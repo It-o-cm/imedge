@@ -54,35 +54,7 @@ class NomenclatureLevelTest {
         return value;
     }
 
-    /**
-     * The contribution of a level is its cumulative length minus the one
-     * above — the file's "2 digits" against its "4 concatenated digits".
-     */
-    @Test
-    void theOwnLengthIsTheDifferenceWithTheLevelAbove() {
-        NomenclatureLevel activite = level(0, "Activité", 2);
-        NomenclatureLevel rayon = level(1, "Rayon", 4);
-        NomenclatureLevel famille = level(2, "Famille", 8);
-        NomenclatureLevel sousFamille = level(3, "Sous-famille", 12);
-        assertEquals(2, activite.ownLength(null));
-        assertEquals(2, rayon.ownLength(activite));
-        assertEquals(4, famille.ownLength(rayon));
-        assertEquals(4, sousFamille.ownLength(famille));
-    }
 
-    /**
-     * A level declared no longer than the one above contributes nothing rather
-     * than a negative count — a broken scheme must not produce a negative
-     * substring length in a caller.
-     */
-    @Test
-    void aLevelNoLongerThanItsParentContributesNothing() {
-        NomenclatureLevel above = level(0, "Activité", 4);
-        NomenclatureLevel same = level(1, "Rayon", 4);
-        NomenclatureLevel shorter = level(1, "Rayon", 2);
-        assertEquals(0, same.ownLength(above));
-        assertEquals(0, shorter.ownLength(above));
-    }
 
     /**
      * The levels of a scheme are read in rank order through its id.

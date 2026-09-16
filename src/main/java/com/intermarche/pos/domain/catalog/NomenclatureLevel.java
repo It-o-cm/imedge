@@ -103,17 +103,6 @@ public class NomenclatureLevel extends BaseEntity {
         return find("nomenclature.id = ?1 and rank = ?2", nomenclature.id, rank).firstResult();
     }
 
-    /**
-     * The number of characters this level adds to its parent's code — the
-     * "2 digits" of the published file against its "4 concatenated digits".
-     *
-     * @param above the level immediately above, or null for the top level
-     * @return the characters this level contributes, never negative
-     */
-    public int ownLength(NomenclatureLevel above) {
-        int inherited = above == null ? 0 : above.codeLength;
-        return Math.max(0, codeLength - inherited);
-    }
 
     /**
      * The fingerprint input of this level for the referential export.

@@ -206,18 +206,6 @@ class CouponTypeTest {
         Assertions.assertNull(type.extractAmount("99999999999999999999"));
     }
 
-    /**
-     * listActiveByPriority delegates to the priority-ordered active finder.
-     */
-    @Test
-    void listActiveByPriorityDelegatesToFinder() {
-        List<CouponType> expected = List.of(new CouponType());
-        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
-            mocked.when(() -> CouponType.list("active = true order by priority"))
-                    .thenReturn(expected);
-            Assertions.assertSame(expected, CouponType.listActiveByPriority());
-        }
-    }
 
     /**
      * listActivePaymentTypes delegates to the non-deposit active finder.

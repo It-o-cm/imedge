@@ -116,21 +116,6 @@ class NomenclatureTest {
         }
     }
 
-    /**
-     * A code of no declared length belongs to no level, and a null code is not
-     * a crash — both are the null arms of the placement.
-     */
-    @Test
-    void anUnplaceableCodeYieldsNoLevel() {
-        Nomenclature itm = scheme("ITM_FR");
-        try (MockedStatic<PanacheEntityBase> mocked = withLevels(intermarcheLevels())) {
-            assertNull(itm.levelOfCode("100"));
-            assertNull(itm.levelOfCode(""));
-            assertNull(itm.levelOfCode(null));
-            assertFalse(itm.acceptsCode("100"));
-            assertTrue(itm.acceptsCode("1002"));
-        }
-    }
 
     /**
      * The parent is the code truncated to the level above — the one property
@@ -205,20 +190,6 @@ class NomenclatureTest {
         }
     }
 
-    /**
-     * A scheme with no declared level places nothing and has no depth — it is
-     * not a crash, it is a scheme not yet configured.
-     */
-    @Test
-    void aSchemeWithoutLevelsPlacesNothing() {
-        Nomenclature itm = scheme("ITM_FR");
-        try (MockedStatic<PanacheEntityBase> mocked = withLevels(List.of())) {
-            assertEquals(0, itm.depth());
-            assertNull(itm.levelOfCode("1002"));
-            assertNull(itm.parentCodeOf("1002"));
-            assertFalse(itm.acceptsCode("1002"));
-        }
-    }
 
     /**
      * The levels are read ONCE: the second call returns the same list without

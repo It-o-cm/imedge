@@ -215,15 +215,6 @@ class ProductAttributesTest {
         Assertions.assertFalse(ProductAttributes.mealVoucherEligible(new Product()));
     }
 
-    /**
-     * bulky reflects the BULKY attribute, both arms.
-     */
-    @Test
-    void bulkyReflectsAttribute() {
-        Assertions.assertTrue(ProductAttributes.bulky(
-                productWith(ProductAttributeCatalog.BULKY, "true")));
-        Assertions.assertFalse(ProductAttributes.bulky(new Product()));
-    }
 
     /**
      * priceToEnter reflects the PRICE_TO_ENTER attribute, both arms.

@@ -152,15 +152,6 @@ class EmployeeTest {
         Assertions.assertFalse(employee.isEnabled());
     }
 
-    /**
-     * getSubjectId returns the string form of the entity id.
-     */
-    @Test
-    void getSubjectIdReturnsIdAsString() {
-        Employee employee = new Employee();
-        employee.id = 42L;
-        Assertions.assertEquals("42", employee.getSubjectId());
-    }
 
     /**
      * getFullName concatenates first and last name with a single space.
@@ -183,28 +174,7 @@ class EmployeeTest {
         Assertions.assertEquals("jane@example.com", employee.getEmail());
     }
 
-    /**
-     * setPassword replaces the stored password hash.
-     */
-    @Test
-    void setPasswordUpdatesPassword() {
-        Employee employee = new Employee();
-        employee.setPassword("newHash");
-        Assertions.assertEquals("newHash", employee.password);
-    }
 
-    /**
-     * present formats the badge, full name and email into the descriptive string.
-     */
-    @Test
-    void presentFormatsDescriptiveString() {
-        Employee employee = new Employee();
-        employee.badgeId = "B01";
-        employee.firstName = "Jane";
-        employee.lastName = "Doe";
-        employee.email = "jane@example.com";
-        Assertions.assertEquals("Employee[B01] Jane Doe (jane@example.com)", employee.present());
-    }
 
     /**
      * hashPassword produces a BCrypt hash that verifyPassword accepts, exercising

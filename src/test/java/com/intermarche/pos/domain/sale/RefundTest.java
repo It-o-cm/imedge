@@ -118,27 +118,7 @@ class RefundTest {
         Assertions.assertEquals(Refund.RefundMethod.LOYALTY, Refund.RefundMethod.valueOf("LOYALTY"));
     }
 
-    /**
-     * calculateTotal over an empty line list yields zero (the reduction identity).
-     */
-    @Test
-    void calculateTotalWithNoLinesIsZero() {
-        Refund refund = new Refund();
-        refund.calculateTotal();
-        Assertions.assertEquals(BigDecimal.ZERO, refund.totalAmount);
-    }
 
-    /**
-     * calculateTotal sums price times quantity across every line.
-     */
-    @Test
-    void calculateTotalSumsLines() {
-        Refund refund = new Refund();
-        refund.lines.add(line("2.5000", "3"));
-        refund.lines.add(line("1.0000", "4"));
-        refund.calculateTotal();
-        Assertions.assertEquals(new BigDecimal("11.5000"), refund.totalAmount);
-    }
 
     /**
      * getChecksum hashes the refund number, ticket id, total, status and method.

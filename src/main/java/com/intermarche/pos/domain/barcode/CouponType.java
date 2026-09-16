@@ -358,15 +358,6 @@ public class CouponType extends PanacheEntity {
         }
     }
 
-    /**
-     * Returns the active coupon types ordered by ascending priority,
-     * regardless of their kind.
-     *
-     * @return the ordered list of active types
-     */
-    public static List<CouponType> listActiveByPriority() {
-        return list("active = true order by priority");
-    }
 
     /**
      * Returns the active payment voucher types (deposit-return types excluded)

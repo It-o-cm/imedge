@@ -49,48 +49,9 @@ class ProductTest {
         Assertions.assertFalse(product.forbiddenToSale);
     }
 
-    /**
-     * standardQuantity returns the raw quantity for UNIT products
-     * (first if arm true).
-     */
-    @Test
-    void standardQuantityUnitReturnsRawQuantity() {
-        Product product = new Product();
-        product.productType = ProductType.UNIT;
-        Assertions.assertEquals(BigDecimal.valueOf(3.0), product.standardQuantity(3.0));
-    }
 
-    /**
-     * standardQuantity returns zero for a non-UNIT product whose reference
-     * weight is null (first if arm false, first OR arm true).
-     */
-    @Test
-    void standardQuantityNullReferenceReturnsZero() {
-        Product product = weightProduct(null);
-        Assertions.assertEquals(BigDecimal.ZERO, product.standardQuantity(2.0));
-    }
 
-    /**
-     * standardQuantity returns zero for a non-UNIT product whose reference
-     * weight is zero (first if arm false, second OR arm true).
-     */
-    @Test
-    void standardQuantityZeroReferenceReturnsZero() {
-        Product product = weightProduct(BigDecimal.ZERO);
-        Assertions.assertEquals(BigDecimal.ZERO, product.standardQuantity(2.0));
-    }
 
-    /**
-     * standardQuantity divides the quantity by a positive reference weight,
-     * scaling to six decimals (first if arm false, both OR arms false).
-     */
-    @Test
-    void standardQuantityDividesByPositiveReference() {
-        Product product = weightProduct(new BigDecimal("0.250"));
-        BigDecimal expected = BigDecimal.valueOf(1.0)
-                .divide(new BigDecimal("0.250"), 6, RoundingMode.HALF_UP);
-        Assertions.assertEquals(expected, product.standardQuantity(1.0));
-    }
 
     /**
      * findByEan delegates to the EAN finder and returns its first result.

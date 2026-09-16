@@ -187,17 +187,6 @@ public class CouponField extends PanacheEntity {
         return dateFormat.toTime(raw);
     }
 
-    /**
-     * Returns the fields of a range, ordered by position.
-     *
-     * @param typeId the identifier of the owning range
-     * @return the ordered fields, possibly empty
-     */
-    public static List<CouponField> listByType(Long typeId) {
-        return typeId == null
-                ? List.of()
-                : list("couponType.id = ?1 order by offsetPosition", typeId);
-    }
 
     /**
      * Names what an administered field holds.

@@ -116,16 +116,6 @@ public class Pdv extends BaseEntity {
         return list("enseigneCode = ?1 order by pdvNumber", enseigneCode);
     }
 
-    /**
-     * Lists the PDVs operated by an adhérent, ordered by number — the
-     * grouping-by-adhérent view (BO-02-05-05).
-     *
-     * @param adherentCode the adhérent code
-     * @return the PDVs of that adhérent, never null
-     */
-    public static List<Pdv> listByAdherent(String adherentCode) {
-        return list("adherentCode = ?1 order by pdvNumber", adherentCode);
-    }
 
     /**
      * Lists every PDV, ordered by number for a stable display.

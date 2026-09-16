@@ -74,15 +74,6 @@ public class Enseigne extends BaseEntity {
         return find("code", code).firstResult();
     }
 
-    /**
-     * Lists the enseignes attached to a country, ordered by code.
-     *
-     * @param countryCode the country code
-     * @return the enseignes of that country, never null
-     */
-    public static List<Enseigne> listByCountry(String countryCode) {
-        return list("countryCode = ?1 order by code", countryCode);
-    }
 
     /**
      * Lists every enseigne, ordered by code for a stable display.

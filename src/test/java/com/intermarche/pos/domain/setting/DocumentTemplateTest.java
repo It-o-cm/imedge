@@ -86,22 +86,6 @@ class DocumentTemplateTest {
         assertFalse(blank.isRenderable());
     }
 
-    /**
-     * The width bounds are accepted at their exact values and refused just
-     * outside them — the two boundaries of the guard.
-     */
-    @Test
-    void theWidthBoundsAreCheckedAtTheirExactValues() {
-        DocumentTemplate template = saleReceipt();
-        template.width = DocumentTemplate.MIN_WIDTH;
-        assertTrue(template.hasValidWidth());
-        template.width = DocumentTemplate.MAX_WIDTH;
-        assertTrue(template.hasValidWidth());
-        template.width = DocumentTemplate.MIN_WIDTH - 1;
-        assertFalse(template.hasValidWidth());
-        template.width = DocumentTemplate.MAX_WIDTH + 1;
-        assertFalse(template.hasValidWidth());
-    }
 
     /**
      * The published width bounds are the ones a roll and a page actually take.
@@ -112,22 +96,6 @@ class DocumentTemplateTest {
         assertEquals(120, DocumentTemplate.MAX_WIDTH);
     }
 
-    /**
-     * The copy count is honoured above one and floored at one — the boundary
-     * and both arms.
-     */
-    @Test
-    void theCopyCountIsFlooredAtOne() {
-        DocumentTemplate template = saleReceipt();
-        template.copies = 3;
-        assertEquals(3, template.effectiveCopies());
-        template.copies = 1;
-        assertEquals(1, template.effectiveCopies());
-        template.copies = 0;
-        assertEquals(1, template.effectiveCopies());
-        template.copies = -2;
-        assertEquals(1, template.effectiveCopies());
-    }
 
     /**
      * {@code listActiveFor} forwards the administered order verbatim, and

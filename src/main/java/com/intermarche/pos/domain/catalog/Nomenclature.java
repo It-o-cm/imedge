@@ -82,14 +82,6 @@ public class Nomenclature extends BaseEntity {
         return find("code", code).firstResult();
     }
 
-    /**
-     * Lists the active schemes, in code order.
-     *
-     * @return the active schemes
-     */
-    public static List<Nomenclature> listActive() {
-        return list("active = true order by code");
-    }
 
     /**
      * Lists every scheme, active or not, in code order.
@@ -197,16 +189,6 @@ public class Nomenclature extends BaseEntity {
         return nodeCode.substring(0, above.codeLength);
     }
 
-    /**
-     * Whether a node code is well formed for this scheme: it has the exact
-     * cumulative length of one of its levels.
-     *
-     * @param nodeCode the node code, possibly null
-     * @return true when the code lands on a declared level
-     */
-    public boolean acceptsCode(String nodeCode) {
-        return levelOfCode(nodeCode) != null;
-    }
 
     /**
      * The fingerprint input of this scheme for the referential export.

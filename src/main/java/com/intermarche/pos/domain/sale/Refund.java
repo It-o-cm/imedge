@@ -109,14 +109,6 @@ public class Refund extends BaseEntity {
     @JoinColumn(name = "refund_id", nullable = false)
     public List<RefundLine> lines = new ArrayList<>();
 
-    /**
-     * Recomputes the tax-included total from the lines (server side).
-     */
-    public void calculateTotal() {
-        this.totalAmount = lines.stream()
-                .map(l -> l.price.multiply(l.quantity))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-    }
 
     /**
      * Returns the audit checksum of the refund.

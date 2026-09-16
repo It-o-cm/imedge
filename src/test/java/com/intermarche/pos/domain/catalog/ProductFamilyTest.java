@@ -435,47 +435,9 @@ class ProductFamilyTest {
         Assertions.assertEquals("EXISTING", f.flags);
     }
 
-    /**
-     * removeFlag returns false for a null token (null arm true).
-     */
-    @Test
-    void removeFlagNullToken() {
-        ProductFamily f = family(1L, "A");
-        Assertions.assertFalse(f.removeFlag(null));
-        Assertions.assertEquals("A", f.flags);
-    }
 
-    /**
-     * removeFlag nulls the flags string when the last token is removed
-     * (remove arm true, isEmpty arm true).
-     */
-    @Test
-    void removeFlagLastToken() {
-        ProductFamily f = family(1L, "ONLY");
-        Assertions.assertTrue(f.removeFlag("ONLY"));
-        Assertions.assertNull(f.flags);
-    }
 
-    /**
-     * removeFlag keeps the remaining tokens when others survive
-     * (remove arm true, isEmpty arm false).
-     */
-    @Test
-    void removeFlagKeepsOthers() {
-        ProductFamily f = family(1L, "A,B");
-        Assertions.assertTrue(f.removeFlag("A"));
-        Assertions.assertEquals("B", f.flags);
-    }
 
-    /**
-     * removeFlag returns false when the token is absent (remove arm false).
-     */
-    @Test
-    void removeFlagAbsentToken() {
-        ProductFamily f = family(1L, "A,B");
-        Assertions.assertFalse(f.removeFlag("Z"));
-        Assertions.assertEquals(Set.of("A", "B"), Set.of(f.flags.split(",")));
-    }
 
     /**
      * hasFlag returns false for a null token (first OR arm true).

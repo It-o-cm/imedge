@@ -307,14 +307,6 @@ public class Employee extends BaseEntity {
         return active;
     }
 
-    /**
-     * Returns the database ID as the subject for the JWT.
-     *
-     * @return the ID as a string.
-     */
-    public String getSubjectId() {
-        return String.valueOf(id);
-    }
 
     /**
      * Returns the full name of the employee.
@@ -338,23 +330,7 @@ public class Employee extends BaseEntity {
         return this.email;
     }
 
-    /**
-     * Sets the password for the employee.
-     *
-     * @param password the new password to be set
-     */
-    public void setPassword(String password) {
-        this.password = password;
-    }
 
-    /**
-     * Returns a string representation of the account for logging.
-     *
-     * @return a descriptive string.
-     */
-    public String present() {
-        return String.format("Employee[%s] %s (%s)", this.badgeId, this.getFullName(), this.email);
-    }
 
     /**
      * Méthode utilitaire statique pour hacher un mot de passe avant de l'assigner.

@@ -174,18 +174,6 @@ public class TenderDefinition extends PanacheEntity {
     @Column(name = "fidelity_reported", nullable = false)
     public boolean fidelityReported = false;
 
-    /**
-     * Tells whether the administered functional identifier satisfies the width
-     * the plan requires (BO-03-02-04).
-     *
-     * @return true when the identifier is at least three characters long
-     */
-    public boolean hasValidFunctionalId() {
-        if (functionalId == null || functionalId.isBlank()) {
-            return false;
-        }
-        return functionalId.trim().length() >= MIN_FUNCTIONAL_ID_LENGTH;
-    }
 
     /**
      * Tells whether one settlement of the given amount goes over the first
@@ -305,14 +293,6 @@ public class TenderDefinition extends PanacheEntity {
         return amount.compareTo(bound) > 0;
     }
 
-    /**
-     * Returns the tenders in service, in administered order.
-     *
-     * @return the active tenders, empty when the store administers none
-     */
-    public static List<TenderDefinition> listActive() {
-        return list("active = true order by displayOrder, code");
-    }
 
     /**
      * Returns every administered tender, active or not, in administered order.

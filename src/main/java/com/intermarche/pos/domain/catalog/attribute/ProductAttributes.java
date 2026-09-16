@@ -180,36 +180,8 @@ public final class ProductAttributes {
         return flag(product, ProductAttributeCatalog.MEAL_VOUCHER_ELIGIBLE);
     }
 
-    /**
-     * Whether the article is eligible for eco-voucher tender (LC-09-01-13/14).
-     *
-     * @param product the product, or null
-     * @return true when the article is eco-voucher eligible
-     */
-    public static boolean ecoVoucherEligible(Product product) {
-        return flag(product, ProductAttributeCatalog.ECO_VOUCHER_ELIGIBLE);
-    }
 
-    /**
-     * Whether the article is eligible for the social purchase card
-     * (LC-09-01-15/16).
-     *
-     * @param product the product, or null
-     * @return true when the article is social-card eligible
-     */
-    public static boolean socialCardEligible(Product product) {
-        return flag(product, ProductAttributeCatalog.SOCIAL_CARD_ELIGIBLE);
-    }
 
-    /**
-     * Whether the article is bulky (BO-02-03-25).
-     *
-     * @param product the product, or null
-     * @return true when the article is bulky
-     */
-    public static boolean bulky(Product product) {
-        return flag(product, ProductAttributeCatalog.BULKY);
-    }
 
     /**
      * Whether the price must be entered at the register (BO-02-03-21).

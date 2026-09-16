@@ -407,32 +407,6 @@ public class ProductFamily extends BaseEntity {
         }
     }
 
-    /**
-     * Removes a token from the flags string.
-     * <p>
-     * The token is trimmed before removal. If the flags list becomes empty,
-     * the field is set to null.
-     *
-     * @param token The token to remove.
-     */
-    public boolean removeFlag(String token) {
-        if (token == null) {
-            return false;
-        }
-
-        Set<String> currentFlags = getFlagsSet();
-        String trimmedToken = token.trim();
-
-        if (currentFlags.remove(trimmedToken)) {
-            if (currentFlags.isEmpty()) {
-                this.flags = null;
-            } else {
-                updateFlagsFromSet(currentFlags);
-            }
-            return true;
-        }
-        return false;
-    }
 
     /**
      * Checks if a specific token is present in the flags string.

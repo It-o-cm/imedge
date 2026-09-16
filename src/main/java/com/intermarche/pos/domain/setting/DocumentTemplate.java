@@ -89,28 +89,7 @@ public class DocumentTemplate extends PanacheEntity {
         return active && source != null && !source.isBlank();
     }
 
-    /**
-     * Tells whether the declared width is one the register can print.
-     *
-     * @return true when the width sits within the published bounds
-     */
-    public boolean hasValidWidth() {
-        return width >= MIN_WIDTH && width <= MAX_WIDTH;
-    }
 
-    /**
-     * Returns the number of copies to print, never fewer than one.
-     *
-     * <p>A row administered with zero copies means "do not print", which is a
-     * decision the printing policy takes and not one a layout may take by
-     * accident: the layout answers at least one, and the caller decides whether
-     * to print at all.
-     *
-     * @return the number of copies, at least one
-     */
-    public int effectiveCopies() {
-        return Math.max(1, copies);
-    }
 
     /**
      * Returns the active templates of one document type, in administered order.

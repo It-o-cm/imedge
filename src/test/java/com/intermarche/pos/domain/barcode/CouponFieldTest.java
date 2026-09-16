@@ -322,28 +322,7 @@ class CouponFieldTest {
         Assertions.assertEquals(LocalTime.of(13, 45), f.timeValue("1345"));
     }
 
-    /**
-     * listByType returns an empty list for a null identifier (first ternary arm).
-     */
-    @Test
-    void listByTypeNullIdIsEmpty() {
-        Assertions.assertTrue(CouponField.listByType(null).isEmpty());
-    }
 
-    /**
-     * listByType delegates to the ordered Panache finder (second ternary arm).
-     */
-    @Test
-    void listByTypeDelegatesToTheOrderedFinder() {
-        CouponField expected = field(CouponField.Role.PRICE, 0, 4);
-        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
-            panache.when(() -> PanacheEntityBase.list("couponType.id = ?1 order by offsetPosition", 7L))
-                    .thenReturn(List.of(expected));
-            List<CouponField> found = CouponField.listByType(7L);
-            Assertions.assertEquals(1, found.size());
-            Assertions.assertSame(expected, found.get(0));
-        }
-    }
 
     /**
      * Each character kind carries its own single-character token.

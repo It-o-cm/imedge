@@ -61,36 +61,7 @@ class TenderDefinitionTest {
         return tender;
     }
 
-    /**
-     * A functional identifier of three characters is accepted, and a shorter one
-     * is not — the width boundary the plan states (BO-03-02-04).
-     */
-    @Test
-    void theFunctionalIdentifierMustBeThreeCharactersWide() {
-        TenderDefinition tender = mealVoucher();
-        assertTrue(tender.hasValidFunctionalId());
 
-        tender.functionalId = "1234";
-        assertTrue(tender.hasValidFunctionalId());
-
-        tender.functionalId = "30";
-        assertFalse(tender.hasValidFunctionalId());
-    }
-
-    /**
-     * A missing identifier is refused, null and blank alike — the two legs of the
-     * same guard.
-     */
-    @Test
-    void aMissingFunctionalIdentifierIsRefused() {
-        TenderDefinition nullId = mealVoucher();
-        nullId.functionalId = null;
-        assertFalse(nullId.hasValidFunctionalId());
-
-        TenderDefinition blankId = mealVoucher();
-        blankId.functionalId = "   ";
-        assertFalse(blankId.hasValidFunctionalId());
-    }
 
     /**
      * The first ceiling fires strictly above the administered amount: twenty-six
@@ -281,18 +252,6 @@ class TenderDefinitionTest {
         assertEquals("VOUCHER", tender.changeTender());
     }
 
-    /**
-     * {@code listActive} forwards the administered order verbatim.
-     */
-    @Test
-    void listActiveForwardsTheAdministeredOrder() {
-        TenderDefinition tender = mealVoucher();
-        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
-            ms.when(() -> TenderDefinition.list("active = true order by displayOrder, code"))
-                    .thenReturn(List.of(tender));
-            assertEquals(List.of(tender), TenderDefinition.listActive());
-        }
-    }
 
     /**
      * {@code listAllOrdered} answers the whole referential, deactivated rows

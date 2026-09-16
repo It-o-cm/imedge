@@ -230,27 +230,6 @@ public class Product extends BaseEntity {
     // Panache Active Record Queries
     // --------------------------------------------------
 
-    /**
-     * Converts a given quantity into standard units based on the product type.
-     * <p>
-     * For UNIT products, the quantity is returned as-is.
-     * For WEIGHT or VOLUME products, the quantity (in kg or L) is divided by the reference weight or volume.
-     *
-     * @param quantity The quantity to convert (can be integer or decimal).
-     * @return The quantity expressed in standard units.
-     */
-    public BigDecimal standardQuantity(double quantity) {
-        if (this.productType == ProductType.UNIT) {
-            return BigDecimal.valueOf(quantity);
-        }
-        else {
-            if (this.referenceWeight == null || this.referenceWeight.compareTo(BigDecimal.ZERO) == 0) {
-                return BigDecimal.ZERO;
-            }
-            BigDecimal quantityKg = BigDecimal.valueOf(quantity);
-            return quantityKg.divide(this.referenceWeight, 6, RoundingMode.HALF_UP);
-        }
-    }
 
     /**
      * The effective sale-line label (BO-02-03-02): the checkout label when it
