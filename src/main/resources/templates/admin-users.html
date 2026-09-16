@@ -1,0 +1,88 @@
+{!
+ ! Back-office USER ↔ PROFILE assignment (BO-01-03-02/03). Each employee lists
+ ! the profiles bound to it and the echelon each applies to; one form binds a
+ ! profile at a chosen scope, several bindings per employee is the normal
+ ! case. The fixed role is shown for reference and left untouched.
+ ! POST -> 303 -> notice.
+!}
+{#include admin-layout}
+
+{#title}Utilisateurs{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Utilisateurs</h1>
+        <p class="page-sub">Affectation des profils aux comptes, à un ou plusieurs échelons.</p>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+{#if profiles.isEmpty()}
+<div class="card">
+    <div class="empty-state">
+        <p>Aucun profil à affecter.</p>
+        <p class="empty-hint">Définissez d'abord des profils dans <a class="link-strong" href="/admin/profiles">Profils</a>.</p>
+    </div>
+</div>
+{#else}
+{#for user in users}
+<div class="card">
+    <div class="card-title-row">
+        <h2 class="card-title">{user.fullName}</h2>
+        <span class="badge badge-off">{user.loginName} · {user.role}</span>
+    </div>
+    {#if user.bindings.isEmpty()}
+    <p class="col-muted">Aucun profil affecté.</p>
+    {#else}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Profil</th>
+                <th>Échelon</th>
+                <th class="col-actions">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {#for binding in user.bindings}
+            <tr>
+                <td>{binding.profileName}</td>
+                <td>{#if binding.scope == '*'}Tous les échelons{#else}PDV {binding.scope}{/if}</td>
+                <td class="col-actions">
+                    <form method="post" action="/admin/users/unassign" class="app-identity-form">
+                        <input type="hidden" name="bindingId" value="{binding.id}">
+                        <button class="btn btn-small btn-danger" type="submit">Retirer</button>
+                    </form>
+                </td>
+            </tr>
+            {/for}
+        </tbody>
+    </table>
+    {/if}
+    <form method="post" action="/admin/users/assign" class="filter-bar" style="margin-top: 10px;">
+        <input type="hidden" name="employeeId" value="{user.id}">
+        <div class="filter-field">
+            <label class="filter-label" for="p-{user.id}">Profil</label>
+            <select class="input-control" id="p-{user.id}" name="profileId" required>
+                {#for ref in profiles}
+                <option value="{ref.id}">{ref.name}</option>
+                {/for}
+            </select>
+        </div>
+        <div class="filter-field">
+            <label class="filter-label" for="s-{user.id}">Échelon (PDV ou * pour tous)</label>
+            <input class="input-control" id="s-{user.id}" type="text" name="echelonScope" value="*" maxlength="20">
+        </div>
+        <div class="filter-actions">
+            <button class="btn btn-small btn-primary" type="submit">Affecter</button>
+        </div>
+    </form>
+</div>
+{/for}
+{/if}
+{/body}
+
+{#footer}Un profil affecté à un échelon n'agit que sur les nœuds de cet échelon.{/footer}

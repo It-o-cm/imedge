@@ -1,0 +1,216 @@
+{!
+ ! Back-office ARTICLE GROUPS admin (Lot 5C): the tree of ProductFamily groups.
+ ! Top forms create a group and add articles at level 0; the table lists every
+ ! group with its parent and member count and lets each be duplicated or
+ ! deleted; opening a group (?edit=id) reveals its edit panel — rename/re-parent,
+ ! add articles by code / EAN range / source group, and per-member remove or
+ ! activate/deactivate. POST -> 303 -> notice, the admin cycle.
+!}
+{#include admin-layout}
+
+{#title}Groupes d'articles{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Groupes d'articles</h1>
+        <p class="page-sub">Arborescence des groupes d'articles : création, duplication, rattachement d'articles à l'unité ou en masse, désactivation.</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-ghost" href="/admin/articles">Retour aux articles</a>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">Nouveau groupe</h2>
+    <form method="post" action="/admin/article-groups">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="g-code">Code</label>
+                <input class="input-control" id="g-code" type="text" name="code" maxlength="50" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="g-desc">Description</label>
+                <input class="input-control" id="g-desc" type="text" name="description" maxlength="255">
+            </div>
+            <div class="field">
+                <label class="field-label" for="g-parent">Groupe parent</label>
+                <select class="input-control" id="g-parent" name="parentId">
+                    <option value="">Niveau 0 (racine)</option>
+                    {#for g in groups}
+                    <option value="{g.id}">{g.code}</option>
+                    {/for}
+                </select>
+            </div>
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">Créer</button>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <h2 class="card-title">Ajouter un article au niveau 0</h2>
+    <p class="page-sub">Un article placé au niveau 0 est disponible en touche caisse sans passer par une touche de groupe.</p>
+    <form method="post" action="/admin/article-groups/level-zero/articles">
+        <div class="field">
+            <label class="field-label" for="z-codes">Codes articles (EAN, code interne ou PLU, séparés par des espaces, virgules ou retours ligne)</label>
+            <textarea class="input-control" id="z-codes" name="codes" rows="2"></textarea>
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">Ajouter au niveau 0</button>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    {#if groups.isEmpty()}
+    <div class="empty-state">
+        <p>Aucun groupe d'articles.</p>
+        <p class="empty-hint">Créez un groupe pour bâtir l'arborescence.</p>
+    </div>
+    {#else}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Code</th>
+                <th>Description</th>
+                <th>Parent</th>
+                <th>Articles</th>
+                <th class="col-actions">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {#for g in groups}
+            <tr>
+                <td><a class="link-strong" href="/admin/article-groups?edit={g.id}">{g.code}</a></td>
+                <td class="col-muted">{g.description ?: '—'}</td>
+                <td class="col-muted">{g.parentCode ?: 'Niveau 0'}</td>
+                <td>{g.memberCount}</td>
+                <td class="col-actions">
+                    <form method="post" action="/admin/article-groups/duplicate">
+                        <input type="hidden" name="sourceId" value="{g.id}">
+                        <input class="input-control" type="text" name="newCode" placeholder="nouveau code" maxlength="50" required>
+                        <button class="btn btn-small" type="submit">Dupliquer</button>
+                    </form>
+                    <form method="post" action="/admin/article-groups/delete"
+                          onsubmit="return confirm('Supprimer ce groupe ?');">
+                        <input type="hidden" name="id" value="{g.id}">
+                        <button class="btn btn-small btn-danger" type="submit">Supprimer</button>
+                    </form>
+                </td>
+            </tr>
+            {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+
+{#if selected}
+<div class="card">
+    <h2 class="card-title">Groupe « {selected.code} »</h2>
+
+    <form method="post" action="/admin/article-groups">
+        <input type="hidden" name="id" value="{selected.id}">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="e-desc">Description</label>
+                <input class="input-control" id="e-desc" type="text" name="description" maxlength="255" value="{selected.description ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="e-parent">Rattacher sous le groupe</label>
+                <select class="input-control" id="e-parent" name="parentId">
+                    <option value="">— inchangé —</option>
+                    {#for g in groups}
+                    <option value="{g.id}">{g.code}</option>
+                    {/for}
+                </select>
+            </div>
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">Enregistrer</button>
+        </div>
+    </form>
+
+    <h3 class="card-title" style="margin-top: 16px;">Ajouter des articles</h3>
+    <form method="post" action="/admin/article-groups/articles">
+        <input type="hidden" name="id" value="{selected.id}">
+        <div class="field">
+            <label class="field-label" for="a-codes">Codes articles (EAN, code interne ou PLU)</label>
+            <textarea class="input-control" id="a-codes" name="codes" rows="2"></textarea>
+        </div>
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="a-from">Plage EAN — de</label>
+                <input class="input-control" id="a-from" type="text" name="eanFrom" maxlength="13">
+            </div>
+            <div class="field">
+                <label class="field-label" for="a-to">Plage EAN — à</label>
+                <input class="input-control" id="a-to" type="text" name="eanTo" maxlength="13">
+            </div>
+            <div class="field">
+                <label class="field-label" for="a-source">Copier les articles du groupe</label>
+                <select class="input-control" id="a-source" name="sourceFamily">
+                    <option value="">— aucun —</option>
+                    {#for g in groups}
+                    <option value="{g.code}">{g.code}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="a-label">Libellé contient</label>
+                <input class="input-control" id="a-label" type="text" name="label">
+            </div>
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">Ajouter au groupe</button>
+        </div>
+    </form>
+
+    <h3 class="card-title" style="margin-top: 16px;">Articles du groupe</h3>
+    {#if members.isEmpty()}
+    <div class="empty-state">
+        <p>Aucun article dans ce groupe.</p>
+    </div>
+    {#else}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>EAN</th>
+                <th>Libellé</th>
+                <th>Statut</th>
+                <th class="col-actions">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {#for m in members}
+            <tr>
+                <td>{m.ean}</td>
+                <td>{m.name}</td>
+                <td>{#if m.active}Actif{#else}Désactivé{/if}</td>
+                <td class="col-actions">
+                    <form method="post" action="/admin/article-groups/articles/toggle">
+                        <input type="hidden" name="id" value="{selected.id}">
+                        <input type="hidden" name="productId" value="{m.id}">
+                        <button class="btn btn-small" type="submit">{#if m.active}Désactiver{#else}Réactiver{/if}</button>
+                    </form>
+                    <form method="post" action="/admin/article-groups/articles/remove">
+                        <input type="hidden" name="id" value="{selected.id}">
+                        <input type="hidden" name="productId" value="{m.id}">
+                        <button class="btn btn-small btn-danger" type="submit">Retirer</button>
+                    </form>
+                </td>
+            </tr>
+            {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+{/if}
+{/body}
+
+{#footer}L'arborescence des groupes d'articles administrée ici alimente les touches caisse au tirage suivant.{/footer}

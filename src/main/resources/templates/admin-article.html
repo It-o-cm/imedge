@@ -1,0 +1,243 @@
+{!
+ ! Back-office ARTICLE fiche (BO-02-03-28/29/33/34/35/45): all base data, all
+ ! attributes (well-known toggles, administered custom fields and the read-only
+ ! full map), the register-behaviour flags, the on-screen article-code flag, and
+ ! the offers and sale-price history. `product` is null when the id is unknown.
+ ! The commercial name, EAN, PLU, type and measures are shown read-only: their
+ ! creation stays on the integration surfaces. POST -> 303 -> notice.
+!}
+{#include admin-layout}
+
+{#title}Fiche article{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Fiche article</h1>
+        <p class="page-sub">Données, attributs, offres et historique des prix d'un article du référentiel.</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-ghost" href="/admin/articles">Retour à la liste</a>
+    </div>
+</div>
+
+{#if product}
+<form method="post" action="/admin/articles/edit">
+    <input type="hidden" name="id" value="{product.id}">
+
+    <div class="card">
+        <h2 class="card-title">Identité</h2>
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="f-ean">Code EAN</label>
+                <input class="input-control" id="f-ean" type="text" value="{product.ean}" disabled>
+                <span class="field-hint">Non modifiable depuis cet écran.</span>
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-name">Libellé commercial</label>
+                <input class="input-control" id="f-name" type="text" value="{product.name}" disabled>
+                <span class="field-hint">Intégré depuis la Gestion Commerciale.</span>
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-checkout">Libellé encaissement</label>
+                <input class="input-control" id="f-checkout" type="text" name="checkoutLabel" value="{product.checkoutLabel ?: ''}" maxlength="100">
+                <span class="field-hint">Affiché sur la ligne et le ticket. Vide : le libellé commercial s'applique.</span>
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-internal">Code interne</label>
+                <input class="input-control" id="f-internal" type="text" name="internalCode" value="{product.internalCode ?: ''}" maxlength="50">
+                <span class="field-hint">Encaissement par scan ou saisie, en plus de l'EAN.</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2 class="card-title">Caractéristiques</h2>
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="f-plu">PLU</label>
+                <input class="input-control" id="f-plu" type="text" value="{product.plu ?: '—'}" disabled>
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-type">Type</label>
+                <input class="input-control" id="f-type" type="text" value="{product.productType ?: '—'}" disabled>
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-unit">Unité de mesure</label>
+                <input class="input-control" id="f-unit" type="text" name="unitName" value="{product.unitName ?: ''}" maxlength="20">
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-weight">Poids de référence (kg)</label>
+                <input class="input-control" id="f-weight" type="text" name="referenceWeight" value="{product.referenceWeight ?: ''}">
+                <span class="field-hint">Décimal en kilogrammes. Vide : aucun poids de référence.</span>
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-volume">Volume de référence (L)</label>
+                <input class="input-control" id="f-volume" type="text" name="referenceVolume" value="{product.referenceVolume ?: ''}">
+                <span class="field-hint">Décimal en litres. Vide : aucun volume de référence.</span>
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-gift">Carte cadeau (€)</label>
+                <input class="input-control" id="f-gift" type="text" name="giftCardAmount" value="{product.giftCardAmount ?: ''}">
+                <span class="field-hint">Renseigné : l'article EST une carte cadeau de ce montant. Vide : article normal.</span>
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-brand">Marque</label>
+                <input class="input-control" id="f-brand" type="text" name="brand" value="{product.brand ?: ''}" maxlength="100">
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-desc">Description</label>
+                <input class="input-control" id="f-desc" type="text" name="description" value="{product.description ?: ''}" maxlength="255">
+            </div>
+            <div class="field field-check">
+                <label class="field-label"><input type="checkbox" name="active" {#if product.active}checked{/if}> Article actif</label>
+                <span class="field-hint">Décoché : l'article est désactivé (retiré du référentiel), jamais supprimé.</span>
+            </div>
+            <div class="field field-check">
+                <label class="field-label"><input type="checkbox" name="variableWeight" {#if product.variableWeight}checked{/if}> Vendu au poids (vrac)</label>
+                <span class="field-hint">Coché : le poids est connu à la pesée (écran FRUITS &amp; LÉGUMES ou étiquette 2x). Décoché : article préemballé.</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2 class="card-title">Comportement en caisse</h2>
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="f-age">Contrôle d'âge (ans)</label>
+                <input class="input-control" id="f-age" type="number" name="ageRestriction" min="0" value="{product.ageRestriction ?: ''}">
+                <span class="field-hint">Vide ou 0 : aucun contrôle.</span>
+            </div>
+            <div class="field field-check">
+                <label class="field-label"><input type="checkbox" name="forbiddenToSale" {#if product.forbiddenToSale}checked{/if}> Vente interdite</label>
+                <span class="field-hint">L'article est refusé au scan.</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2 class="card-title">Attributs déclarés</h2>
+        <div class="field-grid">
+            {#for attr in attributes}
+            <div class="field field-check">
+                <label class="field-label"><input type="checkbox" name="{attr.code}" {#if attr.checked}checked{/if}> {attr.label}</label>
+            </div>
+            {/for}
+        </div>
+    </div>
+
+    {#if !customAttributes.isEmpty()}
+    <div class="card">
+        <h2 class="card-title">Attributs personnalisés</h2>
+        <div class="field-grid">
+            {#for attr in customAttributes}
+            <div class="field">
+                <label class="field-label" for="c-{attr.code}">{attr.label}</label>
+                <input class="input-control" id="c-{attr.code}" type="text" name="{attr.code}" value="{attr.value}" maxlength="255">
+            </div>
+            {/for}
+        </div>
+    </div>
+    {/if}
+
+    <div class="card">
+        <h2 class="card-title">Présentation</h2>
+        <div class="field-grid">
+            <div class="field field-check">
+                <label class="field-label"><input type="checkbox" name="codeOnScreen" {#if codeOnScreen}checked{/if}> Code article sur l'écran caisse</label>
+                <span class="field-hint">Consommé par l'écran de vente (BO-10-02-35). Réglable en masse depuis la liste.</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="page-actions" style="margin-top: 6px;">
+        <button class="btn btn-primary" type="submit">Enregistrer</button>
+        <a class="btn btn-ghost" href="/admin/articles">Annuler</a>
+    </div>
+</form>
+
+<div class="card">
+    <h2 class="card-title">Prix de vente courant</h2>
+    {#if currentPrice}
+    <p class="price-current">{currentPrice.priceIncludingTax} € TTC · {currentPrice.priceExcludingTax} € HT · TVA {currentPrice.vatRate}</p>
+    {#else}
+    <p class="col-muted">Aucun prix courant.</p>
+    {/if}
+</div>
+
+<div class="card">
+    <h2 class="card-title">Offres</h2>
+    {#if offers.isEmpty()}
+    <p class="col-muted">Aucune offre, en cours ou passée.</p>
+    {#else}
+    <table class="data-table">
+        <thead>
+            <tr><th>Prix TTC</th><th>TVA</th><th>Priorité</th><th>Début</th><th>Fin</th><th>État</th></tr>
+        </thead>
+        <tbody>
+            {#for offer in offers}
+            <tr>
+                <td>{offer.priceIncludingTax} €</td>
+                <td class="col-muted">{offer.vatRate}</td>
+                <td class="col-muted">{offer.priority}</td>
+                <td class="col-muted">{offer.startDateTime ?: '—'}</td>
+                <td class="col-muted">{offer.endDateTime ?: '—'}</td>
+                <td>{#if offer.active}<span class="badge badge-ok">En cours</span>{#else}<span class="badge badge-off">Hors période</span>{/if}</td>
+            </tr>
+            {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+
+<div class="card">
+    <h2 class="card-title">Historique des prix de vente</h2>
+    {#if history.isEmpty()}
+    <p class="col-muted">Aucun prix enregistré.</p>
+    {#else}
+    <table class="data-table">
+        <thead>
+            <tr><th>Prix TTC</th><th>Prix HT</th><th>TVA</th><th>Priorité</th><th>Début</th><th>Fin</th></tr>
+        </thead>
+        <tbody>
+            {#for price in history}
+            <tr>
+                <td>{price.priceIncludingTax} €</td>
+                <td class="col-muted">{price.priceExcludingTax} €</td>
+                <td class="col-muted">{price.vatRate}</td>
+                <td class="col-muted">{price.priority}</td>
+                <td class="col-muted">{price.startDateTime ?: '—'}</td>
+                <td class="col-muted">{price.endDateTime ?: '—'}</td>
+            </tr>
+            {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+
+{#if !allAttributes.isEmpty()}
+<div class="card">
+    <h2 class="card-title">Tous les attributs</h2>
+    <table class="data-table">
+        <thead>
+            <tr><th>Code</th><th>Valeur</th></tr>
+        </thead>
+        <tbody>
+            {#for entry in allAttributes}
+            <tr>
+                <td class="link-strong">{entry.code}</td>
+                <td class="col-muted">{entry.value}</td>
+            </tr>
+            {/for}
+        </tbody>
+    </table>
+</div>
+{/if}
+{#else}
+<div class="card">
+    <p>Article introuvable. <a class="link-strong" href="/admin/articles">Retour à la liste</a>.</p>
+</div>
+{/if}
+{/body}
+
+{#footer}Ces données sont référentielles : sur un nœud magasin, elles atteignent les caisses au tirage suivant.{/footer}

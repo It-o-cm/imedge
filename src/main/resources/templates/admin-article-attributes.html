@@ -1,0 +1,85 @@
+{!
+ ! Back-office ARTICLE ATTRIBUTES admin (BO-02-03-32): declares the custom
+ ! attributes attachable to article fiches, on top of the well-known register
+ ! attributes. Top form creates one; each row renames or deletes one. POST ->
+ ! 303 -> notice, the admin cycle.
+!}
+{#include admin-layout}
+
+{#title}Attributs article{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Attributs article</h1>
+        <p class="page-sub">Attributs personnalisés déclarés, rattachés ensuite aux fiches articles.</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-ghost" href="/admin/articles">Retour aux articles</a>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">Nouvel attribut</h2>
+    <form method="post" action="/admin/article-attributes">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="n-code">Code</label>
+                <input class="input-control" id="n-code" type="text" name="code" maxlength="50" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="n-label">Libellé</label>
+                <input class="input-control" id="n-label" type="text" name="label" maxlength="100" required>
+            </div>
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">Créer</button>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    {#if definitions.isEmpty()}
+    <div class="empty-state">
+        <p>Aucun attribut personnalisé déclaré.</p>
+        <p class="empty-hint">Créez un attribut pour le rendre saisissable sur les fiches articles.</p>
+    </div>
+    {#else}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Attribut</th>
+                <th class="col-actions">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {#for def in definitions}
+            <tr>
+                <td>
+                    <form method="post" action="/admin/article-attributes" class="attr-edit">
+                        <input type="hidden" name="id" value="{def.id}">
+                        <input class="input-control" type="text" name="code" value="{def.code}" maxlength="50">
+                        <input class="input-control" type="text" name="label" value="{def.label}" maxlength="100">
+                        <button class="btn btn-small btn-ghost" type="submit">Enregistrer</button>
+                    </form>
+                </td>
+                <td class="col-actions">
+                    <form method="post" action="/admin/article-attributes/delete"
+                          onsubmit="return confirm('Supprimer cet attribut ?');">
+                        <input type="hidden" name="id" value="{def.id}">
+                        <button class="btn btn-small btn-danger" type="submit">Supprimer</button>
+                    </form>
+                </td>
+            </tr>
+            {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+{/body}
+
+{#footer}Un attribut déclaré ici devient saisissable sur chaque fiche article et voyage avec le tirage.{/footer}

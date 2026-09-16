@@ -1,0 +1,62 @@
+{!
+ ! Back-office FAVORITES self-service (BO-01-04-08): within the limits of the
+ ! account's profiles, hide the features it does not want to see. Only viewable
+ ! features are offered; hiding one changes display only, never authorization.
+ ! POST -> 303 -> notice.
+!}
+{#include admin-layout}
+
+{#title}Mes favoris{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Mes favoris</h1>
+        <p class="page-sub">Masquez les fonctionnalités que vous ne souhaitez pas afficher.</p>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+<form method="post" action="/admin/favorites">
+    <div class="card">
+        {#if rows.isEmpty()}
+        <div class="empty-state">
+            <p>Aucune fonctionnalité accessible.</p>
+            <p class="empty-hint">Vos profils n'autorisent la visualisation d'aucun écran.</p>
+        </div>
+        {#else}
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Menu</th>
+                    <th>Fonctionnalité</th>
+                    <th class="col-actions">Masquer</th>
+                </tr>
+            </thead>
+            <tbody>
+                {#for row in rows}
+                <tr>
+                    <td class="col-muted">{#if row.firstOfMenu}{row.menu}{#else}{/if}</td>
+                    <td>{row.label}</td>
+                    <td class="col-actions">
+                        <label class="toggle">
+                            <input type="checkbox" name="hide" value="{row.key}"{#if row.hidden} checked{/if}>
+                            <span>Masquée</span>
+                        </label>
+                    </td>
+                </tr>
+                {/for}
+            </tbody>
+        </table>
+        {/if}
+    </div>
+    <div class="page-actions" style="margin-top: 6px;">
+        <button class="btn btn-primary" type="submit">Enregistrer</button>
+    </div>
+</form>
+{/body}
+
+{#footer}Vos favoris n'affectent que votre affichage : ils ne modifient aucun droit.{/footer}

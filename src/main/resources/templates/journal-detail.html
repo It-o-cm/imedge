@@ -1,0 +1,121 @@
+{!
+ ! Ticket detail of the electronic journal (BO-04-01-50, "ouvrir le détail").
+ ! `ticket` is a fully materialized JournalTicketDetail (never a lazy entity),
+ ! or null when the id is unknown. Read screen, no POST. Renders inside the
+ ! admin gabarit.
+!}
+{#include admin-layout}
+
+{#title}Détail du ticket{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Détail du ticket</h1>
+        <p class="page-sub">Document consolidé, lecture seule.</p>
+    </div>
+    <a class="btn btn-ghost" href="/admin/journal">Retour au journal</a>
+</div>
+
+{#if ticket}
+<div class="card">
+    <h2 class="card-title">{ticket.number}</h2>
+    <div class="field-grid">
+        <div class="field">
+            <span class="field-label">N° TPV</span>
+            <span>{ticket.terminal}</span>
+        </div>
+        <div class="field">
+            <span class="field-label">Statut</span>
+            <span>{ticket.status}</span>
+        </div>
+        <div class="field">
+            <span class="field-label">Date</span>
+            <span>{ticket.date} {ticket.time}</span>
+        </div>
+        <div class="field">
+            <span class="field-label">Caissière</span>
+            <span>{ticket.cashier} ({ticket.cashierBadge})</span>
+        </div>
+        <div class="field">
+            <span class="field-label">Magasin</span>
+            <span>{ticket.store}</span>
+        </div>
+        <div class="field">
+            <span class="field-label">Carte fidélité</span>
+            <span>{ticket.fidelityCard}</span>
+        </div>
+        <div class="field">
+            <span class="field-label">Total TTC</span>
+            <span>{ticket.totalIncludingTax}</span>
+        </div>
+        <div class="field">
+            <span class="field-label">Total HT</span>
+            <span>{ticket.totalExcludingTax}</span>
+        </div>
+        <div class="field">
+            <span class="field-label">Total TVA</span>
+            <span>{ticket.totalVat}</span>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <h2 class="card-title">Articles</h2>
+    <p class="col-muted">Les articles annulés en cours de vente sont conservés et
+    signalés : ils n'entrent dans aucun total.</p>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>N°</th>
+                <th>Libellé</th>
+                <th>EAN</th>
+                <th>PLU</th>
+                <th>Quantité</th>
+                <th>Total</th>
+                <th>Modification</th>
+            </tr>
+        </thead>
+        <tbody>
+            {#for line in ticket.lines}
+            <tr{#if line.cancelled} class="is-cancelled"{/if}>
+                <td>{line.number}</td>
+                <td>{line.label}{#if line.cancelled} <span class="tag-cancelled">ANNULÉ</span>{/if}</td>
+                <td>{line.ean}</td>
+                <td>{line.plu}</td>
+                <td>{line.quantity}</td>
+                <td>{line.total}</td>
+                <td>{line.modifier}</td>
+            </tr>
+            {/for}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h2 class="card-title">Règlements</h2>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Mode</th>
+                <th>Montant</th>
+            </tr>
+        </thead>
+        <tbody>
+            {#for payment in ticket.payments}
+            <tr>
+                <td>{payment.method}</td>
+                <td>{payment.amount}</td>
+            </tr>
+            {/for}
+        </tbody>
+    </table>
+</div>
+{#else}
+<div class="card">
+    <p class="col-muted">Ce ticket n'existe pas sur ce nœud.</p>
+</div>
+{/if}
+{/body}
+
+{#footer}Le journal ne produit aucune donnée : il ouvre en lecture les documents remontés par l'outbox de consolidation.{/footer}

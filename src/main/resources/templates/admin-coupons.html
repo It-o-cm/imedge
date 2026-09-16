@@ -1,0 +1,506 @@
+{!
+ ! Back-office BARCODE RANGES page (BO-03-06): the ranges the till recognises,
+ ! stated by position instead of by regular expression. The generated patterns
+ ! are shown read-only — they are an output of this page, never an input.
+ ! POST -> 303 -> notice, the same admin cycle as the other back-office pages.
+ ! No inline <style>: base.css primitives only.
+!}
+{#include admin-layout}
+
+{#title}Plages de codes-barres{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Plages de codes-barres</h1>
+        <p class="page-sub">Chaque plage se décrit par un préfixe, une longueur et des positions ; le motif de reconnaissance en est déduit.</p>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+{#for type in types}
+<div class="card">
+    <h2 class="card-title">{type.code} — {type.label}</h2>
+    <p class="page-sub">
+        Motif engendré : <code>{type.matchPattern ?: '—'}</code>
+        {#if type.amountPattern} · montant : <code>{type.amountPattern}</code>{/if}
+    </p>
+
+    <form method="post" action="/admin/coupons/type">
+        <input type="hidden" name="code" value="{type.code}">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="l-{type.code}">Libellé</label>
+                <input class="input-control" id="l-{type.code}" type="text" name="label" maxlength="100" value="{type.label}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="p-{type.code}">Préfixe</label>
+                <input class="input-control" id="p-{type.code}" type="text" name="prefix" maxlength="40" value="{type.prefix ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="n-{type.code}">Longueur du code</label>
+                <input class="input-control" id="n-{type.code}" type="number" name="codeLength" min="1" value="{type.codeLength ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="k-{type.code}">Caractères</label>
+                <select class="input-control" id="k-{type.code}" name="codeKind">
+                    {#for kind in kinds}
+                    <option value="{kind}" {#if type.codeKind == kind}selected{/if}>{kind}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="s-{type.code}">Montant</label>
+                <select class="input-control" id="s-{type.code}" name="amountSource">
+                    {#for source in sources}
+                    <option value="{source}" {#if type.amountSource == source}selected{/if}>{source}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="o-{type.code}">Priorité</label>
+                <input class="input-control" id="o-{type.code}" type="number" name="priority" value="{type.priority}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="a-{type.code}">Active</label>
+                <input id="a-{type.code}" type="checkbox" name="active" {#if type.active}checked{/if}>
+            </div>
+            <div class="field">
+                <label class="field-label" for="d-{type.code}">Ligne de consigne</label>
+                <input id="d-{type.code}" type="checkbox" name="depositLine" {#if type.depositLine}checked{/if}>
+            </div>
+            <div class="field">
+                <label class="field-label" for="ic-{type.code}">Îlots acceptant la plage</label>
+                <input class="input-control" id="ic-{type.code}" type="text" name="islandCodes" maxlength="1000" value="{type.islandCodes ?: ''}" placeholder="vide = tous les îlots">
+            </div>
+            <div class="field">
+                <label class="field-label" for="n9-{type.code}">Montant 9999 saisi</label>
+                <input id="n9-{type.code}" type="checkbox" name="manualAmountOnAllNines" {#if type.manualAmountOnAllNines}checked{/if}>
+            </div>
+        </div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">Enregistrer la plage</button></div>
+    </form>
+
+    <table class="data-table">
+        <thead>
+        <tr><th>Rôle</th><th>Position</th><th>Longueur</th><th>Caractères</th><th>Décimales</th><th>Format</th><th>Devise</th><th></th></tr>
+        </thead>
+        <tbody>
+        {#for field in type.fields}
+        <tr>
+            <td>{field.role}</td>
+            <td>{field.offsetPosition}</td>
+            <td>{field.fieldLength}</td>
+            <td>{field.kind}</td>
+            <td>{field.decimals ?: '—'}</td>
+            <td>{field.dateFormat ?: '—'}</td>
+            <td>{field.currency ?: '—'}</td>
+            <td>
+                <form method="post" action="/admin/coupons/field/delete">
+                    <input type="hidden" name="code" value="{type.code}">
+                    <input type="hidden" name="role" value="{field.role}">
+                    <button class="btn" type="submit">Supprimer</button>
+                </form>
+            </td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+
+    <form method="post" action="/admin/coupons/field">
+        <input type="hidden" name="code" value="{type.code}">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="fr-{type.code}">Rôle</label>
+                <select class="input-control" id="fr-{type.code}" name="role">
+                    {#for role in roles}
+                    <option value="{role}">{role}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="fo-{type.code}">Position</label>
+                <input class="input-control" id="fo-{type.code}" type="number" name="offsetPosition" min="0" value="0">
+            </div>
+            <div class="field">
+                <label class="field-label" for="fl-{type.code}">Longueur</label>
+                <input class="input-control" id="fl-{type.code}" type="number" name="fieldLength" min="1" value="1">
+            </div>
+            <div class="field">
+                <label class="field-label" for="fk-{type.code}">Caractères</label>
+                <select class="input-control" id="fk-{type.code}" name="kind">
+                    {#for kind in kinds}
+                    <option value="{kind}">{kind}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="fd-{type.code}">Décimales</label>
+                <input class="input-control" id="fd-{type.code}" type="number" name="decimals" min="0">
+            </div>
+            <div class="field">
+                <label class="field-label" for="ff-{type.code}">Format date/heure</label>
+                <select class="input-control" id="ff-{type.code}" name="dateFormat">
+                    <option value="">—</option>
+                    {#for format in formats}
+                    <option value="{format}">{format}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="fc-{type.code}">Devise</label>
+                <select class="input-control" id="fc-{type.code}" name="currency">
+                    <option value="">—</option>
+                    {#for currency in currencies}
+                    <option value="{currency}">{currency}</option>
+                    {/for}
+                </select>
+            </div>
+        </div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">Enregistrer le champ</button></div>
+    </form>
+
+    <table class="data-table">
+        <thead>
+        <tr><th>Contrôle</th><th>Niveau</th><th>Message</th><th></th></tr>
+        </thead>
+        <tbody>
+        {#for control in type.controls}
+        <tr>
+            <td>{control.kind}</td>
+            <td>{control.level}</td>
+            <td>{control.effectiveMessage}</td>
+            <td>
+                <form method="post" action="/admin/coupons/control/delete">
+                    <input type="hidden" name="code" value="{type.code}">
+                    <input type="hidden" name="kind" value="{control.kind}">
+                    <button class="btn" type="submit">Supprimer</button>
+                </form>
+            </td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+
+    <form method="post" action="/admin/coupons/control">
+        <input type="hidden" name="code" value="{type.code}">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="ck-{type.code}">Contrôle</label>
+                <select class="input-control" id="ck-{type.code}" name="kind">
+                    {#for kind in controlKinds}
+                    <option value="{kind}">{kind}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="cl-{type.code}">Niveau</label>
+                <select class="input-control" id="cl-{type.code}" name="level">
+                    {#for level in levels}
+                    <option value="{level}">{level}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="cm-{type.code}">Message</label>
+                <input class="input-control" id="cm-{type.code}" type="text" name="message" maxlength="120">
+            </div>
+        </div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">Enregistrer le contrôle</button></div>
+    </form>
+</div>
+{/for}
+
+<div class="card">
+    <h2 class="card-title">Nouvelle plage</h2>
+    <form method="post" action="/admin/coupons/type">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="new-code">Code</label>
+                <input class="input-control" id="new-code" type="text" name="code" maxlength="50" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-label">Libellé</label>
+                <input class="input-control" id="new-label" type="text" name="label" maxlength="100">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-prefix">Préfixe</label>
+                <input class="input-control" id="new-prefix" type="text" name="prefix" maxlength="40">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-length">Longueur du code</label>
+                <input class="input-control" id="new-length" type="number" name="codeLength" min="1">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-kind">Caractères</label>
+                <select class="input-control" id="new-kind" name="codeKind">
+                    {#for kind in kinds}
+                    <option value="{kind}">{kind}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-source">Montant</label>
+                <select class="input-control" id="new-source" name="amountSource">
+                    {#for source in sources}
+                    <option value="{source}">{source}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-islands">Îlots acceptant la plage</label>
+                <input class="input-control" id="new-islands" type="text" name="islandCodes" maxlength="1000" placeholder="vide = tous les îlots">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-nines">Montant 9999 saisi</label>
+                <input id="new-nines" type="checkbox" name="manualAmountOnAllNines">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-priority">Priorité</label>
+                <input class="input-control" id="new-priority" type="number" name="priority" value="100">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-active">Active</label>
+                <input id="new-active" type="checkbox" name="active" checked>
+            </div>
+        </div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">Créer la plage</button></div>
+    </form>
+</div>
+
+<div class="page-head">
+    <div>
+        <h2>Plages de codes-barres ARTICLE</h2>
+        <p class="page-sub">Les codes que la balance et le comptoir impriment : le préfixe et la longueur disent ce qui appartient à la plage, les deux zones disent où lire l'article et la valeur, et le motif en est déduit (BO-03-06-02/03/04/05/10).</p>
+    </div>
+</div>
+
+{#for range in articleRanges}
+<div class="card">
+    <h2 class="card-title">{range.code} — {range.label}</h2>
+    <p class="page-sub">Motif engendré : <code>{range.matchPattern ?: '—'}</code></p>
+    <form method="post" action="/admin/coupons/article-range">
+        <input type="hidden" name="code" value="{range.code}">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="al-{range.code}">Libellé</label>
+                <input class="input-control" id="al-{range.code}" type="text" name="label" maxlength="100" value="{range.label}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="ap-{range.code}">Préfixe</label>
+                <input class="input-control" id="ap-{range.code}" type="text" name="prefix" maxlength="40" value="{range.prefix ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="an-{range.code}">Longueur du code</label>
+                <input class="input-control" id="an-{range.code}" type="number" name="codeLength" min="1" max="38" value="{range.codeLength}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="ak-{range.code}">Caractères</label>
+                <select class="input-control" id="ak-{range.code}" name="codeKind">
+                    {#for kind in kinds}
+                    <option value="{kind}" {#if kind == range.codeKind}selected{/if}>{kind}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="aap-{range.code}">Article : position</label>
+                <input class="input-control" id="aap-{range.code}" type="number" name="articlePosition" min="0" value="{range.articlePosition}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="aal-{range.code}">Article : longueur</label>
+                <input class="input-control" id="aal-{range.code}" type="number" name="articleLength" min="1" value="{range.articleLength}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="avs-{range.code}">Valeur lue</label>
+                <select class="input-control" id="avs-{range.code}" name="valueSource">
+                    {#for source in valueSources}
+                    <option value="{source}" {#if source == range.valueSource}selected{/if}>{source}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="avp-{range.code}">Valeur : position</label>
+                <input class="input-control" id="avp-{range.code}" type="number" name="valuePosition" min="0" value="{range.valuePosition}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="avl-{range.code}">Valeur : longueur</label>
+                <input class="input-control" id="avl-{range.code}" type="number" name="valueLength" min="1" value="{range.valueLength}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="avd-{range.code}">Valeur : décimales</label>
+                <input class="input-control" id="avd-{range.code}" type="number" name="valueDecimals" min="0" value="{range.valueDecimals}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="ac-{range.code}">Devise du prix</label>
+                <select class="input-control" id="ac-{range.code}" name="currency">
+                    {#for currency in currencies}
+                    <option value="{currency}" {#if currency == range.currency}selected{/if}>{currency}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="acd-{range.code}">Clé de contrôle</label>
+                <input id="acd-{range.code}" type="checkbox" name="checkDigit" {#if range.checkDigit}checked{/if}>
+            </div>
+            <div class="field">
+                <label class="field-label" for="apr-{range.code}">Priorité</label>
+                <input class="input-control" id="apr-{range.code}" type="number" name="priority" value="{range.priority}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="aa-{range.code}">Active</label>
+                <input id="aa-{range.code}" type="checkbox" name="active" {#if range.active}checked{/if}>
+            </div>
+        </div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">Enregistrer la plage article</button></div>
+    </form>
+    <form method="post" action="/admin/coupons/article-range/delete">
+        <input type="hidden" name="code" value="{range.code}">
+        <div class="page-actions"><button class="btn btn-muted" type="submit">Supprimer la plage article</button></div>
+    </form>
+</div>
+{/for}
+
+<div class="card">
+    <h2 class="card-title">Nouvelle plage article</h2>
+    <form method="post" action="/admin/coupons/article-range">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="new-acode">Code</label>
+                <input class="input-control" id="new-acode" type="text" name="code" maxlength="50" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-alabel">Libellé</label>
+                <input class="input-control" id="new-alabel" type="text" name="label" maxlength="100">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-aprefix">Préfixe</label>
+                <input class="input-control" id="new-aprefix" type="text" name="prefix" maxlength="40">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-alength">Longueur du code</label>
+                <input class="input-control" id="new-alength" type="number" name="codeLength" min="1" max="38" value="13">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-akind">Caractères</label>
+                <select class="input-control" id="new-akind" name="codeKind">
+                    {#for kind in kinds}
+                    <option value="{kind}">{kind}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-aapos">Article : position</label>
+                <input class="input-control" id="new-aapos" type="number" name="articlePosition" min="0" value="2">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-aalen">Article : longueur</label>
+                <input class="input-control" id="new-aalen" type="number" name="articleLength" min="1" value="5">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-avsrc">Valeur lue</label>
+                <select class="input-control" id="new-avsrc" name="valueSource">
+                    {#for source in valueSources}
+                    <option value="{source}">{source}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-avpos">Valeur : position</label>
+                <input class="input-control" id="new-avpos" type="number" name="valuePosition" min="0" value="7">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-avlen">Valeur : longueur</label>
+                <input class="input-control" id="new-avlen" type="number" name="valueLength" min="1" value="5">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-avdec">Valeur : décimales</label>
+                <input class="input-control" id="new-avdec" type="number" name="valueDecimals" min="0" value="2">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-acur">Devise du prix</label>
+                <select class="input-control" id="new-acur" name="currency">
+                    {#for currency in currencies}
+                    <option value="{currency}">{currency}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-acd">Clé de contrôle</label>
+                <input id="new-acd" type="checkbox" name="checkDigit" checked>
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-apri">Priorité</label>
+                <input class="input-control" id="new-apri" type="number" name="priority" value="100">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-aact">Active</label>
+                <input id="new-aact" type="checkbox" name="active" checked>
+            </div>
+        </div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">Créer la plage article</button></div>
+    </form>
+</div>
+
+<div class="page-head">
+    <div>
+        <h2>Îlots de caisse</h2>
+        <p class="page-sub">Le groupe de caisses qu'un magasin pilote ensemble — ligne avant, comptoir, drive. Une plage de codes-barres peut n'être acceptée que sur certains d'entre eux (BO-03-06-07, BO-03-06-50).</p>
+    </div>
+</div>
+
+{#for island in islands}
+<div class="card">
+    <h2 class="card-title">{island.code} — {island.label}</h2>
+    <form method="post" action="/admin/coupons/island">
+        <input type="hidden" name="code" value="{island.code}">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="il-{island.code}">Libellé</label>
+                <input class="input-control" id="il-{island.code}" type="text" name="label" maxlength="100" value="{island.label}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="it-{island.code}">Caisses rattachées</label>
+                <input class="input-control" id="it-{island.code}" type="text" name="terminalIds" maxlength="1000" value="{island.terminalIds ?: ''}" placeholder="POS01;POS02">
+            </div>
+            <div class="field">
+                <label class="field-label" for="ia-{island.code}">Actif</label>
+                <input id="ia-{island.code}" type="checkbox" name="active" {#if island.active}checked{/if}>
+            </div>
+        </div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">Enregistrer l'îlot</button></div>
+    </form>
+    <form method="post" action="/admin/coupons/island/delete">
+        <input type="hidden" name="code" value="{island.code}">
+        <div class="page-actions"><button class="btn btn-muted" type="submit">Supprimer l'îlot</button></div>
+    </form>
+</div>
+{/for}
+
+<div class="card">
+    <h2 class="card-title">Nouvel îlot</h2>
+    <form method="post" action="/admin/coupons/island">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="new-icode">Code</label>
+                <input class="input-control" id="new-icode" type="text" name="code" maxlength="50" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-ilabel">Libellé</label>
+                <input class="input-control" id="new-ilabel" type="text" name="label" maxlength="100">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-iterm">Caisses rattachées</label>
+                <input class="input-control" id="new-iterm" type="text" name="terminalIds" maxlength="1000" placeholder="POS01;POS02">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-iact">Actif</label>
+                <input id="new-iact" type="checkbox" name="active" checked>
+            </div>
+        </div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">Créer l'îlot</button></div>
+    </form>
+</div>
+{/body}

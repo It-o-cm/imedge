@@ -1,0 +1,101 @@
+{!
+ ! Back-office POINT-OF-SALE INFORMATION page (BO-03-12-06): name, address,
+ ! VAT number, SIRET, phone and bank account of this node's own Store row.
+ ! `store` is null when the node has no row yet (before seed/import). The PDV
+ ! number is rendered disabled: this screen never writes it. POST -> 303 ->
+ ! notice, the same admin cycle as the parameters page.
+!}
+{#include admin-layout}
+
+{#title}Point de vente{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Point de vente</h1>
+        <p class="page-sub">Informations administratives du point de vente de ce nœud.</p>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+{#if store}
+<form method="post" action="/admin/store">
+    <div class="card">
+        <h2 class="card-title">Identification</h2>
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="f-code">N° Point De Vente</label>
+                <input class="input-control" id="f-code" type="text" value="{store.code}" disabled>
+                <span class="field-hint">Non modifiable depuis cet écran.</span>
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-name">Nom magasin</label>
+                <input class="input-control" id="f-name" type="text" name="name" value="{store.name}" maxlength="120" required>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2 class="card-title">Adresse</h2>
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="f-street1">Adresse</label>
+                <input class="input-control" id="f-street1" type="text" name="streetLine1" value="{store.address.streetLine1}" maxlength="120">
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-street2">Complément d'adresse</label>
+                <input class="input-control" id="f-street2" type="text" name="streetLine2" value="{store.address.streetLine2}" maxlength="120">
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-postal">Code postal</label>
+                <input class="input-control" id="f-postal" type="text" name="postalCode" value="{store.address.postalCode}" maxlength="20">
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-city">Ville</label>
+                <input class="input-control" id="f-city" type="text" name="city" value="{store.address.city}" maxlength="80">
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-country">Pays</label>
+                <input class="input-control" id="f-country" type="text" name="country" value="{store.address.country}" maxlength="80">
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2 class="card-title">Administratif</h2>
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="f-vat">Numéro TVA intracommunautaire</label>
+                <input class="input-control" id="f-vat" type="text" name="vatNumber" value="{store.vatNumber}" maxlength="32">
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-siret">N° Siret</label>
+                <input class="input-control" id="f-siret" type="text" name="siret" value="{store.siret}" maxlength="32">
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-phone">N° téléphone</label>
+                <input class="input-control" id="f-phone" type="text" name="phone" value="{store.phone}" maxlength="32">
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-bank">N° compte (chèque)</label>
+                <input class="input-control" id="f-bank" type="text" name="bankAccountNumber" value="{store.bankAccountNumber}" maxlength="64">
+            </div>
+        </div>
+    </div>
+
+    <div class="page-actions" style="margin-top: 6px;">
+        <button class="btn btn-primary" type="submit">Enregistrer</button>
+        <a class="btn btn-ghost" href="/admin/store">Annuler</a>
+    </div>
+</form>
+{#else}
+<div class="card">
+    <p>Aucun point de vente n'est encore configuré sur ce nœud. Importez-le via <code>/stores/import</code> avant de renseigner ses informations.</p>
+</div>
+{/if}
+{/body}
+
+{#footer}Ces informations restent locales à ce nœud : le point de vente est en dehors du tirage référentiel.{/footer}

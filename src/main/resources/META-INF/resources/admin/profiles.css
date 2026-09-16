@@ -1,0 +1,35 @@
+/*
+ * Profiles area sheet — the (functionality x option) grant grid and the
+ * assignment/favorites toggles. Loaded by admin-layout.html after base.css;
+ * uses --im-* tokens only, never a hard-coded colour, so it follows the same
+ * theme as every other back-office area.
+ */
+
+.grant-grid .grant-col {
+    text-align: center;
+    white-space: nowrap;
+}
+
+.grant-grid .grant-menu-row {
+    background: var(--im-bg);
+    color: var(--im-ink-soft);
+}
+
+.grant-grid input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--im-accent);
+    cursor: pointer;
+}
+
+.grant-validation {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: flex-start;
+    min-width: 180px;
+}
+
+.grant-validation select {
+    max-width: 200px;
+}

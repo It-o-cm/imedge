@@ -1,0 +1,112 @@
+{!
+ ! Back-office ARTICLE SELECTIONS admin (BO-02-03-31): saves named, reusable
+ ! article perimeters defined by the same multi-criteria engine as the fiche
+ ! list. Top form creates one from its criteria; each row deletes one. POST ->
+ ! 303 -> notice, the admin cycle.
+!}
+{#include admin-layout}
+
+{#title}Sélections d'articles{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Sélections d'articles</h1>
+        <p class="page-sub">Regroupements d'articles réutilisables pour restreindre le périmètre des rapports et exports.</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-ghost" href="/admin/articles">Retour aux articles</a>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">Nouvelle sélection</h2>
+    <form method="post" action="/admin/article-selections">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="s-name">Nom</label>
+                <input class="input-control" id="s-name" type="text" name="name" maxlength="100" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="s-text">Texte (EAN, libellé, code interne)</label>
+                <input class="input-control" id="s-text" type="text" name="text">
+            </div>
+            <div class="field">
+                <label class="field-label" for="s-type">Type</label>
+                <select class="input-control" id="s-type" name="type">
+                    <option value="">Tous</option>
+                    {#for type in types}
+                    <option value="{type.name}">{type.name}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="s-status">Statut</label>
+                <select class="input-control" id="s-status" name="status">
+                    <option value="ALL">Tous</option>
+                    <option value="ACTIVE">Actifs</option>
+                    <option value="INACTIVE">Désactivés</option>
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="s-forbidden">Vente</label>
+                <select class="input-control" id="s-forbidden" name="forbidden">
+                    <option value="">Toutes</option>
+                    <option value="yes">Interdites</option>
+                    <option value="no">Autorisées</option>
+                </select>
+            </div>
+        </div>
+        <div class="field-grid">
+            {#for def in attributeDefs}
+            <div class="field field-check">
+                <label class="field-label"><input type="checkbox" name="attr" value="{def.code}"> {def.label}</label>
+            </div>
+            {/for}
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">Créer</button>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    {#if selections.isEmpty()}
+    <div class="empty-state">
+        <p>Aucune sélection enregistrée.</p>
+        <p class="empty-hint">Créez une sélection pour réutiliser un périmètre d'articles.</p>
+    </div>
+    {#else}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Nom</th>
+                <th>Critères</th>
+                <th class="col-actions">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {#for sel in selections}
+            <tr>
+                <td><a class="link-strong" href="/admin/articles?selection={sel.name}">{sel.name}</a></td>
+                <td class="col-muted">{sel.criteria ?: 'Tous les articles'}</td>
+                <td class="col-actions">
+                    <form method="post" action="/admin/article-selections/delete"
+                          onsubmit="return confirm('Supprimer cette sélection ?');">
+                        <input type="hidden" name="id" value="{sel.id}">
+                        <button class="btn btn-small btn-danger" type="submit">Supprimer</button>
+                    </form>
+                </td>
+            </tr>
+            {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+{/body}
+
+{#footer}Une sélection enregistrée ici restreint le périmètre des rapports et exports d'articles.{/footer}

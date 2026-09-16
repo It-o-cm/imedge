@@ -1,0 +1,93 @@
+{!
+ ! Back-office PROFILE create/edit form: the (functionality × option) grid.
+ ! Every Feature is a row, grouped under its Menu (BO-01-04-06); the four
+ ! CrudOption are the columns (BO-01-04-02); a per-feature validation switch
+ ! and validating profile express the supervised options (BO-01-04-03/05).
+ ! `profile` is null on creation. POST -> 303 -> notice.
+!}
+{#include admin-layout}
+
+{#title}Profil{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{#if profile}Modifier le profil{#else}Nouveau profil{/if}</h1>
+        <p class="page-sub">Cochez chaque option autorisée, fonctionnalité par fonctionnalité ou menu entier.</p>
+    </div>
+</div>
+
+<form method="post" action="/admin/profiles">
+    {#if profile}<input type="hidden" name="id" value="{profile.id}">{/if}
+    <div class="card">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="f-name">Nom du profil</label>
+                <input class="input-control" id="f-name" type="text" name="name"
+                       value="{#if profile}{profile.name}{/if}" maxlength="80" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-desc">Description</label>
+                <input class="input-control" id="f-desc" type="text" name="description"
+                       value="{#if profile}{profile.description ?: ''}{/if}" maxlength="255">
+            </div>
+        </div>
+    </div>
+
+    {#for group in groups}
+    <div class="card">
+        <h2 class="card-title">{group.label}</h2>
+        <table class="data-table grant-grid">
+            <thead>
+                <tr>
+                    <th>Fonctionnalité</th>
+                    {#for cell in group.menuCells}<th class="grant-col">{cell.label}</th>{/for}
+                    <th class="grant-col">Validation</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr class="grant-menu-row">
+                    <td><em>Tout le menu</em></td>
+                    {#for cell in group.menuCells}
+                    <td class="grant-col">
+                        <input type="checkbox" name="menugrant" value="{cell.token}" aria-label="{group.label} {cell.label}">
+                    </td>
+                    {/for}
+                    <td class="grant-col">—</td>
+                </tr>
+                {#for feature in group.features}
+                <tr>
+                    <td>{feature.label}</td>
+                    {#for cell in feature.cells}
+                    <td class="grant-col">
+                        <input type="checkbox" name="grant" value="{cell.token}"
+                               aria-label="{feature.label} {cell.label}"{#if cell.checked} checked{/if}>
+                    </td>
+                    {/for}
+                    <td class="grant-col grant-validation">
+                        <label class="toggle">
+                            <input type="checkbox" name="validate" value="{feature.key}"{#if feature.requiresValidation} checked{/if}>
+                            <span>Soumis</span>
+                        </label>
+                        <select class="input-control" name="validator_{feature.key}">
+                            <option value="">— par un manager —</option>
+                            {#for ref in otherProfiles}
+                            <option value="{ref.id}"{#if feature.validatorId == ref.id} selected{/if}>{ref.name}</option>
+                            {/for}
+                        </select>
+                    </td>
+                </tr>
+                {/for}
+            </tbody>
+        </table>
+    </div>
+    {/for}
+
+    <div class="page-actions" style="margin-top: 6px;">
+        <button class="btn btn-primary" type="submit">Enregistrer</button>
+        <a class="btn btn-ghost" href="/admin/profiles">Annuler</a>
+    </div>
+</form>
+{/body}
+
+{#footer}Les droits d'un profil s'appliquent aux utilisateurs qui le portent, à l'échelon de leur affectation.{/footer}

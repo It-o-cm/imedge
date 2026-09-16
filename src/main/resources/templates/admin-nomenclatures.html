@@ -1,0 +1,838 @@
+{!
+ ! The NOMENCLATURE screen (BO-02-01-08): the whole classification visible
+ ! level by level, which is what a chef de rayon asks for to check an
+ ! integration — and the form that RUNS that integration.
+ !
+ ! Three ways to write. The published file is INTEGRATED whole — re-integrating
+ ! it is how the classification is refreshed —, the nodes are edited one by one,
+ ! because the finest level belongs to the point of sale, and a node is MOVED by
+ ! dragging it onto its new parent. A node of a national level is overwritten by
+ ! the next integration; the screen says so above the listing rather than
+ ! forbidding the edit.
+ !
+ ! Moving re-codes: the parent being the prefix, a node dropped elsewhere takes
+ ! its new parent's prefix and its whole descent follows. If the number it
+ ! carries is already taken there, the drop RENUMBERS it — with the first free
+ ! number — instead of refusing: the codes of the target branch are not on the
+ ! operator's screen, so a refusal asked them to solve a problem they could
+ ! neither see nor have caused. The number chosen is said, and the free part of
+ ! every code is a field: what the machine picked, the shop corrects.
+ !
+ ! Holding a drag over
+ ! ANY closed row opens it after a second — the rayon and the famille being
+ ! crossed as much as the eventual parent — so a target three levels down is
+ ! reachable without letting go. The ROW is what is grabbed — anywhere on it,
+ ! with the grab cursor as the sign — and not the ⠿ beside it: a handle that
+ ! small has to be pointed out before anyone can use it, which is another way
+ ! of saying the tree does not move.
+ !
+ ! A control is not shown where it cannot act: no cross on a node that still
+ ! has children, no plus on the finest level, no grab cursor on a top node —
+ ! the server refuses all three anyway, and a button that only ever answers a
+ ! refusal teaches the operator to distrust the row it sits on.
+ !
+ ! The code is never a form field to change: its LENGTH places the node and
+ ! its PREFIX names its parent, so renaming touches the label alone.
+ !
+ ! Navigation is by PREFIX: opening a node lists the nodes of the level below
+ ! whose code starts with its own. Same rule as the import, so this screen can
+ ! never show a tree the printers would disagree with.
+!}
+{#include admin-layout}
+
+{#title}Nomenclatures{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Nomenclatures</h1>
+        {#if scheme}
+        <p class="page-sub">{scheme.label} — {scheme.depth()} niveau(x), {total} nœud(s) à ce niveau.</p>
+        {#else}
+        <p class="page-sub">Aucune nomenclature intégrée.</p>
+        {/if}
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+{#if schemes.size() > 1}
+<div class="page-actions">
+    {#for candidate in schemes}
+    <a class="btn {#if scheme && candidate.code == scheme.code}btn-primary{#else}btn-ghost{/if}"
+       href="/admin/nomenclatures?scheme={candidate.code}">{candidate.label}</a>
+    {/for}
+</div>
+{/if}
+
+<details class="card panel">
+    <summary class="card-title panel-title">Intégrer un fichier</summary>
+    <form method="post" action="/admin/nomenclatures/import" enctype="multipart/form-data">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="ni-scheme">Code de la nomenclature</label>
+                <input class="input-control" id="ni-scheme" type="text" name="scheme"
+                       maxlength="30" required value="{#if scheme}{scheme.code}{/if}">
+                <span class="field-hint">Clé d'intégration : le même code recharge la nomenclature existante, un code inconnu en crée une.</span>
+            </div>
+            <div class="field">
+                <label class="field-label" for="ni-label">Libellé</label>
+                <input class="input-control" id="ni-label" type="text" name="label"
+                       maxlength="60" value="{#if scheme}{scheme.label}{/if}">
+                <span class="field-hint">Utilisé à la création ; vide, le code fait office de libellé.</span>
+            </div>
+            <div class="field">
+                <label class="field-label" for="ni-enseigne">Enseigne</label>
+                <input class="input-control" id="ni-enseigne" type="text" name="enseigne"
+                       maxlength="30" value="{#if scheme && scheme.enseigneCode}{scheme.enseigneCode}{/if}">
+                <span class="field-hint">L'enseigne que la nomenclature classe (ITM, BRICO…), facultatif.</span>
+            </div>
+            <div class="field">
+                <label class="field-label" for="ni-file">Fichier publié</label>
+                <input class="input-control" id="ni-file" type="file" name="file" required>
+                <span class="field-hint">Export de la gestion commerciale, colonnes <code>SOURCE|NIVEAU|NUMERO|LIBELLE</code>.</span>
+            </div>
+        </div>
+        <div class="page-actions">
+            <button class="btn btn-primary" type="submit">Intégrer</button>
+        </div>
+    </form>
+    <p class="page-sub">
+        L'intégration est idempotente : le même fichier deux fois ne change rien.
+        Les nœuds que le fichier ne nomme plus sont conservés — un article peut
+        encore y être rattaché.
+    </p>
+</details>
+
+{#if scheme}
+<details class="card panel">
+    <summary class="card-title panel-title">Niveaux<span class="panel-count">{levels.size()}</span></summary>
+    <div class="field-grid">
+        <form method="post" action="/admin/nomenclatures/levels">
+            <input type="hidden" name="scheme" value="{scheme.code}">
+            <div class="field-grid">
+                {#for level in levels}
+                <div class="field">
+                    <label class="field-label" for="nl-{level.rank}">Niveau {level.rank}</label>
+                    <input class="input-control" id="nl-{level.rank}" type="text"
+                           name="level-{level.rank}" maxlength="60" value="{level.label}">
+                    <span class="field-hint">Code de {level.codeLength} caractères{#if level.custom} — défini par le point de vente{#else} — national{/if}.</span>
+                </div>
+                {/for}
+            </div>
+            <div class="page-actions">
+                <button class="btn btn-primary" type="submit">Renommer les niveaux</button>
+            </div>
+        </form>
+    </div>
+</details>
+
+<div class="card">
+    <h2 class="card-title">{scheme.label}</h2>
+
+    <div class="field">
+        <label class="field-label" for="nomen-search">Rechercher</label>
+        <input class="input-control" id="nomen-search" type="search" autocomplete="off"
+               placeholder="un code ou un libellé — 1002, boucherie…">
+        <span class="field-hint">Quatre niveaux : chercher évite d'en ouvrir trois pour en atteindre un.</span>
+    </div>
+
+    <div id="nomen-hits" class="nomen-hits" hidden></div>
+
+    <div id="nomen-tree" class="nomen-tree" hidden
+         data-scheme="{scheme.code}"
+         data-lengths="{#for level in levels}{#if level_index}|{/if}{level.codeLength}{/for}"
+         data-customs="{#for level in levels}{#if level_index}|{/if}{level.custom}{/for}"></div>
+
+    <div id="nomen-fallback">
+        <h2 class="card-title">{levelLabel}</h2>
+
+    <p class="page-sub">
+        {#for crumb in crumbs}
+        <a href="/admin/nomenclatures?scheme={scheme.code}{#if crumb.code}&parent={crumb.code}{/if}">{crumb.label}</a>
+        {#if crumb_hasNext} › {/if}
+        {/for}
+    </p>
+
+    {#if levelCustom}
+    <p class="page-sub">Niveau défini par le point de vente : ce que vous saisissez ici vous appartient.</p>
+    {#else}
+    <p class="page-sub">Niveau national : la prochaine intégration réécrit les libellés de ce niveau.</p>
+    {/if}
+
+    {#if rows.isEmpty()}
+    <p class="page-sub">Rien à ce niveau.</p>
+    {#else}
+    <table class="data-table">
+        <tr><th>Code</th><th>Libellé</th><th>Contient</th><th></th></tr>
+        {#for row in rows}
+        <tr>
+            <td><code>{row.code}</code></td>
+            <td>
+                <form method="post" action="/admin/nomenclatures/nodes" class="app-identity-form">
+                    <input type="hidden" name="scheme" value="{scheme.code}">
+                    <input type="hidden" name="code" value="{row.code}">
+                    <input class="input-control" type="text" name="label" maxlength="255"
+                           required value="{row.label}" aria-label="Libellé de {row.code}">
+                    <button class="btn btn-ghost" type="submit">Renommer</button>
+                </form>
+            </td>
+            <td>
+                {#if row.openable}
+                <a href="/admin/nomenclatures?scheme={scheme.code}&parent={row.code}">{row.children} nœud(s)</a>
+                {#else}
+                —
+                {/if}
+            </td>
+            <td>
+                {#if row.openable}
+                <span class="field-hint">Vider d'abord</span>
+                {#else}
+                <form method="post" action="/admin/nomenclatures/nodes/delete" class="app-identity-form">
+                    <input type="hidden" name="scheme" value="{scheme.code}">
+                    <input type="hidden" name="code" value="{row.code}">
+                    <button class="btn btn-ghost" type="submit">Supprimer</button>
+                </form>
+                {/if}
+            </td>
+        </tr>
+        {/for}
+    </table>
+    {/if}
+
+    {#if codeLength > 0}
+    <details class="card panel">
+        <summary class="card-title panel-title">Ajouter un nœud à ce niveau</summary>
+        <form method="post" action="/admin/nomenclatures/nodes">
+            <input type="hidden" name="scheme" value="{scheme.code}">
+            <div class="field-grid">
+                <div class="field">
+                    <label class="field-label" for="nn-code">Code</label>
+                    <input class="input-control" id="nn-code" type="text" name="code"
+                           required minlength="{codeLength}" maxlength="{codeLength}"
+                           value="{parent}">
+                    <span class="field-hint">
+                        {codeLength} caractères exactement — c'est la longueur qui place le nœud à ce niveau.
+                        {#if parent}Il doit commencer par <code>{parent}</code> pour tenir sous le nœud ouvert.{/if}
+                    </span>
+                </div>
+                <div class="field">
+                    <label class="field-label" for="nn-label">Libellé</label>
+                    <input class="input-control" id="nn-label" type="text" name="label"
+                           maxlength="255" required>
+                </div>
+            </div>
+            <div class="page-actions">
+                <button class="btn btn-primary" type="submit">Ajouter</button>
+            </div>
+        </form>
+        <p class="page-sub">
+            Le code ne se modifie pas : il porte l'identité du nœud et son
+            rattachement. Le changer, c'est supprimer puis recréer.
+        </p>
+    </details>
+    {/if}
+
+    {#if totalPages > 1}
+    <div class="page-actions">
+        {#if page > 1}
+        <a class="btn btn-ghost" href="/admin/nomenclatures?scheme={scheme.code}{#if parent}&parent={parent}{/if}&page={page - 1}">Précédent</a>
+        {/if}
+        <span class="field-hint">Page {page} / {totalPages} — {total} nœud(s)</span>
+        {#if page < totalPages}
+        <a class="btn btn-ghost" href="/admin/nomenclatures?scheme={scheme.code}{#if parent}&parent={parent}{/if}&page={page + 1}">Suivant</a>
+        {/if}
+    </div>
+    {/if}
+    </div>
+</div>
+
+{#else}
+<div class="card">
+    <h2 class="card-title">Aucune nomenclature</h2>
+    <p class="page-sub">
+        Rien n'est encore intégré. Renseignez un code et déposez le fichier
+        publié par la gestion commerciale dans le panneau « Intégrer un
+        fichier » ci-dessus ; les niveaux et leurs longueurs de code sont
+        déduits du fichier lui-même.
+    </p>
+</div>
+{/if}
+
+{|
+<style>
+/* The living tree (BO-02-01-08). Scoped to this screen: it is the only one
+   drawing a tree, and the shared base.css has no business carrying rules
+   nothing else uses. Tokens only, no colour literal a token already names. */
+.nomen-tree ul { list-style: none; margin: 0; padding: 0 0 0 20px; }
+.nomen-tree > ul { padding-left: 0; }
+.nomen-row { display: flex; align-items: center; gap: 8px; padding: 3px 0;
+             border-bottom: 1px solid var(--im-line); }
+.nomen-row:hover { background: var(--im-bg); }
+.nomen-twist { width: 22px; height: 22px; flex: 0 0 22px; border: 0; cursor: pointer;
+               background: transparent; color: var(--im-ink-soft); font-size: 12px; }
+.nomen-twist[disabled] { visibility: hidden; cursor: default; }
+/* The code of a row reads as ONE number but is two things: the prefix, which
+   names the parent and is not the operator's to change, and the free part,
+   which is. They sit flush against each other so the eye still reads the whole
+   code, and only the second is a field. */
+.nomen-code { font-family: ui-monospace, monospace; color: var(--im-ink-soft);
+              flex: 0 0 auto; min-width: 13ch; display: flex; align-items: center; }
+.nomen-fixed { white-space: pre; }
+/* No horizontal padding and the border pulled back: the two halves have to
+   touch, or « 1004 » reads as « 10 » and « 04 », two numbers where there is
+   one. */
+.nomen-own { font-family: ui-monospace, monospace; font-size: inherit;
+             border: 1px solid transparent; background: transparent;
+             color: var(--im-ink); padding: 2px 0; margin-left: -1px;
+             border-radius: 4px; }
+.nomen-own:hover { border-color: var(--im-line); }
+.nomen-own:focus { border-color: var(--im-accent); background: var(--im-surface);
+                   outline: none; }
+.nomen-label { flex: 1 1 auto; min-width: 120px; border: 1px solid transparent;
+               background: transparent; color: var(--im-ink); padding: 3px 6px;
+               font: inherit; border-radius: 4px; }
+.nomen-label:focus { border-color: var(--im-accent); background: var(--im-surface);
+                     outline: none; }
+.nomen-act { border: 0; background: transparent; cursor: pointer; padding: 2px 6px;
+             color: var(--im-ink-soft); font: inherit; }
+.nomen-act:hover { color: var(--im-accent); }
+.nomen-act.nomen-del:hover { color: var(--im-red); }
+.nomen-say { flex: 0 0 auto; font-size: 12px; color: var(--im-ink-soft); }
+.nomen-say.nomen-bad { color: var(--im-red); }
+.nomen-new { display: flex; align-items: center; gap: 8px; padding: 6px 0 6px 20px; }
+.nomen-prefix { font-family: ui-monospace, monospace; color: var(--im-ink-soft); }
+.nomen-seg { font-family: ui-monospace, monospace; width: 9ch; }
+.nomen-hits { margin: 8px 0; }
+.nomen-hit { display: block; width: 100%; text-align: left; border: 0; cursor: pointer;
+             background: transparent; padding: 5px 6px; font: inherit; color: var(--im-ink);
+             border-bottom: 1px solid var(--im-line); }
+.nomen-hit:hover { background: var(--im-bg); }
+.nomen-hit code { color: var(--im-ink-soft); }
+.nomen-national { font-size: 12px; color: var(--im-warn); flex: 0 0 auto;
+                  margin-left: 6px; }
+.nomen-grip { color: var(--im-ink-soft); flex: 0 0 auto; padding: 0 2px; }
+/* The grab cursor on the WHOLE row is what tells the operator the row moves,
+   without a sentence of help text. The label keeps the text caret: what is
+   grabbed there is the text, not the node. */
+.nomen-row.nomen-movable { cursor: grab; }
+.nomen-row.nomen-movable .nomen-label { cursor: text; }
+.nomen-row.nomen-movable:active { cursor: grabbing; }
+.nomen-row.nomen-dragged { opacity: .45; }
+.nomen-row.nomen-target { outline: 2px solid var(--im-accent); outline-offset: -2px;
+                          background: var(--im-bg); }
+/* The countdown shows on rows that are NOT drop targets too — those are the
+   ones being crossed to reach the target — so it carries its own outline
+   instead of only restyling the target's. */
+.nomen-row.nomen-waiting { outline: 2px dashed var(--im-ink-soft); outline-offset: -2px; }
+.nomen-row.nomen-target.nomen-waiting { outline-color: var(--im-accent); }
+</style>
+<script>
+// The living tree. Everything below is an ENHANCEMENT: the server already
+// rendered the same classification as a paged table, which stays in the page
+// and is what an operator without JavaScript uses. This script hides it and
+// mounts a tree that opens in place, renames without a reload and creates a
+// node from its segment alone — on a classification of 2504 nodes, a reload
+// per gesture is the whole ergonomic problem.
+(function () {
+    var mount = document.getElementById('nomen-tree');
+    if (!mount || !window.fetch) { return; }
+    // How long a drag must rest on a closed node before it opens.
+    var HOVER_OPEN_MS = 1000;
+    var scheme = mount.dataset.scheme;
+    var lengths = mount.dataset.lengths.split('|').map(Number);
+    var customs = mount.dataset.customs.split('|').map(function (f) { return f === 'true'; });
+    var fallback = document.getElementById('nomen-fallback');
+    var hits = document.getElementById('nomen-hits');
+    var search = document.getElementById('nomen-search');
+    if (fallback) { fallback.hidden = true; }
+    mount.hidden = false;
+
+    function post(path, fields) {
+        var body = new URLSearchParams();
+        body.set('scheme', scheme);
+        Object.keys(fields).forEach(function (k) { body.set(k, fields[k]); });
+        return fetch(path, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: body.toString()
+        }).then(function (r) { return r.json(); });
+    }
+
+    function say(row, message, bad) {
+        var slot = row.querySelector('.nomen-say');
+        slot.textContent = message;
+        slot.classList.toggle('nomen-bad', !!bad);
+        if (!bad) { setTimeout(function () { slot.textContent = ''; }, 2500); }
+    }
+
+    // The level a code belongs to is its LENGTH — the same rule the server
+    // enforces, so the form can refuse a wrong segment before sending it.
+    function levelOf(code) {
+        return lengths.indexOf(code.length);
+    }
+
+    function segmentLength(level) {
+        return level === 0 ? lengths[0] : lengths[level] - lengths[level - 1];
+    }
+
+    // A branch that has just lost its LAST child became a leaf, and the cross
+    // hidden on it while it held children has to come back: an operator who
+    // empties a branch precisely in order to remove it would otherwise face a
+    // row offering nothing, and would have to reload the page to get the
+    // control the server is now perfectly willing to honour. The twisty goes
+    // the other way for the same reason — there is nothing left to open.
+    function emptied(list) {
+        if (!list || list.querySelector('li[data-code]')) { return; }
+        var holder = list.parentElement;
+        if (!holder || !holder.dataset || !holder.dataset.code) { return; }
+        var above = holder.querySelector('.nomen-row');
+        var cross = above.querySelector('.nomen-del');
+        cross.style.visibility = '';
+        cross.disabled = false;
+        var twisty = above.querySelector('.nomen-twist');
+        twisty.disabled = true;
+        twisty.textContent = '▸';
+        list.hidden = true;
+        // The row's own description of itself is what the drag uses to decide
+        // whether holding over it should open it; left stale, a hover would
+        // count down and unfold an empty branch.
+        if (holder.nodeData) { holder.nodeData.openable = false; }
+    }
+
+    function rowFor(node) {
+        var li = document.createElement('li');
+        li.dataset.code = node.code;
+        li.nodeData = node;
+        var row = document.createElement('div');
+        row.className = 'nomen-row';
+        var twist = document.createElement('button');
+        twist.className = 'nomen-twist';
+        twist.type = 'button';
+        twist.textContent = '▸';
+        twist.disabled = !node.openable;
+        twist.setAttribute('aria-label', 'Ouvrir ' + node.code);
+        var grip = document.createElement('span');
+        grip.className = 'nomen-grip';
+        grip.textContent = '⠿';
+        grip.title = 'Déplacer ' + node.code + ' sous un autre nœud';
+        // The grip is a SIGN, not the handle: the whole row is grabbed (see
+        // wireDrag). A ten-pixel glyph is something an operator has to be told
+        // about before they can use it, and a tree whose rows do not move
+        // where the eye lands reads as a tree with no drag at all.
+        if (node.level === null || node.level <= 0) { grip.style.visibility = 'hidden'; }
+        // The code is shown split: the prefix fixed, the free part editable.
+        // A drop RENUMBERS rather than refusing, so the operator has to be
+        // able to say which number they actually wanted; and the prefix is
+        // never theirs to type — it is the parent, and changing it is a move.
+        var fixedLength = node.level === null || node.level <= 0
+                ? 0 : lengths[node.level - 1];
+        var code = document.createElement('span');
+        code.className = 'nomen-code';
+        var fixed = document.createElement('span');
+        fixed.className = 'nomen-fixed';
+        fixed.textContent = node.code.substring(0, fixedLength);
+        var own = document.createElement('input');
+        own.className = 'nomen-own';
+        own.value = node.code.substring(fixedLength);
+        own.maxLength = node.code.length - fixedLength;
+        own.size = own.maxLength;
+        own.setAttribute('aria-label', 'Numéro de ' + node.code);
+        own.title = 'Renuméroter ' + node.code;
+        code.appendChild(fixed);
+        code.appendChild(own);
+        var label = document.createElement('input');
+        label.className = 'nomen-label';
+        label.value = node.label || '';
+        label.setAttribute('aria-label', 'Libellé de ' + node.code);
+        var add = document.createElement('button');
+        add.className = 'nomen-act';
+        add.type = 'button';
+        add.textContent = '＋';
+        add.title = 'Ajouter un nœud sous ' + node.code;
+        var kill = document.createElement('button');
+        kill.className = 'nomen-act nomen-del';
+        kill.type = 'button';
+        kill.textContent = '✕';
+        kill.title = 'Supprimer ' + node.code;
+        var slot = document.createElement('span');
+        slot.className = 'nomen-say';
+        var deeper = node.level !== null && node.level + 1 < lengths.length;
+        if (!deeper) { add.style.visibility = 'hidden'; }
+        // A node with children CANNOT be deleted — they hang from it by their
+        // code prefix — so the cross is not offered on it. Showing a control
+        // whose only outcome is a refusal is worse than showing none: the
+        // operator clicks, nothing happens, and they learn to distrust the
+        // whole row. Empty the branch and the cross appears.
+        if (node.openable) {
+            kill.style.visibility = 'hidden';
+            kill.disabled = true;
+        }
+        row.appendChild(grip);
+        row.appendChild(twist);
+        row.appendChild(code);
+        row.appendChild(label);
+        row.appendChild(add);
+        row.appendChild(kill);
+        row.appendChild(slot);
+        // Said last and said quietly: the level belongs to the published file,
+        // so the next integration rewrites this label. It is a warning, not a
+        // refusal — a shop may have a good reason to correct one meanwhile.
+        if (node.level !== null && customs[node.level] === false) {
+            var flag = document.createElement('span');
+            flag.className = 'nomen-national';
+            flag.textContent = 'national';
+            flag.title = 'La prochaine intégration réécrit ce libellé.';
+            row.appendChild(flag);
+        }
+        li.appendChild(row);
+        var kids = document.createElement('ul');
+        kids.hidden = true;
+        li.appendChild(kids);
+
+        twist.addEventListener('click', function () {
+            if (!kids.hidden) { kids.hidden = true; twist.textContent = '▸'; return; }
+            twist.textContent = '▾';
+            kids.hidden = false;
+            if (!kids.dataset.loaded) { load(node.code, kids); }
+        });
+        // Rename on Enter or when the focus leaves, and only when the label
+        // actually changed: a tab through the tree must not write a row.
+        var last = label.value;
+        function rename() {
+            if (label.value.trim() === last.trim()) { return; }
+            post('/admin/nomenclatures/api/nodes',
+                    { code: node.code, label: label.value.trim() })
+                .then(function (verdict) {
+                    say(row, verdict.message, !verdict.ok);
+                    if (verdict.ok) { last = label.value; } else { label.value = last; }
+                });
+        }
+        label.addEventListener('blur', rename);
+        label.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') { e.preventDefault(); label.blur(); }
+            if (e.key === 'Escape') { label.value = last; label.blur(); }
+        });
+        // Renumbering rewrites the node's code AND every code under it, so
+        // the branch on screen is stale the moment it succeeds: the tree is
+        // re-read and the node shown on its new number, exactly as after a
+        // drop. Refused, the field goes back to what it was rather than
+        // leaving a number the base does not carry.
+        var held = own.value;
+        function renumber() {
+            if (own.value.trim() === held.trim()) { return; }
+            post('/admin/nomenclatures/api/nodes/recode',
+                    { code: node.code, segment: own.value.trim() })
+                .then(function (verdict) {
+                    if (!verdict.ok) {
+                        say(row, verdict.message, true);
+                        own.value = held;
+                        return;
+                    }
+                    reload(verdict.code, verdict.message);
+                });
+        }
+        own.addEventListener('blur', renumber);
+        own.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') { e.preventDefault(); own.blur(); }
+            if (e.key === 'Escape') { own.value = held; own.blur(); }
+        });
+        add.addEventListener('click', function () {
+            kids.hidden = false;
+            twist.textContent = '▾';
+            if (!kids.dataset.loaded) {
+                load(node.code, kids, function () { creator(kids, node.code, node.level + 1); });
+            } else {
+                creator(kids, node.code, node.level + 1);
+            }
+        });
+        kill.addEventListener('click', function () {
+            post('/admin/nomenclatures/api/nodes/delete', { code: node.code })
+                .then(function (verdict) {
+                    if (!verdict.ok) { say(row, verdict.message, true); return; }
+                    var host = li.parentElement;
+                    li.remove();
+                    emptied(host);
+                });
+        });
+        wireDrag(node, row, twist, kids);
+        return li;
+    }
+
+    // --- Moving a node: drag its grip onto its new parent -------------------
+    //
+    // What a drop MEANS here: the parent is the code's own prefix, so moving a
+    // node re-codes it and everything under it. The server does that work and
+    // refuses what cannot hold; this only decides what may be aimed at, so the
+    // operator is not invited to drop somewhere that will be refused.
+    var dragged = null;
+    var hoverTimer = null;
+    var hovered = null;
+
+    // A valid target is a node exactly ONE level above the dragged one, and
+    // never the dragged node itself nor anything under it — dropping a branch
+    // into its own descendant would ask for a code that contains itself.
+    function canDrop(node) {
+        return dragged
+                && node.level === dragged.level - 1
+                && node.code.indexOf(dragged.code) !== 0;
+    }
+
+    function clearHover() {
+        clearTimeout(hoverTimer);
+        if (hovered) { hovered.classList.remove('nomen-waiting'); }
+        hovered = null;
+    }
+
+    function wireDrag(node, row, twist, kids) {
+        // The WHOLE ROW is the handle. A first level node stays fixed: its
+        // code has no prefix above it, so there is nowhere to drop it.
+        var movable = node.level !== null && node.level > 0;
+        if (movable) { row.classList.add('nomen-movable'); }
+        // Decided at the press, not once and for all: pressing INSIDE the
+        // label is the start of a text selection and inside a button the
+        // start of a click, and the browser gives the row's drag priority
+        // over both. Anywhere else on the row, the row moves.
+        row.addEventListener('mousedown', function (event) {
+            var own = event.target.tagName === 'INPUT'
+                    || event.target.tagName === 'BUTTON';
+            row.draggable = movable && !own;
+        });
+        row.addEventListener('dragstart', function (event) {
+            dragged = node;
+            row.classList.add('nomen-dragged');
+            event.dataTransfer.effectAllowed = 'move';
+            // Firefox starts no drag at all without payload; the code is the
+            // only thing worth carrying, and the server re-reads it anyway.
+            event.dataTransfer.setData('text/plain', node.code);
+        });
+        row.addEventListener('dragend', function () {
+            row.classList.remove('nomen-dragged');
+            dragged = null;
+            clearHover();
+            document.querySelectorAll('.nomen-target').forEach(function (lit) {
+                lit.classList.remove('nomen-target');
+            });
+        });
+        row.addEventListener('dragover', function (event) {
+            if (!canDrop(node)) { return; }
+            // Without this the browser refuses the drop outright.
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+            row.classList.add('nomen-target');
+        });
+        row.addEventListener('dragenter', function () {
+            // HOLDING a drag over a closed row opens it after a second, so a
+            // target three levels down is reachable without letting go.
+            //
+            // ANY closed row, and NOT only one that could receive the drop:
+            // reaching a sous-famille means resting on the rayon and the
+            // famille above it, and neither of those is ever a valid parent
+            // for the node in hand. Gating the countdown on canDrop made the
+            // branches the operator has to unfold the only ones that would
+            // never open — the feature did nothing where it was needed.
+            if (!dragged || hovered === row) { return; }
+            // Entering the SAME row again — the pointer crossing one of its
+            // own children, which bubbles a fresh dragenter here — must not
+            // restart the countdown: a hand that is not perfectly still would
+            // reset it forever and the branch would never open.
+            clearHover();
+            if (!node.openable || !kids.hidden) { return; }
+            hovered = row;
+            row.classList.add('nomen-waiting');
+            hoverTimer = setTimeout(function () {
+                row.classList.remove('nomen-waiting');
+                hovered = null;
+                kids.hidden = false;
+                twist.textContent = '▾';
+                if (!kids.dataset.loaded) { load(node.code, kids); }
+            }, HOVER_OPEN_MS);
+        });
+        row.addEventListener('dragleave', function (event) {
+            // A dragleave also fires when the pointer crosses onto a CHILD of
+            // the row; ignore those, or the countdown restarts forever.
+            if (event.relatedTarget && row.contains(event.relatedTarget)) { return; }
+            row.classList.remove('nomen-target');
+            if (hovered === row) { clearHover(); }
+        });
+        row.addEventListener('drop', function (event) {
+            if (!canDrop(node)) { return; }
+            event.preventDefault();
+            row.classList.remove('nomen-target');
+            var moving = dragged;
+            clearHover();
+            post('/admin/nomenclatures/api/nodes/move',
+                    { code: moving.code, parent: node.code })
+                .then(function (verdict) {
+                    if (!verdict.ok) { say(row, verdict.message, true); return; }
+                    // Where it landed is SAID, not computed: a drop whose
+                    // number was taken renumbers rather than refusing, so the
+                    // landing code cannot be deduced from the parent aimed at.
+                    reload(verdict.code, verdict.message);
+                });
+        });
+    }
+
+    // The creation form types the SEGMENT only: the parent's code is shown
+    // fixed beside it, so a wrong length or a wrong parent cannot be posted.
+    function creator(list, parentCode, level) {
+        var open = list.querySelector('.nomen-new');
+        if (open) { open.querySelector('.nomen-seg').focus(); return; }
+        var li = document.createElement('li');
+        var box = document.createElement('div');
+        box.className = 'nomen-new';
+        var prefix = document.createElement('span');
+        prefix.className = 'nomen-prefix';
+        prefix.textContent = parentCode;
+        var seg = document.createElement('input');
+        seg.className = 'input-control nomen-seg';
+        seg.maxLength = segmentLength(level);
+        seg.placeholder = '0'.repeat(segmentLength(level));
+        seg.setAttribute('aria-label', 'Segment du code');
+        var label = document.createElement('input');
+        label.className = 'input-control';
+        label.placeholder = 'Libellé';
+        label.setAttribute('aria-label', 'Libellé du nouveau nœud');
+        var go = document.createElement('button');
+        go.className = 'btn btn-primary';
+        go.type = 'button';
+        go.textContent = 'Ajouter';
+        var slot = document.createElement('span');
+        slot.className = 'nomen-say';
+        box.appendChild(prefix);
+        box.appendChild(seg);
+        box.appendChild(label);
+        box.appendChild(go);
+        box.appendChild(slot);
+        li.appendChild(box);
+        list.appendChild(li);
+        seg.focus();
+        function create() {
+            var full = parentCode + seg.value.trim();
+            if (levelOf(full) !== level) {
+                slot.textContent = 'Il manque ' + (segmentLength(level) - seg.value.trim().length)
+                        + ' caractère(s).';
+                slot.classList.add('nomen-bad');
+                return;
+            }
+            post('/admin/nomenclatures/api/nodes', { code: full, label: label.value.trim() })
+                .then(function (verdict) {
+                    if (!verdict.ok) {
+                        slot.textContent = verdict.message;
+                        slot.classList.add('nomen-bad');
+                        return;
+                    }
+                    li.remove();
+                    list.dataset.loaded = '';
+                    load(parentCode, list, function () { creator(list, parentCode, level); });
+                });
+        }
+        go.addEventListener('click', create);
+        [seg, label].forEach(function (field) {
+            field.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter') { e.preventDefault(); create(); }
+                if (e.key === 'Escape') { li.remove(); }
+            });
+        });
+    }
+
+    function load(parentCode, list, then) {
+        list.textContent = '';
+        fetch('/admin/nomenclatures/api/children?scheme=' + encodeURIComponent(scheme)
+                + '&parent=' + encodeURIComponent(parentCode || ''))
+            .then(function (r) { return r.json(); })
+            .then(function (nodes) {
+                list.dataset.loaded = '1';
+                nodes.forEach(function (node) { list.appendChild(rowFor(node)); });
+                if (then) { then(); }
+            });
+    }
+
+    // What a MOVE or a RENUMBERING leaves behind: every code under the node
+    // changed, so the branch on screen describes rows that no longer exist.
+    // The tree is re-read from the top and the node shown on its new number,
+    // and the verdict is said THERE — said on the row that was acted upon it
+    // would be wiped by this very reload before anyone could read it, which
+    // is how the only account of a renumbering used to disappear.
+    function reload(landed, message) {
+        root.dataset.loaded = '';
+        load('', root, function () {
+            creator(root, '', 0);
+            reveal(landed, function (arrived) {
+                say(arrived.querySelector('.nomen-row'), message, false);
+            });
+        });
+    }
+
+    var root = document.createElement('ul');
+    mount.appendChild(root);
+    load('', root, function () { creator(root, '', 0); });
+
+    // Reaching a node found by the search: its ancestors are its own code
+    // truncated at each level, so opening the path needs no stored edge.
+    function reveal(code, then) {
+        var list = root;
+        var step = 0;
+        (function next() {
+            if (step >= lengths.length || lengths[step] > code.length) { return; }
+            var wanted = code.substring(0, lengths[step]);
+            var li = Array.prototype.find.call(list.children, function (child) {
+                return child.dataset && child.dataset.code === wanted;
+            });
+            if (!li) { return; }
+            var kids = li.querySelector('ul');
+            var twist = li.querySelector('.nomen-twist');
+            li.querySelector('.nomen-label').focus();
+            // Arrived: the caller is handed the row, which is the only moment
+            // it exists — every level above was fetched to get here.
+            if (wanted === code) { if (then) { then(li); } return; }
+            if (!kids || twist.disabled) { return; }
+            kids.hidden = false;
+            twist.textContent = '▾';
+            step++;
+            list = kids;
+            if (kids.dataset.loaded) { next(); } else { load(wanted, kids, next); }
+        })();
+    }
+
+    var pending;
+    search.addEventListener('input', function () {
+        clearTimeout(pending);
+        var needle = search.value.trim();
+        if (needle.length < 2) { hits.hidden = true; hits.textContent = ''; return; }
+        pending = setTimeout(function () {
+            fetch('/admin/nomenclatures/api/search?scheme=' + encodeURIComponent(scheme)
+                    + '&q=' + encodeURIComponent(needle))
+                .then(function (r) { return r.json(); })
+                .then(function (found) {
+                    hits.textContent = '';
+                    hits.hidden = false;
+                    if (!found.length) {
+                        hits.textContent = 'Aucun nœud ne porte « ' + needle + ' ».';
+                        return;
+                    }
+                    found.forEach(function (node) {
+                        var hit = document.createElement('button');
+                        hit.className = 'nomen-hit';
+                        hit.type = 'button';
+                        hit.innerHTML = '<code></code> ';
+                        hit.firstChild.textContent = node.code;
+                        hit.appendChild(document.createTextNode(node.path));
+                        hit.addEventListener('click', function () {
+                            hits.hidden = true;
+                            search.value = '';
+                            reveal(node.code);
+                        });
+                        hits.appendChild(hit);
+                    });
+                });
+        }, 250);
+    });
+})();
+</script>
+|}
+{/body}
+
+{#footer}Le fichier publié par la gestion commerciale s'intègre ici, et les nœuds s'y éditent : le niveau le plus fin appartient au point de vente. Un nœud d'un niveau national est réécrit à la prochaine intégration.{/footer}

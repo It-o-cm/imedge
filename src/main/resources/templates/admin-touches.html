@@ -1,0 +1,175 @@
+{!
+ ! Back-office CAISSE TOUCHES admin (Lot 5F): the group-touch configuration
+ ! that drives the SAISIE DIRECTE grid. The table pins/unpins groups (max 4),
+ ! sets each group's touch size, custom rank and sales volume; the image card
+ ! attaches article pictures one by one or in bulk (resized server-side). The
+ ! order mode and page size are echoed from /admin/settings. POST -> 303 ->
+ ! notice, the admin cycle.
+!}
+{#include admin-layout}
+
+{#title}Touches caisse{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Touches caisse</h1>
+        <p class="page-sub">Configuration des touches groupe de l'écran de saisie directe : épinglage, taille, ordre, volume de vente et images des articles.</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-ghost" href="/admin/article-groups">Groupes d'articles</a>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">Ordre et pagination</h2>
+    <p class="page-sub">Ordre d'affichage effectif : <b>{orderMode}</b> — {perPage} touche(s) groupe par page. Groupes épinglés : <b>{pinnedCount}</b> / {maxPinned}.</p>
+    <p class="page-sub">Ces deux paramètres se règlent sur la page <a class="link-strong" href="/admin/settings">Paramètres</a> (clés <code>touch.display-order</code> et <code>touch.groups-per-page</code>).</p>
+</div>
+
+<div class="card">
+    <h2 class="card-title">Groupes</h2>
+    {#if groups.isEmpty()}
+    <div class="empty-state">
+        <p>Aucun groupe d'articles.</p>
+        <p class="empty-hint">Créez un groupe sur la page Groupes d'articles.</p>
+    </div>
+    {#else}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Code</th>
+                <th>Description</th>
+                <th>Épinglé</th>
+                <th>Taille</th>
+                <th>Ordre</th>
+                <th>Volume</th>
+                <th class="col-actions">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {#for g in groups}
+            <tr>
+                <td class="link-strong">{g.code}</td>
+                <td class="col-muted">{g.description ?: '—'}</td>
+                <td>
+                    <form method="post" action="/admin/touches/pin">
+                        <input type="hidden" name="id" value="{g.id}">
+                        <button class="btn btn-small{#if g.pinned} btn-primary{/if}" type="submit">{#if g.pinned}Épinglé{#else}Épingler{/if}</button>
+                    </form>
+                </td>
+                <td colspan="4">
+                    <form method="post" action="/admin/touches/config" class="touch-config-form">
+                        <input type="hidden" name="id" value="{g.id}">
+                        <select class="input-control" name="buttonSize" aria-label="Taille">
+                            <option value="SMALL"{#if g.buttonSize == 'SMALL'} selected{/if}>Petite</option>
+                            <option value="NORMAL"{#if g.buttonSize == 'NORMAL'} selected{/if}>Normale</option>
+                            <option value="LARGE"{#if g.buttonSize == 'LARGE'} selected{/if}>Grande</option>
+                        </select>
+                        <input class="input-control" type="number" min="0" name="displayOrder" value="{g.displayOrder}" aria-label="Ordre">
+                        <input class="input-control" type="number" min="0" name="salesVolume" value="{g.salesVolume}" aria-label="Volume">
+                        <button class="btn btn-small" type="submit">Enregistrer</button>
+                    </form>
+                </td>
+            </tr>
+            {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+
+<div class="card">
+    <h2 class="card-title">Image d'un article</h2>
+    <p class="page-sub">L'image remplace l'emoji sur la touche caisse de l'article. Elle est redimensionnée automatiquement à l'import.</p>
+    <form method="post" action="/admin/touches/image" id="singleImageForm">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="s-code">Code article (EAN, code interne ou PLU)</label>
+                <input class="input-control" id="s-code" type="text" name="imgCode" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="s-file">Fichier image</label>
+                <input class="input-control" id="s-file" type="file" accept="image/*" required>
+            </div>
+        </div>
+        <input type="hidden" name="imgData" id="s-data">
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">Importer l'image</button>
+        </div>
+    </form>
+
+    <h3 class="card-title" style="margin-top: 16px;">Import en masse</h3>
+    <p class="page-sub">Sélectionnez plusieurs images : chaque fichier est rattaché à l'article dont le code est le nom du fichier (sans extension).</p>
+    <form method="post" action="/admin/touches/image" id="bulkImageForm">
+        <div class="field">
+            <label class="field-label" for="b-files">Fichiers images</label>
+            <input class="input-control" id="b-files" type="file" accept="image/*" multiple>
+        </div>
+        <div id="b-fields"></div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">Importer les images</button>
+        </div>
+    </form>
+
+    <h3 class="card-title" style="margin-top: 16px;">Retirer une image</h3>
+    <form method="post" action="/admin/touches/image/clear">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="c-code">Code article</label>
+                <input class="input-control" id="c-code" type="text" name="code" required>
+            </div>
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-small btn-danger" type="submit">Retirer l'image</button>
+        </div>
+    </form>
+</div>
+
+<script>
+    function readAsDataUri(file) {
+        return new Promise(function (resolve, reject) {
+            var reader = new FileReader();
+            reader.onload = function () { resolve(reader.result); };
+            reader.onerror = function () { reject(reader.error); };
+            reader.readAsDataURL(file);
+        });
+    }
+    var singleForm = document.getElementById('singleImageForm');
+    singleForm.addEventListener('submit', function (event) {
+        var file = document.getElementById('s-file').files[0];
+        if (!file || document.getElementById('s-data').value) { return; }
+        event.preventDefault();
+        readAsDataUri(file).then(function (uri) {
+            document.getElementById('s-data').value = uri;
+            singleForm.submit();
+        });
+    });
+    var bulkForm = document.getElementById('bulkImageForm');
+    bulkForm.addEventListener('submit', function (event) {
+        var files = document.getElementById('b-files').files;
+        if (!files.length || document.getElementById('b-fields').childElementCount) { return; }
+        event.preventDefault();
+        var container = document.getElementById('b-fields');
+        var reads = [];
+        for (var i = 0; i < files.length; i++) {
+            (function (file) {
+                reads.push(readAsDataUri(file).then(function (uri) {
+                    var code = document.createElement('input');
+                    code.type = 'hidden'; code.name = 'imgCode';
+                    code.value = file.name.replace(/\.[^.]+$/, '');
+                    var data = document.createElement('input');
+                    data.type = 'hidden'; data.name = 'imgData'; data.value = uri;
+                    container.appendChild(code); container.appendChild(data);
+                }));
+            })(files[i]);
+        }
+        Promise.all(reads).then(function () { bulkForm.submit(); });
+    });
+</script>
+{/body}
+
+{#footer}Les touches caisse administrées ici alimentent l'écran de saisie directe au tirage suivant.{/footer}

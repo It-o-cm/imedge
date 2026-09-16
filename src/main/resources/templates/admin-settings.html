@@ -1,0 +1,77 @@
+{!
+ ! Back-office parameters page: the PosSettingsService catalog rendered by
+ ! section, one widget per type (BOOL select, INT number, TEXT text), one
+ ! POST saving everything, POST -> 303 -> notice — the imvaluation admin
+ ! cycle. `entries` = list of {def, value, section headings precomputed}.
+!}
+{#include admin-layout}
+
+{#title}Paramètres caisse{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Paramètres caisse</h1>
+        <p class="page-sub">{settingCount} paramètres en {sections.size()} rubriques — appliqués aux caisses au prochain tirage référentiel.</p>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+<form method="post" action="/admin/settings">
+    <div class="page-actions panel-actions">
+        <button class="btn btn-ghost" type="button" data-panels="open">Tout déplier</button>
+        <button class="btn btn-ghost" type="button" data-panels="close">Tout replier</button>
+    </div>
+
+    {#for section in sections}
+    <details class="card panel">
+        <summary class="card-title panel-title">
+            {section.label}<span class="panel-count">{section.count}</span>
+        </summary>
+        <div class="field-grid">
+            {#for entry in section.entries}
+            <div class="field">
+                <label class="field-label" for="f-{entry.key}">{entry.label}</label>
+                {#if entry.bool}
+                <select class="input-control" id="f-{entry.key}" name="{entry.key}">
+                    <option value="true" {#if entry.value == 'true'}selected{/if}>Activé</option>
+                    <option value="false" {#if entry.value != 'true'}selected{/if}>Désactivé</option>
+                </select>
+                {#else if entry.integer}
+                <input type="number" id="f-{entry.key}" name="{entry.key}" value="{entry.value}" min="0">
+                {#else}
+                <input type="text" id="f-{entry.key}" name="{entry.key}" value="{entry.value}" maxlength="120">
+                {/if}
+                <span class="field-hint">{entry.hint}</span>
+            </div>
+            {/for}
+        </div>
+    </details>
+    {/for}
+
+    <div class="page-actions" style="margin-top: 6px;">
+        <button class="btn btn-primary" type="submit">Enregistrer</button>
+        <a class="btn btn-ghost" href="/admin/settings">Annuler</a>
+    </div>
+</form>
+
+{|
+<script>
+// A collapsed panel keeps its inputs in the form, so saving saves every
+// parameter whatever is open. The two buttons only fold and unfold.
+document.querySelectorAll('[data-panels]').forEach(function (button) {
+    button.addEventListener('click', function () {
+        var open = button.getAttribute('data-panels') === 'open';
+        document.querySelectorAll('details.panel').forEach(function (panel) {
+            panel.open = open;
+        });
+    });
+});
+</script>
+|}
+{/body}
+
+{#footer}Les paramètres sont distribués aux caisses par le tirage référentiel (domaine SETTINGS), comme les produits et les prix.{/footer}

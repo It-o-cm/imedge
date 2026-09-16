@@ -1,0 +1,190 @@
+{!
+ ! Back-office ECHELONS page (BO-02-05-01/02/04/05, BO-03-12-07): the
+ ! organisation tree (Pays -> Enseigne -> Point De Vente) held on the central
+ ! node, the parameters posed at each echelon, and the view of which PDVs of
+ ! an enseigne personalised a given key. POST -> 303 -> notice, the same admin
+ ! cycle as the other back-office pages. No inline <style>: base.css primitives
+ ! only.
+!}
+{#include admin-layout}
+
+{#title}Échelons{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Échelons</h1>
+        <p class="page-sub">Pays, enseignes et points de vente de l'organisation, et les paramètres hérités.</p>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">Pays</h2>
+    <ul>
+        {#for country in countries}
+        <li><strong>{country.code}</strong> — {country.name}{#if country.defaultLanguage} ({country.defaultLanguage}){/if}</li>
+        {/for}
+    </ul>
+    <form method="post" action="/admin/echelons/country">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="c-code">Code pays</label>
+                <input class="input-control" id="c-code" type="text" name="code" maxlength="8" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="c-name">Nom</label>
+                <input class="input-control" id="c-name" type="text" name="name" maxlength="120">
+            </div>
+            <div class="field">
+                <label class="field-label" for="c-lang">Langue par défaut</label>
+                <input class="input-control" id="c-lang" type="text" name="defaultLanguage" maxlength="8">
+            </div>
+        </div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">Enregistrer le pays</button></div>
+    </form>
+</div>
+
+<div class="card">
+    <h2 class="card-title">Enseignes</h2>
+    <ul>
+        {#for enseigne in enseignes}
+        <li><strong>{enseigne.code}</strong> — {enseigne.name}{#if enseigne.countryCode} · pays {enseigne.countryCode}{/if}</li>
+        {/for}
+    </ul>
+    <form method="post" action="/admin/echelons/enseigne">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="e-code">Code enseigne</label>
+                <input class="input-control" id="e-code" type="text" name="code" maxlength="8" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="e-name">Nom</label>
+                <input class="input-control" id="e-name" type="text" name="name" maxlength="120">
+            </div>
+            <div class="field">
+                <label class="field-label" for="e-country">Code pays de rattachement</label>
+                <input class="input-control" id="e-country" type="text" name="countryCode" maxlength="8">
+            </div>
+            <div class="field">
+                <label class="field-label" for="e-lang">Langue par défaut</label>
+                <input class="input-control" id="e-lang" type="text" name="defaultLanguage" maxlength="8">
+            </div>
+        </div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">Enregistrer l'enseigne</button></div>
+    </form>
+</div>
+
+<div class="card">
+    <h2 class="card-title">Points de vente</h2>
+    <ul>
+        {#for pdv in pdvs}
+        <li><strong>{pdv.pdvNumber}</strong> — {pdv.name}{#if pdv.enseigneCode} · enseigne {pdv.enseigneCode}{/if}{#if pdv.adherentCode} · adhérent {pdv.adherentCode}{/if}{#if !pdv.active} · inactif{/if}</li>
+        {/for}
+    </ul>
+    <form method="post" action="/admin/echelons/pdv">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="p-number">N° PDV (5 chiffres)</label>
+                <input class="input-control" id="p-number" type="text" name="pdvNumber" maxlength="5" pattern="[0-9]{5}" required>
+                <span class="field-hint">Renommer : renseignez l'ancien numéro ci-dessous.</span>
+            </div>
+            <div class="field">
+                <label class="field-label" for="p-original">Ancien N° (renommage)</label>
+                <input class="input-control" id="p-original" type="text" name="originalNumber" maxlength="5">
+            </div>
+            <div class="field">
+                <label class="field-label" for="p-name">Nom</label>
+                <input class="input-control" id="p-name" type="text" name="name" maxlength="120">
+            </div>
+            <div class="field">
+                <label class="field-label" for="p-enseigne">Code enseigne</label>
+                <input class="input-control" id="p-enseigne" type="text" name="enseigneCode" maxlength="8">
+            </div>
+            <div class="field">
+                <label class="field-label" for="p-adherent">Code adhérent</label>
+                <input class="input-control" id="p-adherent" type="text" name="adherentCode" maxlength="32">
+            </div>
+            <div class="field">
+                <label class="field-label" for="p-active">Actif</label>
+                <input id="p-active" type="checkbox" name="active" value="1" checked>
+            </div>
+        </div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">Enregistrer le point de vente</button></div>
+    </form>
+</div>
+
+<div class="card">
+    <h2 class="card-title">Paramètre d'échelon</h2>
+    <form method="post" action="/admin/echelons/setting">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="s-level">Niveau</label>
+                <select class="input-control" id="s-level" name="level">
+                    <option value="COUNTRY">Pays</option>
+                    <option value="ENSEIGNE">Enseigne</option>
+                    <option value="PDV">Point de vente</option>
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="s-code">Code échelon</label>
+                <input class="input-control" id="s-code" type="text" name="echelonCode" maxlength="32" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="s-key">Paramètre</label>
+                <select class="input-control" id="s-key" name="key">
+                    {#for def in keys}
+                    <option value="{def.key}">{def.key} — {def.label}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="s-value">Valeur</label>
+                <input class="input-control" id="s-value" type="text" name="value" maxlength="255">
+            </div>
+            <div class="field">
+                <label class="field-label" for="s-effective">Date d'effet (optionnel)</label>
+                <input class="input-control" id="s-effective" type="date" name="effectiveDate">
+                <span class="field-hint">Vide : effet immédiat. Sinon la valeur s'applique à partir de cette date.</span>
+            </div>
+        </div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">Poser le paramètre</button></div>
+    </form>
+</div>
+
+<div class="card">
+    <h2 class="card-title">Personnalisations (BO-03-12-07)</h2>
+    <p class="page-sub">Points de vente d'une enseigne ayant leur propre valeur pour un paramètre.</p>
+    <form method="get" action="/admin/echelons">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="v-enseigne">Code enseigne</label>
+                <input class="input-control" id="v-enseigne" type="text" name="viewEnseigne" value="{viewEnseigne ?: ''}" maxlength="8">
+            </div>
+            <div class="field">
+                <label class="field-label" for="v-key">Paramètre</label>
+                <select class="input-control" id="v-key" name="viewKey">
+                    {#for def in keys}
+                    <option value="{def.key}" {#if def.key == viewKey}selected{/if}>{def.key}</option>
+                    {/for}
+                </select>
+            </div>
+        </div>
+        <div class="page-actions"><button class="btn btn-ghost" type="submit">Afficher</button></div>
+    </form>
+    {#if viewKey}
+    <ul>
+        {#for pdv in personalised}
+        <li><strong>{pdv.pdvNumber}</strong> — {pdv.name}</li>
+        {#else}
+        <li>Aucun point de vente n'a personnalisé ce paramètre.</li>
+        {/for}
+    </ul>
+    {/if}
+</div>
+{/body}
+
+{#footer}Les échelons et leurs paramètres sont administrés sur le nœud central et distribués aux magasins par le tirage.{/footer}

@@ -1,0 +1,84 @@
+/*
+ * Supervision area: the store dashboard's indicator tiles, its column panels
+ * and the supervisor-call banners.
+ *
+ * Depends on the custom properties declared in base.css, which stays a
+ * verbatim copy of the imvaluation stylesheet: everything specific to this
+ * screen lives here, exactly as the imvaluation admin splits base.css from
+ * its per-area sheets (offer.css, user.css, valuation.css...).
+ */
+
+/* ---------- Page head ---------- */
+
+.sup-clock { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* ---------- Supervisor calls ---------- */
+
+.call-list { display: flex; flex-direction: column; gap: 10px; }
+
+.call-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.call-subject { font-weight: 600; }
+
+.call-context { font-weight: 400; color: var(--im-ink-soft); }
+
+/* ---------- Indicator tiles ---------- */
+
+.kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 18px;
+}
+
+.kpi { display: flex; flex-direction: column; gap: 4px; }
+
+.kpi-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .4px;
+    color: var(--im-ink-soft);
+}
+
+.kpi-value {
+    font-size: 22px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.kpi-value.is-accent { color: var(--im-accent); }
+.kpi-value.is-warn { color: var(--im-warn); }
+
+/* ---------- Column panels ---------- */
+
+.sup-columns {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 18px;
+    align-items: start;
+}
+
+.sup-columns .card { margin-bottom: 0; }
+
+.sup-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid #eef0f4;
+    font-size: 14px;
+}
+
+.sup-row:last-child { border-bottom: none; }
+
+.sup-muted { color: var(--im-ink-soft); font-size: 13px; }
+
+.sup-amount { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.sup-empty { padding: 10px 0; color: var(--im-ink-soft); font-size: 13px; }

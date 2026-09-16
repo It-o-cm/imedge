@@ -1,0 +1,411 @@
+{!
+ ! Back-office DOCUMENT TEMPLATES page (BO-03-03): the layout of every printed
+ ! document, edited as a Qute source. A text area and not a canvas — a receipt
+ ! is a flow of lines on a roll, there is nothing to drag sideways. What makes
+ ! it an editor is the PREVIEW beside each source: the layout is rendered on a
+ ! demonstration sale, so the paramétreur reads the receipt instead of imagining
+ ! it. POST -> 303 -> notice, the same admin cycle as the other pages.
+ !
+ ! Two things keep the box from being empty and the keys from being guessed.
+ ! « Partir de », in the top grid because it comes BEFORE writing, copies an
+ ! existing layout — a house example or one the shop already administers, those
+ ! of the SAME document first, because a layout of another document reads keys
+ ! this one does not carry.
+ !
+ ! And the data a layout may read is offered where it is wanted: a RIGHT CLICK
+ ! in the layout box opens the references of THAT card's document, filtered as
+ ! you type, inserted at the cursor. Only that card's document: eleven
+ ! catalogues at the top of the page asked the paramétreur to find their own
+ ! among ten they had no use for. The collapsed list under each box is the
+ ! no-JavaScript fallback, and carries the same references.
+ !
+ ! They are DEDUCED from the demonstration document the preview runs against,
+ ! so they cannot name a value the renderer does not serve; the hand-written
+ ! paragraph they replace had already drifted.
+ !
+ ! The inline <style> carries what NO other screen needs — the reference menu
+ ! and the load pair — and nothing else: everything that exists in base.css is
+ ! taken from there.
+!}
+{#include admin-layout}
+
+{#title}Gabarits de documents{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Gabarits de documents</h1>
+        <p class="page-sub">Chaque document imprimé peut porter sa mise en page. Un document sans gabarit reste imprimé par la caisse, à l'identique.</p>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+{#for preview in previews}
+<div class="card">
+    <h2 class="card-title">{preview.template.code} — {preview.template.label}</h2>
+    <form method="post" action="/admin/templates/save">
+        <input type="hidden" name="code" value="{preview.template.code}">
+        <input type="hidden" name="card" value="{preview.template.code}">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="gl-{preview.template.code}">Libellé</label>
+                <input class="input-control" id="gl-{preview.template.code}" type="text" name="label" maxlength="100" value="{preview.template.label}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="gt-{preview.template.code}">Document</label>
+                <select class="input-control" id="gt-{preview.template.code}" name="documentType">
+                    {#for type in documentTypes}
+                    <option value="{type}" {#if preview.template.documentType == type}selected{/if}>{type.label}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field gab-from">
+                <label class="field-label" for="gf-{preview.template.code}">Partir de</label>
+                <div class="gab-load">
+                    <select class="input-control gab-pick" id="gf-{preview.template.code}" name="from">
+                        {#for pick in preview.picks}
+                        <option value="{pick.key}" data-type="{pick.type}">{#if pick.sameType}✓ {/if}{pick.label}</option>
+                        {/for}
+                    </select>
+                    <button class="btn" type="submit" formaction="/admin/templates/copy" formnovalidate>Charger</button>
+                </div>
+                <span class="field-hint">Un gabarit du même document est en tête (✓).</span>
+            </div>
+            <div class="field">
+                <label class="field-label" for="gw-{preview.template.code}">Largeur</label>
+                <input class="input-control" id="gw-{preview.template.code}" type="number" name="width" value="{preview.template.width}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="gc-{preview.template.code}">Exemplaires</label>
+                <input class="input-control" id="gc-{preview.template.code}" type="number" name="copies" min="1" value="{preview.template.copies}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="gp-{preview.template.code}">Priorité</label>
+                <input class="input-control" id="gp-{preview.template.code}" type="number" name="priority" value="{preview.template.priority}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="ga-{preview.template.code}">Actif</label>
+                <input id="ga-{preview.template.code}" type="checkbox" name="active" {#if preview.template.active}checked{/if}>
+            </div>
+        </div>
+        <div class="field">
+            <label class="field-label" for="gs-{preview.template.code}">Mise en page</label>
+            <textarea class="input-control gab-source" id="gs-{preview.template.code}" name="source" rows="14" spellcheck="false"
+                      data-type="{preview.template.documentType}">{#if draft && draft.isFor(preview.template.code)}{draft.source}{#else}{preview.template.source}{/if}</textarea>
+            <span class="field-hint">Clic droit dans la zone : les données de ce document, insérées au curseur.</span>
+        </div>
+        <details class="panel gab-fallback">
+            <summary class="panel-title">Données de ce document<span class="panel-count">{preview.references.size()}</span></summary>
+            <table class="data-table">
+                <tr><th>Référence</th><th>Exemple</th><th>Portée</th></tr>
+                {#for reference in preview.references}
+                <tr>
+                    <td><code>{reference.expression}</code></td>
+                    <td>{reference.sample}</td>
+                    <td>{#if reference.repeating}<span class="field-hint">dans <code>{reference.loop}</code></span>{#else}—{/if}</td>
+                </tr>
+                {/for}
+            </table>
+        </details>
+        <div class="page-actions">
+            <button class="btn btn-primary" type="submit">Enregistrer le gabarit</button>
+            <button class="btn btn-ghost" type="submit" formaction="/admin/templates/preview" formnovalidate>Aperçu</button>
+        </div>
+    </form>
+
+    <h3 class="card-title">Aperçu</h3>
+    {#if draft && draft.isFor(preview.template.code)}
+    {#if draft.error}
+    <div class="alert alert-error" role="status">Aperçu impossible : {draft.error}</div>
+    {#else}
+    <p class="field-hint">Aperçu de la mise en page saisie — rien n'est enregistré.</p>
+    <pre class="preview-pane">{draft.rendered}</pre>
+    {/if}
+    {#else if preview.rendered}
+    <pre class="preview-pane">{preview.rendered}</pre>
+    {#else}
+    <p class="page-sub">Ce gabarit ne rend rien : la caisse imprimera ce document à sa façon.</p>
+    {/if}
+
+    <form method="post" action="/admin/templates/delete">
+        <input type="hidden" name="code" value="{preview.template.code}">
+        <div class="page-actions"><button class="btn btn-muted" type="submit">Supprimer le gabarit</button></div>
+    </form>
+</div>
+{/for}
+
+<div class="card">
+    <h2 class="card-title">Nouveau gabarit</h2>
+    <form method="post" action="/admin/templates/save">
+        <input type="hidden" name="card" value="new">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="new-gcode">Code</label>
+                <input class="input-control" id="new-gcode" type="text" name="code" maxlength="50" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-glabel">Libellé</label>
+                <input class="input-control" id="new-glabel" type="text" name="label" maxlength="100">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-gtype">Document</label>
+                <select class="input-control" id="new-gtype" name="documentType" required>
+                    {#for type in documentTypes}
+                    <option value="{type}" {#if draft && draft.new && draft.documentType == type}selected{/if}>{type.label}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field gab-from">
+                <label class="field-label" for="new-gfrom">Partir de</label>
+                <div class="gab-load">
+                    <select class="input-control gab-pick" id="new-gfrom" name="from">
+                        {#for pick in newPicks}
+                        <option value="{pick.key}" data-type="{pick.type}">{#if pick.sameType}✓ {/if}{pick.label}</option>
+                        {/for}
+                    </select>
+                    <button class="btn" type="submit" formaction="/admin/templates/copy" formnovalidate>Charger</button>
+                </div>
+                <span class="field-hint">Un exemple de la maison, ou un gabarit déjà administré — ceux du même document en tête (✓). Le code n'est jamais recopié.</span>
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-gwidth">Largeur</label>
+                <input class="input-control" id="new-gwidth" type="number" name="width" value="42">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-gcopies">Exemplaires</label>
+                <input class="input-control" id="new-gcopies" type="number" name="copies" min="1" value="1">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-gpriority">Priorité</label>
+                <input class="input-control" id="new-gpriority" type="number" name="priority" value="100">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-gactive">Actif</label>
+                <input id="new-gactive" type="checkbox" name="active" checked>
+            </div>
+        </div>
+        <div class="field">
+            <label class="field-label" for="new-gsource">Mise en page</label>
+            <textarea class="input-control gab-source" id="new-gsource" name="source" rows="14" spellcheck="false"
+                      data-type="{#if draft && draft.new}{draft.documentType}{#else}SALE_RECEIPT{/if}">{#if draft && draft.new}{draft.source}{/if}</textarea>
+            <span class="field-hint">Clic droit dans la zone : les données de ce document, insérées au curseur.</span>
+        </div>
+        <details class="panel gab-fallback">
+            <summary class="panel-title">Données de ce document<span class="panel-count">{newReferences.size()}</span></summary>
+            <table class="data-table">
+                <tr><th>Référence</th><th>Exemple</th><th>Portée</th></tr>
+                {#for reference in newReferences}
+                <tr>
+                    <td><code>{reference.expression}</code></td>
+                    <td>{reference.sample}</td>
+                    <td>{#if reference.repeating}<span class="field-hint">dans <code>{reference.loop}</code></span>{#else}—{/if}</td>
+                </tr>
+                {/for}
+            </table>
+        </details>
+        <div class="page-actions">
+            <button class="btn btn-primary" type="submit">Créer le gabarit</button>
+            <button class="btn btn-ghost" type="submit" formaction="/admin/templates/preview" formnovalidate>Aperçu</button>
+        </div>
+    </form>
+
+    {#if draft && draft.new}
+    <h3 class="card-title">Aperçu</h3>
+    {#if draft.error}
+    <div class="alert alert-error" role="status">Aperçu impossible : {draft.error}</div>
+    {#else}
+    <p class="field-hint">Aperçu de la mise en page saisie — rien n'est enregistré.</p>
+    <pre class="preview-pane">{draft.rendered}</pre>
+    {/if}
+    {/if}
+</div>
+
+{|
+<style>
+/* « Partir de » is a list AND the button that acts on it, side by side, so the
+   pair reads as one gesture. The button used to sit UNDER the list in the
+   ghost style — transparent border, soft grey — between a select and a grey
+   hint: three lines of grey text, and the only one that did anything was the
+   middle one. Nobody found it. A bordered button beside the list is the whole
+   fix; the list alone still changes nothing until it is pressed, which is
+   deliberate — loading replaces what is in the box. */
+/* Two columns wide: the entries name a document AND a layout, and a list
+   narrow enough to show « ✓ Exemple — » and nothing else is a list one
+   picks from blind. */
+.gab-from { grid-column: span 2; }
+.gab-load { display: flex; gap: 8px; align-items: stretch; }
+.gab-load .gab-pick { flex: 1 1 auto; min-width: 0; }
+.gab-load .btn { flex: 0 0 auto; white-space: nowrap; }
+
+/* The reference menu. Scoped here: no other screen opens one, and base.css
+   has no business carrying rules nothing else uses. Tokens only. */
+.gab-menu { position: absolute; z-index: 50; min-width: 320px; max-width: 460px;
+            background: var(--im-surface); border: 1px solid var(--im-line);
+            border-radius: 6px; box-shadow: 0 6px 24px rgba(0,0,0,.18); padding: 6px; }
+.gab-menu input { width: 100%; box-sizing: border-box; margin-bottom: 4px; }
+.gab-menu-list { max-height: 300px; overflow-y: auto; }
+.gab-menu-item { display: flex; gap: 8px; align-items: baseline; width: 100%;
+                 text-align: left; border: 0; background: transparent; cursor: pointer;
+                 font: inherit; padding: 4px 6px; border-radius: 4px; color: var(--im-ink); }
+.gab-menu-item:hover, .gab-menu-item.gab-on { background: var(--im-bg); }
+.gab-menu-item code { font-family: ui-monospace, monospace; flex: 0 0 auto; }
+.gab-menu-sample { color: var(--im-ink-soft); font-size: 12px; overflow: hidden;
+                   text-overflow: ellipsis; white-space: nowrap; }
+.gab-menu-loop { color: var(--im-warn); font-size: 11px; flex: 0 0 auto; }
+.gab-menu-empty { color: var(--im-ink-soft); padding: 6px; font-size: 13px; }
+</style>
+<script>
+// Two enhancements, both optional: without them « Partir de » still copies a
+// layout by its own button, and the references stay readable in the collapsed
+// list under each box — that list is rendered by the server, not built here.
+(function () {
+    // 1. RIGHT CLICK in a layout box opens the data of THAT card's document,
+    //    filtered as you type, inserted at the cursor. The reference is wanted
+    //    while writing, so the menu opens where the writing is happening; the
+    //    first version put a catalogue at the top of the page, far from the
+    //    box and carrying ten documents the card has nothing to do with.
+    var cache = {};
+    var menu = null;
+
+    function shut() {
+        if (menu) { menu.remove(); menu = null; }
+    }
+    document.addEventListener('click', function (event) {
+        if (menu && !menu.contains(event.target)) { shut(); }
+    });
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') { shut(); }
+    });
+
+    function insert(box, text) {
+        var at = box.selectionStart === null ? box.value.length : box.selectionStart;
+        var to = box.selectionEnd === null ? at : box.selectionEnd;
+        box.value = box.value.slice(0, at) + text + box.value.slice(to);
+        box.focus();
+        box.selectionStart = box.selectionEnd = at + text.length;
+    }
+
+    function open(box, references, x, y) {
+        shut();
+        menu = document.createElement('div');
+        menu.className = 'gab-menu';
+        menu.style.left = Math.round(x) + 'px';
+        menu.style.top = Math.round(y) + 'px';
+        var filter = document.createElement('input');
+        filter.className = 'input-control';
+        // The examples must be words that ACTUALLY match: the expressions are
+        // written in English, so offering « tva » as a hint would send the
+        // operator straight to « aucune donnée ne porte… » on their first try.
+        filter.placeholder = 'Filtrer — total, line, store…';
+        filter.setAttribute('aria-label', 'Filtrer les données');
+        var list = document.createElement('div');
+        list.className = 'gab-menu-list';
+        menu.appendChild(filter);
+        menu.appendChild(list);
+        document.body.appendChild(menu);
+
+        function draw(needle) {
+            list.textContent = '';
+            var shown = 0;
+            references.forEach(function (reference) {
+                var hay = (reference.expression + ' ' + reference.sample).toLowerCase();
+                if (needle && hay.indexOf(needle) < 0) { return; }
+                shown++;
+                var item = document.createElement('button');
+                item.className = 'gab-menu-item';
+                item.type = 'button';
+                var expression = document.createElement('code');
+                expression.textContent = reference.expression;
+                var sample = document.createElement('span');
+                sample.className = 'gab-menu-sample';
+                sample.textContent = reference.sample;
+                item.appendChild(expression);
+                item.appendChild(sample);
+                if (reference.loop) {
+                    var loop = document.createElement('span');
+                    loop.className = 'gab-menu-loop';
+                    // Said on the entry itself: this one renders nothing
+                    // outside its loop, and a menu that stayed silent about it
+                    // would hand out an expression that quietly yields empty.
+                    loop.textContent = 'dans une boucle';
+                    loop.title = reference.loop;
+                    item.appendChild(loop);
+                }
+                item.addEventListener('click', function () {
+                    insert(box, reference.expression);
+                    shut();
+                });
+                list.appendChild(item);
+            });
+            if (!shown) {
+                var none = document.createElement('div');
+                none.className = 'gab-menu-empty';
+                none.textContent = 'Aucune donnée ne porte « ' + needle + ' ».';
+                list.appendChild(none);
+            }
+        }
+        draw('');
+        filter.addEventListener('input', function () {
+            draw(filter.value.trim().toLowerCase());
+        });
+        // Enter takes the first match: filter, Enter, done, without the mouse.
+        filter.addEventListener('keydown', function (event) {
+            if (event.key !== 'Enter') { return; }
+            event.preventDefault();
+            var first = list.querySelector('.gab-menu-item');
+            if (first) { first.click(); }
+        });
+        filter.focus();
+    }
+
+    document.querySelectorAll('.gab-source').forEach(function (box) {
+        box.addEventListener('contextmenu', function (event) {
+            event.preventDefault();
+            var type = box.dataset.type;
+            var x = event.pageX;
+            var y = event.pageY;
+            if (cache[type]) { open(box, cache[type], x, y); return; }
+            fetch('/admin/templates/api/references?type=' + encodeURIComponent(type))
+                .then(function (r) { return r.json(); })
+                .then(function (references) {
+                    cache[type] = references;
+                    open(box, references, x, y);
+                });
+        });
+    });
+
+    // 2. On the creation card the document is chosen live, so the picker is
+    //    re-ordered and the layout box is told which document it now writes —
+    //    the menu must not keep offering the data of the previous one.
+    var type = document.getElementById('new-gtype');
+    var pick = document.getElementById('new-gfrom');
+    var source = document.getElementById('new-gsource');
+    if (!type || !pick) { return; }
+    type.addEventListener('change', function () {
+        var chosen = type.value;
+        if (source) { source.dataset.type = chosen; }
+        var options = Array.prototype.slice.call(pick.options);
+        options.forEach(function (option) {
+            var same = option.dataset.type === chosen;
+            option.textContent = (same ? '✓ ' : '') + option.textContent.replace(/^✓ /, '');
+            option.dataset.same = same ? '1' : '';
+        });
+        options.sort(function (a, b) {
+            if (!!a.dataset.same === !!b.dataset.same) { return 0; }
+            return a.dataset.same ? -1 : 1;
+        });
+        options.forEach(function (option) { pick.appendChild(option); });
+        // The selection FOLLOWS the document. Keeping a pick of the previous
+        // one would leave the operator on an entry marked as belonging
+        // elsewhere, and loading it would fill the box with a layout whose
+        // every line renders empty.
+        pick.selectedIndex = 0;
+    });
+})();
+</script>
+|}
+
+{/body}

@@ -1,0 +1,19 @@
+/*
+ * Caisse-touches admin area (Lot 5F): the inline group-configuration form on
+ * the touches table. Base chrome (cards, tables, buttons, tokens) comes from
+ * base.css; only the row-form layout is specific here.
+ */
+.touch-config-form {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.touch-config-form select.input-control {
+    width: auto;
+}
+
+.touch-config-form input[type="number"] {
+    width: 90px;
+}

@@ -1,0 +1,63 @@
+{!
+ ! Back-office PROFILES list (BO-01-03-01): the composable profiles that
+ ! replace the four fixed roles. Each row edits or deletes a profile; the
+ ! header opens the create form. POST -> 303 -> notice, the admin cycle.
+!}
+{#include admin-layout}
+
+{#title}Profils{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Profils</h1>
+        <p class="page-sub">Ensembles de droits (fonctionnalité × option) affectables aux utilisateurs.</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-primary" href="/admin/profiles/new">Nouveau profil</a>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+<div class="card">
+    {#if profiles.isEmpty()}
+    <div class="empty-state">
+        <p>Aucun profil défini.</p>
+        <p class="empty-hint">Créez un premier profil pour commencer à administrer les droits.</p>
+    </div>
+    {#else}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Nom</th>
+                <th>Description</th>
+                <th>Droits</th>
+                <th class="col-actions">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {#for profile in profiles}
+            <tr>
+                <td><a class="link-strong" href="/admin/profiles/edit?id={profile.id}">{profile.name}</a></td>
+                <td class="col-muted">{profile.description ?: '—'}</td>
+                <td><span class="badge badge-ok">{profile.grants.size()} droit(s)</span></td>
+                <td class="col-actions">
+                    <a class="btn btn-small btn-ghost" href="/admin/profiles/edit?id={profile.id}">Modifier</a>
+                    <form method="post" action="/admin/profiles/delete" class="app-identity-form"
+                          onsubmit="return confirm('Supprimer le profil « {profile.name} » ?');">
+                        <input type="hidden" name="id" value="{profile.id}">
+                        <button class="btn btn-small btn-danger" type="submit">Supprimer</button>
+                    </form>
+                </td>
+            </tr>
+            {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+{/body}
+
+{#footer}Un profil créé ici autorise ou refuse une fonctionnalité précise, sans redéploiement.{/footer}

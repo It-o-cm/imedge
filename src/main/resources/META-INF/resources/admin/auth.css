@@ -1,0 +1,88 @@
+/*
+ * Authentication area: the sign-in page and the identity controls of the
+ * back-office header.
+ *
+ * Depends on the custom properties declared in base.css, which stays a
+ * verbatim copy of the imvaluation stylesheet — the per-area split is that
+ * admin's idiom, not a local invention.
+ */
+
+/* ---------- Header identity ---------- */
+
+.app-identity {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.app-identity-name {
+    font-size: 13px;
+    color: var(--im-ink-soft);
+}
+
+.app-identity-form { display: inline; margin: 0; }
+
+.app-identity-link {
+    border: none;
+    background: none;
+    padding: 0;
+    font: inherit;
+    font-size: 13px;
+    color: var(--im-ink-soft);
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.app-identity-link:hover { color: var(--im-red); }
+
+/* ---------- Sign-in page ---------- */
+
+.login-body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    margin: 0;
+    background: var(--im-bg);
+}
+
+.login-panel {
+    width: 100%;
+    max-width: 360px;
+    padding: 32px;
+    background: var(--im-surface);
+    border: 1px solid var(--im-line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+}
+
+.login-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 24px;
+}
+
+.login-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.login-form .field input {
+    width: 100%;
+    padding: 9px 12px;
+    border: 1px solid var(--im-line);
+    border-radius: 6px;
+    font: inherit;
+    font-size: 14px;
+}
+
+.login-form .field input:focus {
+    outline: none;
+    border-color: var(--im-red);
+    box-shadow: 0 0 0 3px rgba(226, 0, 26, .1);
+}
+
+.login-submit { width: 100%; margin-top: 4px; }

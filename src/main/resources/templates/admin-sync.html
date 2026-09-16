@@ -1,0 +1,122 @@
+{!
+ ! Sync supervision page (lot C2): the read-only state of this node's three
+ ! outbound flows — engine feeds, referential pull, store outbox — plus the
+ ! two manual relaunches and the local session force-close. POST -> 303 ->
+ ! notice, the imvaluation admin cycle. `view` = the assembled SyncView,
+ ! `sessionOpen` gates the force-close button.
+!}
+{#include admin-layout}
+
+{#title}Supervision des flux{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Supervision des flux</h1>
+        <p class="page-sub">État local des flux sortants de ce nœud — flux moteur, tirage référentiel, outbox magasin. Ce nœud ne connaît que lui-même.</p>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+<div class="sync-health {#if view.healthy}sync-health-ok{#else}sync-health-warn{/if}" role="status">
+    {#if view.healthy}Nœud synchronisé — aucune erreur de flux, outbox vide.{#else}Anomalie de synchronisation — {#if view.engineError}au moins un flux moteur en erreur. {/if}{#if view.outboxCount > 0}{view.outboxCount} élément(s) en attente dans l'outbox.{/if}{/if}
+</div>
+
+<div class="card">
+    <div class="card-head">
+        <h2 class="card-title">Flux moteur (valuation)</h2>
+        <form method="post" action="/admin/sync/deliver" class="card-action">
+            <button class="btn btn-primary" type="submit">Relancer la livraison</button>
+        </form>
+    </div>
+    <p class="card-sub">Livraison automatique toutes les {view.deliverySeconds} s.</p>
+    <table class="sync-table">
+        <thead>
+            <tr><th>Code</th><th>Version</th><th>Appliquée</th><th>Version moteur</th><th>Reçu</th><th>Appliqué</th><th>Dernière erreur</th></tr>
+        </thead>
+        <tbody>
+            {#for feed in view.feeds}
+            <tr class="{#if feed.lastError}row-error{/if}">
+                <td>{feed.code}</td>
+                <td class="mono">{feed.version}</td>
+                <td>{#if feed.applied}oui{#else}non{/if}</td>
+                <td class="mono">{feed.appliedVersion}</td>
+                <td>{feed.receivedAt}</td>
+                <td>{feed.appliedAt}</td>
+                <td class="cell-error">{#if feed.lastError}{feed.lastError}{#else}—{/if}</td>
+            </tr>
+            {/for}
+            {#if view.feeds.isEmpty()}
+            <tr><td colspan="7" class="cell-empty">Aucun flux moteur reçu sur ce nœud.</td></tr>
+            {/if}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <div class="card-head">
+        <h2 class="card-title">Tirage référentiel</h2>
+        <form method="post" action="/admin/sync/pull" class="card-action">
+            <button class="btn btn-primary" type="submit">Relancer le tirage</button>
+        </form>
+    </div>
+    <p class="card-sub">Tirage automatique toutes les {view.pullSeconds} s. Dernier tirage réussi : {view.lastPull}.</p>
+    <table class="sync-table">
+        <thead>
+            <tr><th>Domaine</th><th>Empreinte appliquée</th><th>Appliqué</th></tr>
+        </thead>
+        <tbody>
+            {#for pull in view.pulls}
+            <tr>
+                <td>{pull.domain}</td>
+                <td class="mono">{pull.fingerprint}</td>
+                <td>{pull.appliedAt}</td>
+            </tr>
+            {/for}
+            {#if view.pulls.isEmpty()}
+            <tr><td colspan="3" class="cell-empty">Aucun référentiel appliqué (nœud fraîchement démarré).</td></tr>
+            {/if}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h2 class="card-title">Outbox magasin</h2>
+    <p class="card-sub">Purge automatique toutes les {view.pushSeconds} s. {view.outboxCount} élément(s) en attente.</p>
+    <table class="sync-table">
+        <thead>
+            <tr><th>Type</th><th>En attente</th><th>Tentatives max</th><th>Dernière erreur</th></tr>
+        </thead>
+        <tbody>
+            {#for row in view.backlog}
+            <tr class="{#if row.lastError}row-error{/if}">
+                <td>{row.type}</td>
+                <td>{row.count}</td>
+                <td>{row.maxAttempts}</td>
+                <td class="cell-error">{#if row.lastError}{row.lastError}{#else}—{/if}</td>
+            </tr>
+            {/for}
+            {#if view.backlog.isEmpty()}
+            <tr><td colspan="4" class="cell-empty">Outbox vide — nœud entièrement synchronisé.</td></tr>
+            {/if}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h2 class="card-title">Session locale</h2>
+    {#if sessionOpen}
+    <p class="card-sub">Une session est ouverte sur ce nœud. Le forçage la clôture sans caissier de clôture ni comptage — recours quand le poste est resté ouvert.</p>
+    <form method="post" action="/admin/sync/force-close" class="card-action">
+        <button class="btn btn-danger" type="submit">Forcer la clôture de la session</button>
+    </form>
+    {#else}
+    <p class="card-sub">Aucune session ouverte sur ce nœud.</p>
+    {/if}
+</div>
+{/body}
+
+{#footer}La supervision est locale à ce nœud : elle n'affiche jamais l'état d'une autre caisse (une caisse coupée du réseau continue de vendre).{/footer}

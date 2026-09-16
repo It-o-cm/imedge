@@ -1,0 +1,270 @@
+{!
+ ! Back-office TENDERS page (BO-03-02): which settlement methods this store
+ ! accepts, and under what rules. The CODE is chosen from the settlement
+ ! natures the register knows how to carry out — that list is the doctrine made
+ ! visible: the back office puts a method in service and bounds it, it does not
+ ! invent a settlement conversation. POST -> 303 -> notice, the same admin cycle
+ ! as the other back-office pages. No inline <style>: base.css primitives only.
+!}
+{#include admin-layout}
+
+{#title}Modes de règlement{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Modes de règlement</h1>
+        <p class="page-sub">Chaque mode porte son identifiant, son activation et ses contrôles : plafonds, plancher, nombre par ticket, rendu monnaie, ouverture du tiroir.</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-muted" href="/admin/tenders/export">Exporter la liste</a>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+{#for tender in tenders}
+<div class="card">
+    <h2 class="card-title">{tender.functionalId} — {tender.code} — {tender.label}</h2>
+    <form method="post" action="/admin/tenders/save">
+        <input type="hidden" name="code" value="{tender.code}">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="tid-{tender.code}">Identifiant</label>
+                <input class="input-control" id="tid-{tender.code}" type="text" name="functionalId" maxlength="10" value="{tender.functionalId}" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="tlb-{tender.code}">Libellé</label>
+                <input class="input-control" id="tlb-{tender.code}" type="text" name="label" maxlength="60" value="{tender.label}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="tac-{tender.code}">Actif</label>
+                <input id="tac-{tender.code}" type="checkbox" name="active" {#if tender.active}checked{/if}>
+            </div>
+            <div class="field">
+                <label class="field-label" for="tor-{tender.code}">Ordre</label>
+                <input class="input-control" id="tor-{tender.code}" type="number" name="displayOrder" value="{tender.displayOrder}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="tma-{tender.code}">Montant maximum</label>
+                <input class="input-control" id="tma-{tender.code}" type="text" name="maxAmount" value="{tender.maxAmount ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="tmc-{tender.code}">Contrôle du maximum</label>
+                <select class="input-control" id="tmc-{tender.code}" name="maxAmountControl">
+                    {#for control in controls}
+                    <option value="{control}" {#if tender.maxAmountControl == control}selected{/if}>{control.label}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="tsa-{tender.code}">Second montant maximum</label>
+                <input class="input-control" id="tsa-{tender.code}" type="text" name="secondMaxAmount" value="{tender.secondMaxAmount ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="tsc-{tender.code}">Contrôle du second maximum</label>
+                <select class="input-control" id="tsc-{tender.code}" name="secondMaxAmountControl">
+                    {#for control in controls}
+                    <option value="{control}" {#if tender.secondMaxAmountControl == control}selected{/if}>{control.label}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="tmi-{tender.code}">Montant minimum</label>
+                <input class="input-control" id="tmi-{tender.code}" type="text" name="minAmount" value="{tender.minAmount ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="tic-{tender.code}">Contrôle du minimum</label>
+                <select class="input-control" id="tic-{tender.code}" name="minAmountControl">
+                    {#for control in controls}
+                    <option value="{control}" {#if tender.minAmountControl == control}selected{/if}>{control.label}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="tnb-{tender.code}">Nombre maximum par ticket</label>
+                <input class="input-control" id="tnb-{tender.code}" type="number" name="maxCount" min="1" value="{tender.maxCount ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="tnc-{tender.code}">Contrôle du nombre</label>
+                <select class="input-control" id="tnc-{tender.code}" name="maxCountControl">
+                    {#for control in controls}
+                    <option value="{control}" {#if tender.maxCountControl == control}selected{/if}>{control.label}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="tra-{tender.code}">Rendu maximum</label>
+                <input class="input-control" id="tra-{tender.code}" type="text" name="maxChangeAmount" value="{tender.maxChangeAmount ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="trc-{tender.code}">Contrôle du rendu</label>
+                <select class="input-control" id="trc-{tender.code}" name="maxChangeControl">
+                    {#for control in controls}
+                    <option value="{control}" {#if tender.maxChangeControl == control}selected{/if}>{control.label}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="trb-{tender.code}">Autorisé au remboursement</label>
+                <input id="trb-{tender.code}" type="checkbox" name="refundAllowed" {#if tender.refundAllowed}checked{/if}>
+            </div>
+            <div class="field">
+                <label class="field-label" for="trm-{tender.code}">Rendu monnaie autorisé</label>
+                <input id="trm-{tender.code}" type="checkbox" name="changeAllowed" {#if tender.changeAllowed}checked{/if}>
+            </div>
+            <div class="field">
+                <label class="field-label" for="trt-{tender.code}">Rendu avec</label>
+                <select class="input-control" id="trt-{tender.code}" name="changeTenderCode">
+                    <option value="">Le mode lui-même</option>
+                    {#for key in settlementKeys}
+                    <option value="{key}" {#if tender.changeTenderCode == key}selected{/if}>{key}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="tdc-{tender.code}">Déclaration automatique</label>
+                <input id="tdc-{tender.code}" type="checkbox" name="cashierDeclaration" {#if tender.cashierDeclaration}checked{/if}>
+            </div>
+            <div class="field">
+                <label class="field-label" for="tpa-{tender.code}">Prélèvement automatique</label>
+                <input id="tpa-{tender.code}" type="checkbox" name="automaticWithdrawal" {#if tender.automaticWithdrawal}checked{/if}>
+            </div>
+            <div class="field">
+                <label class="field-label" for="tti-{tender.code}">Ouverture du tiroir</label>
+                <select class="input-control" id="tti-{tender.code}" name="drawerOpening">
+                    {#for moment in drawerMoments}
+                    <option value="{moment}" {#if tender.drawerOpening == moment}selected{/if}>{moment.label}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="tmv-{tender.code}">Apport / dépense autorisé</label>
+                <input id="tmv-{tender.code}" type="checkbox" name="movementAllowed" {#if tender.movementAllowed}checked{/if}>
+            </div>
+            <div class="field">
+                <label class="field-label" for="tbk-{tender.code}">Remise en banque</label>
+                <input id="tbk-{tender.code}" type="checkbox" name="bankDeposit" {#if tender.bankDeposit}checked{/if}>
+            </div>
+            <div class="field">
+                <label class="field-label" for="tfd-{tender.code}">Autorisé en fond de caisse</label>
+                <input id="tfd-{tender.code}" type="checkbox" name="floatAllowed" {#if tender.floatAllowed}checked{/if}>
+            </div>
+            <div class="field">
+                <label class="field-label" for="ttd-{tender.code}">Total par défaut</label>
+                <input id="ttd-{tender.code}" type="checkbox" name="defaultsToTotal" {#if tender.defaultsToTotal}checked{/if}>
+            </div>
+            <div class="field">
+                <label class="field-label" for="twd-{tender.code}">Détail au rapport de prélèvement</label>
+                <input id="twd-{tender.code}" type="checkbox" name="withdrawalReportDetail" {#if tender.withdrawalReportDetail}checked{/if}>
+            </div>
+            <div class="field">
+                <label class="field-label" for="tfr-{tender.code}">Remontée fidélité</label>
+                <input id="tfr-{tender.code}" type="checkbox" name="fidelityReported" {#if tender.fidelityReported}checked{/if}>
+            </div>
+        </div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">Enregistrer le mode</button></div>
+    </form>
+    <form method="post" action="/admin/tenders/delete">
+        <input type="hidden" name="code" value="{tender.code}">
+        <div class="page-actions"><button class="btn btn-muted" type="submit">Supprimer le mode</button></div>
+    </form>
+</div>
+{/for}
+
+<div class="card">
+    <h2 class="card-title">Nouveau mode de règlement</h2>
+    <p class="page-sub">Le code désigne la nature du règlement que la caisse sait conduire ; le back-office la met en service et la borne.</p>
+    <form method="post" action="/admin/tenders/save">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="new-tcode">Nature du règlement</label>
+                <select class="input-control" id="new-tcode" name="code" required>
+                    {#for key in settlementKeys}
+                    <option value="{key}">{key}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-tid">Identifiant</label>
+                <input class="input-control" id="new-tid" type="text" name="functionalId" maxlength="10" placeholder="010" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-tlabel">Libellé</label>
+                <input class="input-control" id="new-tlabel" type="text" name="label" maxlength="60">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-torder">Ordre</label>
+                <input class="input-control" id="new-torder" type="number" name="displayOrder" value="100">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-tmax">Montant maximum</label>
+                <input class="input-control" id="new-tmax" type="text" name="maxAmount">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-tmaxc">Contrôle du maximum</label>
+                <select class="input-control" id="new-tmaxc" name="maxAmountControl">
+                    {#for control in controls}
+                    <option value="{control}">{control.label}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-tmin">Montant minimum</label>
+                <input class="input-control" id="new-tmin" type="text" name="minAmount">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-tminc">Contrôle du minimum</label>
+                <select class="input-control" id="new-tminc" name="minAmountControl">
+                    {#for control in controls}
+                    <option value="{control}">{control.label}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-tcount">Nombre maximum par ticket</label>
+                <input class="input-control" id="new-tcount" type="number" name="maxCount" min="1">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-tcountc">Contrôle du nombre</label>
+                <select class="input-control" id="new-tcountc" name="maxCountControl">
+                    {#for control in controls}
+                    <option value="{control}">{control.label}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-tdrawer">Ouverture du tiroir</label>
+                <select class="input-control" id="new-tdrawer" name="drawerOpening">
+                    {#for moment in drawerMoments}
+                    <option value="{moment}">{moment.label}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-tchange">Rendu monnaie autorisé</label>
+                <input id="new-tchange" type="checkbox" name="changeAllowed">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-trefund">Autorisé au remboursement</label>
+                <input id="new-trefund" type="checkbox" name="refundAllowed">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-tdefault">Total par défaut</label>
+                <input id="new-tdefault" type="checkbox" name="defaultsToTotal" checked>
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-tdetail">Détail au rapport de prélèvement</label>
+                <input id="new-tdetail" type="checkbox" name="withdrawalReportDetail" checked>
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-tactive">Actif</label>
+                <input id="new-tactive" type="checkbox" name="active" checked>
+            </div>
+        </div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">Créer le mode</button></div>
+    </form>
+</div>
+{/body}

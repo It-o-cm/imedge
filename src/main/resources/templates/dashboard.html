@@ -1,0 +1,140 @@
+{!
+ ! Manager supervision page (store node): DUMB RENDERER by design — polls
+ ! /dashboard-data every 5s and paints pre-formatted values (amounts arrive
+ ! French-formatted from the server). Supervisor-call banners render first
+ ! with their ACQUITTER button (/dashboard/ack/{id}).
+ !
+ ! CHROME: the back-office gabarit (admin-layout), the same one as
+ ! /admin/settings — one surface, one chrome, one navigation. The till's
+ ! dark touch theme is deliberately absent: this page never runs on a
+ ! register screen, and the whole styling now comes from the shared
+ ! stylesheets (base.css + dashboard.css), never from an inline block.
+ !
+ ! No authentication: back-office LAN posture, see DashboardResource.
+!}
+{#include admin-layout}
+
+{#title}Supervision magasin{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Supervision magasin</h1>
+        <p class="page-sub">Activité consolidée du jour, rafraîchie toutes les 5 secondes.</p>
+    </div>
+    <span class="page-sub sup-clock" id="clock"></span>
+</div>
+
+<div class="call-list" id="callsZone"></div>
+
+<div class="card">
+    <h2 class="card-title">Activité du jour</h2>
+    <p class="card-sub">Cumuls de la journée, toutes caisses confondues.</p>
+    <div class="kpi-grid">
+        <div class="kpi">
+            <span class="kpi-label">CA du jour</span>
+            <span class="kpi-value is-accent" id="kpiRevenue">—</span>
+        </div>
+        <div class="kpi">
+            <span class="kpi-label">Tickets</span>
+            <span class="kpi-value" id="kpiTickets">—</span>
+        </div>
+        <div class="kpi">
+            <span class="kpi-label">Panier moyen</span>
+            <span class="kpi-value" id="kpiBasket">—</span>
+        </div>
+        <div class="kpi">
+            <span class="kpi-label">Annulation</span>
+            <span class="kpi-value is-warn" id="kpiCancel">—</span>
+        </div>
+        <div class="kpi">
+            <span class="kpi-label">Remboursements</span>
+            <span class="kpi-value is-warn" id="kpiRefunds">—</span>
+        </div>
+    </div>
+</div>
+
+<div class="sup-columns">
+    <div class="card">
+        <h2 class="card-title">CA par caisse</h2>
+        <div id="perRegisterZone"><div class="sup-empty">Aucune vente aujourd'hui</div></div>
+    </div>
+    <div class="card">
+        <h2 class="card-title">Sessions actives</h2>
+        <div id="sessionsZone"><div class="sup-empty">Aucune session ouverte</div></div>
+    </div>
+    <div class="card">
+        <h2 class="card-title">Top ventes du jour</h2>
+        <div id="topSalesZone"><div class="sup-empty">Aucune vente aujourd'hui</div></div>
+    </div>
+</div>
+
+<script>
+    /* Renders one label/value row list into a panel zone. */
+    function renderRows(zoneId, rows, emptyText) {
+      const zone = document.getElementById(zoneId);
+      zone.innerHTML = '';
+      if (!rows.length) {
+        zone.innerHTML = '<div class="sup-empty">' + emptyText + '</div>';
+        return;
+      }
+      rows.forEach(r => {
+        const div = document.createElement('div');
+        div.className = 'sup-row';
+        div.innerHTML = r;
+        zone.appendChild(div);
+      });
+    }
+
+    /* Applies a fresh data payload to the page. */
+    function apply(data) {
+      document.getElementById('kpiRevenue').textContent = data.revenue + ' €';
+      document.getElementById('kpiTickets').textContent = data.ticketCount;
+      document.getElementById('kpiBasket').textContent = data.averageBasket + ' €';
+      document.getElementById('kpiCancel').textContent = data.cancellationRate + ' %';
+      document.getElementById('kpiRefunds').textContent = data.refundTotal + ' € (' + data.refundCount + ')';
+
+      renderRows('perRegisterZone', data.perRegister.map(r =>
+        '<span>' + r.terminal + ' <span class="sup-muted">(' + r.tickets + ' tickets)</span></span>'
+        + '<span class="sup-amount">' + r.revenue + ' €</span>'), "Aucune vente aujourd'hui");
+
+      renderRows('sessionsZone', data.sessions.map(s =>
+        '<span>' + s.terminal + ' — ' + s.operator + '</span>'
+        + '<span class="sup-muted">' + s.number + ' · depuis ' + s.since + '</span>'), 'Aucune session ouverte');
+
+      renderRows('topSalesZone', data.topSales.map(t =>
+        '<span>' + t.label + '</span><span class="sup-amount">×' + t.quantity + '</span>'), "Aucune vente aujourd'hui");
+
+      const calls = document.getElementById('callsZone');
+      calls.innerHTML = '';
+      data.calls.forEach(c => {
+        const banner = document.createElement('div');
+        banner.className = 'alert alert-error call-banner';
+        banner.setAttribute('role', 'alert');
+        banner.innerHTML = '<span class="call-subject">' + c.terminal + ' demande un superviseur — '
+            + c.reason + ' <span class="call-context">(' + c.operator + ', ' + c.time + ')</span></span>';
+        const ack = document.createElement('button');
+        ack.className = 'btn btn-small btn-danger';
+        ack.type = 'button';
+        ack.textContent = 'Acquitter';
+        ack.onclick = () => fetch('/dashboard/ack/' + c.id).then(poll);
+        banner.appendChild(ack);
+        calls.appendChild(banner);
+      });
+    }
+
+    /* Polls the dashboard data. */
+    function poll() {
+      fetch('/dashboard-data')
+        .then(r => r.json())
+        .then(apply)
+        .catch(() => { /* transient error: keep the current view */ });
+    }
+
+    setInterval(poll, 5000);
+    poll();
+    setInterval(() => { document.getElementById('clock').textContent = new Date().toLocaleTimeString('fr-FR'); }, 1000);
+</script>
+{/body}
+
+{#footer}Vue consolidée du nœud magasin : les caisses y remontent leurs ventes, leurs sessions et leurs appels superviseur.{/footer}

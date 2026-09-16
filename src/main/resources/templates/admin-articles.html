@@ -1,0 +1,152 @@
+{!
+ ! Back-office ARTICLE list and multi-criteria search (BO-02-03-30): the
+ ! referential articles, filtered by the search form or an applied saved
+ ! selection (BO-02-03-31), ordered by EAN. Each row opens the fiche edit form.
+ ! The bulk bar sets the on-screen article-code flag over the filtered set
+ ! (BO-02-03-45). Creation stays on the integration surfaces (CSV import,
+ ! GraphQL); this screen reads and administers. POST -> 303 -> notice.
+!}
+{#include admin-layout}
+
+{#title}Articles{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Articles</h1>
+        <p class="page-sub">Fiches articles du référentiel, recherche multicritères et attributs de caisse.</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-ghost" href="/admin/article-attributes">Attributs</a>
+        <a class="btn btn-ghost" href="/admin/article-selections">Sélections</a>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">Recherche</h2>
+    <form method="get" action="/admin/articles" class="article-search">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="s-text">Texte (EAN, libellé, code interne)</label>
+                <input class="input-control" id="s-text" type="text" name="text" value="{criteria.text ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="s-type">Type</label>
+                <select class="input-control" id="s-type" name="type">
+                    <option value="">Tous</option>
+                    {#for type in types}
+                    <option value="{type.name}" {#if criteria.type && criteria.type.name == type.name}selected{/if}>{type.name}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="s-status">Statut</label>
+                <select class="input-control" id="s-status" name="status">
+                    <option value="ALL">Tous</option>
+                    <option value="ACTIVE" {#if criteria.status.name == 'ACTIVE'}selected{/if}>Actifs</option>
+                    <option value="INACTIVE" {#if criteria.status.name == 'INACTIVE'}selected{/if}>Désactivés</option>
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="s-forbidden">Vente</label>
+                <select class="input-control" id="s-forbidden" name="forbidden">
+                    <option value="">Toutes</option>
+                    <option value="yes" {#if criteria.forbidden == true}selected{/if}>Interdites</option>
+                    <option value="no" {#if criteria.forbidden == false}selected{/if}>Autorisées</option>
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="s-ean-from">EAN de</label>
+                <input class="input-control" id="s-ean-from" type="text" name="eanFrom" value="{criteria.eanFrom ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="s-ean-to">EAN à</label>
+                <input class="input-control" id="s-ean-to" type="text" name="eanTo" value="{criteria.eanTo ?: ''}">
+            </div>
+        </div>
+        <div class="field-grid">
+            {#for def in attributeDefs}
+            <div class="field field-check">
+                <label class="field-label"><input type="checkbox" name="attr" value="{def.code}" {#if criteria.attributes.contains(def.code)}checked{/if}> {def.label}</label>
+            </div>
+            {/for}
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">Rechercher</button>
+            <a class="btn btn-ghost" href="/admin/articles">Réinitialiser</a>
+        </div>
+    </form>
+    {#if !selections.isEmpty()}
+    <form method="get" action="/admin/articles" class="article-selection-apply">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="s-selection">Appliquer une sélection enregistrée</label>
+                <select class="input-control" id="s-selection" name="selection" onchange="this.form.submit()">
+                    <option value="">—</option>
+                    {#for sel in selections}
+                    <option value="{sel.name}" {#if selectedSelection == sel.name}selected{/if}>{sel.name}</option>
+                    {/for}
+                </select>
+            </div>
+        </div>
+    </form>
+    {/if}
+</div>
+
+<div class="card">
+    {#if products.isEmpty()}
+    <div class="empty-state">
+        <p>Aucun article ne correspond.</p>
+        <p class="empty-hint">Élargissez la recherche, ou intégrez les articles via l'import CSV ou le GraphQL.</p>
+    </div>
+    {#else}
+    <form method="post" action="/admin/articles/bulk-code" class="bulk-code-bar">
+        {#if criteria.text}<input type="hidden" name="text" value="{criteria.text}">{/if}
+        {#if criteria.type}<input type="hidden" name="type" value="{criteria.type.name}">{/if}
+        {#if criteria.status.name != 'ALL'}<input type="hidden" name="status" value="{criteria.status.name}">{/if}
+        {#if criteria.forbidden == true}<input type="hidden" name="forbidden" value="yes">{/if}
+        {#if criteria.forbidden == false}<input type="hidden" name="forbidden" value="no">{/if}
+        {#if criteria.eanFrom}<input type="hidden" name="eanFrom" value="{criteria.eanFrom}">{/if}
+        {#if criteria.eanTo}<input type="hidden" name="eanTo" value="{criteria.eanTo}">{/if}
+        {#for code in criteria.attributes}<input type="hidden" name="attr" value="{code}">{/for}
+        <span class="bulk-code-label">Code article à l'écran sur les {products.size()} article(s) filtré(s) :</span>
+        <label class="bulk-code-toggle"><input type="checkbox" name="value"> Activer</label>
+        <button class="btn btn-small btn-ghost" type="submit">Appliquer en masse</button>
+    </form>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>EAN</th>
+                <th>Libellé commercial</th>
+                <th>Libellé encaissement</th>
+                <th>Code interne</th>
+                <th>Type</th>
+                <th>Statut</th>
+                <th class="col-actions">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {#for product in products}
+            <tr>
+                <td><a class="link-strong" href="/admin/articles/edit?id={product.id}">{product.ean}</a></td>
+                <td>{product.name}</td>
+                <td class="col-muted">{product.checkoutLabel ?: '—'}</td>
+                <td class="col-muted">{product.internalCode ?: '—'}</td>
+                <td class="col-muted">{product.productType ?: '—'}</td>
+                <td>{#if product.active}<span class="badge badge-ok">Actif</span>{#else}<span class="badge badge-off">Désactivé</span>{/if}</td>
+                <td class="col-actions">
+                    <a class="btn btn-small btn-ghost" href="/admin/articles/edit?id={product.id}">Modifier</a>
+                </td>
+            </tr>
+            {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+{/body}
+
+{#footer}Une fiche modifiée ici change le comportement de la caisse au tirage suivant.{/footer}

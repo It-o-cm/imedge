@@ -1,0 +1,127 @@
+{!
+ ! Back-office layout — the IMVALUATION ADMIN GABARIT transplanted verbatim
+ ! (same base.css, same --im-* tokens, same chrome): the store's back office
+ ! must feel like the valuation and fidelity admins, NOT like the till. The
+ ! till's dark touch theme (theme.html) is deliberately absent here.
+ !
+ ! THE layout of the whole back-office surface: every back-office page goes
+ ! through it (parameters AND supervision), which is what makes the two
+ ! screens one application rather than two. As in imvaluation, the layout
+ ! loads base.css plus every area stylesheet, so a page never carries its
+ ! own <style> block. Adding a screen = adding its sheet here and its link
+ ! to the navigation, nowhere else.
+ !
+ ! Insertable blocks: `title` (browser title), `body` (the page) and
+ ! `footer` (the closing note, whose default states what the surface is).
+ !
+ ! The header carries the signed-in operator and the sign-out form. The
+ ! navigation itself is BUILT from the Feature catalog through
+ ! inject:backOfficeMenu: two levels, the Menu aggregates then their
+ ! features, each entry shown only when the profile grants it and the
+ ! operator has not hidden it. Adding a screen = declaring its Feature,
+ ! nowhere else. Hiding an entry remains a CONVENIENCE only: the guard is
+ ! the @RolesAllowed on the resource, and typing the URL still lands on a
+ ! refusal.
+ !
+ ! Only one menu opens at a time: the shared name= makes the <details> an
+ ! exclusive accordion, which every current browser honours. What HTML does
+ ! NOT give is closing when the operator goes elsewhere, so the small script
+ ! at the foot closes the open menu on a click outside the navigation, on
+ ! Escape, and when the focus leaves it. Nothing else depends on that
+ ! script: without it the menus still open, close and navigate.
+!}
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{#insert title}Noeud magasin{/}</title>
+    <link rel="stylesheet" href="/admin/base.css">
+    <link rel="stylesheet" href="/admin/auth.css">
+    <link rel="stylesheet" href="/admin/dashboard.css">
+    <link rel="stylesheet" href="/admin/profiles.css">
+    <link rel="stylesheet" href="/admin/journal.css">
+    <link rel="stylesheet" href="/admin/articles.css">
+    <link rel="stylesheet" href="/admin/touches.css">
+    <link rel="stylesheet" href="/admin/sync.css">
+</head>
+<body>
+<header class="app-header">
+    <a class="app-brand" href="/dashboard">
+        <span class="app-brand-mark"></span>
+        <span class="app-brand-text">im<b>edge</b></span>
+    </a>
+    <nav class="app-nav" aria-label="Navigation principale">
+        {#for group in inject:backOfficeMenu.groups}
+        <details class="app-menu" name="app-menu">
+            <summary class="app-menu-title">{group.label}</summary>
+            <div class="app-menu-panel">
+                {#for entry in group.entries}
+                <a class="app-menu-item" href="{entry.path}">{entry.label}</a>
+                {/for}
+            </div>
+        </details>
+        {/for}
+    </nav>
+    {#if inject:currentUser.authenticated}
+    <div class="app-identity">
+        <span class="app-identity-name">{inject:currentUser.fullName}</span>
+        <a class="app-identity-link" href="/admin/favorites">Mes favoris</a>
+        <a class="app-identity-link" href="/admin/password">Mot de passe</a>
+        <form method="post" action="/admin/logout" class="app-identity-form">
+            <button class="app-identity-link" type="submit">Se déconnecter</button>
+        </form>
+    </div>
+    {/if}
+</header>
+
+<main class="app-main">
+    {#insert body}{/}
+</main>
+
+<footer class="app-footer">
+    <span>{#insert footer}Nœud magasin : référentiel et paramétrage du magasin, consolidation des ventes, supervision de la ligne.{/}</span>
+</footer>
+{|
+<script>
+// Closing the open menu when the operator acts elsewhere. The exclusivity
+// between menus is native (the shared name= on each <details>); this only
+// adds the three ways out HTML has no opinion about.
+(function () {
+    var nav = document.querySelector('.app-nav');
+    if (!nav) {
+        return;
+    }
+    function closeAll() {
+        nav.querySelectorAll('details.app-menu[open]').forEach(function (menu) {
+            menu.open = false;
+        });
+    }
+    // A click anywhere outside the navigation, including on the page itself.
+    document.addEventListener('pointerdown', function (event) {
+        if (!nav.contains(event.target)) {
+            closeAll();
+        }
+    });
+    // Choosing an entry navigates; close so a cached page never comes back open.
+    nav.addEventListener('click', function (event) {
+        if (event.target.closest('a.app-menu-item')) {
+            closeAll();
+        }
+    });
+    // Escape, and the focus leaving the navigation by keyboard.
+    document.addEventListener('keydown', function (event) {
+        if (event.key === 'Escape') {
+            closeAll();
+        }
+    });
+    nav.addEventListener('focusout', function (event) {
+        if (!nav.contains(event.relatedTarget)) {
+            closeAll();
+        }
+    });
+})();
+</script>
+|}
+</body>
+</html>

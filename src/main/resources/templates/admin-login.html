@@ -1,0 +1,54 @@
+{!
+ ! Back-office sign-in page.
+ !
+ ! Deliberately OUTSIDE admin-layout: a login screen must not carry a
+ ! navigation toward pages the visitor cannot reach yet. It loads the same
+ ! two stylesheets all the same, so it is the same application visually.
+ !
+ ! The form posts to /j_security_check — Quarkus form authentication, not a
+ ! handler of ours. The credential is the BACK-OFFICE password, never the
+ ! register PIN: same staff file, two doors, two secrets.
+!}
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Connexion — POS admin</title>
+    <link rel="stylesheet" href="/admin/base.css">
+    <link rel="stylesheet" href="/admin/auth.css">
+</head>
+<body class="login-body">
+<main class="login-panel">
+    <div class="login-brand">
+        <span class="app-brand-mark"></span>
+        <span class="app-brand-text">POS<b>admin</b></span>
+    </div>
+
+    {#if error}
+    <div class="alert alert-error" role="alert">{error}</div>
+    {/if}
+    {#if notice}
+    <div class="alert alert-ok" role="status">{notice}</div>
+    {/if}
+
+    <form class="login-form" method="post" action="/j_security_check">
+        <label class="field">
+            <span class="field-label">Identifiant</span>
+            <input type="text" name="j_username" autocomplete="username" required autofocus>
+        </label>
+
+        <label class="field">
+            <span class="field-label">Mot de passe</span>
+            <input type="password" name="j_password" autocomplete="current-password" required>
+        </label>
+
+        <button class="btn btn-primary login-submit" type="submit">Se connecter</button>
+    </form>
+
+    <p class="field-hint" style="margin-top:14px;text-align:center">
+        Mot de passe du back-office, distinct du code PIN de la caisse.
+    </p>
+</main>
+</body>
+</html>

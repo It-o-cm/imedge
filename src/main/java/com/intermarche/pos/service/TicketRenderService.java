@@ -1,0 +1,494 @@
+package com.intermarche.pos.service;
+
+import com.intermarche.pos.domain.sale.Ticket;
+import com.intermarche.pos.domain.sale.TicketLine;
+import com.intermarche.pos.domain.sale.TicketLineValuation;
+import com.intermarche.pos.domain.sale.VatBreakdown;
+import com.intermarche.pos.domain.payment.TicketPayment;
+import com.intermarche.pos.ui.hardware.ReceiptLogo;
+import com.intermarche.pos.ui.hardware.TicketLineOrder;
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import org.jboss.logging.Logger;
+
+import java.math.BigDecimal;
+import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
+import java.time.format.DateTimeFormatter;
+import java.util.Locale;
+
+/**
+ * Renders a sale ticket as 42-column text, from the persisted entities alone.
+ * <p>
+ * This is the store node's own renderer. The node holds a copy of every sale
+ * made in the shop, and a register that does not hold a sale asks the node for
+ * its duplicata (LC-08-05-05); what comes back must read exactly like the paper
+ * the customer got at the other till, so the rendering rules here are the
+ * register's own, character for character.
+ * <p>
+ * It renders and nothing else: no printer, no counter, no journal entry. The
+ * print counter and its journal entry belong to the register that made the
+ * sale, not to the node that keeps a copy.
+ * <p>
+ * One section of the register's receipt is absent by construction: the loyalty
+ * projection of the day. It is read from the LIVE register state at print time
+ * and is never persisted, so a node — which has no register state and no live
+ * sale — could not print it even if it tried. A duplicata already carried no
+ * such section on the register itself.
+ * <p>
+ * Format contract: 42 columns (WIDTH), French decimal comma (DF), administered
+ * layout first (BO-03-03) and the built-in rendering below when the shop
+ * administers none.
+ */
+@ApplicationScoped
+public class TicketRenderService {
+
+    /** Technical log of this class. */
+    private static final Logger LOGGER = Logger.getLogger(TicketRenderService.class);
+
+    /** The back-office parameters (EAN on paper, LC-02-04-04). */
+    @Inject
+    PosSettingsService posSettingsService;
+
+    /**
+     * The administered layouts (BO-03-03). Null when this renderer was built by
+     * hand in a unit test, which simply means "no template, render it our way" —
+     * the same answer the service itself gives for an unadministered document.
+     */
+    @Inject
+    DocumentTemplateService documentTemplateService;
+
+    /** French display format for amounts on the receipt. */
+    private static final DecimalFormat DF = new DecimalFormat("0.00", DecimalFormatSymbols.getInstance(Locale.FRENCH));
+
+    /** Standard 80mm receipt width, in characters. */
+    private static final int WIDTH = 42;
+
+    /**
+     * Renders a document through its ADMINISTERED layout, when there is one
+     * (BO-03-03).
+     *
+     * @param type the document being printed
+     * @param data the already-formatted values the layout may read
+     * @return the laid-out document, or null when this printer must render it
+     */
+    private String administeredLayout(
+            com.intermarche.pos.domain.setting.DocumentTemplate.DocumentType type,
+            java.util.Map<String, Object> data) {
+        if (documentTemplateService == null) {
+            return null;
+        }
+        return documentTemplateService.render(type, data);
+    }
+
+    /**
+     * Renders a sale ticket as 42-column text, WITHOUT printing it and without
+     * touching a single row.
+     *
+     * <p>This is what the node answers a register with (LC-08-05-05): a
+     * duplicata of a sale made on ANOTHER register must look exactly like the
+     * original, and the only way to guarantee that is to run the same rendering
+     * rules over the very same entity rather than a second rendering of a
+     * payload.
+     *
+     * @param ticket the ticket to render
+     * @param duplicata whether the DUPLICATA banner is printed
+     * @param duplicataNumber the duplicata's rank, meaningless when not a duplicata
+     * @return the ticket as printable text
+     */
+    public String renderTicket(Ticket ticket, boolean duplicata, int duplicataNumber) {
+        LOGGER.info("Entering method renderTicket with ticket: " + ticket + ", duplicata: " + duplicata + ", duplicataNumber: " + duplicataNumber);
+        // BO-03-03: the store's own layout first. A shop that administers none —
+        // or one whose layout does not hold together — gets the receipt below,
+        // character for character as before.
+        String administered = administeredLayout(
+                com.intermarche.pos.domain.setting.DocumentTemplate.DocumentType.SALE_RECEIPT,
+                saleDocumentData(ticket, duplicata, duplicataNumber));
+        if (administered != null) {
+            LOGGER.info("Exiting method renderTicket");
+            return administered;
+        }
+        StringBuilder sb = new StringBuilder();
+        // Header. The logo prints above the store name when this till has one; the
+        // text line stays regardless, so a receipt is readable even on a printer that
+        // ignores images or a deployment with no logo file.
+        String logo = ReceiptLogo.directive();
+        if (!logo.isEmpty()) {
+            sb.append(logo).append("\n");
+        }
+        sb.append(center("INTERMARCHE", WIDTH)).append("\n");
+        sb.append(center(ticket.store.name, WIDTH)).append("\n");
+        sb.append(center(ticket.store.address.city, WIDTH)).append("\n");
+        // BO-03-08-03: an administered header message, printed under the store
+        // address; absent or blank, nothing is printed.
+        String headerMessage = posSettingsService.ticketHeaderMessage();
+        if (headerMessage != null && !headerMessage.isBlank()) {
+            sb.append(center(headerMessage, WIDTH)).append("\n");
+        }
+        if (duplicata) {
+            sb.append("-".repeat(WIDTH)).append("\n");
+            sb.append(center(String.format("*** DUPLICATA N°%d ***", duplicataNumber), WIDTH)).append("\n");
+        }
+        sb.append("-".repeat(WIDTH)).append("\n");
+        // Ticket info
+        sb.append(String.format("Ticket: %s%n", ticket.ticketNumber));
+        sb.append(String.format("Date   : %s%n", ticket.creationDate.format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm"))));
+        sb.append(String.format("Vendeur: %s%n", ticket.cashier.getFullName()));
+        sb.append("-".repeat(WIDTH)).append("\n");
+        // Lines
+        // Phase 7: per-line valuation traces (engine advantages), printed as
+        // deltas under their article — loaded once, keyed by lineUid
+        java.util.Map<String, TicketLineValuation> valuations = new java.util.HashMap<>();
+        for (TicketLineValuation v : TicketLineValuation.<TicketLineValuation>list("ticket.id", ticket.id)) {
+            valuations.put(v.lineUid, v);
+        }
+        // LC-08-01-07: the store administers the order the articles print in, and
+        // whether they are grouped under a family heading. The stored lines keep
+        // their own order — this is a rendering, not the record.
+        String lineOrder = TicketLineOrder.normalize(posSettingsService.ticketLineOrder());
+        boolean groupByFamily = TicketLineOrder.groupsByFamily(lineOrder);
+        String printedFamily = null;
+        for (TicketLine line : TicketLineOrder.apply(ticket.lines, lineOrder)) {
+            // A cancelled article (lot C4, BO-04-01-16) is kept in the ticket
+            // only as a journal witness; it never prints on the receipt.
+            if (line.cancelled) continue;
+            if (groupByFamily) {
+                String family = TicketLineOrder.familyOf(line);
+                if (!family.equals(printedFamily)) {
+                    sb.append(center(family, WIDTH)).append("\n");
+                    printedFamily = family;
+                }
+            }
+            // Product label (possibly truncated)
+            String label = line.productLabel.length() > 20 ? line.productLabel.substring(0, 20) : line.productLabel;
+            // Quantity and unit price
+            String qtyStr = DF.format(line.quantity);
+            String unitPriceStr = DF.format(line.unitPrice);
+            // LC-02-03-02 and LC-02-13-18: quantity, unit price and line total on the
+            // receipt as on the two screens. An article sold by a unit of measure
+            // states that unit — "2,360 m x 4,99" — because the figure alone does not
+            // say what was bought.
+            String unit = line.unitName == null || line.unitName.isBlank()
+                    ? "" : line.unitName.trim();
+            sb.append(unit.isEmpty()
+                    ? String.format("%-20s %5s x %6s%n", label, qtyStr, unitPriceStr)
+                    : String.format("%-20s %5s %s x %6s%n", label, qtyStr, unit, unitPriceStr));
+            if (posSettingsService.showEan() && line.ean != null && !line.ean.isEmpty()) {
+                // LC-02-04-04: the EAN printed under the label when configured.
+                sb.append("  ").append(line.ean).append("\n");
+            }
+            // Line total (right-aligned)
+            String lineTotal = DF.format(line.totalPrice);
+            sb.append(String.format("%" + WIDTH + "s%n", lineTotal));
+            // Engine advantage on this line: printed as a signed delta
+            TicketLineValuation valuation = valuations.get(line.lineUid);
+            if (valuation != null && valuation.valuedTotal.compareTo(valuation.localTotal) != 0) {
+                java.math.BigDecimal delta = valuation.valuedTotal.subtract(valuation.localTotal);
+                String advLabel = valuation.advantageLabel != null ? valuation.advantageLabel
+                        : (valuation.offerLabel != null ? valuation.offerLabel : "AVANTAGE");
+                if (advLabel.length() > 26) advLabel = advLabel.substring(0, 26);
+                sb.append(formatLine("  " + advLabel, DF.format(delta) + " E"));
+            }
+        }
+        sb.append("-".repeat(WIDTH)).append("\n");
+        // Totals
+        if (ticket.globalDiscountApplied != null) {
+            sb.append(formatLine("REMISE TICKET",
+                    "-" + DF.format(ticket.globalDiscountApplied) + " E"));
+        }
+        sb.append(formatLine("TOTAL TTC", DF.format(ticket.totalIncludingTax) + " E"));
+        sb.append(formatLine("Dont TVA", DF.format(ticket.totalVat) + " E"));
+        // Per-rate VAT ventilation (same rule as the persisted totals)
+        VatBreakdown breakdown = new VatBreakdown();
+        for (TicketLine line : ticket.lines) {
+            // Cancelled articles (lot C4) are outside the sale: excluded from
+            // the per-rate VAT ventilation exactly as from the totals.
+            if (line.cancelled) continue;
+            breakdown.add(line.vatRate, line.totalPrice);
+        }
+        // BO-10-06-04: the per-rate VAT ventilation is printed only when the
+        // back office asks for it; disabled, the ticket carries no breakdown.
+        if (posSettingsService.vatBreakdownEnabled()) {
+            for (VatBreakdown.Bucket bucket : breakdown.getBuckets()) {
+                sb.append(formatLine("  TVA " + bucket.getRateFormatted(),
+                        "HT " + DF.format(bucket.totalExcludingTax) + "  TVA " + DF.format(bucket.vatAmount)));
+            }
+        }
+        sb.append("\n");
+        // Payments
+        sb.append(center("REGLEMENT", WIDTH)).append("\n");
+        for (TicketPayment payment : ticket.payments) {
+            String method = payment.getClass().getSimpleName().replace("Payment", "").toUpperCase();
+            // LC-07-03-06: the rounding is stored with the sign the ledger needs
+            // (so the settlements sum to the total) and PRINTED with the opposite
+            // one, because on paper it reads as the adjustment to what the customer
+            // hands over: "A PAYER 24,62 / ESPECES 24,60 / ARRONDI -0,02". This is
+            // the single place that inversion happens.
+            // LC-07-14-05: a foreign settlement states the three figures the
+            // customer and the accounts both need — what was handed over, what it
+            // was worth, and the rate that connects them.
+            if (payment instanceof com.intermarche.pos.domain.payment.ForeignCurrencyPayment devise) {
+                sb.append(formatLine("DEVISE " + safe(devise.currencyCode),
+                        DF.format(payment.amount) + " E"));
+                sb.append("  ").append(DF.format(devise.foreignAmount)).append(" ")
+                        .append(safe(devise.currencyCode)).append("  TAUX ")
+                        .append(devise.exchangeRate == null ? "" : devise.exchangeRate.toPlainString())
+                        .append("\n");
+                continue;
+            }
+            if (payment instanceof com.intermarche.pos.domain.payment.RoundingPayment) {
+                sb.append(formatLine("ARRONDI", DF.format(payment.amount.negate()) + " E"));
+                continue;
+            }
+            sb.append(formatLine(method, DF.format(payment.amount) + " E"));
+            // LC-08-04-06 [sic LC-07-09-06]: a credit settlement names its debtor
+            // under its own line — date, account number, account name. A month
+            // later this receipt is what the account is reconciled against, and an
+            // amount owed by nobody cannot be reconciled against anything.
+            if (payment instanceof com.intermarche.pos.domain.payment.CreditPayment credit) {
+                String saleDay = ticket.creationDate == null ? ""
+                        : ticket.creationDate.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+                sb.append("  ").append(saleDay).append("  COMPTE ")
+                        .append(credit.accountNumber == null ? "" : credit.accountNumber)
+                        .append("\n");
+                sb.append("  ").append(credit.accountName == null ? "" : credit.accountName)
+                        .append("\n");
+            }
+        }
+        // Footer, with the online digital receipt link
+        sb.append("\n");
+        if (ticket.digitalKey != null) {
+            sb.append(center("Votre ticket en ligne :", WIDTH)).append("\n");
+            sb.append(center("/t/" + ticket.id + "/" + ticket.digitalKey, WIDTH)).append("\n");
+            sb.append("\n");
+        }
+        sb.append(center("MERCI DE VOTRE VISITE", WIDTH)).append("\n");
+        sb.append(center("A BIENTOT", WIDTH)).append("\n");
+        // BO-03-08-03 / BO-03-08-05: an administered footer message, printed
+        // after the courtesy line; absent or blank, nothing is printed.
+        String footerMessage = posSettingsService.ticketFooterMessage();
+        if (footerMessage != null && !footerMessage.isBlank()) {
+            sb.append(center(footerMessage, WIDTH)).append("\n");
+        }
+        // The ticket number as a barcode, last thing on the receipt: it is what a
+        // return, a duplicate or a claim is looked up by, and typing it back by hand
+        // is where the mistakes happen. The hardware bridge turns the directive into
+        // the printer's own barcode command; the POS stays text.
+        sb.append("\n").append(barcode(ticket.ticketNumber)).append("\n");
+        LOGGER.info("Exiting method renderTicket");
+        return sb.toString();
+    }
+
+    /**
+     * Builds the SALE as an administered layout sees it (BO-03-03).
+     *
+     * <p>Maps, lists and strings, every figure already written — the shape the
+     * back office's preview pane advertises, built here from a real sale. A
+     * layout therefore reads exactly what the paramétreur was shown, and cannot
+     * reach anything else.
+     *
+     * <p>Every accessor is null-tolerant on purpose: this printer is also built
+     * by hand in unit tests and reached from the store node, where a sale may
+     * carry no store, no cashier or no payment, and a layout must not be the
+     * thing that fails a print.
+     *
+     * @param ticket the sale to describe
+     * @param duplicata whether this print is a duplicate
+     * @param duplicataNumber the duplicate's rank, meaningless when not one
+     * @return the document values
+     */
+    java.util.Map<String, Object> saleDocumentData(Ticket ticket, boolean duplicata,
+            int duplicataNumber) {
+        java.util.Map<String, Object> data = new java.util.HashMap<>();
+        data.put("store", storeData(ticket));
+        data.put("terminal", safe(ticket.terminalId));
+        data.put("operator", ticket.cashier == null ? "" : safe(ticket.cashier.getFullName()));
+        data.put("date", ticket.creationDate == null ? ""
+                : ticket.creationDate.format(DateTimeFormatter.ofPattern("dd/MM/yyyy")));
+        data.put("time", ticket.creationDate == null ? ""
+                : ticket.creationDate.format(DateTimeFormatter.ofPattern("HH:mm")));
+        data.put("document", java.util.Map.of(
+                "number", safe(ticket.ticketNumber),
+                "duplicate", duplicata,
+                "duplicateNumber", String.valueOf(duplicataNumber),
+                "digitalPath", ticket.digitalKey == null ? ""
+                        : "/t/" + ticket.id + "/" + ticket.digitalKey));
+        data.put("lines", saleLines(ticket));
+        data.put("totals", saleTotals(ticket));
+        data.put("vatRows", saleVatRows(ticket));
+        data.put("payments", salePayments(ticket));
+        data.put("fidelity", java.util.Map.of("card", safe(ticket.fidelityCard)));
+        return data;
+    }
+
+    /**
+     * Describes the point of sale a document is emitted by.
+     *
+     * @param ticket the sale
+     * @return the store values, empty strings when the sale carries no store
+     */
+    private java.util.Map<String, Object> storeData(Ticket ticket) {
+        if (ticket.store == null) {
+            return java.util.Map.of("name", "", "street", "", "postalCode", "",
+                    "city", "", "siret", "");
+        }
+        com.intermarche.pos.domain.store.Address address = ticket.store.address;
+        return java.util.Map.of(
+                "name", safe(ticket.store.name),
+                "street", address == null ? "" : safe(address.streetLine1),
+                "postalCode", address == null ? "" : safe(address.postalCode),
+                "city", address == null ? "" : safe(address.city),
+                "siret", safe(ticket.store.siret));
+    }
+
+    /**
+     * Describes the articles a layout prints, in the administered print order
+     * and without the cancelled ones (LC-08-01-07, BO-04-01-16).
+     *
+     * @param ticket the sale
+     * @return one map per printed article
+     */
+    private java.util.List<java.util.Map<String, Object>> saleLines(Ticket ticket) {
+        java.util.List<java.util.Map<String, Object>> lines = new java.util.ArrayList<>();
+        if (ticket.lines == null) {
+            return lines;
+        }
+        String order = TicketLineOrder.normalize(posSettingsService.ticketLineOrder());
+        for (TicketLine line : TicketLineOrder.apply(ticket.lines, order)) {
+            if (line.cancelled) continue;
+            lines.add(java.util.Map.of(
+                    "label", safe(line.productLabel),
+                    "ean", safe(line.ean),
+                    "family", safe(TicketLineOrder.familyOf(line)),
+                    "unit", safe(line.unitName),
+                    "quantity", line.quantity == null ? "" : DF.format(line.quantity),
+                    "unitPrice", line.unitPrice == null ? "" : DF.format(line.unitPrice),
+                    "total", line.totalPrice == null ? "" : DF.format(line.totalPrice),
+                    "vatRate", line.vatRate == null ? "" : line.vatRate.toPlainString()));
+        }
+        return lines;
+    }
+
+    /**
+     * Describes what the sale comes to.
+     *
+     * @param ticket the sale
+     * @return the totals, already written
+     */
+    private java.util.Map<String, Object> saleTotals(Ticket ticket) {
+        BigDecimal includingTax = ticket.totalIncludingTax == null
+                ? BigDecimal.ZERO : ticket.totalIncludingTax;
+        BigDecimal vat = ticket.totalVat == null ? BigDecimal.ZERO : ticket.totalVat;
+        return java.util.Map.of(
+                "excludingTax", DF.format(includingTax.subtract(vat)),
+                "vat", DF.format(vat),
+                "includingTax", DF.format(includingTax),
+                "discount", ticket.globalDiscountApplied == null ? ""
+                        : DF.format(ticket.globalDiscountApplied));
+    }
+
+    /**
+     * Describes the per-rate VAT ventilation, on the same rule as the persisted
+     * totals.
+     *
+     * @param ticket the sale
+     * @return one map per VAT rate
+     */
+    private java.util.List<java.util.Map<String, Object>> saleVatRows(Ticket ticket) {
+        java.util.List<java.util.Map<String, Object>> rows = new java.util.ArrayList<>();
+        VatBreakdown breakdown = new VatBreakdown();
+        if (ticket.lines != null) {
+            for (TicketLine line : ticket.lines) {
+                if (line.cancelled) continue;
+                breakdown.add(line.vatRate, line.totalPrice);
+            }
+        }
+        for (VatBreakdown.Bucket bucket : breakdown.getBuckets()) {
+            rows.add(java.util.Map.of(
+                    "rate", bucket.getRateFormatted(),
+                    "base", DF.format(bucket.totalExcludingTax),
+                    "vat", DF.format(bucket.vatAmount)));
+        }
+        return rows;
+    }
+
+    /**
+     * Describes how the sale was settled, the rounding carried with the sign
+     * the paper reads rather than the one the ledger stores (LC-07-03-06).
+     *
+     * @param ticket the sale
+     * @return one map per settlement
+     */
+    private java.util.List<java.util.Map<String, Object>> salePayments(Ticket ticket) {
+        java.util.List<java.util.Map<String, Object>> payments = new java.util.ArrayList<>();
+        if (ticket.payments == null) {
+            return payments;
+        }
+        for (TicketPayment payment : ticket.payments) {
+            BigDecimal amount = payment.amount == null ? BigDecimal.ZERO : payment.amount;
+            boolean rounding =
+                    payment instanceof com.intermarche.pos.domain.payment.RoundingPayment;
+            payments.add(java.util.Map.of(
+                    "label", payment.getClass().getSimpleName()
+                            .replace("Payment", "").toUpperCase(),
+                    "key", safe(payment.getMethodKey()),
+                    "amount", DF.format(rounding ? amount.negate() : amount)));
+        }
+        return payments;
+    }
+
+    /**
+     * Writes the directive asking the hardware bridge for a barcode.
+     *
+     * <p>The print contract is plain text and stays that way: a line of its own
+     * carrying this directive is the whole extension, and the bridge is what knows
+     * ESC/POS. A value the bridge cannot encode prints as the directive line itself,
+     * which is visible on the receipt rather than silently missing.
+     *
+     * @param value the value to encode
+     * @return the directive line
+     */
+    private static String barcode(String value) {
+        return "[[BARCODE " + value + "]]";
+    }
+
+    // --------------------------------------------------
+    // Formatting helpers
+    // --------------------------------------------------
+
+    /**
+     * Returns a printable string for a value that may be absent.
+     *
+     * @param value the value, possibly null
+     * @return the value, or an empty string
+     */
+    private String safe(String value) {
+        return value == null ? "" : value;
+    }
+
+    /**
+     * Centers a text within the given width by left-padding.
+     *
+     * @param text the text to center
+     * @param width the receipt width in characters
+     * @return the padded text
+     */
+    private String center(String text, int width) {
+        if (text.length() >= width) return text;
+        int pad = (width - text.length()) / 2;
+        return " ".repeat(pad) + text;
+    }
+
+    /**
+     * Formats a label / value pair on one receipt line, value right-aligned.
+     *
+     * @param left the left label
+     * @param right the right value
+     * @return the formatted line, newline included
+     */
+    private String formatLine(String left, String right) {
+        int space = WIDTH - left.length() - right.length();
+        if (space < 1) space = 1;
+        return left + " ".repeat(space) + right + "\n";
+    }
+}
