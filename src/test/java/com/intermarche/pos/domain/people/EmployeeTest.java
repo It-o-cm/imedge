@@ -378,7 +378,8 @@ class EmployeeTest {
     }
 
     /**
-     * getChecksum returns the Objects.hash of the seven business fields.
+     * getChecksum returns the Objects.hash of the ten business fields, the three
+     * payroll columns of {@code BO-05-02-15} included.
      */
     @Test
     void getChecksumMatchesObjectsHash() {
@@ -390,9 +391,24 @@ class EmployeeTest {
         employee.badgeId = "B01";
         employee.active = true;
         employee.email = "jane@example.com";
+        employee.legalEntity = true;
+        employee.forcingLevel = 3;
+        employee.advanceLimit = new java.math.BigDecimal("150.00");
         int expected = Objects.hash("Jane", "Doe", "hash", Employee.EmployeeRole.MANAGER, "B01", true,
-                "jane@example.com");
+                "jane@example.com", true, 3, new java.math.BigDecimal("150.00"));
         Assertions.assertEquals(expected, employee.getChecksum());
+    }
+
+    /**
+     * A file opened by hand is a PERSON with no rank and no ceiling — the
+     * defaults of the three payroll columns ({@code BO-05-02-15}).
+     */
+    @Test
+    void thePayrollColumnsDefaultToAPlainPerson() {
+        Employee employee = new Employee();
+        Assertions.assertFalse(employee.legalEntity);
+        Assertions.assertEquals(0, employee.forcingLevel);
+        Assertions.assertNull(employee.advanceLimit);
     }
 
     /**

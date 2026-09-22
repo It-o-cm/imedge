@@ -164,6 +164,16 @@
                 <label class="field-label" for="tfr-{tender.code}">Remontée fidélité</label>
                 <input id="tfr-{tender.code}" type="checkbox" name="fidelityReported" {#if tender.fidelityReported}checked{/if}>
             </div>
+            {! BO-05-02-17 : deux cases et non une — ce qu'on autorise à sortir
+             ! d'un moyen n'est pas ce qu'on autorise à y entrer. !}
+            <div class="field">
+                <label class="field-label" for="tts-{tender.code}">Transfert : autorisé en source</label>
+                <input id="tts-{tender.code}" type="checkbox" name="transferSource" {#if tender.transferSource}checked{/if}>
+            </div>
+            <div class="field">
+                <label class="field-label" for="ttdst-{tender.code}">Transfert : autorisé en destination</label>
+                <input id="ttdst-{tender.code}" type="checkbox" name="transferDestination" {#if tender.transferDestination}checked{/if}>
+            </div>
         </div>
         <div class="page-actions"><button class="btn btn-primary" type="submit">Enregistrer le mode</button></div>
     </form>
@@ -258,6 +268,14 @@
             <div class="field">
                 <label class="field-label" for="new-tdetail">Détail au rapport de prélèvement</label>
                 <input id="new-tdetail" type="checkbox" name="withdrawalReportDetail" checked>
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-tsource">Transfert : autorisé en source</label>
+                <input id="new-tsource" type="checkbox" name="transferSource" checked>
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-tdest">Transfert : autorisé en destination</label>
+                <input id="new-tdest" type="checkbox" name="transferDestination" checked>
             </div>
             <div class="field">
                 <label class="field-label" for="new-tactive">Actif</label>

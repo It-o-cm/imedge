@@ -1,0 +1,139 @@
+{!
+ ! ONE report, whatever it is (BO-06). The screen is written once: the period
+ ! form, the chart, the table and the three export buttons come from the frame,
+ ! and the columns come from the report's own definition — which is why adding a
+ ! state does not add a screen.
+ !
+ ! The cells arrive ALREADY RENDERED from the resource, through the same
+ ! formatter the CSV and the PDF use: a template that formatted amounts itself
+ ! would drift from the exports the first time a decimal changed.
+ !
+ ! The export links carry the CURRENT query string (baseQuery), so what is
+ ! downloaded is what is on screen, over the same period — minus the paging,
+ ! because an export of one page is not an export.
+!}
+{#include admin-layout}
+
+{#title}{definition.label}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{definition.label}</h1>
+        <p class="page-sub">{heading} — exigence {definition.requirement}</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-muted" href="/admin/reports">Tous les rapports</a>
+    </div>
+</div>
+
+<form method="get" action="/admin/reports/{definition.code}" class="card report-form">
+    <div class="field-grid">
+        <div class="field">
+            <label class="field-label" for="r-period">Période</label>
+            <select class="input-control" id="r-period" name="period">
+                {#for p in periods}
+                <option value="{p}" {#if criteria.period == p}selected{/if}>{p.label}</option>
+                {/for}
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-label" for="r-reference">Date de référence</label>
+            <input class="input-control" id="r-reference" type="date" name="reference" value="{criteria.reference ?: ''}">
+            <span class="field-hint">Le jour, la semaine, le mois ou l'année qui contient cette date.</span>
+        </div>
+        <div class="field">
+            <label class="field-label" for="r-from">Plage — du</label>
+            <input class="input-control" id="r-from" type="date" name="from" value="{criteria.rangeFrom ?: ''}">
+        </div>
+        <div class="field">
+            <label class="field-label" for="r-to">Plage — au</label>
+            <input class="input-control" id="r-to" type="date" name="to" value="{criteria.rangeTo ?: ''}">
+        </div>
+        {#if definition.optionLabel}
+        <div class="field">
+            <label class="field-label" for="r-option">{definition.optionLabel}</label>
+            {#if definition.optionChoices.isEmpty}
+            {! No choices: the option is FREE TEXT — an article code, a family. A
+             ! select over an empty list would show an empty menu and swallow the
+             ! filter the report announced. !}
+            <input class="input-control" id="r-option" type="text" name="option" value="{criteria.option ?: ''}" maxlength="30">
+            {#else}
+            <select class="input-control" id="r-option" name="option">
+                {#for choice in definition.optionChoices}
+                <option value="{choice.split(':').0}" {#if criteria.option == choice.split(':').0}selected{/if}>{choice.split(':').1}</option>
+                {/for}
+            </select>
+            {/if}
+        </div>
+        {/if}
+    </div>
+    <div class="filter-actions">
+        <button class="btn btn-primary" type="submit">Éditer</button>
+        <a class="btn btn-muted" href="/admin/reports/{definition.code}">Journée en cours</a>
+    </div>
+</form>
+
+<div class="card">
+    <div class="card-title-row">
+        <h2 class="card-title">{data.size} ligne(s)</h2>
+        <div class="panel-actions">
+            <a class="btn btn-small btn-muted" href="/admin/reports/{definition.code}/export?{baseQuery}format=csv">CSV</a>
+            <a class="btn btn-small btn-muted" href="/admin/reports/{definition.code}/export?{baseQuery}format=xlsx">Tableur</a>
+            <a class="btn btn-small btn-muted" href="/admin/reports/{definition.code}/export?{baseQuery}format=pdf">PDF</a>
+        </div>
+    </div>
+
+    {#if hasChart}
+    <div class="report-chart-box">{chart.raw}</div>
+    {/if}
+
+    {#if data.isEmpty}
+    <div class="empty-state">Aucune donnée sur la période demandée.</div>
+    {#else}
+    <table class="data-table report-table">
+        <thead>
+        <tr>
+            {#for column in columns}
+            <th {#if column.numeric}class="report-num"{/if}>{column.label}</th>
+            {/for}
+        </tr>
+        </thead>
+        <tbody>
+        {#for row in pageRows}
+        <tr>
+            {#for cell in row}
+            <td {#if columns.get(cell_index).numeric}class="report-num"{/if}>{cell}</td>
+            {/for}
+        </tr>
+        {/for}
+        </tbody>
+        {#if data.hasTotals}
+        <tfoot>
+        <tr class="report-total">
+            {#for cell in totalCells}
+            <td {#if columns.get(cell_index).numeric}class="report-num"{/if}>{#if cell_index == 0 && cell.isEmpty}TOTAL{#else}{cell}{/if}</td>
+            {/for}
+        </tr>
+        </tfoot>
+        {/if}
+    </table>
+
+    {#if pageCount > 1}
+    <div class="pager">
+        {#if hasPrev}
+        <a class="btn btn-small btn-muted" href="/admin/reports/{definition.code}?{baseQuery}page={prevPage}">Précédent</a>
+        {#else}
+        <span class="btn btn-small btn-muted is-hidden">Précédent</span>
+        {/if}
+        <span class="pager-status">Page {page} / {pageCount}</span>
+        {#if hasNext}
+        <a class="btn btn-small btn-muted" href="/admin/reports/{definition.code}?{baseQuery}page={nextPage}">Suivant</a>
+        {#else}
+        <span class="btn btn-small btn-muted is-hidden">Suivant</span>
+        {/if}
+    </div>
+    {/if}
+    {/if}
+</div>
+{/body}

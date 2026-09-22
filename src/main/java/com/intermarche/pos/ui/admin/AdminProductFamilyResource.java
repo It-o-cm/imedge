@@ -2,6 +2,8 @@ package com.intermarche.pos.ui.admin;
 
 import com.intermarche.pos.domain.catalog.Product;
 import com.intermarche.pos.domain.catalog.ProductFamily;
+import com.intermarche.pos.ui.journal.JournalPage;
+import io.quarkus.hibernate.orm.panache.PanacheQuery;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
@@ -74,6 +76,22 @@ public class AdminProductFamilyResource {
     Template adminArticleGroups;
 
     /**
+     * Clamps a requested page number into the pages the result actually has, so
+     * a stale link or a hand-typed number lands on the last page rather than on
+     * an empty list.
+     *
+     * @param requested the 1-based page number asked for
+     * @param total the number of groups
+     * @return the page number to read, between 1 and the page count
+     */
+    private int clampPage(int requested, long total) {
+        if (requested < 1) {
+            return 1;
+        }
+        return Math.min(requested, JournalPage.pageCount(total, AdminForms.PAGE_SIZE));
+    }
+
+    /**
      * Renders the group tree as a flat, code-ordered list annotated with each
      * group's parent and member count, plus — when an {@code edit} id resolves —
      * the edit panel of the selected group with its member articles.
@@ -87,11 +105,17 @@ public class AdminProductFamilyResource {
     @RolesAllowed("ADMIN")
     public TemplateInstance list(@QueryParam("notice") String notice,
                                  @QueryParam("noticeOk") @DefaultValue("true") boolean noticeOk,
+                                 @QueryParam("page") @DefaultValue("1") int page,
                                  @QueryParam("edit") Long editId) {
-        LOGGER.info("Entering method list with notice: " + notice + ", noticeOk: " + noticeOk + ", editId: " + editId);
-        List<ProductFamily> families = ProductFamily.<ProductFamily>find("order by code").list();
+        LOGGER.info("Entering method list with notice: " + notice + ", noticeOk: " + noticeOk + ", page: " + page + ", editId: " + editId);
+        // The page is cut BEFORE the rows are built: each row asks the database
+        // for its parent, so rendering used to cost one query per group of the
+        // whole tree, not per group on screen.
+        PanacheQuery<ProductFamily> query = ProductFamily.find("order by code");
+        long total = query.count();
+        int number = clampPage(page, total);
         List<GroupRow> rows = new ArrayList<>();
-        for (ProductFamily family : families) {
+        for (ProductFamily family : query.page(number - 1, AdminForms.PAGE_SIZE).<ProductFamily>list()) {
             ProductFamily parent = parentOf(family.id);
             rows.add(new GroupRow(family.id, family.code, family.description,
                     parent == null ? null : parent.code, family.products.size()));
@@ -99,7 +123,14 @@ public class AdminProductFamilyResource {
         ProductFamily selected = editId == null ? null : ProductFamily.<ProductFamily>findById(editId);
         List<Product> members = selected == null ? List.of() : sortedMembers(selected);
         LOGGER.info("Exiting method list");
-        return adminArticleGroups.data("groups", rows)
+        return adminArticleGroups.data("page",
+                        new JournalPage<>(rows, number, AdminForms.PAGE_SIZE, total))
+                // The parent selector of the creation form needs EVERY group,
+                // by construction: a dropdown showing one page cannot express a
+                // parent that lives on another. Loaded without the per-row
+                // parent lookup, which is what the page cut was for.
+                .data("groups", ProductFamily.<ProductFamily>find("order by code").list())
+                .data("baseQuery", editId == null ? "" : "edit=" + editId + "&")
                 .data("selected", selected)
                 .data("members", members)
                 .data("notice", notice)

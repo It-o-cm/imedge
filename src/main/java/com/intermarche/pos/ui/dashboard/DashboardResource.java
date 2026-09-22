@@ -49,6 +49,14 @@ public class DashboardResource {
     /** Technical log of this class. */
     private static final Logger LOGGER = Logger.getLogger(DashboardResource.class);
 
+    /** The order book: where a forced close is left for a register. */
+    @Inject
+    com.intermarche.pos.service.sync.RegisterCommandService registerCommandService;
+
+    /** Who is signed in, recorded as the issuer of a forced close. */
+    @Inject
+    com.intermarche.pos.security.CurrentUser currentUser;
+
     @Inject @Location("dashboard") Template dashboard;
     @Inject DashboardService dashboardService;
     @Inject SupervisorCallRegistry supervisorCallRegistry;
@@ -136,6 +144,30 @@ public class DashboardResource {
         LOGGER.info("Entering method acknowledge with id: " + id);
         supervisorCallRegistry.acknowledge(id);
         LOGGER.info("Exiting method acknowledge");
+        return Response.noContent().build();
+    }
+
+    /**
+     * Leaves a FORCED CLOSE order for a register (LC-01-02-07, BO-04-03-13).
+     *
+     * <p>The order is written, not sent: the register collects it on its next
+     * cycle and acknowledges it, and the acknowledgement is what proves it
+     * obeyed. So this answers « demandé », never « fait » — the screen shows the
+     * order as pending until the register says otherwise, which is the honest
+     * state of a shop where a till may be off, unplugged or mid-sale.
+     *
+     * @param terminalId the register to close
+     * @return 204, the dashboard refreshing itself on its own cycle
+     */
+    @POST
+    @Path("/dashboard/force-close/{terminalId}")
+    @RolesAllowed({"ADMIN", "MANAGER"})
+    public Response forceClose(@PathParam("terminalId") String terminalId) {
+        LOGGER.info("Entering method forceClose with terminalId: " + terminalId);
+        registerCommandService.issue(terminalId,
+                com.intermarche.pos.domain.sync.RegisterCommand.CommandType.CLOSE_SESSION,
+                currentUser.getFullName(), "Fermeture demandée depuis le back-office");
+        LOGGER.info("Exiting method forceClose");
         return Response.noContent().build();
     }
 

@@ -48,7 +48,10 @@ import java.util.*;
  * row per node): unlike the other imports, a store import propagates
  * nowhere and each node's row is maintained on that node.
  */
-@Path("/stores/import")
+// No @Path: the ONE door is POST /feeds/import/{CODE}, which delegates here.
+// A second address for the same import is a second thing to secure, to
+// document and to keep in step, and the permission policy had to name them
+// one by one — an importer forgotten there was a door left open.
 @ApplicationScoped
 @RunOnVirtualThread
 public class StoreCsvResource extends ImporterCsvResource {
@@ -108,10 +111,6 @@ public class StoreCsvResource extends ImporterCsvResource {
      * @param inputStream The input stream containing CSV data.
      * @return A Response containing a JSON summary of created/updated counts and errors.
      */
-    @POST
-    @Consumes({MediaType.TEXT_PLAIN, MediaType.APPLICATION_OCTET_STREAM})
-    @Produces(MediaType.APPLICATION_JSON)
-    @RolesAllowed("ADMIN")
     public Response importStores(InputStream inputStream) {
         LOGGER.info("Entering method importStores with inputStream: " + inputStream);
         LOGGER.info("Exiting method importStores");

@@ -2,6 +2,7 @@ package com.intermarche.pos.graphql;
 
 import com.intermarche.pos.domain.catalog.Price;
 import com.intermarche.pos.domain.catalog.Product;
+import com.intermarche.pos.domain.catalog.VatRate;
 import io.smallrye.common.annotation.RunOnVirtualThread;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -139,7 +140,7 @@ public class PriceResource implements GraphQLTrait {
             price.product = product;
             price.priceExcludingTax = input.priceExcludingTax;
             price.priceIncludingTax = input.priceIncludingTax;
-            price.vatRate = input.vatRate;
+            price.vat = VatRate.findByNumber(input.vatNumber);
             price.priority = input.priority;
             price.startDateTime = input.startDateTime;
             price.endDateTime = input.endDateTime;
@@ -200,7 +201,7 @@ public class PriceResource implements GraphQLTrait {
             if (input.productId != null) price.product = Product.findById(input.productId);
             if (input.priceExcludingTax != null) price.priceExcludingTax = input.priceExcludingTax;
             if (input.priceIncludingTax != null) price.priceIncludingTax = input.priceIncludingTax;
-            if (input.vatRate != null) price.vatRate = input.vatRate;
+            if (input.vatNumber != null) price.vat = VatRate.findByNumber(input.vatNumber);
             if (input.priority != null) price.priority = input.priority;
             if (input.startDateTime != null) price.startDateTime = input.startDateTime;
             if (input.endDateTime != null) price.endDateTime = input.endDateTime;
@@ -253,9 +254,10 @@ public class PriceResource implements GraphQLTrait {
         public BigDecimal priceIncludingTax;
 
         /**
-         * The applicable VAT rate.
+         * The NUMBER of the VAT regime this price falls under, which names a
+         * line of the VAT referential rather than carrying a rate of its own.
          */
-        public BigDecimal vatRate;
+        public Integer vatNumber;
 
         /**
          * The priority of the price (used for conflict resolution).
@@ -286,7 +288,7 @@ public class PriceResource implements GraphQLTrait {
             return "PriceRecord [productId=" + productId +
                     ", priceExcludingTax=" + priceExcludingTax +
                     ", priceIncludingTax=" + priceIncludingTax +
-                    ", vatRate=" + vatRate +
+                    ", vatNumber=" + vatNumber +
                     ", priority=" + priority +
                     ", startDateTime=" + startDateTime +
                     ", endDateTime=" + endDateTime + "]";

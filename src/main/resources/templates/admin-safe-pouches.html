@@ -1,0 +1,126 @@
+{!
+ ! Back-office POUCHES (BO-05-02-10): the registers' withdrawals of a day,
+ ! sealed into one or two pouches and brought to the safe. The day's total is
+ ! proposed, never imposed — the operator declares the pouches as they were
+ ! actually sealed. POST -> 303 -> notice.
+!}
+{#include admin-layout}
+
+{#title}Remises au coffre{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Remises au coffre</h1>
+        <p class="page-sub">Pochettes de recettes apportées au coffre après validation des mouvements de la journée.</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-ghost" href="/admin/safe/days">Historique des journées</a>
+        <a class="btn btn-ghost" href="/admin/safe/bank-deposits">Remises en banque</a>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">Prélèvements de la journée</h2>
+    <form method="get" action="/admin/safe/pouches">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="d-day">Journée comptable</label>
+                <input class="input-control" id="d-day" type="date" name="day" value="{day}">
+            </div>
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">Afficher</button>
+        </div>
+    </form>
+    <p class="card-sub">Total prélevé sur les caisses de la journée : <strong>{withdrawn} €</strong></p>
+    {#if sessions.isEmpty()}
+    <div class="empty-state">
+        <p>Aucune session close ce jour-là.</p>
+    </div>
+    {#else}
+    <table class="data-table">
+        <thead>
+        <tr><th>Caisse</th><th>Session</th><th>Compté €</th><th>Théorique €</th><th>Écart €</th><th>Prélevé €</th></tr>
+        </thead>
+        <tbody>
+        {#for session in sessions}
+        <tr>
+            <td>{session.terminalId}</td>
+            <td>{session.sessionNumber}</td>
+            <td>{session.countedAmount ?: '—'}</td>
+            <td>{session.theoreticalAmount ?: '—'}</td>
+            <td>{session.variance ?: '—'}</td>
+            <td>{session.withdrawnAmount ?: '—'}</td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+
+<div class="card">
+    <h2 class="card-title">Déclarer une pochette</h2>
+    <form method="post" action="/admin/safe/pouches">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="p-number">N° de pochette</label>
+                <input class="input-control" id="p-number" type="text" name="pouchNumber" maxlength="30" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="p-label">Libellé</label>
+                <input class="input-control" id="p-label" type="text" name="label" maxlength="120">
+            </div>
+            <div class="field">
+                <label class="field-label" for="p-day">Journée comptable</label>
+                <input class="input-control" id="p-day" type="date" name="accountingDay" value="{day}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="p-amount">Montant €</label>
+                <input class="input-control" id="p-amount" type="text" name="amount" inputmode="decimal" value="{withdrawn}" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="p-terminals">Caisses</label>
+                <input class="input-control" id="p-terminals" type="text" name="terminals" maxlength="200" value="{terminals}">
+            </div>
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">Remettre au coffre</button>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <h2 class="card-title">Pochettes</h2>
+    {#if pouches.isEmpty()}
+    <div class="empty-state">
+        <p>Aucune pochette.</p>
+    </div>
+    {#else}
+    <table class="data-table">
+        <thead>
+        <tr><th>N°</th><th>Journée</th><th>Libellé</th><th>Caisses</th><th>Montant €</th><th>État</th></tr>
+        </thead>
+        <tbody>
+        {#for pouch in pouches}
+        <tr>
+            <td>{pouch.pouchNumber}</td>
+            <td>{pouch.accountingDay}</td>
+            <td>{pouch.label ?: '—'}</td>
+            <td>{pouch.terminals ?: '—'}</td>
+            <td>{pouch.amountFormatted}</td>
+            <td>
+                {#if pouch.inSafe}<span class="badge badge-ok">Au coffre</span>
+                {#else}<span class="badge badge-off">Remise en banque</span>{/if}
+            </td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+{/body}

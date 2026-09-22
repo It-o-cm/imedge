@@ -13,6 +13,7 @@ import jakarta.ws.rs.core.MultivaluedHashMap;
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedConstruction;
 import org.mockito.MockedStatic;
 
 import java.io.ByteArrayInputStream;
@@ -31,6 +32,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
@@ -520,21 +522,70 @@ class AdminNomenclatureResourceTest {
     }
 
     // --------------------------------------------------
-    // saveLevels
+    // saveLevels, addLevel, deleteLevel — the level table
     // --------------------------------------------------
 
     /**
-     * Renaming the levels of an unknown scheme is refused, and the redirect
+     * Builds a posted level table: one label and one length per rank.
+     *
+     * @param scheme the posted scheme code, or null to omit the field
+     * @param lengths the posted length of each rank, in rank order
+     * @return the form, its labels left absent
+     */
+    private MultivaluedMap<String, String> levelForm(String scheme, String... lengths) {
+        MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
+        if (scheme != null) {
+            form.putSingle("scheme", scheme);
+        }
+        for (int rank = 0; rank < lengths.length; rank++) {
+            if (lengths[rank] != null) {
+                form.putSingle("length-" + rank, lengths[rank]);
+            }
+        }
+        return form;
+    }
+
+    /**
+     * Stubs how many nodes sit at a rank or below.
+     *
+     * @param mocked the active PanacheEntityBase mock
+     * @param nomenclature the scheme the count is asked of
+     * @param rank the 0-based rank
+     * @param count the answer
+     */
+    private void stubNodeCount(MockedStatic<PanacheEntityBase> mocked,
+            Nomenclature nomenclature, int rank, long count) {
+        mocked.when(() -> PanacheEntityBase.count("nomenclature.id = ?1 and level >= ?2",
+                nomenclature.id, rank)).thenReturn(count);
+    }
+
+    /**
+     * Stubs the rank lookup of one level.
+     *
+     * @param mocked the active PanacheEntityBase mock
+     * @param nomenclature the scheme the level belongs to
+     * @param rank the 0-based rank
+     * @param found the level to resolve, or null
+     */
+    @SuppressWarnings("unchecked")
+    private void stubByRank(MockedStatic<PanacheEntityBase> mocked, Nomenclature nomenclature,
+            int rank, NomenclatureLevel found) {
+        PanacheQuery<Object> query = mock(PanacheQuery.class);
+        when(query.firstResult()).thenReturn(found);
+        mocked.when(() -> PanacheEntityBase.find("nomenclature.id = ?1 and rank = ?2",
+                nomenclature.id, rank)).thenReturn(query);
+    }
+
+    /**
+     * Saving the levels of an unknown scheme is refused, and the redirect
      * carries no scheme to come back to (the null arm of {@code redirect}).
      */
     @Test
-    void renamingAnUnknownSchemeIsRefused() {
+    void savingLevelsOfAnUnknownSchemeIsRefused() {
         AdminNomenclatureResource resource = newResource();
-        MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
-        form.putSingle("scheme", "ABSENT");
         try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
             stubByCode(mocked, "ABSENT", null);
-            Response response = resource.saveLevels(form);
+            Response response = resource.saveLevels(levelForm("ABSENT"));
             assertFalse(ok(response));
             assertEquals("Nomenclature introuvable.", notice(response));
             assertFalse(response.getLocation().toString().contains("scheme="));
@@ -546,7 +597,7 @@ class AdminNomenclatureResourceTest {
      * lookup (the {@code schemeCode == null} arm).
      */
     @Test
-    void renamingWithoutASchemeFieldIsRefused() {
+    void savingLevelsWithoutASchemeFieldIsRefused() {
         AdminNomenclatureResource resource = newResource();
         Response response = resource.saveLevels(new MultivaluedHashMap<>());
         assertFalse(ok(response));
@@ -554,31 +605,362 @@ class AdminNomenclatureResourceTest {
     }
 
     /**
-     * A level whose label is posted is renamed and counted; a level whose
-     * posted label is blank and one whose field is absent are both left alone
-     * — the three arms of the rename guard.
+     * The three legs that make a posted length unusable — absent, unreadable
+     * and below one — each refuse the whole table, and nothing is written.
      */
     @Test
-    void onlyTheLevelsCarryingALabelAreRenamed() {
+    void anunusableLengthRefusesTheWholeTable() {
         AdminNomenclatureResource resource = newResource();
         Nomenclature itm = scheme("ITM_FR");
-        MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
-        form.putSingle("scheme", "ITM_FR");
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubByCode(mocked, "ITM_FR", itm);
+            List<NomenclatureLevel> levels = stubLevels(mocked, itm, 2, 4);
+            for (String bad : new String[] {null, "beaucoup", "0"}) {
+                itm.reloadLevels();
+                Response response = resource.saveLevels(levelForm("ITM_FR", "2", bad));
+                assertFalse(ok(response), String.valueOf(bad));
+                assertEquals("Niveau 1 : le nombre de caractères doit être un entier d'au"
+                        + " moins 1.", notice(response));
+            }
+            verify(levels.get(0), never()).persist();
+            verify(levels.get(1), never()).persist();
+        }
+    }
+
+    /**
+     * Lengths that do not grow strictly with the rank are refused: a level
+     * that adds no character would name the very same node as the one above.
+     * Equal and shorter are the two legs of that guard.
+     */
+    @Test
+    void lengthsThatDoNotGrowAreRefused() {
+        AdminNomenclatureResource resource = newResource();
+        Nomenclature itm = scheme("ITM_FR");
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubByCode(mocked, "ITM_FR", itm);
+            stubLevels(mocked, itm, 2, 4);
+            itm.reloadLevels();
+            Response equal = resource.saveLevels(levelForm("ITM_FR", "4", "4"));
+            assertFalse(ok(equal));
+            assertEquals("Niveau 1 : les codes doivent s'allonger d'un niveau à l'autre, au-delà"
+                    + " de 4 caractères.", notice(equal));
+            itm.reloadLevels();
+            Response shorter = resource.saveLevels(levelForm("ITM_FR", "6", "4"));
+            assertFalse(ok(shorter));
+            assertEquals("Niveau 1 : les codes doivent s'allonger d'un niveau à l'autre, au-delà"
+                    + " de 6 caractères.", notice(shorter));
+        }
+    }
+
+    /**
+     * A length may not change on a level carrying nodes at its rank or below:
+     * a node is placed by the length of its code, so moving the length would
+     * leave every one of them hanging from a length nobody declares.
+     */
+    @Test
+    void alengthCannotChangeUnderPlacedNodes() {
+        AdminNomenclatureResource resource = newResource();
+        Nomenclature itm = scheme("ITM_FR");
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubByCode(mocked, "ITM_FR", itm);
+            List<NomenclatureLevel> levels = stubLevels(mocked, itm, 2, 4);
+            stubNodeCount(mocked, itm, 1, 539L);
+            itm.reloadLevels();
+            Response response = resource.saveLevels(levelForm("ITM_FR", "2", "8"));
+            assertFalse(ok(response));
+            assertEquals("Niveau 1 : 539 nœud(s) y sont posés ou en dessous — la longueur des"
+                    + " codes ne peut plus changer.", notice(response));
+            verify(levels.get(1), never()).persist();
+        }
+    }
+
+    /**
+     * On an EMPTY level the length changes, and the level is written once.
+     */
+    @Test
+    void alengthChangesOnAnemptyLevel() {
+        AdminNomenclatureResource resource = newResource();
+        Nomenclature itm = scheme("ITM_FR");
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubByCode(mocked, "ITM_FR", itm);
+            List<NomenclatureLevel> levels = stubLevels(mocked, itm, 2, 4);
+            stubNodeCount(mocked, itm, 1, 0L);
+            itm.reloadLevels();
+            Response response = resource.saveLevels(levelForm("ITM_FR", "2", "6"));
+            assertTrue(ok(response));
+            assertEquals("1 niveau(x) enregistré(s).", notice(response));
+            assertEquals(6, levels.get(1).codeLength);
+            verify(levels.get(1)).persist();
+            verify(levels.get(0), never()).persist();
+        }
+    }
+
+    /**
+     * A level whose label is posted is renamed at an unchanged length; a level
+     * whose posted label is blank, one whose field is absent and one whose
+     * label is already that text are all left alone — the four arms of the
+     * rename guard, with no write at all on the last three.
+     */
+    @Test
+    void onlyTheLevelsCarryingAnewLabelAreWritten() {
+        AdminNomenclatureResource resource = newResource();
+        Nomenclature itm = scheme("ITM_FR");
+        MultivaluedMap<String, String> form = levelForm("ITM_FR", "2", "4", "8");
         form.putSingle("level-0", "  Activité  ");
         form.putSingle("level-1", "   ");
+        form.putSingle("level-2", "Niveau 2");
         try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
             stubByCode(mocked, "ITM_FR", itm);
             List<NomenclatureLevel> levels = stubLevels(mocked, itm, 2, 4, 8);
             Response response = resource.saveLevels(form);
             assertTrue(ok(response));
-            assertEquals("1 niveau(x) renommé(s).", notice(response));
+            assertEquals("1 niveau(x) enregistré(s).", notice(response));
             assertEquals("Activité", levels.get(0).label);
             assertEquals("Niveau 1", levels.get(1).label);
             assertEquals("Niveau 2", levels.get(2).label);
             verify(levels.get(0)).persist();
             verify(levels.get(1), never()).persist();
+            verify(levels.get(2), never()).persist();
             assertTrue(response.getLocation().toString().contains("scheme=ITM_FR"));
         }
+    }
+
+    /**
+     * Adding a level to an unknown scheme is refused, with and without the
+     * scheme field — the two legs of that guard.
+     */
+    @Test
+    void addingAlevelToAnUnknownSchemeIsRefused() {
+        AdminNomenclatureResource resource = newResource();
+        assertEquals("Nomenclature introuvable.",
+                notice(resource.addLevel(new MultivaluedHashMap<>())));
+        MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
+        form.putSingle("scheme", "ABSENT");
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubByCode(mocked, "ABSENT", null);
+            assertFalse(ok(resource.addLevel(form)));
+        }
+    }
+
+    /**
+     * A new level with an unusable length is refused — absent, unreadable and
+     * below one, the same three legs as the table.
+     */
+    @Test
+    void addingAlevelWithoutAusableLengthIsRefused() {
+        AdminNomenclatureResource resource = newResource();
+        Nomenclature itm = scheme("ITM_FR");
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubByCode(mocked, "ITM_FR", itm);
+            for (String bad : new String[] {null, "douze", "-3"}) {
+                MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
+                form.putSingle("scheme", "ITM_FR");
+                if (bad != null) {
+                    form.putSingle("length", bad);
+                }
+                Response response = resource.addLevel(form);
+                assertFalse(ok(response), String.valueOf(bad));
+                assertEquals("Le nombre de caractères doit être un entier d'au moins 1.",
+                        notice(response));
+            }
+        }
+    }
+
+    /**
+     * A new level must carry LONGER codes than the level above it: equal and
+     * shorter are both refused, and the message names the length to beat.
+     */
+    @Test
+    void anewLevelMustCarryLongerCodesThanTheOneAbove() {
+        AdminNomenclatureResource resource = newResource();
+        Nomenclature itm = scheme("ITM_FR");
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubByCode(mocked, "ITM_FR", itm);
+            stubLevels(mocked, itm, 2, 8);
+            for (String bad : new String[] {"8", "4"}) {
+                itm.reloadLevels();
+                MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
+                form.putSingle("scheme", "ITM_FR");
+                form.putSingle("length", bad);
+                Response response = resource.addLevel(form);
+                assertFalse(ok(response), bad);
+                assertEquals("Un niveau plus bas porte des codes plus longs : au-delà de 8"
+                        + " caractères.", notice(response));
+            }
+        }
+    }
+
+    /**
+     * A level appended under the deepest one takes the next rank, the posted
+     * name and the posted length, and belongs to the point of sale.
+     */
+    @Test
+    void anappendedLevelTakesTheNextRank() {
+        AdminNomenclatureResource resource = newResource();
+        Nomenclature itm = scheme("ITM_FR");
+        MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
+        form.putSingle("scheme", "ITM_FR");
+        form.putSingle("length", "12");
+        form.putSingle("label", "  Sous-famille  ");
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubByCode(mocked, "ITM_FR", itm);
+            // Stubbed BEFORE the construction mock opens: the fixture builds
+            // real levels, and a level built inside that block would come back
+            // a mock the spy refuses.
+            stubLevels(mocked, itm, 2, 4, 8);
+            try (MockedConstruction<NomenclatureLevel> created =
+                    mockConstruction(NomenclatureLevel.class)) {
+                Response response = resource.addLevel(form);
+                assertTrue(ok(response));
+                assertEquals("Niveau 3 ajouté (12 caractères).", notice(response));
+                NomenclatureLevel added = created.constructed().get(0);
+                assertSame(itm, added.nomenclature);
+                assertEquals(3, added.rank);
+                assertEquals("Sous-famille", added.label);
+                assertEquals(12, added.codeLength);
+                assertTrue(added.custom);
+                verify(added).persist();
+            }
+        }
+    }
+
+    /**
+     * The FIRST level of a scheme that declares none is accepted whatever its
+     * length — there is nothing above to be longer than — and an absent label
+     * falls back on the rank.
+     */
+    @Test
+    void thefirstLevelNeedsNothingAboveIt() {
+        AdminNomenclatureResource resource = newResource();
+        Nomenclature itm = scheme("NEUF");
+        MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
+        form.putSingle("scheme", "NEUF");
+        form.putSingle("length", "2");
+        form.putSingle("label", "   ");
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubByCode(mocked, "NEUF", itm);
+            stubLevels(mocked, itm);
+            try (MockedConstruction<NomenclatureLevel> created =
+                    mockConstruction(NomenclatureLevel.class)) {
+                Response response = resource.addLevel(form);
+                assertTrue(ok(response));
+                NomenclatureLevel added = created.constructed().get(0);
+                assertEquals(0, added.rank);
+                assertEquals("Niveau 0", added.label);
+            }
+        }
+    }
+
+    /**
+     * Removing a level of an unknown scheme is refused, with and without the
+     * scheme field.
+     */
+    @Test
+    void removingAlevelOfAnUnknownSchemeIsRefused() {
+        AdminNomenclatureResource resource = newResource();
+        assertEquals("Nomenclature introuvable.",
+                notice(resource.deleteLevel(new MultivaluedHashMap<>())));
+        MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
+        form.putSingle("scheme", "ABSENT");
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubByCode(mocked, "ABSENT", null);
+            assertFalse(ok(resource.deleteLevel(form)));
+        }
+    }
+
+    /**
+     * A rank that is absent, unreadable, negative or names no level is refused
+     * — the four legs that leave the lookup with nothing.
+     */
+    @Test
+    void anunusableRankIsRefused() {
+        AdminNomenclatureResource resource = newResource();
+        Nomenclature itm = scheme("ITM_FR");
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubByCode(mocked, "ITM_FR", itm);
+            stubByRank(mocked, itm, 9, null);
+            for (String bad : new String[] {null, "dernier", "-1", "9"}) {
+                MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
+                form.putSingle("scheme", "ITM_FR");
+                if (bad != null) {
+                    form.putSingle("rank", bad);
+                }
+                Response response = resource.deleteLevel(form);
+                assertFalse(ok(response), String.valueOf(bad));
+                assertEquals("Niveau introuvable.", notice(response));
+            }
+        }
+    }
+
+    /**
+     * A level carrying nodes at its rank or below is not removed: the message
+     * says how many stand in the way.
+     */
+    @Test
+    void alevelCarryingNodesIsNotRemoved() {
+        AdminNomenclatureResource resource = newResource();
+        Nomenclature itm = scheme("ITM_FR");
+        MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
+        form.putSingle("scheme", "ITM_FR");
+        form.putSingle("rank", "2");
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubByCode(mocked, "ITM_FR", itm);
+            List<NomenclatureLevel> levels = stubLevels(mocked, itm, 2, 4, 8);
+            stubByRank(mocked, itm, 2, levels.get(2));
+            stubNodeCount(mocked, itm, 2, 1909L);
+            Response response = resource.deleteLevel(form);
+            assertFalse(ok(response));
+            assertEquals("Niveau 2 : 1909 nœud(s) y sont posés ou en dessous — retirez-les"
+                    + " d'abord.", notice(response));
+            verify(levels.get(2), never()).delete();
+        }
+    }
+
+    /**
+     * An empty level is removed and the empty ranks under it shift up — free
+     * precisely because nothing is placed there to be re-parented.
+     */
+    @Test
+    void anemptyLevelIsRemovedAndTheRanksBelowShiftUp() {
+        AdminNomenclatureResource resource = newResource();
+        Nomenclature itm = scheme("ITM_FR");
+        MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
+        form.putSingle("scheme", "ITM_FR");
+        form.putSingle("rank", "1");
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubByCode(mocked, "ITM_FR", itm);
+            List<NomenclatureLevel> levels = stubLevels(mocked, itm, 2, 4, 8);
+            doNothing().when(levels.get(1)).delete();
+            stubByRank(mocked, itm, 1, levels.get(1));
+            stubNodeCount(mocked, itm, 1, 0L);
+            Response response = resource.deleteLevel(form);
+            assertTrue(ok(response));
+            assertEquals("Niveau 1 retiré.", notice(response));
+            assertEquals(0, levels.get(0).rank);
+            assertEquals(1, levels.get(2).rank);
+            verify(levels.get(0), never()).persist();
+            verify(levels.get(2)).persist();
+            verify(levels.get(1)).delete();
+        }
+    }
+
+    /**
+     * A level row says whether it may still be reshaped: an empty one may, a
+     * populated one may not — the two arms the screen reads to offer the
+     * length field and the removal button.
+     */
+    @Test
+    void alevelRowSaysWhetherItMayStillBeReshaped() {
+        assertTrue(new AdminNomenclatureResource.LevelRow(0, "Activité", 2, false, 0L)
+                .isReshapable());
+        AdminNomenclatureResource.LevelRow filled =
+                new AdminNomenclatureResource.LevelRow(3, "Sous-famille", 12, true, 1909L);
+        assertFalse(filled.isReshapable());
+        assertEquals(3, filled.getRank());
+        assertEquals("Sous-famille", filled.getLabel());
+        assertEquals(12, filled.getCodeLength());
+        assertTrue(filled.isCustom());
+        assertEquals(1909L, filled.getNodes());
     }
 
     // --------------------------------------------------

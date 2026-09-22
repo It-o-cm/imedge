@@ -100,6 +100,31 @@ class RefPayloadsTest {
     }
 
     /**
+     * A {@link RefPayloads.VatRateDto} stores and returns each of its fields.
+     */
+    @Test
+    void vatRateDtoHoldsItsFields() {
+        RefPayloads.VatRateDto dto = new RefPayloads.VatRateDto();
+        dto.number = 2;
+        dto.rate = new BigDecimal("0.0550");
+        dto.label = "Taux réduit";
+        assertEquals(2, dto.number);
+        assertEquals(new BigDecimal("0.0550"), dto.rate);
+        assertEquals("Taux réduit", dto.label);
+    }
+
+    /**
+     * A default {@link RefPayloads.VatRateDto} leaves its three fields null.
+     */
+    @Test
+    void vatRateDtoDefaultsAreNull() {
+        RefPayloads.VatRateDto dto = new RefPayloads.VatRateDto();
+        assertNull(dto.number);
+        assertNull(dto.rate);
+        assertNull(dto.label);
+    }
+
+    /**
      * A {@link RefPayloads.PriceDto} stores and returns each of its fields.
      */
     @Test
@@ -108,14 +133,14 @@ class RefPayloadsTest {
         dto.productEan = "3760000000001";
         dto.priceExcludingTax = new BigDecimal("1.00");
         dto.priceIncludingTax = new BigDecimal("1.20");
-        dto.vatRate = new BigDecimal("20.0");
+        dto.vatNumber = 1;
         dto.priority = 5;
         dto.startDateTime = "2026-01-01T00:00:00";
         dto.endDateTime = "2026-12-31T23:59:59";
         assertEquals("3760000000001", dto.productEan);
         assertEquals(new BigDecimal("1.00"), dto.priceExcludingTax);
         assertEquals(new BigDecimal("1.20"), dto.priceIncludingTax);
-        assertEquals(new BigDecimal("20.0"), dto.vatRate);
+        assertEquals(1, dto.vatNumber);
         assertEquals(5, dto.priority);
         assertEquals("2026-01-01T00:00:00", dto.startDateTime);
         assertEquals("2026-12-31T23:59:59", dto.endDateTime);
@@ -130,7 +155,7 @@ class RefPayloadsTest {
         assertNull(dto.productEan);
         assertNull(dto.priceExcludingTax);
         assertNull(dto.priceIncludingTax);
-        assertNull(dto.vatRate);
+        assertNull(dto.vatNumber);
         assertNull(dto.priority);
         assertNull(dto.startDateTime);
         assertNull(dto.endDateTime);

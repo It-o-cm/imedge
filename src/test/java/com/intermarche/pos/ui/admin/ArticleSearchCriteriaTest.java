@@ -491,4 +491,178 @@ class ArticleSearchCriteriaTest {
         Assertions.assertEquals("3000000000100", restored.eanFrom);
         Assertions.assertEquals("3000000000300", restored.eanTo);
     }
+
+    // --------------------------------------------------
+    // The JPQL reading of the same criteria
+    // --------------------------------------------------
+
+    /**
+     * An empty criteria constrains nothing: no clause and no parameter, which
+     * is what makes the unfiltered list a plain ordered query.
+     */
+    @Test
+    void anEmptyCriteriaProducesNoClause() {
+        ArticleSearchCriteria criteria = new ArticleSearchCriteria();
+        Assertions.assertEquals("", criteria.whereClause());
+        Assertions.assertTrue(criteria.parameters().isEmpty());
+    }
+
+    /**
+     * The free text becomes the three-field OR, parenthesised, and binds one
+     * lower-cased fragment wrapped in percent signs.
+     */
+    @Test
+    void theFreeTextBecomesAParenthesisedOr() {
+        ArticleSearchCriteria criteria = new ArticleSearchCriteria();
+        criteria.text = "LaIt";
+        Assertions.assertEquals("(lower(p.ean) like :text or lower(p.name) like :text"
+                + " or lower(p.internalCode) like :text)", criteria.whereClause());
+        Assertions.assertEquals("%lait%", criteria.parameters().get("text"));
+    }
+
+    /**
+     * The type binds the enum itself, not its name.
+     */
+    @Test
+    void theTypeBindsTheEnum() {
+        ArticleSearchCriteria criteria = new ArticleSearchCriteria();
+        criteria.type = ProductType.WEIGHT;
+        Assertions.assertEquals("p.productType = :type", criteria.whereClause());
+        Assertions.assertEquals(ProductType.WEIGHT, criteria.parameters().get("type"));
+    }
+
+    /**
+     * The ACTIVE status becomes a literal and binds nothing (first arm of the
+     * status pair).
+     */
+    @Test
+    void theActiveStatusBecomesALiteral() {
+        ArticleSearchCriteria criteria = new ArticleSearchCriteria();
+        criteria.status = ArticleSearchCriteria.Status.ACTIVE;
+        Assertions.assertEquals("p.active = true", criteria.whereClause());
+        Assertions.assertTrue(criteria.parameters().isEmpty());
+    }
+
+    /**
+     * The INACTIVE status becomes the opposite literal (second arm of the
+     * status pair).
+     */
+    @Test
+    void theInactiveStatusBecomesTheOppositeLiteral() {
+        ArticleSearchCriteria criteria = new ArticleSearchCriteria();
+        criteria.status = ArticleSearchCriteria.Status.INACTIVE;
+        Assertions.assertEquals("p.active = false", criteria.whereClause());
+    }
+
+    /**
+     * The ALL status constrains nothing (fall-through of the status pair).
+     */
+    @Test
+    void theAllStatusConstrainsNothing() {
+        ArticleSearchCriteria criteria = new ArticleSearchCriteria();
+        criteria.status = ArticleSearchCriteria.Status.ALL;
+        Assertions.assertEquals("", criteria.whereClause());
+    }
+
+    /**
+     * The forbidden filter binds the boolean, in both of its values.
+     */
+    @Test
+    void theForbiddenFilterBindsItsBoolean() {
+        ArticleSearchCriteria criteria = new ArticleSearchCriteria();
+        criteria.forbidden = Boolean.TRUE;
+        Assertions.assertEquals("p.forbiddenToSale = :forbidden", criteria.whereClause());
+        Assertions.assertEquals(Boolean.TRUE, criteria.parameters().get("forbidden"));
+        criteria.forbidden = Boolean.FALSE;
+        Assertions.assertEquals(Boolean.FALSE, criteria.parameters().get("forbidden"));
+    }
+
+    /**
+     * Each EAN bound becomes its own comparison, and the two coexist.
+     */
+    @Test
+    void theEanBoundsBecomeComparisons() {
+        ArticleSearchCriteria lower = new ArticleSearchCriteria();
+        lower.eanFrom = "300";
+        Assertions.assertEquals("p.ean >= :eanFrom", lower.whereClause());
+        ArticleSearchCriteria upper = new ArticleSearchCriteria();
+        upper.eanTo = "400";
+        Assertions.assertEquals("p.ean <= :eanTo", upper.whereClause());
+        ArticleSearchCriteria both = new ArticleSearchCriteria();
+        both.eanFrom = "300";
+        both.eanTo = "400";
+        Assertions.assertEquals("p.ean >= :eanFrom and p.ean <= :eanTo", both.whereClause());
+        Assertions.assertEquals("300", both.parameters().get("eanFrom"));
+        Assertions.assertEquals("400", both.parameters().get("eanTo"));
+    }
+
+    /**
+     * An attribute defaulting to false — every one of them today — asks that the
+     * article be among those holding it true.
+     */
+    @Test
+    void aFalseDefaultAttributeAsksForTheRowsHoldingItTrue() {
+        ArticleSearchCriteria criteria = new ArticleSearchCriteria();
+        criteria.attributes.add(ProductAttributeCatalog.RECALL);
+        Assertions.assertEquals("p.id in (select a0.id from Product a0 join a0.attributes v0"
+                + " where key(v0) = :attr0 and lower(v0) = 'true')", criteria.whereClause());
+        Assertions.assertEquals(ProductAttributeCatalog.RECALL,
+                criteria.parameters().get("attr0"));
+    }
+
+    /**
+     * Every BOOL attribute of the catalog defaults to false today, so the
+     * mirror clause is unreachable through the catalog — this pins the
+     * assumption the false-default clause rests on, and fails the day a
+     * default-true attribute is declared without the query being revisited.
+     */
+    @Test
+    void everyCatalogBooleanDefaultsToFalse() {
+        for (com.intermarche.pos.domain.catalog.attribute.ProductAttributeDef def
+                : ProductAttributeCatalog.CATALOG) {
+            Assertions.assertFalse(Boolean.parseBoolean(def.defaultValue()),
+                    "attribut " + def.code() + " : défaut vrai, la clause miroir devient atteignable");
+        }
+    }
+
+    /**
+     * Two attributes produce two sub-selects with distinct aliases and distinct
+     * parameters, which is what lets both be required at once.
+     */
+    @Test
+    void twoAttributesProduceTwoIndependentSubSelects() {
+        ArticleSearchCriteria criteria = new ArticleSearchCriteria();
+        criteria.attributes.add(ProductAttributeCatalog.RECALL);
+        criteria.attributes.add(ProductAttributeCatalog.BULKY);
+        String where = criteria.whereClause();
+        Assertions.assertTrue(where.contains("a0.attributes v0"));
+        Assertions.assertTrue(where.contains("a1.attributes v1"));
+        Assertions.assertTrue(where.contains(":attr0"));
+        Assertions.assertTrue(where.contains(":attr1"));
+        Assertions.assertEquals(2, criteria.parameters().size());
+    }
+
+    /**
+     * Every criterion at once is ANDed in declaration order, so the clause a
+     * reader checks is the clause the screen issues.
+     */
+    @Test
+    void everyCriterionAtOnceIsAnded() {
+        ArticleSearchCriteria criteria = new ArticleSearchCriteria();
+        criteria.text = "lait";
+        criteria.type = ProductType.UNIT;
+        criteria.status = ArticleSearchCriteria.Status.ACTIVE;
+        criteria.forbidden = Boolean.FALSE;
+        criteria.eanFrom = "300";
+        criteria.eanTo = "400";
+        Assertions.assertEquals("(lower(p.ean) like :text or lower(p.name) like :text"
+                + " or lower(p.internalCode) like :text)"
+                + " and p.productType = :type"
+                + " and p.active = true"
+                + " and p.forbiddenToSale = :forbidden"
+                + " and p.ean >= :eanFrom"
+                + " and p.ean <= :eanTo", criteria.whereClause());
+        Assertions.assertEquals(List.of("text", "type", "forbidden", "eanFrom", "eanTo"),
+                List.copyOf(criteria.parameters().keySet()));
+    }
 }

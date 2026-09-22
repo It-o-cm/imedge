@@ -188,6 +188,41 @@ public class Employee extends BaseEntity {
     public LocalDateTime lockedUntil;
 
     // --------------------------------------------------
+    // Payroll file (BO-05-02-15)
+    // --------------------------------------------------
+
+    /**
+     * Whether this file names a LEGAL entity rather than a person
+     * ({@code BO-05-02-15}).
+     *
+     * <p>The list of people who may receive an advance, a reimbursement or a
+     * down-payment at the safe is not the list of cashiers: a cleaning company
+     * paid in cash out of the safe belongs to it and will never sign in. Such a
+     * file carries a business name in {@link #lastName} and no first name.
+     */
+    @Column(name = "legal_entity", nullable = false)
+    public boolean legalEntity = false;
+
+    /**
+     * The FORCING level of this employee ({@code BO-05-02-15}), zero when they
+     * force nothing.
+     *
+     * <p>A rank and not a right: the shops use it to order their staff among
+     * themselves — a movement entered by a level 2 may be validated by a level 3
+     * and not the reverse. What a profile may OPEN stays in the profile grants;
+     * this says who outranks whom once both are allowed in.
+     */
+    @Column(name = "forcing_level", nullable = false)
+    public int forcingLevel = 0;
+
+    /**
+     * The largest down-payment this employee may receive from the safe
+     * ({@code BO-05-02-15}), null when the shop caps nothing.
+     */
+    @Column(name = "advance_limit", precision = 19, scale = 4)
+    public java.math.BigDecimal advanceLimit;
+
+    // --------------------------------------------------
     // Back-office credential (local state, like the lockout)
     // --------------------------------------------------
 
@@ -393,6 +428,7 @@ public class Employee extends BaseEntity {
      */
     @Override
     public int getChecksum() {
-        return Objects.hash(firstName, lastName, password, role, badgeId, active, email);
+        return Objects.hash(firstName, lastName, password, role, badgeId, active, email,
+                legalEntity, forcingLevel, advanceLimit);
     }
 }

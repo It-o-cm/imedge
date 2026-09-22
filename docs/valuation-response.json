@@ -1,0 +1,139 @@
+{
+  "offers": [
+    {
+      "type": "Manual Gesture: EAN=3300000000032 (percent -25%)",
+      "amount": { "amountExcludingTax": 11.25, "amountIncludingTax": 13.50, "vatRate": 0.2000 },
+      "items": [
+        { "lineId": "L8", "produceEan": "3300000000032", "quantity": 1.0,
+          "amount": { "amountExcludingTax": 11.25, "amountIncludingTax": 13.50, "vatRate": 0.2000 } }
+      ]
+    },
+    {
+      "type": "MixedBundle: PROMO_COFFEE_PACK x1 for 4.50€",
+      "amount": { "amountExcludingTax": 3.75, "amountIncludingTax": 4.50, "vatRate": 0.2000 },
+      "items": [
+        { "lineId": "L3", "produceEan": "3300000000004", "quantity": 1.0,
+          "amount": { "amountExcludingTax": 2.38, "amountIncludingTax": 2.86, "vatRate": 0.2000 } },
+        { "lineId": "L4", "produceEan": "3300000000013", "quantity": 1.0,
+          "amount": { "amountExcludingTax": 1.37, "amountIncludingTax": 1.64, "vatRate": 0.2000 } }
+      ]
+    },
+    {
+      "type": "Mixed Bundle Promo: PROMO_2FOR1_3300",
+      "amount": { "amountExcludingTax": 2.20, "amountIncludingTax": 2.64, "vatRate": 0.2000 },
+      "items": [
+        { "lineId": "L1", "produceEan": "3300000000001", "quantity": 2.0,
+          "amount": { "amountExcludingTax": 2.20, "amountIncludingTax": 2.64, "vatRate": 0.2000 } },
+        { "lineId": "L1", "produceEan": "3300000000001", "quantity": 1.0,
+          "amount": { "amountExcludingTax": 0.00, "amountIncludingTax": 0.00, "vatRate": 0.2000 } }
+      ]
+    },
+    {
+      "type": "Standard: EAN=3300000000001, Qty=1.0",
+      "amount": { "amountExcludingTax": 1.10, "amountIncludingTax": 1.32, "vatRate": 0.2000 },
+      "items": [
+        { "lineId": "L1", "produceEan": "3300000000001", "quantity": 1.0,
+          "amount": { "amountExcludingTax": 1.10, "amountIncludingTax": 1.32, "vatRate": 0.2000 } }
+      ]
+    },
+    {
+      "type": "Standard: EAN=3300000000002, Qty=1.0",
+      "amount": { "amountExcludingTax": 2.50, "amountIncludingTax": 3.00, "vatRate": 0.2000 },
+      "items": [
+        { "lineId": "L2", "produceEan": "3300000000002", "quantity": 1.0,
+          "amount": { "amountExcludingTax": 2.50, "amountIncludingTax": 3.00, "vatRate": 0.2000 } }
+      ]
+    },
+    {
+      "type": "Standard: EAN=3300000000014, Qty=1.0",
+      "amount": { "amountExcludingTax": 1.50, "amountIncludingTax": 1.80, "vatRate": 0.2000 },
+      "items": [
+        { "lineId": "L5", "produceEan": "3300000000014", "quantity": 1.0,
+          "amount": { "amountExcludingTax": 1.50, "amountIncludingTax": 1.80, "vatRate": 0.2000 } }
+      ]
+    },
+    {
+      "type": "Standard: EAN=3300000000020, Qty=1.2",
+      "amount": { "amountExcludingTax": 10.00, "amountIncludingTax": 10.55, "vatRate": 0.0550 },
+      "items": [
+        { "lineId": "L6", "produceEan": "3300000000020", "quantity": 1.2,
+          "amount": { "amountExcludingTax": 10.00, "amountIncludingTax": 10.55, "vatRate": 0.0550 } }
+      ]
+    },
+    {
+      "type": "Standard: EAN=3300000000031, Qty=1.0",
+      "amount": { "amountExcludingTax": 13.20, "amountIncludingTax": 15.84, "vatRate": 0.2000 },
+      "items": [
+        { "lineId": "L7", "produceEan": "3300000000031", "quantity": 1.0,
+          "amount": { "amountExcludingTax": 13.20, "amountIncludingTax": 15.84, "vatRate": 0.2000 } }
+      ]
+    },
+    {
+      "type": "Standard: EAN=3300000000007, Qty=2.0",
+      "amount": { "amountExcludingTax": 1.00, "amountIncludingTax": 1.20, "vatRate": 0.2000 },
+      "items": [
+        { "lineId": "L9", "produceEan": "3300000000007", "quantity": 2.0,
+          "amount": { "amountExcludingTax": 1.00, "amountIncludingTax": 1.20, "vatRate": 0.2000 } }
+      ]
+    },
+    {
+      "type": "Delivery: DELIVERY_HOME_0101 (10.23 km) for 9.90€",
+      "amount": { "amountExcludingTax": 8.25, "amountIncludingTax": 9.90, "vatRate": 0.2000 },
+      "items": []
+    },
+    {
+      "type": "Deposit Basket: 2 x 0.50€",
+      "amount": { "amountExcludingTax": 0.83, "amountIncludingTax": 1.00, "vatRate": 0.2000 },
+      "items": []
+    }
+  ],
+  "advantages": [
+    {
+      "type": "Vignette Discount: VIGNETTE_CUISSON (5 vignettes used, applied 1 times)",
+      "offer": "Standard: EAN=3300000000031, Qty=1.0",
+      "discountAmount": { "amountExcludingTax": 6.60, "amountIncludingTax": 7.92, "vatRate": 0.2000 }
+    },
+    {
+      "type": "Immediate Voucher Discount : PROMO_STORE_101",
+      "offer": "Standard: EAN=3300000000001, Qty=1.0",
+      "discountAmount": { "amountExcludingTax": 0.17, "amountIncludingTax": 0.20, "vatRate": 0.2000 }
+    },
+    {
+      "type": "Immediate Voucher Discount : BRI_APPLES_DISCOUNT",
+      "offer": "Standard: EAN=3300000000001, Qty=1.0",
+      "discountAmount": { "amountExcludingTax": 0.10, "amountIncludingTax": 0.12, "vatRate": 0.2000 }
+    },
+    {
+      "type": "Free Delivery Threshold Discount: FREE_DELIVERY_THRESHOLD_0101",
+      "offer": "Delivery: DELIVERY_HOME_0101 (10.23 km) for 9.90€",
+      "discountAmount": { "amountExcludingTax": 8.25, "amountIncludingTax": 9.90, "vatRate": 0.2000 }
+    },
+    {
+      "type": "MEAL_VOUCHER",
+      "offerCode": "MEAL_VOUCHER_0101",
+      "totalEligibleAmount": 7.71,
+      "threshold": 25.00
+    },
+    {
+      "type": "Upsell N+M: PROMO_2FOR1_3300 (Need 2.00 of 3300000000001)",
+      "suggestion": { "ean": "3300000000001", "quantity": 2.0, "offerCode": "PROMO_2FOR1_3300" }
+    },
+    {
+      "type": "Upsell Mixed Bundle: PROMO_COFFEE_PACK (Need 1.00 of 3300000000004)",
+      "suggestion": { "ean": "3300000000004", "quantity": 1.0, "offerCode": "PROMO_COFFEE_PACK" }
+    }
+  ],
+  "totalPrice": { "amountExcludingTax": 40.46, "amountIncludingTax": 47.11, "vatRate": 0.0000 },
+  "vatBreakdown": [
+    { "vatRate": 0.0550, "amountExcludingTax": 10.00, "vatAmount": 0.55, "amountIncludingTax": 10.55 },
+    { "vatRate": 0.2000, "amountExcludingTax": 30.46, "vatAmount": 6.10, "amountIncludingTax": 36.56 }
+  ],
+  "availableToUpcell": {
+    "3300000000001": { "lineId": "L1", "produceEan": "3300000000001", "quantity": 1.0 },
+    "3300000000002": { "lineId": "L2", "produceEan": "3300000000002", "quantity": 1.0 },
+    "3300000000014": { "lineId": "L5", "produceEan": "3300000000014", "quantity": 1.0 },
+    "3300000000020": { "lineId": "L6", "produceEan": "3300000000020", "quantity": 1.2 },
+    "3300000000031": { "lineId": "L7", "produceEan": "3300000000031", "quantity": 1.0 },
+    "3300000000007": { "lineId": "L9", "produceEan": "3300000000007", "quantity": 2.0 }
+  }
+}

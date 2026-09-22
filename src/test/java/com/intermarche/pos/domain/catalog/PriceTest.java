@@ -210,12 +210,15 @@ class PriceTest {
         price.product = product;
         price.priceExcludingTax = new BigDecimal("1.0000");
         price.priceIncludingTax = new BigDecimal("1.2000");
-        price.vatRate = new BigDecimal("0.2000");
+        VatRate regime = new VatRate();
+        regime.number = 1;
+        regime.rate = new BigDecimal("0.2000");
+        price.vat = regime;
         price.priority = 5;
         price.startDateTime = LocalDateTime.of(2026, 8, 1, 0, 0);
         price.endDateTime = LocalDateTime.of(2026, 8, 31, 0, 0);
         int expected = Objects.hash(product.ean, price.priceExcludingTax,
-                price.priceIncludingTax, price.vatRate, price.priority,
+                price.priceIncludingTax, price.vatNumber(), price.priority,
                 price.startDateTime, price.endDateTime);
         Assertions.assertEquals(expected, price.getChecksum());
     }

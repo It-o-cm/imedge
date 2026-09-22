@@ -86,6 +86,15 @@ class SyncOutboxServiceTest {
         SyncOutboxService service = new SyncOutboxService();
         service.endpoints = SyncEndpoints.of(url);
         service.objectMapper = new ObjectMapper();
+        // BO-10-04-14/-19: a document payload asks the parameters what it may
+        // carry, so the collaborator belongs to the fixture. Both extractions are
+        // ON here; the tests that are about the gates say otherwise themselves.
+        service.posSettingsService =
+                org.mockito.Mockito.mock(com.intermarche.pos.service.PosSettingsService.class);
+        org.mockito.Mockito.when(service.posSettingsService.invoiceExportDueDate())
+                .thenReturn(true);
+        org.mockito.Mockito.when(service.posSettingsService.invoiceExportEcoTax())
+                .thenReturn(true);
         return service;
     }
 
@@ -333,6 +342,14 @@ class SyncOutboxServiceTest {
         ticket.totalExcludingTax = new BigDecimal("10.00");
         ticket.totalIncludingTax = new BigDecimal("12.00");
         ticket.totalVat = new BigDecimal("2.00");
+        // BO-03-03-25/-29/-31: the loyalty zone the register froze at closing
+        // travels with the sale, so the node can reissue the same paper.
+        ticket.fidelityCard = "2990000000019";
+        ticket.fidelityEarnTotal = new BigDecimal("1.03");
+        ticket.fidelityAvailableBalance = new BigDecimal("42.30");
+        ticket.fidelityUnavailable = true;
+        ticket.fidelityLines.add(new com.intermarche.pos.domain.sale.TicketFidelityLine(
+                "SOCLE", "Cagnotte socle", new BigDecimal("0.28")));
         TicketLine line = new TicketLine();
         line.lineNumber = 1;
         line.lineUid = "U1";
@@ -373,6 +390,14 @@ class SyncOutboxServiceTest {
             assertEquals("ST1", out.storeCode);
             assertEquals("alice", out.cashierLogin);
             assertEquals("S1", out.sessionNumber);
+            assertEquals("2990000000019", out.fidelityCard);
+            assertEquals(new BigDecimal("1.03"), out.fidelityEarnTotal);
+            assertEquals(new BigDecimal("42.30"), out.fidelityAvailableBalance);
+            assertTrue(out.fidelityUnavailable);
+            assertEquals(1, out.fidelityLines.size());
+            assertEquals("SOCLE", out.fidelityLines.get(0).ruleCode);
+            assertEquals("Cagnotte socle", out.fidelityLines.get(0).label);
+            assertEquals(new BigDecimal("0.28"), out.fidelityLines.get(0).amount);
             assertEquals(1, out.lines.size());
             assertEquals("U1", out.lines.get(0).lineUid);
             assertEquals("FRUITS", out.lines.get(0).familyCode);
@@ -1114,6 +1139,106 @@ class SyncOutboxServiceTest {
             assertEquals(2L, ticket.count());
             assertEquals(5, ticket.maxAttempts());
             assertEquals("e2", ticket.lastError());
+        }
+    }
+
+    /**
+     * Builds the outbox row and the document a DOCUMENT payload is drawn from.
+     *
+     * @return the document, its row already numbered 1
+     */
+    private com.intermarche.pos.domain.sale.Invoice billedDocument() {
+        com.intermarche.pos.domain.sale.Invoice document =
+                new com.intermarche.pos.domain.sale.Invoice();
+        document.documentNumber = "C04-F000123";
+        document.documentType = com.intermarche.pos.domain.sale.DocumentType.FACTURE;
+        document.terminalId = "C04";
+        document.issueDate = LocalDateTime.of(2026, 9, 10, 18, 42);
+        document.ticketNumber = "C04-T000045";
+        document.customerAccountNumber = "ACC-1";
+        document.customerName = "ACME";
+        document.customerTaxId = "PT1";
+        document.customerDueDate = java.time.LocalDate.of(2026, 10, 31);
+        document.totalExcludingTax = new BigDecimal("100.00");
+        document.totalIncludingTax = new BigDecimal("120.00");
+        document.totalVat = new BigDecimal("20.00");
+        document.totalEcoTax = new BigDecimal("1.50");
+        document.printCount = 1;
+        return document;
+    }
+
+    /**
+     * A shop that extracts both carries the due date and the eco-tax on the
+     * payload ({@code BO-10-04-19} and {@code BO-10-04-14}, true arms).
+     */
+    @Test
+    void prepareDocumentCarriesTheDueDateAndTheEcoTaxWhenTheShopExtractsThem()
+            throws Exception {
+        SyncOutboxService service = enabledService("http://store");
+        SyncOutbox row = new SyncOutbox();
+        row.entityType = SyncOutbox.EntityType.DOCUMENT;
+        row.entityId = 100L;
+        com.intermarche.pos.domain.sale.Invoice document = billedDocument();
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> SyncOutbox.findById(1L)).thenReturn(row);
+            mocked.when(() -> com.intermarche.pos.domain.sale.Invoice.findById(100L))
+                    .thenReturn(document);
+            SyncOutboxService.PreparedItem item = service.prepare(1L);
+            assertEquals("document", item.pathSuffix);
+            SyncPayloads.DocumentDto out =
+                    new ObjectMapper().readValue(item.json, SyncPayloads.DocumentDto.class);
+            assertEquals("2026-10-31", out.customerDueDate);
+            assertEquals(new BigDecimal("1.50"), out.totalEcoTax);
+            assertEquals("PT1", out.customerTaxId);
+        }
+    }
+
+    /**
+     * A shop that extracts neither sends neither, although the document carries
+     * both ({@code BO-10-04-19} and {@code BO-10-04-14}, false arms).
+     */
+    @Test
+    void prepareDocumentWithholdsThemWhenTheShopDoesNotExtractThem() throws Exception {
+        SyncOutboxService service = enabledService("http://store");
+        org.mockito.Mockito.when(service.posSettingsService.invoiceExportDueDate())
+                .thenReturn(false);
+        org.mockito.Mockito.when(service.posSettingsService.invoiceExportEcoTax())
+                .thenReturn(false);
+        SyncOutbox row = new SyncOutbox();
+        row.entityType = SyncOutbox.EntityType.DOCUMENT;
+        row.entityId = 100L;
+        com.intermarche.pos.domain.sale.Invoice document = billedDocument();
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> SyncOutbox.findById(1L)).thenReturn(row);
+            mocked.when(() -> com.intermarche.pos.domain.sale.Invoice.findById(100L))
+                    .thenReturn(document);
+            SyncPayloads.DocumentDto out = new ObjectMapper()
+                    .readValue(service.prepare(1L).json, SyncPayloads.DocumentDto.class);
+            assertNull(out.customerDueDate);
+            assertNull(out.totalEcoTax);
+        }
+    }
+
+    /**
+     * A document carrying NO due date sends none even when the shop extracts them
+     * — the null arm of the first leg, which the parameter alone would not reach.
+     */
+    @Test
+    void prepareDocumentSendsNoDueDateWhenTheDocumentCarriesNone() throws Exception {
+        SyncOutboxService service = enabledService("http://store");
+        SyncOutbox row = new SyncOutbox();
+        row.entityType = SyncOutbox.EntityType.DOCUMENT;
+        row.entityId = 100L;
+        com.intermarche.pos.domain.sale.Invoice document = billedDocument();
+        document.customerDueDate = null;
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> SyncOutbox.findById(1L)).thenReturn(row);
+            mocked.when(() -> com.intermarche.pos.domain.sale.Invoice.findById(100L))
+                    .thenReturn(document);
+            SyncPayloads.DocumentDto out = new ObjectMapper()
+                    .readValue(service.prepare(1L).json, SyncPayloads.DocumentDto.class);
+            assertNull(out.customerDueDate);
+            assertEquals(new BigDecimal("1.50"), out.totalEcoTax);
         }
     }
 }

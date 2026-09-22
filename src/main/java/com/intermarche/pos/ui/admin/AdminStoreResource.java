@@ -32,7 +32,7 @@ import org.jboss.logging.Logger;
  * an import/central concern (BO-02-05-01's global-uniqueness numbering,
  * still an open arbitrage), never a field this screen writes. Creation of
  * the row itself stays on the existing import/GraphQL surfaces
- * ({@code /stores/import}, {@code StoreResource}) — this page only edits an
+ * ({@code /feeds/import/STORES}, {@code StoreCsvResource}) — this page only edits an
  * EXISTING row, matching the "non modifiable par le Point De Vente" clause
  * of the requirement.
  * <p>

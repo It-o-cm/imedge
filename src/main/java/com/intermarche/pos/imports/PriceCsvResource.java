@@ -2,6 +2,7 @@ package com.intermarche.pos.imports;
 
 import com.intermarche.pos.domain.catalog.Price;
 import com.intermarche.pos.domain.catalog.Product;
+import com.intermarche.pos.domain.catalog.VatRate;
 import io.quarkus.hibernate.orm.panache.Panache;
 import io.smallrye.common.annotation.RunOnVirtualThread;
 import jakarta.annotation.security.RolesAllowed;
@@ -15,6 +16,7 @@ import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
 
 import java.io.InputStream;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
@@ -32,13 +34,22 @@ import java.util.Set;
  * <p>
  * Consumed columns (resolved by header name; unknown columns of the
  * shared feed are ignored): EAN (key), PRICE_EXCL_TAX, PRICE_INCL_TAX,
- * VAT_RATE, PRIORITY, START_DATE, END_DATE — plus the OPTIONAL
+ * VAT_NUMBER or VAT_RATE, PRIORITY, START_DATE, END_DATE — plus the OPTIONAL
  * PRICE_USAGE discriminator of the union feed: the engine distinguishes
  * DEFAULT selling prices from discount bases (BASE_FOR_DISCOUNT…) that
  * share the same composite key, and the register only sells with DEFAULT
  * ones — when the feed declares the column, every non-DEFAULT row is
  * SKIPPED here (silently: those rows are for the engine, not for us).
  * Without the column, every row is a selling price (historical files).
+ * <p>
+ * VAT since BO-02-03-14: a price no longer CARRIES a rate, it names a line of
+ * the VAT referential. A file declaring VAT_NUMBER names that line directly.
+ * A file declaring only VAT_RATE — every historical feed, and the engine feed
+ * which states the rate because the engines compute with it — is resolved by
+ * looking the rate up in the referential, so the existing files keep working
+ * unchanged. A row resolving to neither leaves the price without a regime,
+ * which the scan paths already survive by falling back on the administered
+ * default. This is why the VAT file has to be imported BEFORE the prices.
  * <p>
  * Place in the POS architecture since the phase 6 centralized referentials:
  * these CSV endpoints exist on every node, but their proper home is the
@@ -48,7 +59,10 @@ import java.util.Set;
  * to every register within {@code pos.referential.pull-seconds}, with no
  * bump hook needed anywhere in this hierarchy.
  */
-@Path("/prices/import")
+// No @Path: the ONE door is POST /feeds/import/{CODE}, which delegates here.
+// A second address for the same import is a second thing to secure, to
+// document and to keep in step, and the permission policy had to name them
+// one by one — an importer forgotten there was a door left open.
 @ApplicationScoped
 @RunOnVirtualThread
 public class PriceCsvResource extends ImporterCsvResource {
@@ -63,8 +77,10 @@ public class PriceCsvResource extends ImporterCsvResource {
     static final String COL_PRICE_EXCL_TAX = "PRICE_EXCL_TAX";
     /** Header name of the tax-inclusive price. */
     static final String COL_PRICE_INCL_TAX = "PRICE_INCL_TAX";
-    /** Header name of the VAT rate. */
+    /** Header name of the VAT rate, the historical way of naming a regime. */
     static final String COL_VAT_RATE = "VAT_RATE";
+    /** Header name of the VAT regime number, which names a referential line. */
+    static final String COL_VAT_NUMBER = "VAT_NUMBER";
     /** Header name of the price priority (composite-key part). */
     static final String COL_PRIORITY = "PRIORITY";
     /** Header name of the validity start (composite-key part). */
@@ -76,9 +92,14 @@ public class PriceCsvResource extends ImporterCsvResource {
     /** The only price usage the register sells with. */
     static final String USAGE_DEFAULT = "DEFAULT";
 
-    /** The columns this importer cannot work without. */
+    /**
+     * The columns this importer cannot work without.
+     * <p>
+     * Neither VAT column is in the list: a feed names its regime by number or
+     * by rate, and demanding both would reject one of the two shapes.
+     */
     private static final List<String> REQUIRED_COLUMNS = List.of(
-            COL_PRICE_EXCL_TAX, COL_PRICE_INCL_TAX, COL_VAT_RATE,
+            COL_PRICE_EXCL_TAX, COL_PRICE_INCL_TAX,
             COL_PRIORITY, COL_START_DATE, COL_END_DATE);
 
     /**
@@ -88,10 +109,6 @@ public class PriceCsvResource extends ImporterCsvResource {
      * @param inputStream The input stream containing CSV data.
      * @return A Response containing a JSON summary of created/updated counts and errors.
      */
-    @POST
-    @Consumes({MediaType.TEXT_PLAIN, MediaType.APPLICATION_OCTET_STREAM})
-    @Produces(MediaType.APPLICATION_JSON)
-    @RolesAllowed("ADMIN")
     public Response importPrices(InputStream inputStream) {
         LOGGER.info("Entering method importPrices with inputStream: " + inputStream);
         LOGGER.info("Exiting method importPrices");
@@ -350,10 +367,29 @@ public class PriceCsvResource extends ImporterCsvResource {
     private void feedPrice(LineData data, Price price) {
         price.priceExcludingTax = safeParseBigDecimal(data, COL_PRICE_EXCL_TAX);
         price.priceIncludingTax = safeParseBigDecimal(data, COL_PRICE_INCL_TAX);
-        price.vatRate = safeParseBigDecimal(data, COL_VAT_RATE);
+        price.vat = resolveVat(data);
         price.priority = safeParseInt(data, COL_PRIORITY);
         price.startDateTime = safeParseDateTime(data, COL_START_DATE);
         price.endDateTime = safeParseDateTime(data, COL_END_DATE);
+    }
+
+    /**
+     * Resolves the VAT regime this line names.
+     * <p>
+     * The number wins when the file declares it, because it names a
+     * referential line without interpretation. Failing that, the rate is
+     * looked up in the referential, which is what keeps every historical feed
+     * — and the engine feed, which states rates — importable unchanged.
+     *
+     * @param data The parsed CSV line data.
+     * @return The regime, or null when the line names none the referential knows.
+     */
+    private VatRate resolveVat(LineData data) {
+        Integer number = safeParseInt(data, COL_VAT_NUMBER);
+        if (number != null) {
+            return VatRate.findByNumber(number);
+        }
+        return VatRate.findByRate(safeParseBigDecimal(data, COL_VAT_RATE));
     }
 
     /**
@@ -366,11 +402,12 @@ public class PriceCsvResource extends ImporterCsvResource {
      * @return The integer hash of incoming data.
      */
     private int computeIncomingChecksum(LineData data, Product product) {
+        VatRate vat = resolveVat(data);
         return Objects.hash(
                 product.ean,
                 safeParseBigDecimal(data, COL_PRICE_EXCL_TAX),
                 safeParseBigDecimal(data, COL_PRICE_INCL_TAX),
-                safeParseBigDecimal(data, COL_VAT_RATE),
+                vat == null ? null : vat.number,
                 safeParseInt(data, COL_PRIORITY),
                 safeParseDateTime(data, COL_START_DATE),
                 safeParseDateTime(data, COL_END_DATE)

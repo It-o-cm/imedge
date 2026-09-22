@@ -52,7 +52,15 @@ public class SyncOutbox extends PanacheEntity {
          * where a new kind belongs, since the order of everything before it is
          * a contract the store node relies on.
          */
-        CUSTOMER
+        CUSTOMER,
+        /**
+         * A document issued at the register — invoice or delivery note
+         * (BO-02-04-19). It references its TICKET, which the store node
+         * resolves by number; the ticket is pushed before it because TICKET
+         * comes earlier in this enumeration, and the drain follows the
+         * ordinal.
+         */
+        DOCUMENT
     }
 
     /** The kind of entity to push. */

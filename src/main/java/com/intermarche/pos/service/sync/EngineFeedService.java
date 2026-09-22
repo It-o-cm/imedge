@@ -43,6 +43,11 @@ public class EngineFeedService {
     /**
      * The feed catalog, in DELIVERY ORDER (shared referentials before the
      * engine-specific feeds; offers last, they reference everything else).
+     *
+     * <p>VAT_RATES comes BEFORE PRICES and the order is load-bearing: the
+     * engine attaches every price to the regime carrying its rate, so a price
+     * file delivered to an engine with an empty regime table is rejected line
+     * by line and the engine prices nothing.
      */
     public static final List<FeedDef> CATALOG = List.of(
             new FeedDef("STORES", "/stores/import"),
@@ -50,6 +55,7 @@ public class EngineFeedService {
             new FeedDef("PRODUCTS", "/products/import"),
             new FeedDef("FAMILIES", "/product-families/import"),
             new FeedDef("CATEGORY_STORAGES", "/product-category-storages/import"),
+            new FeedDef("VAT_RATES", "/vat-rates/import"),
             new FeedDef("PRICES", "/prices/import"),
             new FeedDef("OFFERS", "/offers/import"));
 

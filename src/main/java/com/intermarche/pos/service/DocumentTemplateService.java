@@ -218,7 +218,7 @@ public class DocumentTemplateService {
                         Map.of("rate", "5,5", "base", "4,36", "vat", "0,24")));
                 data.put("payments", List.of(
                         Map.of("label", "CASH", "key", "CASH", "amount", "4,60")));
-                data.put("fidelity", Map.of("card", "6045200000123"));
+                data.put("fidelity", sampleFidelity());
                 if (type == DocumentTemplate.DocumentType.INVOICE
                         || type == DocumentTemplate.DocumentType.INVOICE_A4) {
                     // The invoice names a seller and an addressee the receipt
@@ -273,9 +273,39 @@ public class DocumentTemplateService {
                     "amount", "30,00"));
             case CARD_RECEIPT -> data.put("card", Map.of(
                     "kind", "CREDIT", "amount", "4,60", "frame", ""));
+            case LOYALTY_RECEIPT -> {
+                data.put("document", Map.of("number", "C04-000123"));
+                data.put("fidelity", sampleFidelity());
+                data.put("settlement", Map.of("amount", "3,00"));
+            }
         }
         LOGGER.info("Exiting method sampleData");
         return data;
+    }
+
+    /**
+     * The LOYALTY ZONE of the demonstration document (BO-03-03-25, -29, -30,
+     * -31, -32).
+     *
+     * <p>Built once and shared by the receipt and the loyalty slip, because the
+     * two show the same zone: a paramétreur who learns it on one knows it on the
+     * other, and a key that drifted between them would be a key the preview
+     * lies about.
+     *
+     * @return the demonstration loyalty values
+     */
+    private Map<String, Object> sampleFidelity() {
+        return Map.of(
+                "card", "6045200000123",
+                "present", true,
+                "earnTotal", "1,03",
+                "lines", List.of(
+                        Map.of("ruleCode", "SOCLE", "label", "Cagnotte socle", "amount", "0,28"),
+                        Map.of("ruleCode", "F&L", "label", "Fruits & legumes", "amount", "0,75")),
+                "availableBalance", "42,30",
+                "usedAmount", "3,00",
+                "unavailable", false,
+                "message", "");
     }
 
     /**
@@ -645,6 +675,21 @@ public class DocumentTemplateService {
                     Montant {card.amount}
                     ---
                     A conserver
+                    """;
+            case LOYALTY_RECEIPT -> """
+                    {store.name}
+                    ---
+                    PAIEMENT FIDELITE
+                    Caisse {terminal}  {date} {time}
+                    Ticket {document.number}
+                    ---
+                    PAIEMENT TOTAL FID  {settlement.amount}
+                    CARTE {fidelity.card}
+                    SOLDE AVANT {fidelity.availableBalance}
+                    ---
+                    Signature du client
+
+
                     """;
         };
     }

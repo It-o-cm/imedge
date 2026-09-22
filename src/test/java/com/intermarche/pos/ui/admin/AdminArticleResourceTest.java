@@ -8,6 +8,7 @@ import com.intermarche.pos.domain.catalog.ProductType;
 import com.intermarche.pos.domain.catalog.attribute.ProductAttributeCatalog;
 import com.intermarche.pos.domain.util.DateTimeProvider;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
+import com.intermarche.pos.ui.journal.JournalPage;
 import io.quarkus.hibernate.orm.panache.PanacheQuery;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
@@ -20,6 +21,7 @@ import org.mockito.MockedStatic;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -133,7 +135,9 @@ class AdminArticleResourceTest {
     }
 
     /**
-     * Builds a single-list Panache query mock over the ordered product finder.
+     * Builds a paged Panache query mock over the article finder: it counts the
+     * rows it holds and hands them back whichever page is asked for, which is
+     * what lets a test assert the window arithmetic without a database.
      *
      * @param products the products to return
      * @return the query mock
@@ -142,7 +146,19 @@ class AdminArticleResourceTest {
     private PanacheQuery<Product> productQuery(List<Product> products) {
         PanacheQuery<Product> query = mock(PanacheQuery.class);
         when(query.list()).thenReturn(products);
+        when(query.count()).thenReturn((long) products.size());
+        when(query.page(org.mockito.ArgumentMatchers.anyInt(),
+                org.mockito.ArgumentMatchers.anyInt())).thenReturn(query);
         return query;
+    }
+
+    /**
+     * The query the article list issues for a type-only criteria.
+     *
+     * @return the JPQL the resource builds
+     */
+    private String typeQuery() {
+        return "from Product p where p.productType = :type order by p.ean";
     }
 
     /**
@@ -178,14 +194,22 @@ class AdminArticleResourceTest {
         MultivaluedMap<String, String> params = new MultivaluedHashMap<>();
         params.putSingle("type", "WEIGHT");
         Product weighed = product("1", ProductType.WEIGHT);
-        Product unit = product("2", ProductType.UNIT);
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
-            PanacheQuery<Product> products = productQuery(List.of(weighed, unit));
-            panache.when(() -> Product.find("order by ean")).thenReturn(products);
+            PanacheQuery<Product> products = productQuery(List.of(weighed));
+            panache.when(() -> Product.find(typeQuery(),
+                    Map.of("type", ProductType.WEIGHT))).thenReturn(products);
             stubSelectionList(panache);
-            assertEquals(instance, resource.list(uriInfo(params), null, true));
+            assertEquals(instance, resource.list(uriInfo(params), 1, null, true));
         }
-        verify(resource.adminArticles).data("products", List.of(weighed));
+        org.mockito.ArgumentCaptor<Object> captor =
+                org.mockito.ArgumentCaptor.forClass(Object.class);
+        verify(resource.adminArticles).data(
+                org.mockito.ArgumentMatchers.eq("page"), captor.capture());
+        @SuppressWarnings("unchecked")
+        JournalPage<Product> window = (JournalPage<Product>) captor.getValue();
+        assertEquals(List.of(weighed), window.rows);
+        assertEquals(1, window.number);
+        assertEquals(1L, window.total);
         verify(instance).data("selectedSelection", null);
     }
 
@@ -203,17 +227,17 @@ class AdminArticleResourceTest {
         selection.name = "Pesés";
         selection.criteria = "type=WEIGHT";
         Product weighed = product("1", ProductType.WEIGHT);
-        Product unit = product("2", ProductType.UNIT);
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
             PanacheQuery<ArticleSelection> found = priceSelection(selection);
             panache.when(() -> ArticleSelection.find("name", "Pesés")).thenReturn(found);
-            PanacheQuery<Product> products = productQuery(List.of(weighed, unit));
-            panache.when(() -> Product.find("order by ean")).thenReturn(products);
+            PanacheQuery<Product> products = productQuery(List.of(weighed));
+            panache.when(() -> Product.find(typeQuery(),
+                    Map.of("type", ProductType.WEIGHT))).thenReturn(products);
             stubSelectionList(panache);
-            resource.list(uriInfo(params), null, true);
+            resource.list(uriInfo(params), 1, null, true);
         }
-        verify(resource.adminArticles).data("products", List.of(weighed));
         verify(instance).data("selectedSelection", "Pesés");
+        verify(instance).data("baseQuery", "selection=Pes%C3%A9s&");
     }
 
     /**
@@ -231,12 +255,12 @@ class AdminArticleResourceTest {
             PanacheQuery<ArticleSelection> missing = priceSelection(null);
             panache.when(() -> ArticleSelection.find("name", "Ghost")).thenReturn(missing);
             PanacheQuery<Product> products = productQuery(List.of(unit));
-            panache.when(() -> Product.find("order by ean")).thenReturn(products);
+            panache.when(() -> Product.find("from Product p order by p.ean")).thenReturn(products);
             stubSelectionList(panache);
-            resource.list(uriInfo(params), null, true);
+            resource.list(uriInfo(params), 1, null, true);
         }
-        verify(resource.adminArticles).data("products", List.of(unit));
         verify(instance).data("selectedSelection", null);
+        verify(instance).data("baseQuery", "");
     }
 
     /**
@@ -571,9 +595,13 @@ class AdminArticleResourceTest {
         MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
         form.putSingle("value", "on");
         form.putSingle("type", "WEIGHT");
+        // The perimeter is now the database's answer, not a sieve in Java: the
+        // query resolves to the weighed article alone, so the unit one is left
+        // untouched because it was never returned.
+        PanacheQuery<Product> products = productQuery(List.of(weighed));
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
-            PanacheQuery<Product> products = productQuery(List.of(weighed, unit));
-            panache.when(() -> Product.find("order by ean")).thenReturn(products);
+            panache.when(() -> Product.find(typeQuery(),
+                    Map.of("type", ProductType.WEIGHT))).thenReturn(products);
             Response response = resource.bulkCodeOnScreen(form);
             assertTrue(response.getLocation().toString().contains("noticeOk=true"));
             assertTrue(response.getLocation().toString().contains("activ"));
@@ -591,9 +619,9 @@ class AdminArticleResourceTest {
         AdminArticleResource resource = newResource();
         Product unit = product("2", ProductType.UNIT);
         MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
+        PanacheQuery<Product> products = productQuery(List.of(unit));
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
-            PanacheQuery<Product> products = productQuery(List.of(unit));
-            panache.when(() -> Product.find("order by ean")).thenReturn(products);
+            panache.when(() -> Product.find("from Product p order by p.ean")).thenReturn(products);
             resource.bulkCodeOnScreen(form);
         }
         assertEquals("false", unit.attributes.get(AdminArticleResource.CODE_ON_SCREEN));

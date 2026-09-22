@@ -61,6 +61,10 @@ public class SyncIngestService {
     @Inject
     com.intermarche.pos.service.TicketRenderService ticketRenderService;
 
+    /** What the coin machines of the line hold ({@code BO-05-02-16}). */
+    @Inject
+    com.intermarche.pos.service.CoinMachineService coinMachineService;
+
     /** Payment factories indexed by their method key. */
     private final Map<String, TicketPayment.Factory> paymentFactories = new HashMap<>();
 
@@ -123,6 +127,11 @@ public class SyncIngestService {
             ticket.ticketNumber = dto.ticketNumber;
             created = true;
         }
+        // BO-05-02-16 : ce que ce ticket avait déjà porté au monnayeur, lu AVANT
+        // que ses règlements ne soient réécrits — l'ingestion est un upsert, et
+        // un ticket repoussé ne doit pas créditer le monnayeur deux fois.
+        java.math.BigDecimal previousCash = created
+                ? java.math.BigDecimal.ZERO : coinMachineService.cashOf(ticket);
         ticket.terminalId = dto.terminalId;
         ticket.status = Ticket.TicketStatus.valueOf(dto.status);
         ticket.creationDate = parse(dto.creationDate);
@@ -133,6 +142,20 @@ public class SyncIngestService {
                 ? CashSession.<CashSession>find("sessionNumber", dto.sessionNumber).firstResult()
                 : null;
         ticket.fidelityCard = dto.fidelityCard;
+        // BO-03-03-25/-29/-31: the loyalty zone as the selling register showed
+        // it. Rewritten wholesale on every push, like the lines: the register
+        // that made the sale is the only authority on what its paper said.
+        ticket.fidelityEarnTotal = dto.fidelityEarnTotal;
+        ticket.fidelityAvailableBalance = dto.fidelityAvailableBalance;
+        ticket.fidelityUnavailable = dto.fidelityUnavailable;
+        if (ticket.fidelityLines == null) {
+            ticket.fidelityLines = new java.util.ArrayList<>();
+        }
+        ticket.fidelityLines.clear();
+        for (SyncPayloads.FidelityLineDto earnDto : dto.fidelityLines) {
+            ticket.fidelityLines.add(new com.intermarche.pos.domain.sale.TicketFidelityLine(
+                    earnDto.ruleCode, earnDto.label, earnDto.amount));
+        }
         ticket.digitalKey = dto.digitalKey;
         ticket.customerEmail = dto.customerEmail;
         ticket.itemCount = dto.itemCount;
@@ -230,6 +253,7 @@ public class SyncIngestService {
         }
 
         ticket.persist();
+        coinMachineService.collect(ticket, previousCash);
         LOGGER.infof("Ticket %s %s (%s)", dto.ticketNumber, created ? "créé" : "mis à jour", dto.status);
         LOGGER.info("Exiting method ingestTicket");
     }
@@ -359,6 +383,97 @@ public class SyncIngestService {
         customer.persist();
         LOGGER.infof("Client en compte %s %s", dto.accountNumber, created ? "créé" : "mis à jour");
         LOGGER.info("Exiting method ingestCustomer");
+    }
+
+    /**
+     * Upserts a document issued at a register, by its document number
+     * ({@code BO-02-04-19}).
+     *
+     * <p>The customer block is stored AS PUSHED and never re-read from the
+     * customer's file here: the document is what was printed that day, and the
+     * back office extracts it years later, long after the customer may have
+     * moved or been renamed.
+     *
+     * <p>The ticket is resolved by number and the document is attached to it
+     * when it is there. It is NOT required to be: the drain pushes tickets
+     * before documents, but a register that issued a document for a ticket the
+     * node never received — an old sale, a purge upstream — must still be able
+     * to declare it. The number is kept whatever happens, which is what the
+     * screens read.
+     *
+     * @param dto the pushed document payload
+     */
+    @Transactional
+    public void ingestDocument(SyncPayloads.DocumentDto dto) {
+        LOGGER.info("Entering method ingestDocument with dto: " + dto);
+        com.intermarche.pos.domain.sale.Invoice document =
+                com.intermarche.pos.domain.sale.Invoice
+                        .find("documentNumber", dto.documentNumber).firstResult();
+        boolean created = false;
+        if (document == null) {
+            document = new com.intermarche.pos.domain.sale.Invoice();
+            document.documentNumber = dto.documentNumber;
+            created = true;
+        }
+        document.documentType = dto.documentType == null
+                ? com.intermarche.pos.domain.sale.DocumentType.FACTURE
+                : com.intermarche.pos.domain.sale.DocumentType.valueOf(dto.documentType);
+        document.terminalId = dto.terminalId;
+        document.issueDate = parse(dto.issueDate);
+        document.ticketNumber = dto.ticketNumber;
+        document.ticket = dto.ticketNumber == null
+                ? null : Ticket.<Ticket>find("ticketNumber", dto.ticketNumber).firstResult();
+        document.customerAccountNumber = dto.customerAccountNumber;
+        document.customer = dto.customerAccountNumber == null ? null
+                : com.intermarche.pos.domain.payment.AccountCustomer
+                        .<com.intermarche.pos.domain.payment.AccountCustomer>find(
+                                "accountNumber", dto.customerAccountNumber).firstResult();
+        document.customerName = dto.customerName;
+        document.customerContact = dto.customerContact;
+        document.customerSiret = dto.customerSiret;
+        document.customerVatNumber = dto.customerVatNumber;
+        document.customerTaxId = dto.customerTaxId;
+        document.customerDueDate = parseDay(dto.customerDueDate);
+        if (document.customerAddress == null) {
+            document.customerAddress = new com.intermarche.pos.domain.store.Address();
+        }
+        document.customerAddress.streetLine1 = dto.customerStreet;
+        document.customerAddress.postalCode = dto.customerPostalCode;
+        document.customerAddress.city = dto.customerCity;
+        document.totalExcludingTax = dto.totalExcludingTax == null
+                ? java.math.BigDecimal.ZERO : dto.totalExcludingTax;
+        document.totalIncludingTax = dto.totalIncludingTax == null
+                ? java.math.BigDecimal.ZERO : dto.totalIncludingTax;
+        document.totalVat = dto.totalVat == null ? java.math.BigDecimal.ZERO : dto.totalVat;
+        // BO-10-04-14 : une caisse qui n'extrait pas l'éco-taxe envoie null, ce qui
+        // vaut zéro et non « inconnu » — la colonne du document reste obligatoire.
+        document.totalEcoTax = dto.totalEcoTax == null
+                ? java.math.BigDecimal.ZERO : dto.totalEcoTax;
+        document.printCount = dto.printCount;
+        document.persist();
+        LOGGER.infof("Document %s %s", dto.documentNumber, created ? "créé" : "mis à jour");
+        LOGGER.info("Exiting method ingestDocument");
+    }
+
+    /**
+     * Reads an ISO DAY pushed as text, an unreadable one counting as none.
+     *
+     * <p>Beside {@code parse}, which reads a moment: a due date is a day, and
+     * reading it with the date-time parser would reject every value the
+     * register sends ({@code BO-02-04-08}).
+     *
+     * @param text the day as pushed, possibly null or unreadable
+     * @return the day, or null when nothing readable was sent
+     */
+    private static java.time.LocalDate parseDay(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        try {
+            return java.time.LocalDate.parse(text.trim());
+        } catch (java.time.format.DateTimeParseException unreadable) {
+            return null;
+        }
     }
 
     /**

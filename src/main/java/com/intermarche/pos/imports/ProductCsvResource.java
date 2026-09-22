@@ -47,7 +47,10 @@ import java.util.Set;
  * extension keeps its historical behavior. The engine ignores these
  * columns entirely.
  */
-@Path("/products/import")
+// No @Path: the ONE door is POST /feeds/import/{CODE}, which delegates here.
+// A second address for the same import is a second thing to secure, to
+// document and to keep in step, and the permission policy had to name them
+// one by one — an importer forgotten there was a door left open.
 @ApplicationScoped
 @RunOnVirtualThread
 public class ProductCsvResource extends ImporterCsvResource {
@@ -122,10 +125,6 @@ public class ProductCsvResource extends ImporterCsvResource {
      * @param inputStream The input stream containing CSV data.
      * @return A Response containing a JSON summary of created/updated counts and errors.
      */
-    @POST
-    @Consumes({MediaType.TEXT_PLAIN, MediaType.APPLICATION_OCTET_STREAM})
-    @Produces(MediaType.APPLICATION_JSON)
-    @RolesAllowed("ADMIN")
     public Response importProducts(InputStream inputStream) {
         LOGGER.info("Entering method importProducts with inputStream: " + inputStream);
         LOGGER.info("Exiting method importProducts");

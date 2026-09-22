@@ -1,0 +1,64 @@
+/* Reports (BO-06). Only what base.css does not already carry: the numeric
+   alignment of a figure column, and the server-drawn chart.
+
+   The chart is an inline SVG with no script behind it, so it prints exactly as
+   it is shown — a report is a document before it is a screen. */
+
+.report-num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.report-total td {
+    font-weight: 700;
+    border-top: 2px solid var(--im-line, #d7dce3);
+    background: #f7f9fb;
+}
+
+.report-chart-box {
+    margin: 4px 0 18px;
+    padding: 8px 4px 0;
+    border: 1px solid var(--im-line, #d7dce3);
+    border-radius: 8px;
+    background: #fff;
+}
+
+/* The drawing scales to the width it is given and keeps a fixed height: a
+   chart that grew with the page would tower over the table it summarizes. */
+.report-chart {
+    display: block;
+    width: 100%;
+    height: 240px;
+}
+
+.report-chart-axis {
+    stroke: #c9d1da;
+    stroke-width: 1;
+}
+
+.report-chart-bar {
+    fill: var(--im-accent, #0b6ab0);
+}
+
+.report-chart-bar:hover {
+    fill: #0a4f82;
+}
+
+/* preserveAspectRatio="none" stretches the drawing, so the text is scaled
+   with it; the label size is chosen to stay legible once stretched. */
+.report-chart-label {
+    fill: #5b6672;
+    font-size: 11px;
+    text-anchor: middle;
+}
+
+.report-chart-empty {
+    margin: 0 0 14px;
+    color: #5b6672;
+    font-style: italic;
+}
+
+.report-form .filter-actions {
+    margin-top: 10px;
+}

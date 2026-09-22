@@ -174,6 +174,21 @@ public class TenderDefinition extends PanacheEntity {
     @Column(name = "fidelity_reported", nullable = false)
     public boolean fidelityReported = false;
 
+    /**
+     * Whether an amount may be transferred OUT of this tender ({@code BO-05-02-17}).
+     *
+     * <p>Source and destination are administered SEPARATELY because they are not
+     * the same permission: a discount voucher may be corrected into cash — the
+     * shop took a voucher and recorded cash — while cash may never be corrected
+     * into a voucher, which would invent a voucher nobody handed over.
+     */
+    @Column(name = "transfer_source", nullable = false)
+    public boolean transferSource = true;
+
+    /** Whether an amount may be transferred INTO this tender ({@code BO-05-02-17}). */
+    @Column(name = "transfer_destination", nullable = false)
+    public boolean transferDestination = true;
+
 
     /**
      * Tells whether one settlement of the given amount goes over the first

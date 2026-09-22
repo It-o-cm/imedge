@@ -53,6 +53,30 @@ public class DataInitializer {
     private static final LocalDateTime PRICE_START = LocalDateTime.of(2026, 1, 12, 0, 0, 0);
 
     /**
+     * The seeded VAT referential: rate as the seed writes it, number and label.
+     *
+     * <p>Numbered the way the French referential does — 1 normal, 2 réduit,
+     * 3 intermédiaire, 4 super-réduit, 5 exonéré — so a demonstration ticket
+     * prints a VAT number a reader recognizes.
+     */
+    private static final String[][] SEEDED_VAT_RATES = {
+            {"0.2000", "1", "Taux normal"},
+            {"0.0550", "2", "Taux réduit"},
+            {"0.1000", "3", "Taux intermédiaire"},
+            {"0.0210", "4", "Taux super-réduit"},
+            {"0.0000", "5", "Exonéré"}};
+
+    /**
+     * The regimes written by {@link #loadVatRates()}, indexed by the rate as
+     * the seed writes it.
+     *
+     * <p>Held here rather than looked up per price: the seed states rates
+     * because that is what a demonstration price list reads like, the model
+     * states regimes, and this map is the one place the two meet.
+     */
+    private final java.util.Map<String, VatRate> seededVatRates = new java.util.HashMap<>();
+
+    /**
      * Wipes and reloads the referential tables at startup (dev/test only).
      *
      * @param ev the startup event
@@ -66,8 +90,10 @@ public class DataInitializer {
         ProductFamily.deleteAll();
         Nomenclature.deleteAll();
         CouponType.deleteAll();
+        VatRate.deleteAll();
 
         createStore();
+        loadVatRates();
         loadEmployees();
         loadProductsAndFamilies();
         loadCouponTypes();
@@ -592,11 +618,30 @@ public class DataInitializer {
         p.product = product;
         p.priceExcludingTax = new BigDecimal(priceHT);
         p.priceIncludingTax = new BigDecimal(priceTTC);
-        p.vatRate = new BigDecimal(vatRate);
+        p.vat = seededVatRates.get(vatRate);
         p.priority = priority;
         p.startDateTime = PRICE_START;
         p.endDateTime = null;
         p.persist();
+    }
+
+    /**
+     * Writes the VAT referential, once, before any price names it.
+     *
+     * <p>Five regimes and no more: a price of this seed carries one of the
+     * five rates {@link #SEEDED_VAT_RATES} declares, and a rate outside them
+     * would leave its price without a regime — which the scan paths survive by
+     * falling back on the administered default, exactly as for a product with
+     * no price at all.
+     */
+    private void loadVatRates() {
+        seededVatRates.clear();
+        for (String[] seeded : SEEDED_VAT_RATES) {
+            VatRate regime = new VatRate(Integer.valueOf(seeded[1]),
+                    new BigDecimal(seeded[0]), seeded[2]);
+            regime.persist();
+            seededVatRates.put(seeded[0], regime);
+        }
     }
 
     /**

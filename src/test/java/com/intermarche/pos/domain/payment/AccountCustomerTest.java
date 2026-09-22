@@ -7,6 +7,7 @@ import java.util.Objects;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -44,6 +45,81 @@ class AccountCustomerTest {
         AccountCustomer customer = minimal();
         customer.creditLimit = new BigDecimal("100.00");
         assertTrue(customer.isCreditAllowed());
+    }
+
+    /**
+     * A BLOCKED account is refused credit even with a ceiling: the other leg of
+     * the {@code creditLimit != null && !blocked} guard, and the whole point of
+     * the blocking (BO-02-04-06).
+     */
+    @Test
+    void isCreditAllowedFalseWhenBlocked() {
+        AccountCustomer customer = minimal();
+        customer.creditLimit = new BigDecimal("100.00");
+        customer.blocked = true;
+        assertFalse(customer.isCreditAllowed());
+        assertEquals(BigDecimal.ZERO, customer.getCreditAvailable());
+    }
+
+    /**
+     * A blocked account with NO ceiling is refused too: both legs true at once.
+     */
+    @Test
+    void isCreditAllowedFalseWhenBlockedAndWithoutLimit() {
+        AccountCustomer customer = minimal();
+        customer.blocked = true;
+        assertFalse(customer.isCreditAllowed());
+    }
+
+    /**
+     * A customer is a REGISTER one until something says otherwise
+     * (BO-02-04-22).
+     */
+    @Test
+    void aCustomerIsARegisterOneByDefault() {
+        assertEquals(AccountCustomer.Origin.REGISTER, minimal().origin);
+    }
+
+    /**
+     * The free fields enter the checksum in SLOT ORDER, so a customer whose
+     * ninetieth field changed is seen as changed, and a customer whose fields
+     * merely came back in another order is not (BO-02-04-11).
+     */
+    @Test
+    void theFreeFieldsEnterTheChecksumInSlotOrder() {
+        AccountCustomer one = minimal();
+        one.freeFields.add(new AccountCustomer.FreeField(2, "Tournée", "B"));
+        one.freeFields.add(new AccountCustomer.FreeField(1, "Zone", "N"));
+        AccountCustomer other = minimal();
+        other.freeFields.add(new AccountCustomer.FreeField(1, "Zone", "N"));
+        other.freeFields.add(new AccountCustomer.FreeField(2, "Tournée", "B"));
+        assertEquals(one.getChecksum(), other.getChecksum());
+        other.freeFields.get(0).value = "S";
+        assertNotEquals(one.getChecksum(), other.getChecksum());
+    }
+
+    /**
+     * A customer carrying no free field, and one whose list is null, hash the
+     * same: both arms of the digest's guard.
+     */
+    @Test
+    void theFreeFieldsDigestToleratesAnEmptyAndANullList() {
+        AccountCustomer empty = minimal();
+        AccountCustomer none = minimal();
+        none.freeFields = null;
+        assertEquals(empty.getChecksum(), none.getChecksum());
+    }
+
+    /**
+     * A free field renders its slot, its label and its value, the null parts
+     * rendered empty — both arms of each of its two ternaries.
+     */
+    @Test
+    void aFreeFieldRendersItsThreeParts() {
+        assertEquals("7=Zone=Nord", new AccountCustomer.FreeField(7, "Zone", "Nord").toString());
+        assertEquals("7==", new AccountCustomer.FreeField(7, null, null).toString());
+        AccountCustomer.FreeField empty = new AccountCustomer.FreeField();
+        assertEquals("0==", empty.toString());
     }
 
     /**
@@ -215,8 +291,10 @@ class AccountCustomerTest {
         customer.address.streetLine1 = "street";
         customer.address.postalCode = "75000";
         customer.address.city = "Paris";
-        int expected = Objects.hash("A1", "Acme", "Doe", "John", "S", "V", "P", "E",
-                BigDecimal.TEN, BigDecimal.ONE, "street", "75000", "Paris");
+        int expected = Objects.hash("A1", "Acme", AccountCustomer.Origin.REGISTER, null,
+                "Doe", "John", "S", "V", null, null, "P", "E",
+                BigDecimal.TEN, BigDecimal.ONE, false, null, null, "",
+                "street", "75000", "Paris");
         assertEquals(expected, customer.getChecksum());
     }
 
@@ -237,8 +315,10 @@ class AccountCustomerTest {
         customer.creditLimit = BigDecimal.TEN;
         customer.creditBalance = BigDecimal.ONE;
         customer.address = null;
-        int expected = Objects.hash("A1", "Acme", "Doe", "John", "S", "V", "P", "E",
-                BigDecimal.TEN, BigDecimal.ONE, null, null, null);
+        int expected = Objects.hash("A1", "Acme", AccountCustomer.Origin.REGISTER, null,
+                "Doe", "John", "S", "V", null, null, "P", "E",
+                BigDecimal.TEN, BigDecimal.ONE, false, null, null, "",
+                null, null, null);
         assertEquals(expected, customer.getChecksum());
     }
 }

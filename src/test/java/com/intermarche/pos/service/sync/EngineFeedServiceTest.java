@@ -33,7 +33,7 @@ class EngineFeedServiceTest {
 
     /**
      * The catalog ships shared referentials before engine-specific feeds,
-     * offers last (delivery-order doctrine).
+     * offers last (delivery-order doctrine), and VAT before prices.
      */
     @Test
     void catalogOrdersSharedBeforeSpecific() {
@@ -41,6 +41,12 @@ class EngineFeedServiceTest {
         assertEquals("OFFERS", EngineFeedService.CATALOG.get(EngineFeedService.CATALOG.size() - 1).code());
         assertTrue(indexOf("PRODUCTS") < indexOf("OFFERS"));
         assertTrue(indexOf("FAMILIES") < indexOf("PRICES"));
+        // Load-bearing: the engine attaches a price to the regime carrying its
+        // rate, so prices delivered first are rejected line by line.
+        assertTrue(indexOf("VAT_RATES") >= 0);
+        assertTrue(indexOf("VAT_RATES") < indexOf("PRICES"));
+        assertEquals("/vat-rates/import",
+                EngineFeedService.catalogEntry("VAT_RATES").orElseThrow().enginePath());
     }
 
     /**

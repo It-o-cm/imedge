@@ -13,6 +13,7 @@ import com.intermarche.pos.domain.store.Pdv;
 import com.intermarche.pos.domain.catalog.Price;
 import com.intermarche.pos.domain.catalog.Product;
 import com.intermarche.pos.domain.catalog.ProductType;
+import com.intermarche.pos.domain.catalog.VatRate;
 import com.intermarche.pos.domain.catalog.ProductFamily;
 import com.intermarche.pos.domain.sync.RefState;
 import com.intermarche.pos.domain.setting.TouchGroupSetting;
@@ -203,6 +204,34 @@ public class RefApplyService {
     }
 
     /**
+     * Replaces the VAT referential with the snapshot pulled from the node
+     * (BO-02-03-14).
+     *
+     * <p>Applied BEFORE the prices, and that order is the contract: a price
+     * names its regime by number, so the table has to be there when the price
+     * rows land. A regime a price names and that this snapshot does not carry
+     * simply leaves that price without a rate, which the scan paths already
+     * know how to survive — they fall back on the administered default.
+     *
+     * @param dtos the regimes of the snapshot
+     */
+    @Transactional
+    public void applyVatRates(List<RefPayloads.VatRateDto> dtos) {
+        LOGGER.info("Entering method applyVatRates with dtos: " + dtos);
+        Price.update("set vat = null where vat is not null");
+        VatRate.deleteAll();
+        for (RefPayloads.VatRateDto dto : dtos) {
+            VatRate rate = new VatRate();
+            rate.number = dto.number;
+            rate.rate = dto.rate;
+            rate.label = dto.label;
+            rate.persist();
+        }
+        LOGGER.infof("Référentiel TVA remplacé: %d régime(s)", dtos.size());
+        LOGGER.info("Exiting method applyVatRates");
+    }
+
+    /**
      * Applies a price snapshot: full replacement (nothing references price
      * rows). Rows pointing to a product unknown on this register are skipped
      * and counted.
@@ -226,7 +255,7 @@ public class RefApplyService {
             price.product = product;
             price.priceExcludingTax = dto.priceExcludingTax;
             price.priceIncludingTax = dto.priceIncludingTax;
-            price.vatRate = dto.vatRate;
+            price.vat = VatRate.findByNumber(dto.vatNumber);
             price.priority = dto.priority != null ? dto.priority : 0;
             price.startDateTime = parse(dto.startDateTime);
             price.endDateTime = parse(dto.endDateTime);
@@ -728,6 +757,55 @@ public class RefApplyService {
     }
 
     /**
+     * Applies a postal-code snapshot: upsert by the PAIR, absents DELETED
+     * ({@code BO-02-04-15}).
+     *
+     * <p>Deleted and not deactivated, unlike the articles: nothing references a
+     * postal code — a customer's address carries the text of the code, not a
+     * foreign key — so a row the store node dropped must go, or a commune
+     * merged away last year would keep being offered at the till forever.
+     *
+     * @param dtos the full postal-code snapshot
+     */
+    @Transactional
+    public void applyPostalCodes(List<RefPayloads.PostalCodeDto> dtos) {
+        LOGGER.info("Entering method applyPostalCodes with dtos: " + dtos);
+        Set<String> seen = new HashSet<>();
+        for (RefPayloads.PostalCodeDto dto : dtos) {
+            com.intermarche.pos.domain.store.PostalCode row =
+                    com.intermarche.pos.domain.store.PostalCode.findPair(dto.code, dto.place);
+            if (row == null) {
+                row = new com.intermarche.pos.domain.store.PostalCode();
+                row.code = dto.code;
+                row.place = dto.place;
+            }
+            row.country = dto.country;
+            row.persist();
+            seen.add(pairOf(dto.code, dto.place));
+        }
+        for (com.intermarche.pos.domain.store.PostalCode row
+                : com.intermarche.pos.domain.store.PostalCode
+                        .<com.intermarche.pos.domain.store.PostalCode>listAll()) {
+            if (!seen.contains(pairOf(row.code, row.place))) {
+                row.delete();
+            }
+        }
+        LOGGER.infof("Référentiel codes postaux appliqué: %d ligne(s)", dtos.size());
+        LOGGER.info("Exiting method applyPostalCodes");
+    }
+
+    /**
+     * Composes the key of a postal-code row, the code alone not being unique.
+     *
+     * @param code the postal code, possibly null
+     * @param place the place, possibly null
+     * @return the composed key
+     */
+    private static String pairOf(String code, String place) {
+        return (code == null ? "" : code) + '\u0000' + (place == null ? "" : place);
+    }
+
+    /**
      * Applies the account-customer snapshot ({@code LC-07-09}): upsert by account
      * number, credit ceiling and outstanding balance included.
      *
@@ -753,6 +831,8 @@ public class RefApplyService {
                 customer.accountNumber = dto.accountNumber;
             }
             customer.companyName = dto.companyName;
+            customer.origin = origin(dto.origin);
+            customer.civility = dto.civility;
             customer.lastName = dto.lastName;
             customer.firstName = dto.firstName;
             if (customer.address == null) {
@@ -765,9 +845,29 @@ public class RefApplyService {
             customer.vatNumber = dto.vatNumber;
             customer.phone = dto.phone;
             customer.email = dto.email;
+            customer.taxId = dto.taxId;
+            customer.segment = dto.segment;
+            customer.blocked = dto.blocked;
+            customer.dueDate = date(dto.dueDate);
+            customer.discountPercent = amount(dto.discountPercent);
             customer.creditLimit = amount(dto.creditLimit);
             java.math.BigDecimal balance = amount(dto.creditBalance);
             customer.creditBalance = balance == null ? java.math.BigDecimal.ZERO : balance;
+            // The free fields are REPLACED and not merged: the commercial
+            // management sends the whole reserve, so a field it dropped must
+            // disappear here rather than survive as a value nobody maintains
+            // any more (BO-02-04-11).
+            if (customer.freeFields == null) {
+                customer.freeFields = new java.util.ArrayList<>();
+            }
+            customer.freeFields.clear();
+            if (dto.freeFields != null) {
+                for (RefPayloads.FreeFieldDto field : dto.freeFields) {
+                    customer.freeFields.add(
+                            new com.intermarche.pos.domain.payment.AccountCustomer.FreeField(
+                                    field.slot, field.label, field.value));
+                }
+            }
             customer.persist();
         }
         LOGGER.infof("Référentiel clients en compte appliqué: %d ligne(s)", dtos.size());
@@ -787,6 +887,49 @@ public class RefApplyService {
         try {
             return new java.math.BigDecimal(text.trim());
         } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Reads where a customer came from ({@code BO-02-04-22}).
+     *
+     * <p>Anything the node did not state, or stated in a word this version does
+     * not know, is read as {@code REGISTER}: claiming a row came from the
+     * commercial management is a claim that must be made explicitly, never one
+     * that falls out of a blank.
+     *
+     * @param text the origin as exported, possibly null or blank
+     * @return the origin, {@code REGISTER} when nothing readable was sent
+     */
+    private static com.intermarche.pos.domain.payment.AccountCustomer.Origin origin(String text) {
+        if (text == null || text.isBlank()) {
+            return com.intermarche.pos.domain.payment.AccountCustomer.Origin.REGISTER;
+        }
+        try {
+            return com.intermarche.pos.domain.payment.AccountCustomer.Origin.valueOf(text.trim());
+        } catch (IllegalArgumentException unknown) {
+            return com.intermarche.pos.domain.payment.AccountCustomer.Origin.REGISTER;
+        }
+    }
+
+    /**
+     * Reads an ISO date carried as text by a snapshot row.
+     *
+     * <p>An unreadable date is read as NO date rather than as an incident: a
+     * malformed due date on one customer must not stop the whole referential
+     * from being applied ({@code BO-02-04-08}).
+     *
+     * @param text the date as exported, possibly null or blank
+     * @return the date, or null when nothing readable was sent
+     */
+    private static java.time.LocalDate date(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        try {
+            return java.time.LocalDate.parse(text.trim());
+        } catch (java.time.format.DateTimeParseException e) {
             return null;
         }
     }

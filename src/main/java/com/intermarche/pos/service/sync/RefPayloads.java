@@ -38,9 +38,9 @@ public final class RefPayloads {
      * association is owned by the family — so the swap is safe.
      */
     public static final List<String> DOMAINS =
-            List.of("PRODUCTS", "FAMILIES", "TOUCH_GROUPS", "PRICES", "EMPLOYEES", "COUPON_TYPES",
-                    "ARTICLE_RANGES", "ISLANDS", "TENDERS", "DOCUMENT_TEMPLATES", "SETTINGS", "ENGINE_FEEDS",
-                    "CUSTOMERS", "CURRENCIES");
+            List.of("ENGINE_FEEDS", "PRODUCTS", "FAMILIES", "TOUCH_GROUPS", "VAT_RATES", "PRICES",
+                    "EMPLOYEES", "COUPON_TYPES", "ARTICLE_RANGES", "ISLANDS", "TENDERS",
+                    "DOCUMENT_TEMPLATES", "SETTINGS", "CUSTOMERS", "CURRENCIES", "POSTAL_CODES");
 
     /**
      * The echelon domains a STORE node pulls from the CENTRAL node (route A),
@@ -151,6 +151,21 @@ public final class RefPayloads {
     /**
      * A price row (prices are replaced as a whole, no upsert key).
      */
+    /**
+     * One VAT regime of the referential (BO-02-03-14).
+     *
+     * <p>Its own domain, applied BEFORE the prices: a price names a regime by
+     * its number, so the table has to exist when the price rows land.
+     */
+    public static class VatRateDto {
+        /** The regime number, the upsert key. */
+        public Integer number;
+        /** The rate as a fraction, 0.0550 for five and a half percent. */
+        public BigDecimal rate;
+        /** What a human reads in front of the rate, or null. */
+        public String label;
+    }
+
     public static class PriceDto {
         /** The EAN of the priced product. */
         public String productEan;
@@ -158,8 +173,12 @@ public final class RefPayloads {
         public BigDecimal priceExcludingTax;
         /** The price including tax. */
         public BigDecimal priceIncludingTax;
-        /** The VAT rate. */
-        public BigDecimal vatRate;
+        /**
+         * The NUMBER of the VAT regime this price falls under, or null when it
+         * names none. The rate itself travels in its own domain, once, instead
+         * of being repeated on every price row.
+         */
+        public Integer vatNumber;
         /** The selection priority. */
         public Integer priority;
         /** The validity start, ISO-8601, or null. */
@@ -502,6 +521,10 @@ public final class RefPayloads {
         public String accountNumber;
         /** The business name. */
         public String companyName;
+        /** Where the customer came from: REGISTER or INTEGRATED (BO-02-04-22). */
+        public String origin;
+        /** The contact's civility, or null (BO-02-04-02). */
+        public String civility;
         /** The contact's family name, or null. */
         public String lastName;
         /** The contact's given name, or null. */
@@ -520,10 +543,50 @@ public final class RefPayloads {
         public String phone;
         /** The electronic address, or null. */
         public String email;
+        /** The fiscal identifier (NIF), or null (BO-02-04-18/20). */
+        public String taxId;
+        /** The commercial segment, or null (BO-10-04-07). */
+        public String segment;
+        /** True when the account is blocked at the register (BO-02-04-06). */
+        public boolean blocked;
+        /** The due date as {@code yyyy-MM-dd}, or null (BO-02-04-08). */
+        public String dueDate;
+        /** The granted discount in percent, or null (BO-02-04-09). */
+        public String discountPercent;
         /** The administered credit ceiling, or null when credit is not granted. */
         public String creditLimit;
         /** The outstanding balance, or null for none. */
         public String creditBalance;
+        /** The free fields the commercial management filled (BO-02-04-11). */
+        public List<FreeFieldDto> freeFields = new ArrayList<>();
+    }
+
+    /**
+     * One free field of a customer in account ({@code BO-02-04-11}).
+     */
+    public static class FreeFieldDto {
+        /** The slot the commercial management numbers the field by. */
+        public int slot;
+        /** The label shown in front of the value, or null. */
+        public String label;
+        /** The value, or null. */
+        public String value;
+    }
+
+    /**
+     * A postal code and the place it designates ({@code BO-02-04-15/16/21}).
+     *
+     * <p>Upserted on the PAIR and not on the code: a French code covers several
+     * communes and a Portuguese one covers a street, so keying on the code
+     * alone would keep one of them and lose the rest.
+     */
+    public static class PostalCodeDto {
+        /** The postal code. */
+        public String code;
+        /** The place it designates. */
+        public String place;
+        /** The ISO country, or null. */
+        public String country;
     }
 
     /**

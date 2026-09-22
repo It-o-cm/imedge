@@ -149,6 +149,24 @@ public class SyncIngestResource {
     }
 
     /**
+     * Ingests a document issued at a register (BO-02-04-19).
+     *
+     * @param presentedToken the shared token presented by the register
+     * @param dto the document payload
+     * @return 200 on upsert, 401 on a bad token, 403 off-role, 409 retryable
+     */
+    @POST
+    @Path("/document")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.TEXT_PLAIN)
+    public Response ingestDocument(@HeaderParam("X-Sync-Token") String presentedToken,
+                                   SyncPayloads.DocumentDto dto) {
+        LOGGER.info("Entering method ingestDocument with presentedToken: ***" + ", dto: " + dto);
+        LOGGER.info("Exiting method ingestDocument");
+        return handle(presentedToken, () -> syncIngestService.ingestDocument(dto));
+    }
+
+    /**
      * Ingests a counter ticket pushed by a scale system (LC-06-01-02).
      *
      * <p>The scale is the emitter and it pushes — but it pushes HERE, never to a

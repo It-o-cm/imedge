@@ -129,6 +129,12 @@ class AdminProductFamilyResourceTest {
     private <T> PanacheQuery<T> listQuery(List<T> results) {
         PanacheQuery<T> query = mock(PanacheQuery.class);
         when(query.list()).thenReturn(results);
+        // The list screen now cuts a page out of this query before building its
+        // rows, so the mock has to answer count() and page() too; it holds one
+        // page, and hands it back whichever page is asked for.
+        when(query.count()).thenReturn((long) results.size());
+        when(query.page(org.mockito.ArgumentMatchers.anyInt(),
+                org.mockito.ArgumentMatchers.anyInt())).thenReturn(query);
         return query;
     }
 
@@ -173,7 +179,7 @@ class AdminProductFamilyResourceTest {
             panache.when(() -> ProductFamily.find(
                     "select p from ProductFamily p join p.productFamilies c where c.id = ?1", 2L))
                     .thenReturn(childParent);
-            assertEquals(instance, resource.list("hello", true, null));
+            assertEquals(instance, resource.list("hello", true, 1, null));
         }
         verify(instance).data("selected", null);
         verify(instance).data("members", List.of());
@@ -210,12 +216,15 @@ class AdminProductFamilyResourceTest {
             panache.when(() -> ProductFamily.find(
                     "select p from ProductFamily p join p.productFamilies c where c.id = ?1", 2L))
                     .thenReturn(childParent);
-            resource.list(null, true, null);
+            resource.list(null, true, 1, null);
         }
-        ArgumentCaptor<List<AdminProductFamilyResource.GroupRow>> captor =
-                ArgumentCaptor.forClass(List.class);
-        verify(resource.adminArticleGroups).data(eq("groups"), captor.capture());
-        List<AdminProductFamilyResource.GroupRow> rows = captor.getValue();
+        ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
+        verify(resource.adminArticleGroups).data(eq("page"), captor.capture());
+        @SuppressWarnings("unchecked")
+        com.intermarche.pos.ui.journal.JournalPage<AdminProductFamilyResource.GroupRow> window =
+                (com.intermarche.pos.ui.journal.JournalPage<AdminProductFamilyResource.GroupRow>)
+                        captor.getValue();
+        List<AdminProductFamilyResource.GroupRow> rows = window.rows;
         assertEquals(3, rows.size());
         assertEquals("RACINE", rows.get(0).code);
         assertNull(rows.get(0).parentCode);
@@ -248,7 +257,7 @@ class AdminProductFamilyResourceTest {
                     "select p from ProductFamily p join p.productFamilies c where c.id = ?1", 5L))
                     .thenReturn(noParent);
             panache.when(() -> ProductFamily.findById(5L)).thenReturn(selected);
-            assertEquals(instance, resource.list(null, false, 5L));
+            assertEquals(instance, resource.list(null, false, 1, 5L));
         }
         verify(instance).data("selected", selected);
         verify(instance).data("members", List.of(noEan, withEan));
@@ -266,7 +275,7 @@ class AdminProductFamilyResourceTest {
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
             panache.when(() -> ProductFamily.find("order by code")).thenReturn(all);
             panache.when(() -> ProductFamily.findById(99L)).thenReturn(null);
-            assertEquals(instance, resource.list(null, true, 99L));
+            assertEquals(instance, resource.list(null, true, 1, 99L));
         }
         verify(instance).data("selected", null);
         verify(instance).data("members", List.of());

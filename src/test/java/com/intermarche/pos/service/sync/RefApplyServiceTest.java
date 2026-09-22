@@ -20,6 +20,7 @@ import com.intermarche.pos.domain.catalog.Price;
 import com.intermarche.pos.domain.catalog.Product;
 import com.intermarche.pos.domain.catalog.ProductFamily;
 import com.intermarche.pos.domain.catalog.ProductType;
+import com.intermarche.pos.domain.catalog.VatRate;
 import com.intermarche.pos.domain.sync.RefState;
 import com.intermarche.pos.service.PosSettingsService;
 import com.intermarche.pos.domain.setting.TouchGroupSetting;
@@ -364,6 +365,61 @@ class RefApplyServiceTest {
     }
 
     // --------------------------------------------------
+    // applyVatRates
+    // --------------------------------------------------
+
+    /**
+     * {@code applyVatRates} detaches every price from its regime, wipes the
+     * table and rebuilds it from the snapshot, carrying the three values of
+     * each row.
+     */
+    @Test
+    void applyVatRatesReplacesTheWholeTable() {
+        RefApplyService service = new RefApplyService();
+        RefPayloads.VatRateDto normal = new RefPayloads.VatRateDto();
+        normal.number = 1;
+        normal.rate = new BigDecimal("0.2000");
+        normal.label = "Taux normal";
+        RefPayloads.VatRateDto bare = new RefPayloads.VatRateDto();
+        bare.number = 5;
+        bare.rate = new BigDecimal("0.0000");
+        bare.label = null;
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class);
+                MockedConstruction<VatRate> created = mockConstruction(VatRate.class)) {
+            service.applyVatRates(List.of(normal, bare));
+            mocked.verify(() -> Price.update("set vat = null where vat is not null"), times(1));
+            mocked.verify(VatRate::deleteAll, times(1));
+            assertEquals(2, created.constructed().size());
+            VatRate first = created.constructed().get(0);
+            assertEquals(1, first.number);
+            assertEquals(new BigDecimal("0.2000"), first.rate);
+            assertEquals("Taux normal", first.label);
+            verify(first, times(1)).persist();
+            VatRate second = created.constructed().get(1);
+            assertEquals(5, second.number);
+            assertEquals(new BigDecimal("0.0000"), second.rate);
+            assertNull(second.label);
+            verify(second, times(1)).persist();
+        }
+    }
+
+    /**
+     * An empty snapshot still detaches and wipes: a referential emptied at the
+     * store node empties on the register too.
+     */
+    @Test
+    void applyVatRatesOnAnEmptySnapshotStillWipes() {
+        RefApplyService service = new RefApplyService();
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class);
+                MockedConstruction<VatRate> created = mockConstruction(VatRate.class)) {
+            service.applyVatRates(List.of());
+            mocked.verify(() -> Price.update("set vat = null where vat is not null"), times(1));
+            mocked.verify(VatRate::deleteAll, times(1));
+            assertEquals(0, created.constructed().size());
+        }
+    }
+
+    // --------------------------------------------------
     // applyPrices
     // --------------------------------------------------
 
@@ -382,7 +438,7 @@ class RefApplyServiceTest {
         priced.productEan = "E1";
         priced.priceExcludingTax = new BigDecimal("1.00");
         priced.priceIncludingTax = new BigDecimal("1.20");
-        priced.vatRate = new BigDecimal("0.2000");
+        priced.vatNumber = 1;
         priced.priority = 5;
         priced.startDateTime = "2026-01-01T10:00:00";
         priced.endDateTime = null;
@@ -390,7 +446,7 @@ class RefApplyServiceTest {
         defaulted.productEan = "E2";
         defaulted.priceExcludingTax = new BigDecimal("2.00");
         defaulted.priceIncludingTax = new BigDecimal("2.20");
-        defaulted.vatRate = new BigDecimal("0.1000");
+        defaulted.vatNumber = null;
         defaulted.priority = null;
         defaulted.startDateTime = null;
         defaulted.endDateTime = "2026-12-31T23:59:59";
@@ -403,22 +459,29 @@ class RefApplyServiceTest {
         PanacheQuery<Product> q1 = queryReturning(p1);
         PanacheQuery<Product> q2 = queryReturning(p2);
         PanacheQuery<Product> qOrphan = queryReturning(null);
+        VatRate regime = new VatRate();
+        regime.number = 1;
+        regime.rate = new BigDecimal("0.2000");
+        PanacheQuery<VatRate> qRegime = queryReturning(regime);
         try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class);
                 MockedConstruction<Price> created = mockConstruction(Price.class)) {
             mocked.when(() -> Product.find("ean", "E1")).thenReturn(q1);
             mocked.when(() -> Product.find("ean", "E2")).thenReturn(q2);
             mocked.when(() -> Product.find("ean", "E9")).thenReturn(qOrphan);
+            mocked.when(() -> VatRate.find("number", 1)).thenReturn(qRegime);
             service.applyPrices(List.of(priced, defaulted, nullEan, orphan));
             mocked.verify(Price::deleteAll, times(1));
             assertEquals(2, created.constructed().size());
             Price first = created.constructed().get(0);
             assertSame(p1, first.product);
+            assertSame(regime, first.vat);
             assertEquals(5, first.priority);
             assertEquals(LocalDateTime.of(2026, 1, 1, 10, 0, 0), first.startDateTime);
             assertNull(first.endDateTime);
             verify(first, times(1)).persist();
             Price second = created.constructed().get(1);
             assertSame(p2, second.product);
+            assertNull(second.vat);
             assertEquals(0, second.priority);
             assertNull(second.startDateTime);
             assertEquals(LocalDateTime.of(2026, 12, 31, 23, 59, 59), second.endDateTime);

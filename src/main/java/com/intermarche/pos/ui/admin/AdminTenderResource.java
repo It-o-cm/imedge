@@ -185,7 +185,8 @@ public class AdminTenderResource {
                 + "Nombre max;Controle nombre;Rendu max;Controle rendu;Remboursement;"
                 + "Rendu monnaie;Rendu avec;Declaration auto;Prelevement auto;Tiroir;"
                 + "Apport/depense;Remise en banque;Fond de caisse;Total par defaut;"
-                + "Detail prelevement;Remontee fidelite\n");
+                + "Detail prelevement;Remontee fidelite;Transfert source;"
+                + "Transfert destination\n");
         for (TenderDefinition tender : tenders) {
             csv.append(cell(tender.functionalId))
                     .append(cell(tender.code))
@@ -213,7 +214,9 @@ public class AdminTenderResource {
                     .append(cell(yesNo(tender.floatAllowed)))
                     .append(cell(yesNo(tender.defaultsToTotal)))
                     .append(cell(yesNo(tender.withdrawalReportDetail)))
-                    .append(yesNo(tender.fidelityReported))
+                    .append(cell(yesNo(tender.fidelityReported)))
+                    .append(cell(yesNo(tender.transferSource)))
+                    .append(yesNo(tender.transferDestination))
                     .append('\n');
         }
         return csv.toString();
@@ -254,6 +257,11 @@ public class AdminTenderResource {
         tender.defaultsToTotal = form.getFirst("defaultsToTotal") != null;
         tender.withdrawalReportDetail = form.getFirst("withdrawalReportDetail") != null;
         tender.fidelityReported = form.getFirst("fidelityReported") != null;
+        // BO-05-02-17 : les deux bouts du transfert de règlement, administrés
+        // séparément — un moyen peut être corrigeable vers un autre sans que
+        // l'inverse ait un sens.
+        tender.transferSource = form.getFirst("transferSource") != null;
+        tender.transferDestination = form.getFirst("transferDestination") != null;
     }
 
     /**

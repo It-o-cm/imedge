@@ -27,6 +27,11 @@
 
 <div class="call-list" id="callsZone"></div>
 
+{! Compte à rebours de la fin de période (BO-09-01-06) : masqué tant que le
+ ! serveur répond -1, c'est-à-dire fermeture automatique désactivée ou fin de
+ ! période encore lointaine. !}
+<div class="alert period-banner" id="periodZone" role="status" hidden></div>
+
 <div class="card">
     <h2 class="card-title">Activité du jour</h2>
     <p class="card-sub">Cumuls de la journée, toutes caisses confondues.</p>
@@ -98,12 +103,39 @@
         '<span>' + r.terminal + ' <span class="sup-muted">(' + r.tickets + ' tickets)</span></span>'
         + '<span class="sup-amount">' + r.revenue + ' €</span>'), "Aucune vente aujourd'hui");
 
+      /* LC-01-02-07 : la fermeture se DEMANDE, elle ne se fait pas d'ici. La
+         caisse relève l'ordre à son tour de boucle et l'acquitte ; tant qu'elle
+         ne l'a pas fait, la ligne affiche « fermeture demandée » et le bouton
+         disparaît — le back-office ne doit pas prétendre avoir fermé une caisse
+         qui est peut-être éteinte ou en pleine vente. */
       renderRows('sessionsZone', data.sessions.map(s =>
         '<span>' + s.terminal + ' — ' + s.operator + '</span>'
-        + '<span class="sup-muted">' + s.number + ' · depuis ' + s.since + '</span>'), 'Aucune session ouverte');
+        + '<span class="sup-muted">' + s.number + ' · depuis ' + s.since + '</span>'
+        + (s.closing
+            ? '<span class="badge badge-off">fermeture demandée</span>'
+            : '<button class="btn btn-small btn-danger" onclick="forceClose(\'' + s.terminal + '\')">Forcer la fermeture</button>')
+      ), 'Aucune session ouverte');
 
       renderRows('topSalesZone', data.topSales.map(t =>
         '<span>' + t.label + '</span><span class="sup-amount">×' + t.quantity + '</span>'), "Aucune vente aujourd'hui");
+
+      /* Un ordre par clic : le service du nœud est idempotent par caisse, donc
+         une main impatiente ne ferme pas deux fois. */
+      window.forceClose = function (terminal) {
+        fetch('/dashboard/force-close/' + encodeURIComponent(terminal), { method: 'POST' })
+          .then(poll);
+      };
+
+      const period = document.getElementById('periodZone');
+      if (data.periodCountdown < 0) {
+        period.hidden = true;
+      } else {
+        period.hidden = false;
+        period.textContent = data.periodCountdown === 0
+          ? 'Fin de période (' + data.periodEnd + ') : fermeture automatique des caisses en cours.'
+          : 'Fin de période à ' + data.periodEnd + ' — fermeture automatique des caisses ouvertes dans '
+              + data.periodCountdown + ' min.';
+      }
 
       const calls = document.getElementById('callsZone');
       calls.innerHTML = '';

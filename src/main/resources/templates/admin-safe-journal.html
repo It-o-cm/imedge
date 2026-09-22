@@ -1,0 +1,81 @@
+{!
+ ! Back-office SAFE JOURNAL (BO-05-02-13): the debits and credits of the safe
+ ! over a stretch of days, with the running balance. Read-only on purpose — a
+ ! journal that could be corrected from the journal would not be one.
+!}
+{#include admin-layout}
+
+{#title}Journal du coffre{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Journal du coffre</h1>
+        <p class="page-sub">Débits, crédits et solde du coffre, jour après jour.</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-ghost" href="/admin/safe/journal/export?from={from}&to={to}">Extraire (CSV)</a>
+        <a class="btn btn-ghost" href="/admin/safe/movements">Mouvements</a>
+    </div>
+</div>
+
+<div class="card">
+    <h2 class="card-title">Période</h2>
+    <form method="get" action="/admin/safe/journal">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="j-from">Du</label>
+                <input class="input-control" id="j-from" type="date" name="from" value="{from}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="j-to">Au</label>
+                <input class="input-control" id="j-to" type="date" name="to" value="{to}">
+            </div>
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">Afficher</button>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <h2 class="card-title">Solde</h2>
+    <p class="card-sub">
+        Report à nouveau <strong>{opening} €</strong> ·
+        total débits <strong>{totalDebit} €</strong> ·
+        total crédits <strong>{totalCredit} €</strong> ·
+        nouveau solde <strong>{closing} €</strong>
+    </p>
+</div>
+
+<div class="card">
+    {#if rows.isEmpty()}
+    <div class="empty-state">
+        <p>Aucun mouvement sur cette période.</p>
+    </div>
+    {#else}
+    <table class="data-table">
+        <thead>
+        <tr><th>Date</th><th>Nature</th><th>Libellé</th><th>Référence</th><th>Débit €</th><th>Crédit €</th><th>Solde €</th><th>État</th></tr>
+        </thead>
+        <tbody>
+        {#for row in rows}
+        <tr>
+            <td>{row.movement.movementDate}</td>
+            <td>{row.movement.typeLabel}</td>
+            <td>{row.movement.label}</td>
+            <td>{row.movement.reference ?: '—'}</td>
+            <td>{row.debit}</td>
+            <td>{row.credit}</td>
+            <td>{row.balance}</td>
+            <td>
+                {#if row.movement.validated}<span class="badge badge-ok">Validé</span>
+                {#else}<span class="badge badge-off">À pointer</span>{/if}
+            </td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+{/body}

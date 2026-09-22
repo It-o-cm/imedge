@@ -348,6 +348,34 @@ class DocumentTemplateServiceTest {
                 DocumentTemplate.DocumentType.CREDIT_NOTE_VOUCHER).get("instrument"));
         assertNotNull(service.sampleData(
                 DocumentTemplate.DocumentType.CARD_RECEIPT).get("card"));
+        assertNotNull(service.sampleData(
+                DocumentTemplate.DocumentType.LOYALTY_RECEIPT).get("settlement"));
+    }
+
+    /**
+     * BO-03-03-25/-29/-31/-32: the LOYALTY ZONE the receipt and the loyalty slip
+     * both advertise — the card, its presence, the earn of the day and its
+     * advantage lines, the balance and the amount settled on it. A paramétreur
+     * who learns the zone on one document knows it on the other, so the two are
+     * asserted to be the SAME map.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void theloyaltyZoneIsAdvertisedOnBothDocumentsAlike() {
+        DocumentTemplateService service = newService();
+        Map<String, Object> onReceipt = (Map<String, Object>) service.sampleData(
+                DocumentTemplate.DocumentType.SALE_RECEIPT).get("fidelity");
+        Map<String, Object> onSlip = (Map<String, Object>) service.sampleData(
+                DocumentTemplate.DocumentType.LOYALTY_RECEIPT).get("fidelity");
+        assertEquals(onReceipt, onSlip);
+        assertEquals("6045200000123", onReceipt.get("card"));
+        assertEquals(Boolean.TRUE, onReceipt.get("present"));
+        assertEquals("1,03", onReceipt.get("earnTotal"));
+        assertEquals("42,30", onReceipt.get("availableBalance"));
+        assertEquals("3,00", onReceipt.get("usedAmount"));
+        assertEquals(Boolean.FALSE, onReceipt.get("unavailable"));
+        assertEquals("", onReceipt.get("message"));
+        assertEquals(2, ((java.util.List<?>) onReceipt.get("lines")).size());
     }
 
     /**

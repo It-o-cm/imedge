@@ -23,7 +23,18 @@ public enum Menu {
     ADMINISTRATION("Administration"),
 
     /** The supervision aggregate: the line's real-time monitoring. */
-    SUPERVISION("Supervision");
+    SUPERVISION("Supervision"),
+
+    /**
+     * The financial aggregate: the safe and what moves it ({@code BO-05-02-14}).
+     *
+     * <p>Apart from the parameters and from the supervision on purpose. The
+     * requirement asks for profiles giving access TO THE SAFE, and a shop where
+     * three or four people hold that access does not thereby let them change an
+     * article price — which is exactly what a right filed under "Paramétrage"
+     * would end up meaning the day somebody grants a menu in one gesture.
+     */
+    FINANCIER("Financier");
 
     /** The operator-facing label (French). */
     private final String label;

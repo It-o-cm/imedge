@@ -214,4 +214,27 @@ public final class ProductAttributes {
     public static boolean legalWarranty(Product product) {
         return flag(product, ProductAttributeCatalog.LEGAL_WARRANTY);
     }
+
+    /**
+     * The unit eco-tax borne by the article (BO-10-04-14), zero when it carries
+     * none.
+     *
+     * <p>An unreadable value is zero and not an error: the eco-tax is integrated
+     * from the commercial management as text, and one malformed article must not
+     * stop an invoice from being drawn.
+     *
+     * @param product the product, or null
+     * @return the unit eco-tax, never null, never negative-by-accident
+     */
+    public static java.math.BigDecimal ecoTax(Product product) {
+        String value = raw(product, ProductAttributeCatalog.ECO_TAX);
+        if (value == null || value.isBlank()) {
+            return java.math.BigDecimal.ZERO;
+        }
+        try {
+            return new java.math.BigDecimal(value.trim().replace(',', '.'));
+        } catch (NumberFormatException e) {
+            return java.math.BigDecimal.ZERO;
+        }
+    }
 }

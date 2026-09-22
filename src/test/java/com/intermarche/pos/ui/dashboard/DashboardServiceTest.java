@@ -2,6 +2,8 @@ package com.intermarche.pos.ui.dashboard;
 
 import com.intermarche.pos.domain.session.CashSession;
 import com.intermarche.pos.domain.people.Employee;
+import com.intermarche.pos.service.PeriodCloseService;
+import com.intermarche.pos.service.sync.RegisterCommandService;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.Query;
@@ -51,6 +53,10 @@ class DashboardServiceTest {
     private DashboardService serviceWith(EntityManager entityManager) {
         DashboardService service = new DashboardService();
         service.entityManager = entityManager;
+        service.registerCommandService = mock(RegisterCommandService.class);
+        service.periodCloseService = mock(PeriodCloseService.class);
+        when(service.periodCloseService.countdownMinutes()).thenReturn(-1L);
+        when(service.periodCloseService.endOfPeriodLabel()).thenReturn("23:30");
         return service;
     }
 
@@ -126,7 +132,8 @@ class DashboardServiceTest {
     /**
      * With non-empty rows for every query and one open session with a cashier,
      * {@code buildData()} formats every indicator, enters all three loops and
-     * takes the true arm of each ternary.
+     * takes the true arm of each ternary — and the false arm of the
+     * {@code pendingCount > 0} flag, no forced close being asked for.
      */
     @Test
     void buildDataPopulated() {
@@ -171,6 +178,9 @@ class DashboardServiceTest {
         assertEquals("C01-S00001", sessions.get(0).get("number"));
         assertEquals("Alice Martin", sessions.get(0).get("operator"));
         assertEquals("09:05", sessions.get(0).get("since"));
+        assertEquals(false, sessions.get(0).get("closing"));
+        assertEquals(-1L, data.get("periodCountdown"));
+        assertEquals("23:30", data.get("periodEnd"));
     }
 
     /**
@@ -214,7 +224,9 @@ class DashboardServiceTest {
     /**
      * With one open session whose opening cashier is null, {@code buildData()}
      * enters the session loop and takes the false arm of the
-     * {@code openingCashier != null} ternary, exposing a blank operator.
+     * {@code openingCashier != null} ternary, exposing a blank operator, and
+     * the true arm of the {@code pendingCount > 0} flag that marks a forced
+     * close already asked for.
      */
     @Test
     void buildDataSessionWithoutCashier() {
@@ -226,6 +238,8 @@ class DashboardServiceTest {
                 new Object[]{new BigDecimal("0"), 0L},
                 List.of());
         DashboardService service = serviceWith(entityManager);
+        when(service.registerCommandService.pendingCount("CAISSE2")).thenReturn(1L);
+        when(service.periodCloseService.countdownMinutes()).thenReturn(7L);
         Map<String, Object> data;
         try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
             mocked.when(() -> CashSession.list("status", CashSession.SessionStatus.OPEN))
@@ -240,5 +254,7 @@ class DashboardServiceTest {
         assertEquals("C02-S00002", sessions.get(0).get("number"));
         assertEquals("", sessions.get(0).get("operator"));
         assertEquals("14:30", sessions.get(0).get("since"));
+        assertEquals(true, sessions.get(0).get("closing"));
+        assertEquals(7L, data.get("periodCountdown"));
     }
 }

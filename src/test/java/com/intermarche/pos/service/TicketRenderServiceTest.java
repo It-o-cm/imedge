@@ -2,10 +2,12 @@ package com.intermarche.pos.service;
 
 import com.intermarche.pos.domain.payment.CashPayment;
 import com.intermarche.pos.domain.payment.CreditPayment;
+import com.intermarche.pos.domain.payment.FidelityPayment;
 import com.intermarche.pos.domain.payment.ForeignCurrencyPayment;
 import com.intermarche.pos.domain.payment.RoundingPayment;
 import com.intermarche.pos.domain.people.Employee;
 import com.intermarche.pos.domain.sale.Ticket;
+import com.intermarche.pos.domain.sale.TicketFidelityLine;
 import com.intermarche.pos.domain.sale.TicketLine;
 import com.intermarche.pos.domain.sale.TicketLineValuation;
 import com.intermarche.pos.domain.setting.DocumentTemplate;
@@ -126,6 +128,7 @@ class TicketRenderServiceTest {
         ticket.digitalKey = digitalKey;
         ticket.lines = new ArrayList<>();
         ticket.payments = new ArrayList<>();
+        ticket.fidelityLines = new ArrayList<>();
         return ticket;
     }
 
@@ -799,5 +802,143 @@ class TicketRenderServiceTest {
         traces.add(valuation("U1", "2.00", "-12345676.90", "AVANTAGE SUR VINGT-SIX CA", null));
         String out = render(service, ticket, traces, "", false, 0);
         assertTrue(out.contains("  AVANTAGE SUR VINGT-SIX CA -12345678,90 E\n"));
+    }
+
+    // --------------------------------------------------
+    // The loyalty zone (BO-03-03-25 / -29 / -30 / -31 / -32)
+    // --------------------------------------------------
+
+    /**
+     * BO-03-03-25: the node prints the loyalty section from what the selling
+     * register froze on the row. It used to be absent here by construction, so
+     * a duplicata issued at the welcome desk came out shorter than the paper the
+     * customer got at the till.
+     */
+    @Test
+    void thenodePrintsTheLoyaltySectionFrozenOnTheSale() {
+        TicketRenderService service = newService();
+        when(service.posSettingsService.fidelityAdvantagesEnabled()).thenReturn(true);
+        Ticket ticket = ticket(null);
+        ticket.fidelityCard = "2990000000019";
+        ticket.fidelityEarnTotal = new BigDecimal("1.03");
+        ticket.fidelityLines.add(
+                new TicketFidelityLine("SOCLE", "Cagnotte socle", new BigDecimal("0.28")));
+        ticket.lines.add(line("U1", "PAIN", "1", "2.00", "2.00"));
+        String out = render(service, ticket);
+        assertTrue(out.contains("CAGNOTTE DU JOUR"));
+        assertTrue(out.contains("+1,03 E"));
+        assertTrue(out.contains("Cagnotte socle"));
+        assertTrue(out.contains("+0,28 E"));
+    }
+
+    /**
+     * The three legs that silence the section, each on its own: the advantages
+     * disabled, no frozen earn at all, and an earn of zero.
+     */
+    @Test
+    void thethreeLegsThatSilenceTheLoyaltySection() {
+        TicketRenderService service = newService();
+        when(service.posSettingsService.fidelityAdvantagesEnabled()).thenReturn(false);
+        Ticket disabled = ticket(null);
+        disabled.fidelityEarnTotal = new BigDecimal("1.03");
+        disabled.lines.add(line("U1", "PAIN", "1", "2.00", "2.00"));
+        assertFalse(render(service, disabled).contains("CAGNOTTE DU JOUR"));
+        TicketRenderService enabled = newService();
+        when(enabled.posSettingsService.fidelityAdvantagesEnabled()).thenReturn(true);
+        Ticket nothing = ticket(null);
+        nothing.fidelityEarnTotal = null;
+        nothing.lines.add(line("U1", "PAIN", "1", "2.00", "2.00"));
+        assertFalse(render(enabled, nothing).contains("CAGNOTTE DU JOUR"));
+        Ticket zero = ticket(null);
+        zero.fidelityEarnTotal = BigDecimal.ZERO;
+        zero.lines.add(line("U1", "PAIN", "1", "2.00", "2.00"));
+        assertFalse(render(enabled, zero).contains("CAGNOTTE DU JOUR"));
+    }
+
+    /**
+     * The zone an administered layout reads on the node is the one the register
+     * builds: same keys, same figures, built from the same columns.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void thezoneAlayoutReadsIsTheRegistersOwn() {
+        TicketRenderService service = newService();
+        Ticket ticket = ticket(null);
+        ticket.fidelityCard = "2990000000019";
+        ticket.fidelityEarnTotal = new BigDecimal("1.03");
+        ticket.fidelityAvailableBalance = new BigDecimal("42.30");
+        ticket.fidelityLines.add(
+                new TicketFidelityLine("SOCLE", "Cagnotte socle", new BigDecimal("0.28")));
+        ticket.payments.add(new FidelityPayment(new BigDecimal("3.00")));
+        java.util.Map<String, Object> zone = (java.util.Map<String, Object>)
+                service.saleDocumentData(ticket, false, 0).get("fidelity");
+        assertEquals("2990000000019", zone.get("card"));
+        assertEquals(true, zone.get("present"));
+        assertEquals("1,03", zone.get("earnTotal"));
+        assertEquals("42,30", zone.get("availableBalance"));
+        assertEquals("3,00", zone.get("usedAmount"));
+        assertEquals(false, zone.get("unavailable"));
+        assertEquals("", zone.get("message"));
+        assertEquals(1, ((List<?>) zone.get("lines")).size());
+    }
+
+    /**
+     * A sale carrying no card, no frozen figure, no payment list and no
+     * collection at all still describes itself — the four null arms of that
+     * zone, which a sale ingested from an older register presents together.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void thezoneOfAbareSaleStillDescribesItself() {
+        TicketRenderService service = newService();
+        Ticket ticket = ticket(null);
+        ticket.fidelityLines = null;
+        ticket.payments = null;
+        java.util.Map<String, Object> zone = (java.util.Map<String, Object>)
+                service.saleDocumentData(ticket, false, 0).get("fidelity");
+        assertEquals("", zone.get("card"));
+        assertEquals(false, zone.get("present"));
+        assertEquals("", zone.get("earnTotal"));
+        assertEquals("", zone.get("availableBalance"));
+        assertEquals("0,00", zone.get("usedAmount"));
+        assertTrue(((List<?>) zone.get("lines")).isEmpty());
+    }
+
+    /**
+     * BO-03-03-29 and BO-03-03-30: a sale made while the programme was silent
+     * carries the administered message — the holder's one with its {@code
+     * {carte}} token replaced, the non-holder's other one — and a shop that
+     * clears the parameter says nothing, on both the blank and the null arm.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void asilentProgrammeIsStatedOnThePaper() {
+        TicketRenderService service = newService();
+        when(service.posSettingsService.fidelityOfflineMessage())
+                .thenReturn("CARTE {carte} INDISPONIBLE", "  ", null);
+        when(service.posSettingsService.fidelityOfflineMessageNoCard())
+                .thenReturn("PRESENTEZ VOTRE CARTE");
+        Ticket holder = ticket(null);
+        holder.fidelityCard = "2990000000019";
+        holder.fidelityUnavailable = true;
+        assertEquals("CARTE 2990000000019 INDISPONIBLE", message(service, holder));
+        assertEquals("", message(service, holder));
+        assertEquals("", message(service, holder));
+        Ticket stranger = ticket(null);
+        stranger.fidelityUnavailable = true;
+        assertEquals("PRESENTEZ VOTRE CARTE", message(service, stranger));
+    }
+
+    /**
+     * Reads the message of a sale's loyalty zone.
+     *
+     * @param service the renderer under test
+     * @param ticket the sale to describe
+     * @return the resolved message
+     */
+    @SuppressWarnings("unchecked")
+    private String message(TicketRenderService service, Ticket ticket) {
+        return (String) ((java.util.Map<String, Object>)
+                service.saleDocumentData(ticket, false, 0).get("fidelity")).get("message");
     }
 }

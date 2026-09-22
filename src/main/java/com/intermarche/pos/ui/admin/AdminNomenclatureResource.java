@@ -40,9 +40,9 @@ import java.util.List;
  * The nomenclature is authored in the gestion commerciale (BO-02-01-01), not
  * here, so this screen never invents a node: it INTEGRATES the file that
  * office publishes, and re-integrating it is how a nomenclature is updated.
- * The file used to be reachable only by posting it to
- * {@code /nomenclatures/import} with an HTTP client, which meant a shop could
- * read its classification on this screen and had no way to refresh it. The
+ * The file used to be reachable only by posting it to the machine surface
+ * ({@code /feeds/import/NOMENCLATURE}) with an HTTP client, which meant a shop
+ * could read its classification on this screen and had no way to refresh it. The
  * form below closes that gap, and reads the file through
  * {@link NomenclatureCsvResource#read} — one reading of the published format,
  * so the screen and the machine surface can never disagree on what a line
@@ -140,6 +140,109 @@ public class AdminNomenclatureResource {
          * Builds an empty form, as the multipart reader requires.
          */
         public ImportForm() {
+        }
+    }
+
+    /**
+     * One level of the scheme as the screen edits it (BO-02-01-01).
+     *
+     * <p>It carries what the entity holds — rank, name, cumulative code length,
+     * origin — plus the two things only a count can tell: how many nodes sit at
+     * this level or below it, and therefore whether the level may still be
+     * reshaped. A screen that offered a length field on a populated level would
+     * be offering to misplace every node under it.
+     */
+    public static class LevelRow {
+
+        /** The 0-based rank of the level, the top one being zero. */
+        public final int rank;
+
+        /** The level's name as the enseigne uses it. */
+        public final String label;
+
+        /** The CUMULATIVE number of digits of a node code at this level. */
+        public final int codeLength;
+
+        /** Whether the point of sale may redefine this level. */
+        public final boolean custom;
+
+        /** How many nodes sit at this level or deeper. */
+        public final long nodes;
+
+        /**
+         * Builds a level row.
+         *
+         * @param rank the 0-based rank
+         * @param label the level name
+         * @param codeLength the cumulative code length
+         * @param custom whether the point of sale may redefine it
+         * @param nodes how many nodes sit at this level or deeper
+         */
+        public LevelRow(int rank, String label, int codeLength, boolean custom, long nodes) {
+            this.rank = rank;
+            this.label = label;
+            this.codeLength = codeLength;
+            this.custom = custom;
+            this.nodes = nodes;
+        }
+
+        /**
+         * Returns the 0-based rank of the level.
+         *
+         * @return the rank
+         */
+        public int getRank() {
+            return rank;
+        }
+
+        /**
+         * Returns the level's name.
+         *
+         * @return the label
+         */
+        public String getLabel() {
+            return label;
+        }
+
+        /**
+         * Returns the cumulative code length of the level.
+         *
+         * @return the number of digits
+         */
+        public int getCodeLength() {
+            return codeLength;
+        }
+
+        /**
+         * Indicates whether the point of sale may redefine this level.
+         *
+         * @return true on a CUSTOM level
+         */
+        public boolean isCustom() {
+            return custom;
+        }
+
+        /**
+         * Returns how many nodes sit at this level or deeper.
+         *
+         * @return the node count
+         */
+        public long getNodes() {
+            return nodes;
+        }
+
+        /**
+         * Indicates whether the level may still change length or be removed.
+         *
+         * <p>Both gestures re-parent everything below — a node is placed by the
+         * length of its code and hangs under its code truncated to the length
+         * above — so both are offered only while nothing is placed here or
+         * deeper.
+         *
+         * @return true when no node sits at this level or below
+         */
+        public boolean isReshapable() {
+            return nodes == 0;
         }
     }
 
@@ -303,6 +406,8 @@ public class AdminNomenclatureResource {
                 .data("schemes", schemes)
                 .data("scheme", scheme)
                 .data("levels", levels)
+                .data("levelRows", levelRows(scheme))
+                .data("nextLength", nextLength(scheme))
                 .data("levelLabel", levelLabel(scheme, level))
                 .data("levelCustom", isCustomLevel(scheme, level))
                 .data("codeLength", codeLengthAt(scheme, level))
@@ -1123,13 +1228,22 @@ public class AdminNomenclatureResource {
     }
 
     /**
-     * Renames the levels of a scheme — the one thing the screen writes.
+     * Saves the level table of a scheme: the name of each level and the number
+     * of digits a node code carries there (BO-02-01-01).
      * <p>
-     * The published file does not carry the level names, and every report
-     * names them. Renaming never moves a node: a node is placed by its code
-     * length, which this form cannot touch.
+     * The published file states neither, and both are needed: every report
+     * names a level ("rupture par rayon"), and the length is what PLACES a node
+     * — a code sits at the level whose length it has, and hangs under itself
+     * truncated to the length above.
+     * <p>
+     * Which is why a length is not a field like another. The whole table is
+     * validated before a single row is written: lengths strictly grow with the
+     * rank, and a level that would change length must carry nothing at its rank
+     * nor below. Half-applying a table would misplace every node under the
+     * first row written — the very defect the importer refuses a file for.
      *
-     * @param form the posted form (scheme, then one label per level rank)
+     * @param form the posted form (scheme, then one label and one length per
+     *        level rank)
      * @return a 303 redirect carrying the outcome notice
      */
     @POST
@@ -1145,17 +1259,267 @@ public class AdminNomenclatureResource {
             LOGGER.info("Exiting method saveLevels");
             return redirect(null, "Nomenclature introuvable.", false);
         }
-        int renamed = 0;
-        for (NomenclatureLevel level : scheme.levels()) {
+        List<NomenclatureLevel> levels = scheme.levels();
+        int[] lengths = new int[levels.size()];
+        for (NomenclatureLevel level : levels) {
+            Integer posted = digits(form.getFirst("length-" + level.rank));
+            if (posted == null) {
+                LOGGER.info("Exiting method saveLevels");
+                return redirect(scheme.code, "Niveau " + level.rank
+                        + " : le nombre de caractères doit être un entier d'au moins 1.", false);
+            }
+            lengths[level.rank] = posted;
+        }
+        String complaint = checkGrowing(lengths);
+        if (complaint == null) {
+            complaint = checkReshapable(scheme, levels, lengths);
+        }
+        if (complaint != null) {
+            LOGGER.info("Exiting method saveLevels");
+            return redirect(scheme.code, complaint, false);
+        }
+        int saved = 0;
+        for (NomenclatureLevel level : levels) {
             String posted = form.getFirst("level-" + level.rank);
-            if (posted != null && !posted.trim().isEmpty()) {
+            boolean renamed = posted != null && !posted.trim().isEmpty()
+                    && !posted.trim().equals(level.label);
+            boolean resized = lengths[level.rank] != level.codeLength;
+            if (!renamed && !resized) {
+                continue;
+            }
+            if (renamed) {
                 level.label = posted.trim();
-                level.persist();
-                renamed++;
+            }
+            level.codeLength = lengths[level.rank];
+            level.persist();
+            saved++;
+        }
+        scheme.reloadLevels();
+        LOGGER.info("Exiting method saveLevels");
+        return redirect(scheme.code, saved + " niveau(x) enregistré(s).", true);
+    }
+
+    /**
+     * Appends a level at the bottom of the scheme (BO-02-01-01).
+     * <p>
+     * At the bottom and nowhere else: inserting a level in the middle would
+     * re-parent every node under it, which is a re-coding of the whole scheme
+     * and not a screen gesture. A deeper level simply needs more digits than
+     * the one above, since a code carries its ancestry in its own characters.
+     *
+     * @param form the posted form (scheme, length, optional label)
+     * @return a 303 redirect carrying the outcome notice
+     */
+    @POST
+    @Path("/levels/add")
+    @RolesAllowed("ADMIN")
+    @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
+    @Transactional
+    public Response addLevel(MultivaluedMap<String, String> form) {
+        LOGGER.info("Entering method addLevel");
+        String schemeCode = form.getFirst("scheme");
+        Nomenclature scheme = schemeCode == null ? null : Nomenclature.findByCode(schemeCode);
+        if (scheme == null) {
+            LOGGER.info("Exiting method addLevel");
+            return redirect(null, "Nomenclature introuvable.", false);
+        }
+        Integer length = digits(form.getFirst("length"));
+        if (length == null) {
+            LOGGER.info("Exiting method addLevel");
+            return redirect(scheme.code,
+                    "Le nombre de caractères doit être un entier d'au moins 1.", false);
+        }
+        List<NomenclatureLevel> levels = scheme.levels();
+        int rank = levels.size();
+        if (rank > 0 && length <= levels.get(rank - 1).codeLength) {
+            LOGGER.info("Exiting method addLevel");
+            return redirect(scheme.code, "Un niveau plus bas porte des codes plus longs : "
+                    + "au-delà de " + levels.get(rank - 1).codeLength + " caractères.", false);
+        }
+        String posted = form.getFirst("label");
+        NomenclatureLevel level = new NomenclatureLevel();
+        level.nomenclature = scheme;
+        level.rank = rank;
+        level.label = posted == null || posted.trim().isEmpty() ? "Niveau " + rank : posted.trim();
+        level.codeLength = length;
+        level.custom = true;
+        level.persist();
+        scheme.reloadLevels();
+        LOGGER.info("Exiting method addLevel");
+        return redirect(scheme.code, "Niveau " + rank + " ajouté (" + length + " caractères).",
+                true);
+    }
+
+    /**
+     * Removes one level of the scheme (BO-02-01-01).
+     * <p>
+     * Only a level carrying nothing at its rank nor below: a node is placed by
+     * the length of its code, so removing a level above it would leave it
+     * hanging from a length nobody declares any more. The ranks under the
+     * removed one shift up, which is free precisely because they are empty.
+     *
+     * @param form the posted form (scheme, rank)
+     * @return a 303 redirect carrying the outcome notice
+     */
+    @POST
+    @Path("/levels/delete")
+    @RolesAllowed("ADMIN")
+    @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
+    @Transactional
+    public Response deleteLevel(MultivaluedMap<String, String> form) {
+        LOGGER.info("Entering method deleteLevel");
+        String schemeCode = form.getFirst("scheme");
+        Nomenclature scheme = schemeCode == null ? null : Nomenclature.findByCode(schemeCode);
+        if (scheme == null) {
+            LOGGER.info("Exiting method deleteLevel");
+            return redirect(null, "Nomenclature introuvable.", false);
+        }
+        Integer rank = rank(form.getFirst("rank"));
+        NomenclatureLevel level = rank == null ? null : NomenclatureLevel.findByRank(scheme, rank);
+        if (level == null) {
+            LOGGER.info("Exiting method deleteLevel");
+            return redirect(scheme.code, "Niveau introuvable.", false);
+        }
+        long placed = nodesAtOrBelow(scheme, rank);
+        if (placed > 0) {
+            LOGGER.info("Exiting method deleteLevel");
+            return redirect(scheme.code, "Niveau " + rank + " : " + placed
+                    + " nœud(s) y sont posés ou en dessous — retirez-les d'abord.", false);
+        }
+        for (NomenclatureLevel below : scheme.levels()) {
+            if (below.rank > rank) {
+                below.rank--;
+                below.persist();
             }
         }
-        LOGGER.info("Exiting method saveLevels");
-        return redirect(scheme.code, renamed + " niveau(x) renommé(s).", true);
+        level.delete();
+        scheme.reloadLevels();
+        LOGGER.info("Exiting method deleteLevel");
+        return redirect(scheme.code, "Niveau " + rank + " retiré.", true);
+    }
+
+    /**
+     * Reads a posted number of digits.
+     *
+     * @param posted the posted value, possibly null or blank
+     * @return the number of digits, or null when it is absent, unreadable or
+     *         below one
+     */
+    private Integer digits(String posted) {
+        if (posted == null || posted.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            int value = Integer.parseInt(posted.trim());
+            return value < 1 ? null : value;
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Reads a posted level rank.
+     *
+     * @param posted the posted value, possibly null or blank
+     * @return the rank, or null when it is absent, unreadable or negative
+     */
+    private Integer rank(String posted) {
+        if (posted == null || posted.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            int value = Integer.parseInt(posted.trim());
+            return value < 0 ? null : value;
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Checks that the code lengths grow strictly with the rank.
+     *
+     * <p>They must: a code carries its own ancestry, so a level that did not
+     * add at least one character to the one above would name the same node
+     * twice.
+     *
+     * @param lengths the wanted length of each rank, in rank order
+     * @return the complaint to show, or null when the table holds together
+     */
+    private String checkGrowing(int[] lengths) {
+        for (int rank = 1; rank < lengths.length; rank++) {
+            if (lengths[rank] <= lengths[rank - 1]) {
+                return "Niveau " + rank + " : les codes doivent s'allonger d'un niveau à l'autre, "
+                        + "au-delà de " + lengths[rank - 1] + " caractères.";
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Checks that every level whose length would change carries nothing at its
+     * rank nor below.
+     *
+     * @param scheme the scheme being saved
+     * @param levels its levels, in rank order
+     * @param lengths the wanted length of each rank, in rank order
+     * @return the complaint to show, or null when every change is safe
+     */
+    private String checkReshapable(Nomenclature scheme, List<NomenclatureLevel> levels,
+            int[] lengths) {
+        for (NomenclatureLevel level : levels) {
+            if (lengths[level.rank] == level.codeLength) {
+                continue;
+            }
+            long placed = nodesAtOrBelow(scheme, level.rank);
+            if (placed > 0) {
+                return "Niveau " + level.rank + " : " + placed + " nœud(s) y sont posés ou en "
+                        + "dessous — la longueur des codes ne peut plus changer.";
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Counts the nodes placed at a level or deeper.
+     *
+     * @param scheme the scheme, never null here
+     * @param rank the 0-based rank
+     * @return how many nodes sit at that rank or below
+     */
+    private long nodesAtOrBelow(Nomenclature scheme, int rank) {
+        return ProductFamily.count("nomenclature.id = ?1 and level >= ?2", scheme.id, rank);
+    }
+
+    /**
+     * The shortest length a level appended at the bottom could carry: one
+     * character more than the deepest declared level.
+     *
+     * @param scheme the scheme, possibly null
+     * @return the proposed length of the next level, 1 on a scheme with none
+     */
+    private int nextLength(Nomenclature scheme) {
+        if (scheme == null || scheme.depth() == 0) {
+            return 1;
+        }
+        return scheme.levels().get(scheme.depth() - 1).codeLength + 1;
+    }
+
+    /**
+     * Describes the level table of a scheme as the screen edits it.
+     *
+     * @param scheme the scheme, possibly null
+     * @return one row per level in rank order, empty when no scheme is shown
+     */
+    private List<LevelRow> levelRows(Nomenclature scheme) {
+        List<LevelRow> rows = new ArrayList<>();
+        if (scheme == null) {
+            return rows;
+        }
+        for (NomenclatureLevel level : scheme.levels()) {
+            rows.add(new LevelRow(level.rank, levelLabel(scheme, level.rank), level.codeLength,
+                    level.custom, nodesAtOrBelow(scheme, level.rank)));
+        }
+        return rows;
     }
 
     /**

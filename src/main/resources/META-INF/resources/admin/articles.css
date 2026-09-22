@@ -70,3 +70,105 @@
     font-weight: 600;
     color: var(--im-ink);
 }
+
+/* Level table of a nomenclature (BO-02-01-01). The name of a level and the
+   number of characters its codes carry are ONE statement — "Rayon, 4" — so
+   they sit on one line, and neither field is wider than what it holds: a
+   level name is a word, a code length is two digits. */
+.level-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.level-line .level-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 220px;
+}
+
+.level-line .level-digits {
+    flex: 0 0 72px;
+    width: 72px;
+    text-align: right;
+}
+
+.level-unit {
+    font-size: 12px;
+    color: var(--im-ink-soft);
+}
+
+/* VAT referential (BO-02-03-14). A regime is four short values — a number, a
+   rate, a label and what uses it — so it is one line, not a form: a field
+   sized for a paragraph in front of two digits tells the operator the two
+   digits are a paragraph.
+
+   ONE GRID for the whole list, and each row a `display: contents` form, rather
+   than one flex line per row: five independent lines only LOOK aligned as long
+   as every one of them holds the same widths, and the last cell does not — it
+   carries either a button or a usage count. Grid columns are declared once, so
+   the alignment is structural and holds whatever the cells contain. */
+.vat-grid {
+    display: grid;
+    grid-template-columns: 72px 72px auto minmax(0, 1fr) 100px 92px;
+    align-items: center;
+    column-gap: 8px;
+    row-gap: 8px;
+}
+
+/* No box of its own: the form's cells ARE the grid's cells, which is what puts
+   every row on the same columns. */
+.vat-grid > form {
+    display: contents;
+}
+
+.vat-grid .vat-number,
+.vat-grid .vat-rate {
+    text-align: right;
+}
+
+.vat-unit {
+    font-size: 12px;
+    color: var(--im-ink-soft);
+}
+
+.vat-usage {
+    font-size: 13px;
+    color: var(--im-ink-soft);
+    white-space: nowrap;
+    text-align: right;
+}
+
+/* The action column is a fixed width and not max-content, so the creation
+   line of the card below puts its button under the save buttons above even
+   though "Créer" is the shorter word. The last column holds either the delete
+   button or the usage count, and they are not the same width — the column
+   gives them one. */
+.vat-remove {
+    display: flex;
+    justify-content: flex-end;
+}
+
+/* The column captions, which are grid cells like the rest. */
+.vat-head {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .4px;
+    color: var(--im-ink-soft);
+    padding-bottom: 4px;
+}
+
+.vat-head.vat-number,
+.vat-head.vat-rate {
+    text-align: right;
+}
+
+/* The creation line reuses the same tracks so its fields sit under the ones
+   above, and its button under the save buttons. */
+.vat-new {
+    display: grid;
+    grid-template-columns: 72px 72px auto minmax(0, 1fr) 100px 92px;
+    align-items: center;
+    column-gap: 8px;
+}

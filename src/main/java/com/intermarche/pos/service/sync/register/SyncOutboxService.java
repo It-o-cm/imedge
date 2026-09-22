@@ -49,6 +49,10 @@ public class SyncOutboxService {
     @Inject
     ObjectMapper objectMapper;
 
+    /** The back-office parameters governing what a document extraction carries. */
+    @Inject
+    com.intermarche.pos.service.PosSettingsService posSettingsService;
+
     /**
      * A payload ready to push: the target path suffix and the JSON body.
      */
@@ -173,6 +177,12 @@ public class SyncOutboxService {
                             com.intermarche.pos.domain.payment.AccountCustomer.findById(row.entityId);
                     yield customer == null ? null
                             : new PreparedItem("customer", objectMapper.writeValueAsString(toDto(customer)));
+                }
+                case DOCUMENT -> {
+                    com.intermarche.pos.domain.sale.Invoice document =
+                            com.intermarche.pos.domain.sale.Invoice.findById(row.entityId);
+                    yield document == null ? null
+                            : new PreparedItem("document", objectMapper.writeValueAsString(toDto(document)));
                 }
             };
         } catch (Exception e) {
@@ -340,6 +350,20 @@ public class SyncOutboxService {
         dto.cashierLogin = ticket.cashier != null ? ticket.cashier.loginName : null;
         dto.sessionNumber = ticket.session != null ? ticket.session.sessionNumber : null;
         dto.fidelityCard = ticket.fidelityCard;
+        // BO-03-03-25/-29/-31: what the programme said about this sale travels
+        // with it. The node prints duplicata of sales made on other registers,
+        // and a duplicata that dropped the loyalty zone would not be the same
+        // document as the original.
+        dto.fidelityEarnTotal = ticket.fidelityEarnTotal;
+        dto.fidelityAvailableBalance = ticket.fidelityAvailableBalance;
+        dto.fidelityUnavailable = ticket.fidelityUnavailable;
+        for (com.intermarche.pos.domain.sale.TicketFidelityLine earnLine : ticket.fidelityLines) {
+            SyncPayloads.FidelityLineDto earnDto = new SyncPayloads.FidelityLineDto();
+            earnDto.ruleCode = earnLine.ruleCode;
+            earnDto.label = earnLine.label;
+            earnDto.amount = earnLine.amount;
+            dto.fidelityLines.add(earnDto);
+        }
         dto.digitalKey = ticket.digitalKey;
         dto.customerEmail = ticket.customerEmail;
         dto.itemCount = ticket.itemCount;
@@ -472,6 +496,50 @@ public class SyncOutboxService {
         dto.vatNumber = customer.vatNumber;
         dto.phone = customer.phone;
         dto.email = customer.email;
+        return dto;
+    }
+
+    /**
+     * Builds the payload of a document issued at the register
+     * ({@code BO-02-04-19}).
+     *
+     * <p>The customer block travels AS PRINTED, read off the document and not
+     * off the customer's file: the document is the archive, the file is the
+     * present state, and the two part company the day the customer moves.
+     *
+     * @param document the issued document
+     * @return the payload
+     */
+    private SyncPayloads.DocumentDto toDto(com.intermarche.pos.domain.sale.Invoice document) {
+        SyncPayloads.DocumentDto dto = new SyncPayloads.DocumentDto();
+        dto.documentNumber = document.documentNumber;
+        dto.documentType = document.documentType == null ? null : document.documentType.name();
+        dto.terminalId = document.terminalId;
+        dto.issueDate = document.issueDate == null ? null : document.issueDate.toString();
+        dto.ticketNumber = document.ticketNumber;
+        dto.customerAccountNumber = document.customerAccountNumber;
+        dto.customerName = document.customerName;
+        dto.customerContact = document.customerContact;
+        dto.customerSiret = document.customerSiret;
+        dto.customerVatNumber = document.customerVatNumber;
+        dto.customerTaxId = document.customerTaxId;
+        // BO-10-04-19 : la date d'échéance ne remonte dans l'extraction que si le
+        // magasin l'a demandée — elle n'est en place qu'en France aujourd'hui.
+        dto.customerDueDate = document.customerDueDate == null
+                || !posSettingsService.invoiceExportDueDate()
+                ? null : document.customerDueDate.toString();
+        if (document.customerAddress != null) {
+            dto.customerStreet = document.customerAddress.streetLine1;
+            dto.customerPostalCode = document.customerAddress.postalCode;
+            dto.customerCity = document.customerAddress.city;
+        }
+        dto.totalExcludingTax = document.totalExcludingTax;
+        dto.totalIncludingTax = document.totalIncludingTax;
+        dto.totalVat = document.totalVat;
+        // BO-10-04-14 : l'éco-taxe ne remonte que si le magasin l'a demandée.
+        dto.totalEcoTax = posSettingsService.invoiceExportEcoTax()
+                ? document.totalEcoTax : null;
+        dto.printCount = document.printCount;
         return dto;
     }
 

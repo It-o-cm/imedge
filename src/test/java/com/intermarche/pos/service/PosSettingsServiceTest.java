@@ -339,7 +339,9 @@ class PosSettingsServiceTest {
                     row("invoice.customer-fields", "companyName*;email"),
                     row("ticket.line-order", "LABEL"),
                     row("ticket.email-format", "ATTACHMENT"),
-                    row("ticket.email-editable", "false")));
+                    row("ticket.email-editable", "false"),
+                    row("fidelity.offline-message", "FIDELITE HS {carte}"),
+                    row("fidelity.offline-message-no-card", "PRESENTEZ VOTRE CARTE")));
             assertEquals(5, service.cashRoundingStepCents());
             assertFalse(service.balanceCounterPrice());
             assertFalse(service.backupManualEndorsement());
@@ -357,6 +359,11 @@ class PosSettingsServiceTest {
             assertEquals("LABEL", service.ticketLineOrder());
             assertEquals("ATTACHMENT", service.ticketEmailFormat());
             assertFalse(service.ticketEmailEditable());
+            // BO-03-03-29 / BO-03-03-30: the two receipt messages of a silent
+            // loyalty service — a holder is told their advantages will follow,
+            // a non-holder is invited to present a card next time.
+            assertEquals("FIDELITE HS {carte}", service.fidelityOfflineMessage());
+            assertEquals("PRESENTEZ VOTRE CARTE", service.fidelityOfflineMessageNoCard());
         }
     }
 

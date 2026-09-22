@@ -2,6 +2,8 @@ package com.intermarche.pos.graphql;
 
 import com.intermarche.pos.domain.catalog.Price;
 import com.intermarche.pos.domain.catalog.Product;
+import com.intermarche.pos.domain.catalog.VatRate;
+import io.quarkus.hibernate.orm.panache.PanacheQuery;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import org.eclipse.microprofile.graphql.GraphQLException;
 import org.junit.jupiter.api.Test;
@@ -19,9 +21,11 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
 
 /**
@@ -65,8 +69,10 @@ class PriceResourceTest {
     private static final BigDecimal HT = new BigDecimal("10.0000");
     /** Price including tax used across scenarios. */
     private static final BigDecimal TTC = new BigDecimal("12.0000");
-    /** VAT rate used across scenarios. */
-    private static final BigDecimal VAT = new BigDecimal("0.2000");
+    /** VAT regime number used across scenarios. */
+    private static final Integer VAT_NUMBER = 1;
+    /** The exact JPQL fragment {@code VatRate.findByNumber} issues. */
+    private static final String VAT_QUERY = "number";
 
     /** The resource under test; the trait default method is real, no collaborators are injected. */
     private final PriceResource resource = new PriceResource();
@@ -94,7 +100,7 @@ class PriceResourceTest {
         input.productId = productId;
         input.priceExcludingTax = HT;
         input.priceIncludingTax = TTC;
-        input.vatRate = VAT;
+        input.vatNumber = VAT_NUMBER;
         input.priority = PRIORITY;
         input.startDateTime = START;
         input.endDateTime = END;
@@ -168,6 +174,26 @@ class PriceResourceTest {
     }
 
     /**
+     * Stubs the referential lookup {@code VatRate.findByNumber} performs, so a
+     * mutation naming {@link #VAT_NUMBER} resolves to a regime instead of
+     * dereferencing the null the unstubbed static finder would answer.
+     *
+     * @param panache the open static mock of the Panache base class
+     * @return the regime the lookup answers
+     */
+    @SuppressWarnings("unchecked")
+    private VatRate stubRegime(MockedStatic<PanacheEntityBase> panache) {
+        VatRate regime = new VatRate();
+        regime.number = VAT_NUMBER;
+        regime.rate = new BigDecimal("0.2000");
+        regime.label = "Taux normal";
+        PanacheQuery<VatRate> query = mock(PanacheQuery.class);
+        when(query.firstResult()).thenReturn(regime);
+        panache.when(() -> VatRate.find(VAT_QUERY, VAT_NUMBER)).thenReturn(query);
+        return regime;
+    }
+
+    /**
      * {@code createPrice} persists a new price when the product exists and no duplicate is present,
      * copying every input field onto the constructed entity.
      *
@@ -181,6 +207,7 @@ class PriceResourceTest {
              MockedConstruction<Price> created = mockConstruction(Price.class)) {
             panache.when(() -> Product.findById(PRODUCT_ID)).thenReturn(product);
             panache.when(() -> Price.count(CREATE_COUNT_QUERY, PRODUCT_ID, PRIORITY, START)).thenReturn(0L);
+            VatRate regime = stubRegime(panache);
             Price result = resource.createPrice(input);
             assertEquals(1, created.constructed().size());
             Price price = created.constructed().get(0);
@@ -188,7 +215,7 @@ class PriceResourceTest {
             assertSame(product, price.product);
             assertSame(HT, price.priceExcludingTax);
             assertSame(TTC, price.priceIncludingTax);
-            assertSame(VAT, price.vatRate);
+            assertSame(regime, price.vat);
             assertSame(PRIORITY, price.priority);
             assertSame(START, price.startDateTime);
             assertSame(END, price.endDateTime);
@@ -333,25 +360,26 @@ class PriceResourceTest {
         existing.product = product(10L);
         existing.priceExcludingTax = new BigDecimal("1.0000");
         existing.priceIncludingTax = new BigDecimal("2.0000");
-        existing.vatRate = new BigDecimal("0.0550");
+        existing.vat = null;
         existing.priority = 0;
         existing.startDateTime = START;
         existing.endDateTime = null;
         PriceResource.PriceRecord input = new PriceResource.PriceRecord();
         input.priceExcludingTax = HT;
         input.priceIncludingTax = TTC;
-        input.vatRate = VAT;
+        input.vatNumber = VAT_NUMBER;
         input.priority = 0;
         input.startDateTime = END;
         input.endDateTime = END;
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
             panache.when(() -> Price.findById(PRICE_ID)).thenReturn(existing);
             panache.when(() -> Price.count(UPDATE_COUNT_QUERY, 10L, 0, END, PRICE_ID)).thenReturn(0L);
+            VatRate regime = stubRegime(panache);
             Price result = resource.updatePrice(PRICE_ID, input);
             assertSame(existing, result);
             assertSame(HT, existing.priceExcludingTax);
             assertSame(TTC, existing.priceIncludingTax);
-            assertSame(VAT, existing.vatRate);
+            assertSame(regime, existing.vat);
             assertEquals(0, existing.priority);
             assertSame(END, existing.startDateTime);
             assertSame(END, existing.endDateTime);
@@ -429,7 +457,7 @@ class PriceResourceTest {
         String expected = "PriceRecord [productId=" + PRODUCT_ID +
                 ", priceExcludingTax=" + HT +
                 ", priceIncludingTax=" + TTC +
-                ", vatRate=" + VAT +
+                ", vatNumber=" + VAT_NUMBER +
                 ", priority=" + PRIORITY +
                 ", startDateTime=" + START +
                 ", endDateTime=" + END + "]";

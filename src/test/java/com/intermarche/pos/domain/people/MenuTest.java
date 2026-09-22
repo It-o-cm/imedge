@@ -25,16 +25,20 @@ class MenuTest {
         assertEquals("Articles", Menu.ARTICLES.getLabel());
         assertEquals("Administration", Menu.ADMINISTRATION.getLabel());
         assertEquals("Supervision", Menu.SUPERVISION.getLabel());
+        assertEquals("Financier", Menu.FINANCIER.getLabel());
     }
 
     /**
-     * The declared constants are the four expected menus.
+     * The declared constants are the five expected menus.
      */
     @Test
-    void declaresFourMenus() {
-        assertEquals(4, Menu.values().length);
+    void declaresFiveMenus() {
+        assertEquals(5, Menu.values().length);
         assertNotNull(Menu.valueOf("ADMINISTRATION"));
         assertNotNull(Menu.valueOf("ARTICLES"));
+        // BO-05-02-14: the safe is its own aggregate, so a shop granting it does
+        // not thereby grant the register parameters.
+        assertNotNull(Menu.valueOf("FINANCIER"));
     }
 
     /**

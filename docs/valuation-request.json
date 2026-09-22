@@ -1,0 +1,28 @@
+{
+  "customerCode": "LOYALTY-DEMO-001",
+  "storeCode": "0101",
+  "createdAt": "2026-08-06T10:15:00",
+  "deliveryMode": "HOME_DELIVERY",
+  "deliveryAddress": {
+    "streetLine1": "12 Rue du Test",
+    "streetLine2": "ZI Sud",
+    "postalCode": "59113",
+    "city": "Seclin",
+    "country": "France",
+    "latitude": 50.540,
+    "longitude": 3.030
+  },
+  "instructions": ["Deposit basket"],
+  "vignettes": { "3300000000031": 5 },
+  "items": [
+    { "lineId": "L1", "produceEan": "3300000000001", "quantity": 4.0 },
+    { "lineId": "L2", "produceEan": "3300000000002", "quantity": 1.0 },
+    { "lineId": "L3", "produceEan": "3300000000004", "quantity": 1.0 },
+    { "lineId": "L4", "produceEan": "3300000000013", "quantity": 1.0 },
+    { "lineId": "L5", "produceEan": "3300000000014", "quantity": 1.0 },
+    { "lineId": "L6", "produceEan": "3300000000020", "quantity": 1.2 },
+    { "lineId": "L7", "produceEan": "3300000000031", "quantity": 1.0 },
+    { "lineId": "L8", "produceEan": "3300000000032", "quantity": 1.0, "manualDiscountPercent": 25 },
+    { "lineId": "L9", "produceEan": "3300000000007", "quantity": 2.0 }
+  ]
+}

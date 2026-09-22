@@ -108,22 +108,62 @@
 
 {#if scheme}
 <details class="card panel">
-    <summary class="card-title panel-title">Niveaux<span class="panel-count">{levels.size()}</span></summary>
+    <summary class="card-title panel-title">Niveaux<span class="panel-count">{levelRows.size()}</span></summary>
     <div class="field-grid">
         <form method="post" action="/admin/nomenclatures/levels">
             <input type="hidden" name="scheme" value="{scheme.code}">
             <div class="field-grid">
-                {#for level in levels}
+                {#for row in levelRows}
                 <div class="field">
-                    <label class="field-label" for="nl-{level.rank}">Niveau {level.rank}</label>
-                    <input class="input-control" id="nl-{level.rank}" type="text"
-                           name="level-{level.rank}" maxlength="60" value="{level.label}">
-                    <span class="field-hint">Code de {level.codeLength} caractères{#if level.custom} — défini par le point de vente{#else} — national{/if}.</span>
+                    <label class="field-label" for="nl-{row.rank}">Niveau {row.rank}</label>
+                    <div class="level-line">
+                        <input class="input-control level-name" id="nl-{row.rank}" type="text"
+                               name="level-{row.rank}" maxlength="60" value="{row.label}"
+                               placeholder="Activité, rayon, famille…">
+                        <input class="input-control level-digits" id="nd-{row.rank}" type="number"
+                               name="length-{row.rank}" min="1" max="40" required
+                               aria-label="Caractères du code du niveau {row.rank}"
+                               value="{row.codeLength}"{#if !row.reshapable} readonly{/if}>
+                        <span class="level-unit">car.</span>
+                    </div>
+                    <span class="field-hint">
+                        {#if row.reshapable}Aucun nœud posé ici ni en dessous : la longueur se change et le niveau se retire.
+                        {#else}{row.nodes} nœud(s) posés ici ou en dessous : la longueur est figée.
+                        {/if}
+                        {#if row.custom}Défini par le point de vente.{#else}National.{/if}
+                    </span>
+                    {#if row.reshapable}
+                    <button class="btn btn-ghost" type="submit"
+                            formaction="/admin/nomenclatures/levels/delete"
+                            formnovalidate name="rank" value="{row.rank}">Retirer ce niveau</button>
+                    {/if}
                 </div>
                 {/for}
             </div>
             <div class="page-actions">
-                <button class="btn btn-primary" type="submit">Renommer les niveaux</button>
+                <button class="btn btn-primary" type="submit">Enregistrer les niveaux</button>
+            </div>
+        </form>
+        <form method="post" action="/admin/nomenclatures/levels/add">
+            <input type="hidden" name="scheme" value="{scheme.code}">
+            <div class="field-grid">
+                <div class="field">
+                    <label class="field-label" for="na-label">Nouveau niveau</label>
+                    <div class="level-line">
+                        <input class="input-control level-name" id="na-label" type="text"
+                               name="label" maxlength="60" placeholder="Segment, sous-famille…">
+                        <input class="input-control level-digits" id="na-length" type="number"
+                               name="length" min="1" max="40" required
+                               aria-label="Caractères du code du nouveau niveau"
+                               value="{nextLength}">
+                        <span class="level-unit">car.</span>
+                    </div>
+                    <span class="field-hint">Nom vide : le niveau prend son rang. Longueur CUMULÉE,
+                        donc supérieure à celle du niveau au-dessus.</span>
+                </div>
+            </div>
+            <div class="page-actions">
+                <button class="btn btn-ghost" type="submit">Ajouter un niveau</button>
             </div>
         </form>
     </div>
@@ -271,8 +311,12 @@
 .nomen-row { display: flex; align-items: center; gap: 8px; padding: 3px 0;
              border-bottom: 1px solid var(--im-line); }
 .nomen-row:hover { background: var(--im-bg); }
-.nomen-twist { width: 22px; height: 22px; flex: 0 0 22px; border: 0; cursor: pointer;
-               background: transparent; color: var(--im-ink-soft); font-size: 12px; }
+/* The glyph is the control: at twelve pixels it was a mark, not a button, and
+   a tree nobody can see how to open reads as a flat list. Sized to be aimed
+   at, with the box grown with it so the arrow stays centred. */
+.nomen-twist { width: 26px; height: 26px; flex: 0 0 26px; border: 0; cursor: pointer;
+               background: transparent; color: var(--im-ink-soft); font-size: 17px;
+               line-height: 1; padding: 0; }
 .nomen-twist[disabled] { visibility: hidden; cursor: default; }
 /* The code of a row reads as ONE number but is two things: the prefix, which
    names the parent and is not the operator's to change, and the free part,

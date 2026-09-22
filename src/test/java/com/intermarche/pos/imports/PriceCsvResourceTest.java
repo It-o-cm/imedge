@@ -2,6 +2,7 @@ package com.intermarche.pos.imports;
 
 import com.intermarche.pos.domain.catalog.Price;
 import com.intermarche.pos.domain.catalog.Product;
+import com.intermarche.pos.domain.catalog.VatRate;
 import io.quarkus.hibernate.orm.panache.Panache;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import io.quarkus.hibernate.orm.panache.PanacheQuery;
@@ -14,6 +15,7 @@ import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -52,6 +54,22 @@ import static org.mockito.Mockito.when;
  * asserted against absolute expected values.
  */
 class PriceCsvResourceTest {
+
+    /** The regime the VAT referential answers for the rate of the test rows. */
+    private static final VatRate REGIME = regime();
+
+    /**
+     * Builds the regime the stubbed referential answers.
+     *
+     * @return a twenty-percent regime numbered 1
+     */
+    private static VatRate regime() {
+        VatRate rate = new VatRate();
+        rate.number = 1;
+        rate.rate = new BigDecimal("0.2000");
+        rate.label = "Taux normal";
+        return rate;
+    }
 
     /** The exact JPQL fragment issued by {@code getProductMap}. */
     private static final String PRODUCT_LIST_QUERY = "ean IN ?1";
@@ -254,9 +272,11 @@ class PriceCsvResourceTest {
         context.put(ctxProducts(), productMap);
         context.put(ctxPrices(), new HashMap<String, Price>());
         int[] counters = {0, 0};
-        try (MockedStatic<Panache> panache = mockStatic(Panache.class)) {
+        try (MockedStatic<Panache> panache = mockStatic(Panache.class);
+                MockedStatic<VatRate> vatRates = mockStatic(VatRate.class)) {
             EntityManager em = mock(EntityManager.class);
             panache.when(Panache::getEntityManager).thenReturn(em);
+            vatRates.when(() -> VatRate.findByRate(new BigDecimal("0.2"))).thenReturn(REGIME);
             resource.processLineLogic(data, context, counters);
             assertEquals(1, counters[0]);
             assertEquals(0, counters[1]);
@@ -279,7 +299,10 @@ class PriceCsvResourceTest {
         product.ean = "111";
         Price existing = new Price();
         existing.id = 42L;
-        existing.checksum = incomingChecksum(resource, data, product) + 1;
+        try (MockedStatic<VatRate> seed = mockStatic(VatRate.class)) {
+            seed.when(() -> VatRate.findByRate(new BigDecimal("0.2"))).thenReturn(REGIME);
+            existing.checksum = incomingChecksum(resource, data, product) + 1;
+        }
         Map<String, Object> productMap = new HashMap<>();
         productMap.put("111", product);
         Map<String, Object> priceMap = new HashMap<>();
@@ -291,9 +314,11 @@ class PriceCsvResourceTest {
         Product freshProduct = new Product();
         freshProduct.ean = "111";
         int[] counters = {0, 0};
-        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
+                MockedStatic<VatRate> vatRates = mockStatic(VatRate.class)) {
             panache.when(() -> Price.findById(42L)).thenReturn(fresh);
             panache.when(() -> Product.findById(7L)).thenReturn(freshProduct);
+            vatRates.when(() -> VatRate.findByRate(new BigDecimal("0.2"))).thenReturn(REGIME);
             resource.processLineLogic(data, context, counters);
             assertEquals(0, counters[0]);
             assertEquals(1, counters[1]);
@@ -315,7 +340,6 @@ class PriceCsvResourceTest {
         product.ean = "111";
         Price existing = new Price();
         existing.id = 42L;
-        existing.checksum = incomingChecksum(resource, data, product);
         Map<String, Object> productMap = new HashMap<>();
         productMap.put("111", product);
         Map<String, Object> priceMap = new HashMap<>();
@@ -324,9 +348,13 @@ class PriceCsvResourceTest {
         context.put(ctxProducts(), productMap);
         context.put(ctxPrices(), priceMap);
         int[] counters = {0, 0};
-        resource.processLineLogic(data, context, counters);
-        assertEquals(0, counters[0]);
-        assertEquals(0, counters[1]);
+        try (MockedStatic<VatRate> vatRates = mockStatic(VatRate.class)) {
+            vatRates.when(() -> VatRate.findByRate(new BigDecimal("0.2"))).thenReturn(REGIME);
+            existing.checksum = incomingChecksum(resource, data, product);
+            resource.processLineLogic(data, context, counters);
+            assertEquals(0, counters[0]);
+            assertEquals(0, counters[1]);
+        }
     }
 
     /**
@@ -360,10 +388,12 @@ class PriceCsvResourceTest {
         context.put(ctxPrices(), new HashMap<String, Price>());
         int[] counters = {0, 0};
         try (MockedStatic<Product> products = mockStatic(Product.class);
-             MockedStatic<Panache> panache = mockStatic(Panache.class)) {
+             MockedStatic<Panache> panache = mockStatic(Panache.class);
+             MockedStatic<VatRate> vatRates = mockStatic(VatRate.class)) {
             products.when(() -> Product.findByEan("111")).thenReturn(product);
             EntityManager em = mock(EntityManager.class);
             panache.when(Panache::getEntityManager).thenReturn(em);
+            vatRates.when(() -> VatRate.findByRate(new BigDecimal("0.2"))).thenReturn(REGIME);
             resource.processLineLogic(data, context, counters);
             assertEquals(1, counters[0]);
             assertEquals(0, counters[1]);
@@ -507,9 +537,11 @@ class PriceCsvResourceTest {
         context.put(ctxProducts(), productMap);
         context.put(ctxPrices(), new HashMap<String, Price>());
         int[] counters = {0, 0};
-        try (MockedStatic<Panache> panache = mockStatic(Panache.class)) {
+        try (MockedStatic<Panache> panache = mockStatic(Panache.class);
+                MockedStatic<VatRate> vatRates = mockStatic(VatRate.class)) {
             EntityManager em = mock(EntityManager.class);
             panache.when(Panache::getEntityManager).thenReturn(em);
+            vatRates.when(() -> VatRate.findByRate(new BigDecimal("0.2000"))).thenReturn(REGIME);
             resource.processLineLogic(data, context, counters);
             assertEquals(1, counters[0]);
         }
@@ -538,9 +570,11 @@ class PriceCsvResourceTest {
         context.put(ctxProducts(), productMap);
         context.put(ctxPrices(), new HashMap<String, Price>());
         int[] counters = {0, 0};
-        try (MockedStatic<Panache> panache = mockStatic(Panache.class)) {
+        try (MockedStatic<Panache> panache = mockStatic(Panache.class);
+                MockedStatic<VatRate> vatRates = mockStatic(VatRate.class)) {
             EntityManager em = mock(EntityManager.class);
             panache.when(Panache::getEntityManager).thenReturn(em);
+            vatRates.when(() -> VatRate.findByRate(new BigDecimal("0.2000"))).thenReturn(REGIME);
             resource.processLineLogic(data, context, counters);
             assertEquals(1, counters[0]);
             assertEquals(0, counters[1]);
@@ -570,9 +604,11 @@ class PriceCsvResourceTest {
         context.put(ctxProducts(), productMap);
         context.put(ctxPrices(), new HashMap<String, Price>());
         int[] counters = {0, 0};
-        try (MockedStatic<Panache> panache = mockStatic(Panache.class)) {
+        try (MockedStatic<Panache> panache = mockStatic(Panache.class);
+                MockedStatic<VatRate> vatRates = mockStatic(VatRate.class)) {
             EntityManager em = mock(EntityManager.class);
             panache.when(Panache::getEntityManager).thenReturn(em);
+            vatRates.when(() -> VatRate.findByRate(new BigDecimal("0.2000"))).thenReturn(REGIME);
             resource.processLineLogic(data, context, counters);
             assertEquals(1, counters[0]);
             assertEquals(0, counters[1]);

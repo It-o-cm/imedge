@@ -715,6 +715,15 @@ body {
     padding: 1px 9px;
 }
 
-.panel > .field-grid { padding: 0 18px 18px; }
+/* A panel pads its CONTENT, whatever that content is. The rule used to name
+   .field-grid and only that, so a panel whose body is a <form> or a <p> — the
+   file-integration panel of the nomenclatures — lost its gutter entirely and
+   sat flush against the card border while its own title stayed indented. */
+.panel > :not(.panel-title) {
+    padding-left: 18px;
+    padding-right: 18px;
+}
+
+.panel > :last-child { padding-bottom: 18px; }
 
 .panel-actions { justify-content: flex-end; margin-bottom: 10px; }

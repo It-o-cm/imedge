@@ -82,3 +82,13 @@
 .sup-amount { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 .sup-empty { padding: 10px 0; color: var(--im-ink-soft); font-size: 13px; }
+
+/* Countdown banner announcing the automatic close of the period
+   (BO-09-01-06): a warning, not an incident — the supervisor-call banners
+   above keep the red to themselves. */
+.period-banner {
+    background: #fdf6e8;
+    border: 1px solid #f0dfb8;
+    color: #7a5310;
+    font-weight: 600;
+}

@@ -1,0 +1,103 @@
+{!
+ ! Back-office COIN MACHINES (BO-05-02-16): what each automatic cash unit holds
+ ! according to the software, beside what it held when last counted. The two
+ ! figures are never merged — their difference is the point.
+!}
+{#include admin-layout}
+
+{#title}Monnayeurs{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Monnayeurs</h1>
+        <p class="page-sub">Montant disponible tenu par le logiciel, sans interroger l'automate.</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-ghost" href="/admin/coin-machines/export">Extraire (CSV)</a>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">Déclarer un monnayeur</h2>
+    <form method="post" action="/admin/coin-machines">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="m-code">Code</label>
+                <input class="input-control" id="m-code" type="text" name="code" maxlength="30" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="m-label">Libellé</label>
+                <input class="input-control" id="m-label" type="text" name="label" maxlength="120">
+            </div>
+            <div class="field">
+                <label class="field-label" for="m-terminal">Caisse</label>
+                <input class="input-control" id="m-terminal" type="text" name="terminalId" maxlength="20">
+            </div>
+            <div class="field">
+                <label class="field-label" for="m-active">En service</label>
+                <input id="m-active" type="checkbox" name="active" checked>
+            </div>
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">Enregistrer</button>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <h2 class="card-title">Parc</h2>
+    <p class="card-sub">Total tenu par le logiciel : <strong>{total} €</strong></p>
+    {#if machines.isEmpty()}
+    <div class="empty-state">
+        <p>Aucun monnayeur déclaré.</p>
+    </div>
+    {#else}
+    <table class="data-table">
+        <thead>
+        <tr><th>Code</th><th>Libellé</th><th>Caisse</th><th>Tenu €</th><th>Compté €</th><th>Écart €</th><th>État</th><th></th></tr>
+        </thead>
+        <tbody>
+        {#for machine in machines}
+        <tr>
+            <td>{machine.code}</td>
+            <td>{machine.label ?: '—'}</td>
+            <td>{machine.terminalId ?: '—'}</td>
+            <td>{machine.declaredAmountFormatted}</td>
+            <td>{machine.countedAmount ?: '—'}</td>
+            <td>{machine.varianceFormatted}</td>
+            <td>
+                {#if !machine.active}<span class="badge badge-off">Hors service</span>
+                {#else if machine.reconciled}<span class="badge badge-ok">Conforme</span>
+                {#else}<span class="badge badge-off">À contrôler</span>{/if}
+            </td>
+            <td>
+                <form method="post" action="/admin/coin-machines/count">
+                    <input type="hidden" name="id" value="{machine.id}">
+                    <input class="input-control" type="text" inputmode="decimal" name="countedAmount" placeholder="Compté">
+                    <button class="btn btn-small btn-primary" type="submit">Compter</button>
+                </form>
+                {#if machine.countedAmount}
+                <form method="post" action="/admin/coin-machines/align">
+                    <input type="hidden" name="id" value="{machine.id}">
+                    <button class="btn btn-small btn-ghost" type="submit">Réaligner</button>
+                </form>
+                {/if}
+                {! BO-05-02-16 : un chargement, ou un retrait avec un signe moins. !}
+                <form method="post" action="/admin/coin-machines/load">
+                    <input type="hidden" name="code" value="{machine.code}">
+                    <input class="input-control" type="text" inputmode="decimal" name="amount" placeholder="Chargement">
+                    <button class="btn btn-small btn-ghost" type="submit">Charger</button>
+                </form>
+            </td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+{/body}

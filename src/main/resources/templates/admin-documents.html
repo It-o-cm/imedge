@@ -1,0 +1,99 @@
+{!
+ ! Back-office DOCUMENTS ISSUED AT THE REGISTERS (BO-02-04-19): the invoices
+ ! and delivery notes the tills printed, filtered by text, by fiscal identifier
+ ! (NIF), by kind and by period, and extractable as CSV. READ ONLY: a document
+ ! is an archive of what was handed to a customer, and the customer block shown
+ ! is the one the DOCUMENT carries, never the one their file carries today.
+!}
+{#include admin-layout}
+
+{#title}Documents de caisse{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Documents de caisse</h1>
+        <p class="page-sub">Factures et bons de livraison émis par les caisses, tels qu'ils ont été imprimés.</p>
+    </div>
+</div>
+
+<div class="card">
+    <h2 class="card-title">Recherche</h2>
+    <form method="get" action="/admin/documents">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="s-text">Texte (n° document, client, compte)</label>
+                <input class="input-control" id="s-text" type="text" name="text" value="{text}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="s-nif">Numéro fiscal (NIF)</label>
+                <input class="input-control" id="s-nif" type="text" name="taxId" value="{taxId}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="s-type">Type</label>
+                <select class="input-control" id="s-type" name="type">
+                    <option value="">Tous</option>
+                    {#for kind in types}
+                    <option value="{kind.name}" {#if type == kind.name}selected{/if}>{kind.title}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="s-from">Du</label>
+                <input class="input-control" id="s-from" type="date" name="from" value="{from}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="s-to">Au</label>
+                <input class="input-control" id="s-to" type="date" name="to" value="{to}">
+            </div>
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">Rechercher</button>
+            <a class="btn btn-ghost" href="/admin/documents">Réinitialiser</a>
+            <a class="btn btn-ghost" href="/admin/documents/export?text={text}&taxId={taxId}&type={type}&from={from}&to={to}">Extraire (CSV)</a>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    {#if documents.isEmpty()}
+    <div class="empty-state">
+        <p>Aucun document ne correspond.</p>
+        <p class="empty-hint">Élargissez la période, ou vérifiez que les caisses ont bien remonté leurs documents.</p>
+    </div>
+    {#else}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>N° document</th>
+                <th>Type</th>
+                <th>Émis le</th>
+                <th>Caisse</th>
+                <th>Ticket</th>
+                <th>Client</th>
+                <th>NIF</th>
+                <th>Total TTC</th>
+                <th>Impressions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {#for document in documents}
+            <tr>
+                <td class="link-strong">{document.documentNumber}</td>
+                <td class="col-muted">{document.documentType.title}</td>
+                <td class="col-muted">{document.issueDate ?: '—'}</td>
+                <td class="col-muted">{document.terminalId ?: '—'}</td>
+                <td class="col-muted">{document.ticketNumber ?: '—'}</td>
+                <td>{document.customerName}{#if document.customerAccountNumber} <span class="sup-muted">({document.customerAccountNumber})</span>{/if}</td>
+                <td class="col-muted">{document.customerTaxId ?: '—'}</td>
+                <td class="sup-amount">{document.totalIncludingTax} €</td>
+                <td class="col-muted">{document.printCount}</td>
+            </tr>
+            {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+{/body}
+
+{#footer}Un document ne se modifie pas ici : c'est l'archive de ce qui a été remis au client.{/footer}

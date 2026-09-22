@@ -1,0 +1,195 @@
+{!
+ ! Back-office SAFE MOVEMENTS (BO-05-02-01, -02, -06): the expenses and the
+ ! receipts entered outside the registers, and the pointing that validates them
+ ! before the period can be closed. The VAT breakdown is three optional rates —
+ ! the requirement asks for none, one or several. POST -> 303 -> notice.
+!}
+{#include admin-layout}
+
+{#title}Mouvements du coffre{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Mouvements du coffre</h1>
+        <p class="page-sub">Dépenses et recettes hors encaissement, pointées puis validées avant la clôture.</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-ghost" href="/admin/safe/journal">Journal du coffre</a>
+        <a class="btn btn-ghost" href="/admin/safe/periods">Clôture</a>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+{#if !period}
+<div class="card">
+    <div class="empty-state">
+        <p>Aucune période comptable ouverte.</p>
+        <p class="empty-hint">Ouvrez-en une depuis l'écran <a class="link-strong" href="/admin/safe/periods">Clôture du coffre</a> : rien ne peut entrer dans le coffre tant qu'aucune période ne le compte.</p>
+    </div>
+</div>
+{#else}
+
+<div class="card">
+    <h2 class="card-title">Période {period.label}</h2>
+    <p class="card-sub">Solde du coffre : <strong>{balance} €</strong> · mouvements non validés : <strong>{pending}</strong></p>
+</div>
+
+<div class="card">
+    <h2 class="card-title">Saisir un mouvement</h2>
+    <p class="card-sub">La nature décide du sens : une dépense sort du coffre, une recette y entre.</p>
+    <form method="post" action="/admin/safe/movements">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="m-type">Nature</label>
+                <select class="input-control" id="m-type" name="type">
+                    {#for type in types}
+                    <option value="{type.name}">{type.label}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="m-label">Libellé</label>
+                <input class="input-control" id="m-label" type="text" name="label" maxlength="160" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="m-amount">Montant €</label>
+                <input class="input-control" id="m-amount" type="text" name="amount" inputmode="decimal" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="m-date">Date</label>
+                <input class="input-control" id="m-date" type="date" name="movementDate" value="{today}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="m-reference">Référence</label>
+                <input class="input-control" id="m-reference" type="text" name="reference" maxlength="60">
+            </div>
+            <div class="field">
+                <label class="field-label" for="m-employee">Salarié concerné</label>
+                <select class="input-control" id="m-employee" name="employeeId">
+                    <option value="">—</option>
+                    {#for employee in employees}
+                    <option value="{employee.id}">{employee.fullName}</option>
+                    {/for}
+                </select>
+            </div>
+        </div>
+        {! BO-05-02-01/-02 : aucune TVA, une seule ou plusieurs. !}
+        <h3 class="card-title" style="margin-top: 10px;">Ventilation de TVA</h3>
+        <table class="data-table">
+            <thead>
+            <tr><th>Taux %</th><th>Base HT €</th><th>TVA €</th></tr>
+            </thead>
+            <tbody>
+            <tr>
+                <td><input class="input-control" type="text" name="vatRate0" inputmode="decimal"></td>
+                <td><input class="input-control" type="text" name="vatBase0" inputmode="decimal"></td>
+                <td><input class="input-control" type="text" name="vatAmount0" inputmode="decimal"></td>
+            </tr>
+            <tr>
+                <td><input class="input-control" type="text" name="vatRate1" inputmode="decimal"></td>
+                <td><input class="input-control" type="text" name="vatBase1" inputmode="decimal"></td>
+                <td><input class="input-control" type="text" name="vatAmount1" inputmode="decimal"></td>
+            </tr>
+            <tr>
+                <td><input class="input-control" type="text" name="vatRate2" inputmode="decimal"></td>
+                <td><input class="input-control" type="text" name="vatBase2" inputmode="decimal"></td>
+                <td><input class="input-control" type="text" name="vatAmount2" inputmode="decimal"></td>
+            </tr>
+            </tbody>
+        </table>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">Enregistrer le mouvement</button>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <h2 class="card-title">Mouvements de la période</h2>
+    {#if movements.isEmpty()}
+    <div class="empty-state">
+        <p>Aucun mouvement sur cette période.</p>
+    </div>
+    {#else}
+    {! Les formulaires sont déclarés hors du tableau ; les boutons les visent par
+     ! l'attribut form, un formulaire imbriqué dans une ligne n'étant pas valide. !}
+    {#for movement in movements}
+    <form method="post" action="/admin/safe/movements/validate" id="val-{movement.id}">
+        <input type="hidden" name="id" value="{movement.id}">
+    </form>
+    {/for}
+    <table class="data-table">
+        <thead>
+        <tr>
+            <th>Date</th><th>Nature</th><th>Libellé</th><th>Référence</th>
+            <th>Montant €</th><th>TVA €</th><th>État</th><th></th>
+        </tr>
+        </thead>
+        <tbody>
+        {#for movement in movements}
+        <tr>
+            <td>{movement.movementDate}</td>
+            <td>{movement.typeLabel}</td>
+            <td>{movement.label}</td>
+            <td>{movement.reference ?: '—'}</td>
+            <td>{movement.signedAmountFormatted}</td>
+            <td>{#if movement.vatLines.isEmpty()}—{#else}{movement.vatTotal()}{/if}</td>
+            <td>
+                {#if movement.validated}<span class="badge badge-ok">Validé</span>
+                {#else}<span class="badge badge-off">À pointer</span>{/if}
+            </td>
+            <td>
+                {#if !movement.validated}
+                <button class="btn btn-small btn-primary" type="submit" form="val-{movement.id}">Valider</button>
+                {/if}
+            </td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+    <form method="post" action="/admin/safe/movements/validate-all">
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">Valider tous les mouvements pointés</button>
+        </div>
+    </form>
+    {/if}
+</div>
+
+<div class="card">
+    <h2 class="card-title">Corriger un mouvement</h2>
+    <p class="card-sub">Une correction n'est possible que tant que le mouvement n'est pas validé et que sa période est ouverte.</p>
+    <form method="post" action="/admin/safe/movements/correct">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="c-id">Mouvement</label>
+                <select class="input-control" id="c-id" name="id">
+                    {#for movement in movements}
+                    {#if movement.correctable}
+                    <option value="{movement.id}">{movement.movementDate} · {movement.label}</option>
+                    {/if}
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="c-label">Nouveau libellé</label>
+                <input class="input-control" id="c-label" type="text" name="label" maxlength="160">
+            </div>
+            <div class="field">
+                <label class="field-label" for="c-amount">Nouveau montant €</label>
+                <input class="input-control" id="c-amount" type="text" name="amount" inputmode="decimal">
+            </div>
+            <div class="field">
+                <label class="field-label" for="c-date">Nouvelle date</label>
+                <input class="input-control" id="c-date" type="date" name="movementDate">
+            </div>
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">Corriger</button>
+        </div>
+    </form>
+</div>
+{/if}
+{/body}

@@ -205,9 +205,12 @@ class DocumentTemplateTest {
      */
     @Test
     void theDocumentTypesAreTheOnesTheRegisterEmits() {
-        assertEquals(11, DocumentTemplate.DocumentType.values().length);
+        assertEquals(12, DocumentTemplate.DocumentType.values().length);
         assertEquals("Ticket de vente",
                 DocumentTemplate.DocumentType.valueOf("SALE_RECEIPT").getLabel());
+        // BO-03-03-10: the loyalty settlement slip, additional to the receipt.
+        assertEquals("Justificatif paiement fidélité",
+                DocumentTemplate.DocumentType.valueOf("LOYALTY_RECEIPT").getLabel());
         assertEquals("Rapport Z",
                 DocumentTemplate.DocumentType.valueOf("Z_REPORT").getLabel());
         // BO-03-03: ONE invoice, TWO papers, two rows — the roll and the A4 page

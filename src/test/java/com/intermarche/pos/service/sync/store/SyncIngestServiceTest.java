@@ -102,6 +102,10 @@ class SyncIngestServiceTest {
         Instance<TicketPayment.Factory> instance = mock(Instance.class);
         when(instance.iterator()).thenReturn(List.of(factories).iterator());
         service.factoryInstances = instance;
+        // BO-05-02-16: every consolidated ticket moves the coin machines of its
+        // register, so the collaborator belongs to the fixture. What it does with
+        // the figure is proved on CoinMachineService itself.
+        service.coinMachineService = mock(com.intermarche.pos.service.CoinMachineService.class);
         service.init();
         return service;
     }
@@ -247,6 +251,15 @@ class SyncIngestServiceTest {
         dto.cashierLogin = "alice";
         dto.sessionNumber = "S1";
         dto.fidelityCard = "F1";
+        // BO-03-03-25/-29/-31: the loyalty zone the selling register froze.
+        dto.fidelityEarnTotal = new BigDecimal("1.03");
+        dto.fidelityAvailableBalance = new BigDecimal("42.30");
+        dto.fidelityUnavailable = true;
+        SyncPayloads.FidelityLineDto earnDto = new SyncPayloads.FidelityLineDto();
+        earnDto.ruleCode = "SOCLE";
+        earnDto.label = "Cagnotte socle";
+        earnDto.amount = new BigDecimal("0.28");
+        dto.fidelityLines.add(earnDto);
         dto.itemCount = 3;
         dto.totalExcludingTax = new BigDecimal("10.00");
         dto.totalIncludingTax = new BigDecimal("12.00");
@@ -318,6 +331,14 @@ class SyncIngestServiceTest {
             assertSame(cashier, ticket.cashier);
             assertSame(session, ticket.session);
             assertEquals(Ticket.ValuationStatus.NOT_VALUATED, ticket.valuationStatus);
+            assertEquals("F1", ticket.fidelityCard);
+            assertEquals(new BigDecimal("1.03"), ticket.fidelityEarnTotal);
+            assertEquals(new BigDecimal("42.30"), ticket.fidelityAvailableBalance);
+            assertTrue(ticket.fidelityUnavailable);
+            assertEquals(1, ticket.fidelityLines.size());
+            assertEquals("SOCLE", ticket.fidelityLines.get(0).ruleCode);
+            assertEquals("Cagnotte socle", ticket.fidelityLines.get(0).label);
+            assertEquals(new BigDecimal("0.28"), ticket.fidelityLines.get(0).amount);
             assertEquals(3, createdLines.constructed().size());
             assertSame(plaster, createdLines.constructed().get(0).product);
             assertSame(apple, createdLines.constructed().get(1).product);
@@ -1410,6 +1431,74 @@ class SyncIngestServiceTest {
             assertEquals("Lyon", address.city);
             assertEquals("marie@globex.fr", existing.email);
             verify(existing, times(1)).persist();
+        }
+    }
+
+    /**
+     * Builds the payload of a document pushed by a register.
+     *
+     * @return the payload, its totals filled
+     */
+    private SyncPayloads.DocumentDto documentDto() {
+        SyncPayloads.DocumentDto dto = new SyncPayloads.DocumentDto();
+        dto.documentNumber = "C04-F000123";
+        dto.documentType = "FACTURE";
+        dto.terminalId = "C04";
+        dto.issueDate = "2026-09-10T18:42:00";
+        dto.ticketNumber = null;
+        dto.customerAccountNumber = null;
+        dto.customerName = "ACME";
+        dto.customerTaxId = "PT1";
+        dto.customerDueDate = "2026-10-31";
+        dto.totalExcludingTax = new BigDecimal("100.00");
+        dto.totalIncludingTax = new BigDecimal("120.00");
+        dto.totalVat = new BigDecimal("20.00");
+        dto.printCount = 1;
+        return dto;
+    }
+
+    /**
+     * A register that extracts the eco-tax has it written onto the stored document
+     * ({@code BO-10-04-14}, non-null arm).
+     */
+    @Test
+    void ingestDocumentStoresTheEcoTaxWhenTheRegisterSendsIt() {
+        SyncIngestService service = new SyncIngestService();
+        SyncPayloads.DocumentDto dto = documentDto();
+        dto.totalEcoTax = new BigDecimal("1.50");
+        com.intermarche.pos.domain.sale.Invoice existing =
+                mock(com.intermarche.pos.domain.sale.Invoice.class);
+        PanacheQuery<com.intermarche.pos.domain.sale.Invoice> found = queryReturning(existing);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> com.intermarche.pos.domain.sale.Invoice
+                    .find("documentNumber", "C04-F000123")).thenReturn(found);
+            service.ingestDocument(dto);
+            assertEquals(new BigDecimal("1.50"), existing.totalEcoTax);
+            assertEquals(java.time.LocalDate.of(2026, 10, 31), existing.customerDueDate);
+            verify(existing, times(1)).persist();
+        }
+    }
+
+    /**
+     * A register that does NOT extract it sends null, which is stored as zero and
+     * not as "unknown": the column of a document is mandatory
+     * ({@code BO-10-04-14}, null arm).
+     */
+    @Test
+    void ingestDocumentStoresZeroWhenTheRegisterWithholdsTheEcoTax() {
+        SyncIngestService service = new SyncIngestService();
+        SyncPayloads.DocumentDto dto = documentDto();
+        dto.totalEcoTax = null;
+        dto.customerDueDate = null;
+        com.intermarche.pos.domain.sale.Invoice existing =
+                mock(com.intermarche.pos.domain.sale.Invoice.class);
+        PanacheQuery<com.intermarche.pos.domain.sale.Invoice> found = queryReturning(existing);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> com.intermarche.pos.domain.sale.Invoice
+                    .find("documentNumber", "C04-F000123")).thenReturn(found);
+            service.ingestDocument(dto);
+            assertEquals(BigDecimal.ZERO, existing.totalEcoTax);
+            assertNull(existing.customerDueDate);
         }
     }
 }

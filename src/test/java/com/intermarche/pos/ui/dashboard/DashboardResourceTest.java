@@ -1,5 +1,8 @@
 package com.intermarche.pos.ui.dashboard;
 
+import com.intermarche.pos.domain.sync.RegisterCommand;
+import com.intermarche.pos.security.CurrentUser;
+import com.intermarche.pos.service.sync.RegisterCommandService;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
 import jakarta.ws.rs.core.Response;
@@ -50,6 +53,9 @@ class DashboardResourceTest {
         // call-collecting cases rely on (BO-10-08-01).
         resource.posSettingsService = mock(com.intermarche.pos.service.PosSettingsService.class);
         when(resource.posSettingsService.dashboardAlertsEnabled()).thenReturn(true);
+        resource.registerCommandService = mock(RegisterCommandService.class);
+        resource.currentUser = mock(CurrentUser.class);
+        when(resource.currentUser.getFullName()).thenReturn("Marie Curie");
         return resource;
     }
 
@@ -151,6 +157,21 @@ class DashboardResourceTest {
         Response response = resource.acknowledge(9L);
         assertEquals(Response.Status.NO_CONTENT.getStatusCode(), response.getStatus());
         verify(resource.supervisorCallRegistry).acknowledge(9L);
+    }
+
+    /**
+     * {@code forceClose()} LEAVES an order for the register — signed by the
+     * back-office user who asked for it — and answers 204: the close itself
+     * happens on the register, on its next collection.
+     */
+    @Test
+    void forceCloseLeavesASignedOrderAndReturnsNoContent() {
+        DashboardResource resource = newResource();
+        Response response = resource.forceClose("CAISSE1");
+        assertEquals(Response.Status.NO_CONTENT.getStatusCode(), response.getStatus());
+        verify(resource.registerCommandService).issue("CAISSE1",
+                RegisterCommand.CommandType.CLOSE_SESSION, "Marie Curie",
+                "Fermeture demandée depuis le back-office");
     }
 
     /**

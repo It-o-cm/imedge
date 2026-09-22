@@ -15,16 +15,21 @@ import static io.restassured.RestAssured.given;
  * being removed, nor the identity providers being broken — only a real
  * request through the running application can. This is deliberately the
  * ONE test of the lot 0 campaign that boots Quarkus, per
- * backoffice-campaign.md, section 11: an anonymous request to an ADMIN-only
- * CSV import and to a MANAGER-only GraphQL query must both be refused.
+ * backoffice-campaign.md, section 11: an anonymous request to the ADMIN-only
+ * CSV door and to a MANAGER-only GraphQL query must both be refused.
  */
 @QuarkusTest
 class SecurityExtensionLivenessIT {
 
     /**
-     * An anonymous POST to the ADMIN-only product CSV import is refused,
-     * proving {@code @RolesAllowed("ADMIN")} on {@code ProductCsvResource}
-     * is live.
+     * An anonymous POST to the ADMIN-only CSV door is refused, proving
+     * {@code @RolesAllowed("ADMIN")} on {@code EngineFeedRelayResource} is
+     * live.
+     *
+     * <p>The door is {@code /feeds/import/\{CODE\}} and there is no other:
+     * the per-domain addresses were retired so that ONE path has to be
+     * secured, documented and kept in step. A 401 here therefore answers for
+     * every importer of the node, not for one of them.
      */
     @Test
     void anonymousCsvImportIsRefused() {
@@ -32,10 +37,27 @@ class SecurityExtensionLivenessIT {
                 .contentType(ContentType.TEXT)
                 .body("EAN;NAME\n")
                 .when()
-                .post("/products/import")
+                .post("/feeds/import/PRODUCTS")
                 .then()
                 .log().ifValidationFails()
                 .statusCode(401);
+    }
+
+    /**
+     * The retired per-domain address answers 404 and not 401: it is gone, not
+     * merely protected. The distinction matters — a path that still answers is
+     * a path someone will keep calling.
+     */
+    @Test
+    void theRetiredPerDomainAddressIsGone() {
+        given()
+                .contentType(ContentType.TEXT)
+                .body("EAN;NAME\n")
+                .when()
+                .post("/products/import")
+                .then()
+                .log().ifValidationFails()
+                .statusCode(404);
     }
 
     /**

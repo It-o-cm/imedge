@@ -1,0 +1,92 @@
+{!
+ ! The VAT screen (BO-02-03-14): the referential every price of the catalog
+ ! points at, five rows a shop actually reads.
+ !
+ ! ONE LINE per regime, in ONE grid. A regime is four short values — a number,
+ ! a rate, a label and what uses it — and a field sized for a paragraph in
+ ! front of two digits tells the operator the two digits are a paragraph; the
+ ! field-grid used elsewhere gives every field a 260px minimum, which for three
+ ! short values means three quarters of the screen and a wrap.
+ !
+ ! The rows share ONE grid, each form being `display: contents`, rather than
+ ! each carrying its own flex line: five independent lines only look aligned as
+ ! long as they hold the same widths, and the last cell does not — it carries
+ ! either a delete button or a usage count. Declared once, the columns hold
+ ! whatever the cells contain, on any engine.
+ !
+ ! The line says what USES each regime, because that is the only thing that
+ ! decides whether it may go. A regime prices name shows the count in place of
+ ! the delete button: the operator learns the rule from the row instead of
+ ! discovering it in a refusal.
+ !
+ ! The screen speaks PERCENT — 5,5 — and the row stores the fraction. The CSV
+ ! feed keeps stating the fraction, being written by a machine for a machine.
+ !
+ ! The NUMBER is editable, and the page says what that costs: the prices follow
+ ! the row and not the number, so nothing detaches, but the next feed naming the
+ ! old number finds nothing. POST -> 303 -> notice, the same admin cycle as the
+ ! other back-office pages. No inline <style>: base.css and articles.css
+ ! primitives only.
+!}
+{#include admin-layout}
+
+{#title}TVA{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>TVA</h1>
+        <p class="page-sub">Chaque prix référence une ligne de cette table : un numéro, un taux et un libellé. Le numéro est ce que porte le flux de la gestion commerciale et ce qu'impriment les documents.</p>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">Régimes</h2>
+    {#if rows.isEmpty()}
+    <p class="page-sub">Aucun régime n'est enregistré. Tant que la table est vide, un prix importé ne trouve pas son régime et la caisse retombe sur le taux par défaut administré.</p>
+    {#else}
+    <div class="vat-grid">
+        <span class="vat-head vat-number">N°</span>
+        <span class="vat-head vat-rate">Taux</span>
+        <span class="vat-head"></span>
+        <span class="vat-head">Libellé</span>
+        <span class="vat-head"></span>
+        <span class="vat-head"></span>
+        {#for row in rows}
+        <form method="post" action="/admin/vat-rates/save">
+            <input type="hidden" name="id" value="{row.rate.id}">
+            <input class="input-control vat-number" type="number" name="number" min="0" value="{row.rate.number}" required aria-label="Numéro du régime">
+            <input class="input-control vat-rate" type="text" name="ratePercent" value="{row.rate.getRateFormatted()}" required aria-label="Taux en pourcentage">
+            <span class="vat-unit">%</span>
+            <input class="input-control vat-label" type="text" name="label" maxlength="60" value="{row.rate.label ?: ''}" placeholder="Sans libellé" aria-label="Libellé du régime">
+            <button class="btn btn-primary" type="submit">Enregistrer</button>
+            <span class="vat-remove">
+                {#if row.removable}
+                <button class="btn btn-muted" type="submit" formaction="/admin/vat-rates/delete">Retirer</button>
+                {#else}
+                <span class="vat-usage">{row.prices} prix</span>
+                {/if}
+            </span>
+        </form>
+        {/for}
+    </div>
+    <p class="page-sub">Un régime référencé par au moins un prix ne peut pas être retiré : repointez ces prix par un import avant de le supprimer. Corriger un numéro ne détache aucun prix, mais le prochain fichier qui nomme l'ancien numéro ne trouvera plus rien.</p>
+    {/if}
+</div>
+
+<div class="card">
+    <h2 class="card-title">Nouveau régime</h2>
+    <form method="post" action="/admin/vat-rates/save" class="vat-new">
+        <input class="input-control vat-number" type="number" name="number" min="0" required aria-label="Numéro du régime" placeholder="N°">
+        <input class="input-control vat-rate" type="text" name="ratePercent" required aria-label="Taux en pourcentage" placeholder="5,5">
+        <span class="vat-unit">%</span>
+        <input class="input-control vat-label" type="text" name="label" maxlength="60" placeholder="Taux réduit" aria-label="Libellé du régime">
+        <button class="btn btn-primary" type="submit">Créer</button>
+        <span class="vat-remove"></span>
+    </form>
+</div>
+{/body}

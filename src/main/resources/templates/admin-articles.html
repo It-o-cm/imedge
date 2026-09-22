@@ -98,7 +98,7 @@
 </div>
 
 <div class="card">
-    {#if products.isEmpty()}
+    {#if page.empty}
     <div class="empty-state">
         <p>Aucun article ne correspond.</p>
         <p class="empty-hint">Élargissez la recherche, ou intégrez les articles via l'import CSV ou le GraphQL.</p>
@@ -113,7 +113,9 @@
         {#if criteria.eanFrom}<input type="hidden" name="eanFrom" value="{criteria.eanFrom}">{/if}
         {#if criteria.eanTo}<input type="hidden" name="eanTo" value="{criteria.eanTo}">{/if}
         {#for code in criteria.attributes}<input type="hidden" name="attr" value="{code}">{/for}
-        <span class="bulk-code-label">Code article à l'écran sur les {products.size()} article(s) filtré(s) :</span>
+        {! The TOTAL and not the page: the bulk applies to the whole perimeter, and a
+         ! bar announcing 100 articles while writing 109 204 is a trap. !}
+        <span class="bulk-code-label">Code article à l'écran sur les {page.total} article(s) filtré(s) :</span>
         <label class="bulk-code-toggle"><input type="checkbox" name="value"> Activer</label>
         <button class="btn btn-small btn-ghost" type="submit">Appliquer en masse</button>
     </form>
@@ -130,7 +132,7 @@
             </tr>
         </thead>
         <tbody>
-            {#for product in products}
+            {#for product in page.rows}
             <tr>
                 <td><a class="link-strong" href="/admin/articles/edit?id={product.id}">{product.ean}</a></td>
                 <td>{product.name}</td>
@@ -145,6 +147,27 @@
             {/for}
         </tbody>
     </table>
+
+    {! The list states which slice of the result it shows. A screen that renders
+     ! the first hundred of a hundred thousand without saying so does not
+     ! degrade the reading, it makes the reader conclude wrong — same rule as
+     ! the journal, and the same pager. !}
+    <div class="pager">
+        <span class="pager-status">Articles {page.firstIndex} à {page.lastIndex} sur {page.total}</span>
+        {#if page.pageCount > 1}
+        {#if page.first}
+        <span class="btn btn-small btn-muted is-hidden">Précédent</span>
+        {#else}
+        <a class="btn btn-small btn-muted" href="/admin/articles?{baseQuery}page={page.previous}">Précédent</a>
+        {/if}
+        <span class="pager-status">Page {page.number} / {page.pageCount}</span>
+        {#if page.last}
+        <span class="btn btn-small btn-muted is-hidden">Suivant</span>
+        {#else}
+        <a class="btn btn-small btn-muted" href="/admin/articles?{baseQuery}page={page.next}">Suivant</a>
+        {/if}
+        {/if}
+    </div>
     {/if}
 </div>
 {/body}

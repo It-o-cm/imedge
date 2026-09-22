@@ -13,13 +13,14 @@ import org.junit.jupiter.api.Test;
 class ProductAttributeCatalogTest {
 
     /**
-     * The catalog declares the eleven well-known behavioural attributes, in order —
+     * The catalog declares the twelve well-known behavioural attributes, in order —
      * every one a BOOL defaulting to false, except the recalled lots, which carry lot
-     * numbers and default to nothing.
+     * numbers and default to nothing, and the eco-tax, which carries an amount
+     * ({@code BO-10-04-14}).
      */
     @Test
-    void catalogDeclaresElevenWellKnownAttributes() {
-        Assertions.assertEquals(11, ProductAttributeCatalog.CATALOG.size());
+    void catalogDeclaresTwelveWellKnownAttributes() {
+        Assertions.assertEquals(12, ProductAttributeCatalog.CATALOG.size());
         Assertions.assertEquals(ProductAttributeCatalog.DISCOUNT_FORBIDDEN,
                 ProductAttributeCatalog.CATALOG.get(0).code());
         Assertions.assertEquals(ProductAttributeCatalog.VAT_EXEMPT,
@@ -40,10 +41,15 @@ class ProductAttributeCatalogTest {
                 ProductAttributeCatalog.CATALOG.get(6).code());
         for (ProductAttributeDef def : ProductAttributeCatalog.CATALOG) {
             if (ProductAttributeCatalog.RECALL_LOTS.equals(def.code())) {
-                // The only non-boolean of the catalog: a recall names lot NUMBERS, and
-                // a flag could not carry them.
+                // One of the two non-booleans of the catalog: a recall names lot
+                // NUMBERS, and a flag could not carry them.
                 Assertions.assertEquals(ProductAttributeType.TEXT, def.type());
                 Assertions.assertEquals("", def.defaultValue());
+            } else if (ProductAttributeCatalog.ECO_TAX.equals(def.code())) {
+                // The other one: an eco-tax is an AMOUNT, defaulting to none
+                // (BO-10-04-14).
+                Assertions.assertEquals(ProductAttributeType.DECIMAL, def.type());
+                Assertions.assertEquals("0", def.defaultValue());
             } else {
                 Assertions.assertEquals(ProductAttributeType.BOOL, def.type());
                 Assertions.assertEquals("false", def.defaultValue());

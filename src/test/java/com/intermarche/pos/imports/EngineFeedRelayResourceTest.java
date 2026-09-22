@@ -43,6 +43,11 @@ class EngineFeedRelayResourceTest {
         resource.productFamilyCsvResource = mock(ProductFamilyCsvResource.class);
         resource.priceCsvResource = mock(PriceCsvResource.class);
         resource.employeeCsvResource = mock(EmployeeCsvResource.class);
+        resource.vatRateCsvResource = mock(VatRateCsvResource.class);
+        resource.accountCustomerCsvResource = mock(AccountCustomerCsvResource.class);
+        resource.postalCodeCsvResource = mock(PostalCodeCsvResource.class);
+        resource.safeReceiptCsvResource = mock(SafeReceiptCsvResource.class);
+        resource.nomenclatureCsvResource = mock(NomenclatureCsvResource.class);
     }
 
     /**
@@ -61,7 +66,7 @@ class EngineFeedRelayResourceTest {
      */
     @Test
     void unknownCodeRejected() {
-        Response response = resource.importFeed("NOPE", stream("CODE|X\n"));
+        Response response = resource.importFeed("NOPE", null, null, null, null, stream("CODE|X\n"));
         assertEquals(400, response.getStatus());
         assertTrue(String.valueOf(response.getEntity()).contains("OFFERS"));
         assertTrue(String.valueOf(response.getEntity()).contains("EMPLOYEES"));
@@ -78,7 +83,7 @@ class EngineFeedRelayResourceTest {
         Response delegated = Response.ok("{\"createdCount\":312, \"updatedCount\":0}").build();
         InputStream body = stream("EAN|NAME\n1|A\n");
         when(resource.productCsvResource.importProducts(body)).thenReturn(delegated);
-        Response response = resource.importFeed("products", body);
+        Response response = resource.importFeed("products", null, null, null, null, body);
         assertSame(delegated, response);
         verify(resource.engineFeedService, never()).store(any(), any());
     }
@@ -93,9 +98,66 @@ class EngineFeedRelayResourceTest {
         Response delegated = Response.ok("{\"createdCount\":4, \"updatedCount\":0}").build();
         InputStream body = stream("BADGE_ID|LOGIN\n1|a\n");
         when(resource.employeeCsvResource.importEmployees(body)).thenReturn(delegated);
-        Response response = resource.importFeed("EMPLOYEES", body);
+        Response response = resource.importFeed("EMPLOYEES", null, null, null, null, body);
         assertSame(delegated, response);
         verify(resource.engineFeedService, never()).store(any(), any());
+    }
+
+    /**
+     * The CUSTOMERS code delegates to the customer importer AND forwards the
+     * import mode, the only delegation that carries one: a full population and
+     * an evening delta enter by the same door and are told apart by it.
+     */
+    @Test
+    void customersCodeForwardsTheImportMode() {
+        InputStream body = stream("ACCOUNT_NUMBER|COMPANY_NAME\n1|Acme\n");
+        Response delegated = Response.ok("{\"createdCount\":1}").build();
+        when(resource.accountCustomerCsvResource.importCustomers(body, "full")).thenReturn(delegated);
+        Response response = resource.importFeed("customers", "full", null, null, null, body);
+        assertEquals(delegated, response);
+        verify(resource.engineFeedService, never()).store(any(), any());
+    }
+
+    /**
+     * The NOMENCLATURE code delegates AND carries its three parameters: the
+     * published file numbers nodes inside a scheme and never names the scheme,
+     * so the caller supplies it. This was the last import with an address of
+     * its own; it has none now.
+     */
+    @Test
+    void nomenclatureCodeForwardsItsThreeParameters() {
+        InputStream body = stream("SOURCE|NIVEAU|NUMERO|LIBELLE\nX|1|10|Frais\n");
+        Response delegated = Response.ok("{\"createdCount\":1}").build();
+        when(resource.nomenclatureCsvResource
+                .importNomenclature("ITM_FR", "Nomenclature ITM", "ITM", body))
+                .thenReturn(delegated);
+        Response response = resource.importFeed(
+                "NOMENCLATURE", null, "ITM_FR", "Nomenclature ITM", "ITM", body);
+        assertEquals(delegated, response);
+        verify(resource.engineFeedService, never()).store(any(), any());
+    }
+
+    /**
+     * The POSTAL_CODES code delegates too: an importer that had only its own
+     * address now answers on the single door like every other.
+     */
+    @Test
+    void postalCodesCodeDelegatesToItsImporter() {
+        InputStream body = stream("CODE|PLACE\n75001|Paris\n");
+        Response delegated = Response.ok("{\"createdCount\":1}").build();
+        when(resource.postalCodeCsvResource.importPostalCodes(body)).thenReturn(delegated);
+        assertEquals(delegated, resource.importFeed("POSTAL_CODES", null, null, null, null, body));
+    }
+
+    /**
+     * The SAFE_RECEIPTS code likewise.
+     */
+    @Test
+    void safeReceiptsCodeDelegatesToItsImporter() {
+        InputStream body = stream("REFERENCE|AMOUNT\nR1|10\n");
+        Response delegated = Response.ok("{\"createdCount\":1}").build();
+        when(resource.safeReceiptCsvResource.importReceipts(body)).thenReturn(delegated);
+        assertEquals(delegated, resource.importFeed("SAFE_RECEIPTS", null, null, null, null, body));
     }
 
     /**
@@ -104,7 +166,7 @@ class EngineFeedRelayResourceTest {
      */
     @Test
     void nullCodeRejected() {
-        Response response = resource.importFeed(null, stream("CODE|X\n"));
+        Response response = resource.importFeed(null, null, null, null, null, stream("CODE|X\n"));
         assertEquals(400, response.getStatus());
     }
 
@@ -113,7 +175,7 @@ class EngineFeedRelayResourceTest {
      */
     @Test
     void emptyBodyRejected() {
-        Response response = resource.importFeed("OFFERS", stream("   "));
+        Response response = resource.importFeed("OFFERS", null, null, null, null, stream("   "));
         assertEquals(400, response.getStatus());
         verify(resource.engineFeedService, never()).store(any(), any());
     }
@@ -125,7 +187,7 @@ class EngineFeedRelayResourceTest {
     @Test
     void knownCodeStoresVerbatim() {
         when(resource.engineFeedService.store("OFFERS", "CODE|TYPE\nA|X\n")).thenReturn("deadbeef");
-        Response response = resource.importFeed("offers", stream("CODE|TYPE\nA|X\n"));
+        Response response = resource.importFeed("offers", null, null, null, null, stream("CODE|TYPE\nA|X\n"));
         assertEquals(200, response.getStatus());
         assertEquals("{\"code\":\"OFFERS\", \"version\":\"deadbeef\"}", response.getEntity());
     }
@@ -237,7 +299,7 @@ class EngineFeedRelayResourceTest {
                 throw new IOException("disk");
             }
         };
-        Response response = resource.importFeed("OFFERS", failing);
+        Response response = resource.importFeed("OFFERS", null, null, null, null, failing);
         assertEquals(500, response.getStatus());
         verify(resource.engineFeedService, never()).store(any(), any());
     }

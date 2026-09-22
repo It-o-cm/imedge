@@ -336,7 +336,8 @@ class RefPullServiceTest {
         Map<String, String> versions = Map.of(
                 "FAMILIES", "f1", "PRODUCTS", "f2", "PRICES", "f3",
                 "EMPLOYEES", "f4", "COUPON_TYPES", "f5", "SETTINGS", "f6",
-                "ENGINE_FEEDS", "f7", "ARTICLE_RANGES", "f8", "ISLANDS", "f9");
+                "ENGINE_FEEDS", "f7", "ARTICLE_RANGES", "f8", "ISLANDS", "f9",
+                "VAT_RATES", "f10");
         doReturn(versions).when(mapper).readValue(eq("VERSIONS"), any(TypeReference.class));
         doReturn(List.of("row")).when(mapper).readValue(eq("PAGE0"), any(TypeReference.class));
         doReturn(List.of()).when(mapper).readValue(eq("PAGEN"), any(TypeReference.class));
@@ -345,6 +346,7 @@ class RefPullServiceTest {
         service.pullOnce();
         verify(apply).applyFamilies(any());
         verify(apply).applyProducts(any());
+        verify(apply).applyVatRates(any());
         verify(apply).applyPrices(any());
         verify(apply).applyEmployees(any());
         verify(apply).applyCouponTypes(any());
@@ -355,6 +357,7 @@ class RefPullServiceTest {
         verify(apply).applyEngineFeeds(any());
         verify(apply).recordApplied("FAMILIES", "f1");
         verify(apply).recordApplied("PRODUCTS", "f2");
+        verify(apply).recordApplied("VAT_RATES", "f10");
         verify(apply).recordApplied("PRICES", "f3");
         verify(apply).recordApplied("EMPLOYEES", "f4");
         verify(apply).recordApplied("COUPON_TYPES", "f5");

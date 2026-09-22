@@ -1,0 +1,100 @@
+{!
+ ! Back-office BANK DEPOSITS (BO-05-02-07): the pouches held in the safe leaving
+ ! for the bank. The amount is the sum of the pouches picked and is never typed.
+ ! The two accounting pieces are printed from the row. POST -> 303 -> notice.
+!}
+{#include admin-layout}
+
+{#title}Remises en banque{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Remises en banque</h1>
+        <p class="page-sub">Sac, libellé et pochettes : le coffre est débité du total, les pièces comptables s'éditent.</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-ghost" href="/admin/safe/pouches">Remises au coffre</a>
+        <a class="btn btn-ghost" href="/admin/safe/journal">Journal</a>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">Nouvelle remise</h2>
+    <p class="card-sub">Pochettes disponibles au coffre : <strong>{availableTotal} €</strong></p>
+    {#if available.isEmpty()}
+    <div class="empty-state">
+        <p>Aucune pochette au coffre.</p>
+        <p class="empty-hint">Déclarez d'abord une remise au coffre depuis l'écran <a class="link-strong" href="/admin/safe/pouches">Remises au coffre</a>.</p>
+    </div>
+    {#else}
+    <form method="post" action="/admin/safe/bank-deposits">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="b-bag">N° de sac</label>
+                <input class="input-control" id="b-bag" type="text" name="bagNumber" maxlength="40" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="b-label">Libellé</label>
+                <input class="input-control" id="b-label" type="text" name="label" maxlength="120">
+            </div>
+            <div class="field">
+                <label class="field-label" for="b-day">Date</label>
+                <input class="input-control" id="b-day" type="date" name="depositDay" value="{today}">
+            </div>
+        </div>
+        <table class="data-table">
+            <thead>
+            <tr><th>Prendre</th><th>Pochette</th><th>Journée</th><th>Montant €</th></tr>
+            </thead>
+            <tbody>
+            {#for pouch in available}
+            <tr>
+                <td><input type="checkbox" name="pouchId" value="{pouch.id}"></td>
+                <td>{pouch.pouchNumber}</td>
+                <td>{pouch.accountingDay}</td>
+                <td>{pouch.amountFormatted}</td>
+            </tr>
+            {/for}
+            </tbody>
+        </table>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">Enregistrer la remise</button>
+        </div>
+    </form>
+    {/if}
+</div>
+
+<div class="card">
+    <h2 class="card-title">Remises enregistrées</h2>
+    {#if deposits.isEmpty()}
+    <div class="empty-state">
+        <p>Aucune remise en banque.</p>
+    </div>
+    {#else}
+    <table class="data-table">
+        <thead>
+        <tr><th>Sac</th><th>Date</th><th>Libellé</th><th>Montant €</th><th>Pièces</th></tr>
+        </thead>
+        <tbody>
+        {#for deposit in deposits}
+        <tr>
+            <td>{deposit.bagNumber}</td>
+            <td>{deposit.depositDay}</td>
+            <td>{deposit.label ?: '—'}</td>
+            <td>{deposit.amountFormatted}</td>
+            <td>
+                <a class="btn btn-small btn-ghost" href="/admin/safe/bank-deposits/{deposit.id}/bordereau">Bordereau</a>
+                <a class="btn btn-small btn-ghost" href="/admin/safe/bank-deposits/{deposit.id}/versement">Versement</a>
+            </td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+{/body}

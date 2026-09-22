@@ -77,12 +77,22 @@ public class Price extends BaseEntity {
     public BigDecimal priceIncludingTax;
 
     /**
-     * VAT Rate (Taux de TVA) applied to this price (e.g., 0.2000 for 20%).
+     * The VAT REGIME this price falls under (BO-02-03-14).
+     *
+     * <p>A reference and no longer a decimal carried here: the regime is named
+     * in the referential, and a price points at that name. The rate is read
+     * through it by {@link #vatRate()}, which is what every computation of the
+     * suite consumes — nothing downstream had to learn the difference, because
+     * a sold line snapshots the rate at scan time exactly as before.
+     *
+     * <p>Null is possible on a row written before a regime existed, or by a
+     * feed naming a number the referential does not know; {@link #vatRate()} then
+     * answers null and the caller applies its own default, as it already did
+     * for a product with no price at all.
      */
-    @Column(name = "vat_rate", nullable = false, precision = 5, scale = 4)
-    @NotNull(message = "VAT Rate is mandatory")
-    @PositiveOrZero(message = "VAT Rate must be positive")
-    public BigDecimal vatRate;
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "vat_rate_id")
+    public VatRate vat;
 
     // --------------------------------------------------
     // Priority & Validity
@@ -195,6 +205,28 @@ public class Price extends BaseEntity {
      */
     @Override
     public int getChecksum() {
-        return Objects.hash(product.ean, priceExcludingTax, priceIncludingTax, vatRate, priority, startDateTime, endDateTime);
+        return Objects.hash(product.ean, priceExcludingTax, priceIncludingTax, vatNumber(), priority, startDateTime, endDateTime);
+    }
+
+    /**
+     * The rate this price is taxed at, read through the regime it names.
+     *
+     * @return the rate as a fraction, or null when the price names no regime
+     */
+    public BigDecimal vatRate() {
+        return vat == null ? null : vat.rate;
+    }
+
+    /**
+     * The number of the regime this price names.
+     *
+     * <p>It is what the fingerprint hashes and what the referential payload
+     * carries: a price is identified by the regime it POINTS AT, so a rate
+     * corrected in the table does not rewrite every price row that names it.
+     *
+     * @return the regime number, or null when the price names none
+     */
+    public Integer vatNumber() {
+        return vat == null ? null : vat.number;
     }
 }

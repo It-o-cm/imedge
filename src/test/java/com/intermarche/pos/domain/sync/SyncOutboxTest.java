@@ -71,15 +71,16 @@ class SyncOutboxTest {
      * (LC-08-04-09).
      */
     @Test
-    void entityTypeValuesHoldsSixConstantsInOrder() {
+    void entityTypeValuesHoldsSevenConstantsInOrder() {
         EntityType[] values = EntityType.values();
-        Assertions.assertEquals(6, values.length);
+        Assertions.assertEquals(7, values.length);
         Assertions.assertEquals(EntityType.SESSION, values[0]);
         Assertions.assertEquals(EntityType.MOVEMENT, values[1]);
         Assertions.assertEquals(EntityType.TICKET, values[2]);
         Assertions.assertEquals(EntityType.REFUND, values[3]);
         Assertions.assertEquals(EntityType.EVENT, values[4]);
         Assertions.assertEquals(EntityType.CUSTOMER, values[5]);
+        Assertions.assertEquals(EntityType.DOCUMENT, values[6]);
     }
 
     /**
@@ -93,6 +94,7 @@ class SyncOutboxTest {
         Assertions.assertEquals(3, EntityType.REFUND.ordinal());
         Assertions.assertEquals(4, EntityType.EVENT.ordinal());
         Assertions.assertEquals(5, EntityType.CUSTOMER.ordinal());
+        Assertions.assertEquals(6, EntityType.DOCUMENT.ordinal());
     }
 
     /**

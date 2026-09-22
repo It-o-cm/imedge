@@ -12,6 +12,7 @@ import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -28,12 +29,15 @@ import org.jboss.logging.Logger;
  * accepts all codes with one grammar, and routes each to its rightful
  * treatment.
  * <ul>
- *   <li>Codes the POS consumes itself (STORES, PRODUCTS, FAMILIES, PRICES,
- *       EMPLOYEES) are DELEGATED to their dedicated import resource: the
- *       file is applied to the POS referential, and the resource captures
- *       the verbatim copy for the engine when relevant — exactly as if the
- *       historical route ({@code /products/import}…) had been called. Those
- *       historical routes remain in place, strictly equivalent.</li>
+ *   <li>Codes the node consumes itself (STORES, PRODUCTS, FAMILIES, VAT_RATES,
+ *       PRICES, EMPLOYEES, CUSTOMERS, POSTAL_CODES, SAFE_RECEIPTS) are
+ *       DELEGATED to their import bean: the file is applied to the node's
+ *       referential, and the bean captures the verbatim copy for the engine
+ *       when relevant. Those beans used to carry a route of their own
+ *       ({@code /products/import}…); the routes are GONE, and this is the
+ *       only address left. One door to secure, to document and to keep in
+ *       step — the permission policy named them one by one, and an importer
+ *       forgotten in that list was a door left ajar.</li>
  *   <li>Engine-specific codes (OFFERS, STORE_GROUPS, CATEGORY_STORAGES) are
  *       stored VERBATIM without being opened — the "sealed parcel" leg of
  *       the single-import-line doctrine; parsing belongs to imvaluation,
@@ -72,6 +76,26 @@ public class EngineFeedRelayResource {
     @Inject
     EmployeeCsvResource employeeCsvResource;
 
+    /** The dedicated VAT importer (VAT_RATES delegation). */
+    @Inject
+    VatRateCsvResource vatRateCsvResource;
+
+    /** The dedicated customer importer (CUSTOMERS delegation). */
+    @Inject
+    AccountCustomerCsvResource accountCustomerCsvResource;
+
+    /** The dedicated postal-code importer (POSTAL_CODES delegation). */
+    @Inject
+    PostalCodeCsvResource postalCodeCsvResource;
+
+    /** The dedicated safe-receipt importer (SAFE_RECEIPTS delegation). */
+    @Inject
+    SafeReceiptCsvResource safeReceiptCsvResource;
+
+    /** The dedicated nomenclature importer (NOMENCLATURE delegation). */
+    @Inject
+    NomenclatureCsvResource nomenclatureCsvResource;
+
     /**
      * Imports one feed under the unified grammar: a code owned by a
      * dedicated importer is delegated to it (its own response shape —
@@ -88,19 +112,27 @@ public class EngineFeedRelayResource {
     @Consumes({MediaType.TEXT_PLAIN, MediaType.APPLICATION_OCTET_STREAM})
     @Produces(MediaType.APPLICATION_JSON)
     @RolesAllowed("ADMIN")
-    public Response importFeed(@PathParam("code") String code, InputStream inputStream) {
-        LOGGER.info("Entering method importFeed with code: " + code + ", inputStream: " + inputStream);
+    public Response importFeed(@PathParam("code") String code,
+                               @QueryParam("mode") String mode,
+                               @QueryParam("scheme") String scheme,
+                               @QueryParam("label") String label,
+                               @QueryParam("enseigne") String enseigne,
+                               InputStream inputStream) {
+        LOGGER.info("Entering method importFeed with code: " + code + ", mode: " + mode
+                + ", scheme: " + scheme);
         String normalized = code == null ? "" : code.trim().toUpperCase(Locale.ROOT);
-        Function<InputStream, Response> delegate = delegates().get(normalized);
+        Function<InputStream, Response> delegate =
+                delegates(mode, scheme, label, enseigne).get(normalized);
         if (delegate != null) {
             LOGGER.info("Exiting method importFeed");
             return delegate.apply(inputStream);
         }
         if (EngineFeedService.catalogEntry(normalized).isEmpty()) {
-            String known = String.join(", ", delegates().keySet().stream().sorted().toList())
+            String known = String.join(", ",
+                    delegates(mode, scheme, label, enseigne).keySet().stream().sorted().toList())
                     + ", " + EngineFeedService.CATALOG.stream()
                     .map(EngineFeedService.FeedDef::code)
-                    .filter(c -> !delegates().containsKey(c))
+                    .filter(c -> !delegates(mode, scheme, label, enseigne).containsKey(c))
                     .collect(Collectors.joining(", "));
             LOGGER.info("Exiting method importFeed");
             return Response.status(Response.Status.BAD_REQUEST)
@@ -129,17 +161,50 @@ public class EngineFeedRelayResource {
     /**
      * The codes owned by a dedicated importer, each mapped to its import
      * entry — the delegation table of the unified grammar. Built per call:
-     * five entries, no state worth caching against injection timing.
+     * nine entries, no state worth caching against injection timing.
      *
+     * <p>EVERY importer of the node is here now. They used to carry a second
+     * address of their own, {@code /products/import} and its kin, so the same
+     * import answered to two spellings and the permission policy had to name
+     * them one by one. One door, one vocabulary — the referential domain code,
+     * the same token as the engine feed catalog and as the register's own
+     * dispatch. The nomenclature stays out, and that is not an oversight: two
+     * retailers publish the same columns and nothing in the file says which
+     * scheme to load, so the scheme is named on the request.
+     *
+     * <p>Three feeds need more than their code, and the table carries what they
+     * need rather than sending them to an address of their own: the customer
+     * population is full or delta ({@code mode}), and a nomenclature must be
+     * told which scheme it lands in ({@code scheme}, {@code label},
+     * {@code enseigne}) because the published lines number nodes INSIDE a
+     * scheme and never name the scheme. Four parameters no other code reads is
+     * a visible blemish on one method; two front doors was an invisible one on
+     * the whole node.
+     *
+     * <p>{@code Map.ofEntries} and not {@code Map.of}: the latter stops at ten
+     * pairs, and the tenth is already here.
+     *
+     * @param mode the import mode, read by the customer feed alone
+     * @param scheme the nomenclature scheme to load into
+     * @param label the nomenclature scheme label, used on creation
+     * @param enseigne the enseigne the nomenclature scheme classifies for
      * @return the code-to-importer delegation map
      */
-    private Map<String, Function<InputStream, Response>> delegates() {
-        return Map.of(
-                "STORES", storeCsvResource::importStores,
-                "PRODUCTS", productCsvResource::importProducts,
-                "FAMILIES", productFamilyCsvResource::importProductFamilies,
-                "PRICES", priceCsvResource::importPrices,
-                "EMPLOYEES", employeeCsvResource::importEmployees);
+    private Map<String, Function<InputStream, Response>> delegates(
+            String mode, String scheme, String label, String enseigne) {
+        return Map.ofEntries(
+                Map.entry("STORES", storeCsvResource::importStores),
+                Map.entry("PRODUCTS", productCsvResource::importProducts),
+                Map.entry("FAMILIES", productFamilyCsvResource::importProductFamilies),
+                Map.entry("VAT_RATES", vatRateCsvResource::importVatRates),
+                Map.entry("PRICES", priceCsvResource::importPrices),
+                Map.entry("EMPLOYEES", employeeCsvResource::importEmployees),
+                Map.entry("CUSTOMERS",
+                        stream -> accountCustomerCsvResource.importCustomers(stream, mode)),
+                Map.entry("POSTAL_CODES", postalCodeCsvResource::importPostalCodes),
+                Map.entry("SAFE_RECEIPTS", safeReceiptCsvResource::importReceipts),
+                Map.entry("NOMENCLATURE", stream -> nomenclatureCsvResource
+                        .importNomenclature(scheme, label, enseigne, stream)));
     }
 
     /**

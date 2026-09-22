@@ -207,6 +207,66 @@ public class PosSettingsService {
                 "Ancienneté du référentiel client tolérée (minutes)",
                 "Au-delà de ce délai sans tirage réussi du référentiel client, la caisse se considère en mode dégradé pour le crédit client (LC-07-09-05).",
                 "60", null),
+        new Def("customer.volatile-creation-enabled", Type.BOOL, "CLIENT EN CAISSE",
+                "Creation d'un client de passage en caisse",
+                "L'hote(sse) peut creer en caisse un client VOLATIL — un client de passage, sans compte ni credit, cree pour porter une facture. Desactive : seuls les clients en compte deja integres sont utilisables (BO-10-04-01).",
+                "true", null),
+        new Def("customer.account-creation-blocked", Type.BOOL, "CLIENT EN CAISSE",
+                "Creation d'un client EN COMPTE bloquee",
+                "La creation d'un client en compte est refusee, en caisse comme au back-office : un client en compte entre par l'integration de la gestion commerciale. Desactive : la creation redevient possible (BO-10-04-05, BO-02-04-12).",
+                "true", null),
+        new Def("customer.show-details", Type.BOOL, "CLIENT EN CAISSE",
+                "Affichage des coordonnees du client",
+                "Quand un client est identifie, ses coordonnees sont montrees a l'hote(sse). Desactive : seuls son numero et sa raison sociale apparaissent (BO-10-04-02).",
+                "true", null),
+        new Def("customer.update-enabled", Type.BOOL, "CLIENT EN CAISSE",
+                "Mise a jour des coordonnees en caisse",
+                "L'hote(sse) peut corriger les coordonnees du client identifie ; la correction est enregistree en base et portee sur le document imprime. Desactive : la fiche est en lecture seule en caisse (BO-10-04-03/04).",
+                "false", null),
+        new Def("customer.show-discount", Type.BOOL, "CLIENT EN CAISSE",
+                "Affichage de la remise du client en compte",
+                "La remise accordee au client en compte est annoncee a l'hote(sse) des que le client est scanne ou saisi. Desactive : la remise s'applique sans etre annoncee (BO-10-04-08).",
+                "true", null),
+        new Def("customer.discount-segment", Type.TEXT, "CLIENT EN CAISSE",
+                "Segment des clients en compte remises",
+                "Nom du segment auquel un client en compte doit appartenir pour que sa remise s'applique. Vide : la remise de la fiche s'applique a tout client en compte qui en porte une (BO-10-04-07).",
+                "", null),
+        new Def("customer.credit-tender", Type.TEXT, "CLIENT EN CAISSE",
+                "Moyen de paiement du credit client",
+                "Cle du moyen de paiement sous lequel le credit client est enregistre sur le ticket et dans les etats. Une cle inconnue retombe sur CREDIT (BO-10-04-09).",
+                "CREDIT", null),
+        new Def("customer.partial-credit-allowed", Type.BOOL, "CLIENT EN CAISSE",
+                "Paiement partiel en credit client",
+                "Le credit client peut ne regler qu'une partie du ticket, le reste etant paye autrement. Desactive : le credit client regle la totalite du reste du, ou rien (BO-10-04-10).",
+                "true", null),
+        new Def("customer.offline-message", Type.TEXT, "CLIENT EN CAISSE",
+                "Alerte des fonctions client hors ligne",
+                "Message montre a l'hote(sse) quand une fonction client est demandee alors que la caisse est autonome et que son referentiel n'est plus a jour (BO-10-04-11/12).",
+                "REFERENTIEL CLIENT NON A JOUR - CREDIT REFUSE", null),
+        new Def("customer.over-limit-message", Type.TEXT, "CLIENT EN CAISSE",
+                "Alerte de depassement du plafond",
+                "Message montre a l'hote(sse) quand le reglement porterait le client au-dela de son plafond de credit. Les jetons {encours} et {plafond} y sont remplaces par les montants (BO-10-04-13).",
+                "PLAFOND DEPASSE - ENCOURS {encours} / PLAFOND {plafond} - AUTORISATION REQUISE", null),
+        new Def("customer.default-tax-id", Type.TEXT, "CLIENT EN CAISSE",
+                "NIF par defaut",
+                "Numero fiscal presente en caisse avant validation du ticket, que l'hote(sse) peut remplacer par celui du client. Vide : aucun NIF n'est propose (BO-10-04-15).",
+                "999999990", null),
+        new Def("customer.default-tax-id-label", Type.TEXT, "CLIENT EN CAISSE",
+                "Libelle du NIF par defaut",
+                "Libelle imprime a la place du numero quand le NIF presente est celui par defaut (BO-10-04-16).",
+                "CONSUMIDOR FINAL", null),
+        new Def("customer.foreign-tax-id-countries", Type.TEXT, "CLIENT EN CAISSE",
+                "Pays proposes pour un NIF etranger",
+                "Codes pays ISO separes par une virgule, proposes en caisse pour la saisie d'un NIF etranger. Le NIF portugais obeit a son propre algorithme et n'est pas dans cette liste (BO-10-04-17).",
+                "ES,FR,DE,IT,GB", null),
+        new Def("customer.invoice-export-due-date", Type.BOOL, "CLIENT EN CAISSE",
+                "Date d'echeance dans les extractions de factures",
+                "Les extractions de factures clients en compte portent la date d'echeance du client (BO-10-04-19).",
+                "true", null),
+        new Def("customer.invoice-export-ecotax", Type.BOOL, "CLIENT EN CAISSE",
+                "Eco-taxe dans les extractions de factures",
+                "Les extractions de factures portent le montant d'eco-taxe associe a la transaction reglee en credit client (BO-10-04-14).",
+                "false", null),
         new Def("scan.ean13-check-digit", Type.BOOL, "SCAN",
                 "Contrôle du checkdigit EAN13",
                 "Au scan d'un EAN13, la clé de contrôle est vérifiée et un code invalide est refusé. Désactivé : aucun contrôle de clé (BO-10-02-21).",
@@ -319,6 +379,38 @@ public class PosSettingsService {
                 "Prise de poste au scan du badge",
                 "Le scan d'un badge deverrouille la caisse ou vise un avenant manager. Desactive : le badge scanne est ignore et l'operateur saisit son identifiant a la main (BO-10-02-29/30).",
                 "true", null),
+        new Def("auth.password-required-on-open", Type.BOOL, "SESSION CAISSE",
+                "Mot de passe a la prise de poste",
+                "Le badge scanne ouvre la caisse SEUL quand ce parametre est desactive. Actif : le badge remplit l'identifiant et l'operateur saisit son code (LC-01-01-03/09, BO-10-02-22).",
+                "true", null),
+        new Def("auth.password-required-on-close", Type.BOOL, "SESSION CAISSE",
+                "Mot de passe a la fermeture",
+                "La deconnexion demande le code de l'operateur. Desactive : la touche ferme la caisse sans rien demander (LC-01-02-02/03, BO-10-02-24).",
+                "false", null),
+        new Def("session.close-endorsement-on-pending", Type.BOOL, "SESSION CAISSE",
+                "Avenant si tickets en attente",
+                "Fermer la caisse en laissant un ticket en attente non repris exige une autorisation superviseur. Desactive : la fermeture passe avec un simple avertissement (LC-01-02-10, BO-10-02-08).",
+                "true", null),
+        new Def("session.print-open-receipt", Type.BOOL, "TICKETS",
+                "Ticket d'ouverture de caisse",
+                "Impression d'un ticket a la prise de poste : caisse, operateur, horodatage (LC-01-01-08, BO-10-07-09).",
+                "false", null),
+        new Def("session.print-close-receipt", Type.BOOL, "TICKETS",
+                "Ticket de fermeture de caisse",
+                "Impression d'un ticket a la fermeture : caisse, operateur, horodatage, et la mention du forcage le cas echeant (LC-01-02-11, BO-10-07-09).",
+                "false", null),
+        new Def("period.auto-close-enabled", Type.BOOL, "FIN DE PÉRIODE",
+                "Fermeture automatique des caisses",
+                "Les caisses restees ouvertes sont fermees d'office a l'approche de la fin de periode, l'ordre etant releve par chaque caisse a son tour de boucle. Desactive : une caisse oubliee reste ouverte jusqu'au lendemain (LC-01-02-08, BO-09-01-06/09).",
+                "false", null),
+        new Def("period.end-time", Type.TEXT, "FIN DE PÉRIODE",
+                "Heure de fin de periode",
+                "Heure de la fin de periode, au format HH:mm. Une valeur illisible retombe sur la valeur par defaut (BO-09-01-06).",
+                "23:30", null),
+        new Def("period.close-lead-minutes", Type.INT, "FIN DE PÉRIODE",
+                "Delai de fermeture avant la fin de periode (minutes)",
+                "Nombre de minutes avant la fin de periode a partir duquel les caisses encore ouvertes sont fermees. Une caisse en pleine vente n'est pas fermee : l'ordre reste en attente et la caisse le reprend des qu'elle est au repos (BO-09-03-07).",
+                "5", null),
         new Def("cash.default-opening-float", Type.TEXT, "SESSION CAISSE",
                 "Fond de caisse par defaut",
                 "Montant pre-rempli du fond de caisse a l'ouverture de session, que le caissier peut corriger. Administre par magasin et herite par echelon (BO-03-02-41).",
@@ -367,6 +459,14 @@ public class PosSettingsService {
                 "Compte machine du service fidélité",
                 "Identifiant du compte machine de la caisse auprès du service fidélité. Vide : la propriété de déploiement pos.fid.user s'applique. Le mot de passe reste un secret de déploiement et n'est pas administrable (BO-11-04-04).",
                 "", "pos.fid.user"),
+        new Def("fidelity.offline-message", Type.TEXT, "FIDÉLITÉ",
+                "Message ticket quand la fidélité est indisponible",
+                "Message imprimé sur le ticket d'un porteur quand le service fidélité n'a pas répondu pendant la vente. Le jeton {carte} y est remplacé par le numéro de carte. Vide : le ticket ne dit rien (BO-03-03-29).",
+                "CARTE {carte} - FIDELITE INDISPONIBLE, VOS AVANTAGES SERONT CREDITES ULTERIEUREMENT", null),
+        new Def("fidelity.offline-message-no-card", Type.TEXT, "FIDÉLITÉ",
+                "Message ticket sans carte quand la fidélité est indisponible",
+                "Message imprimé sur le ticket d'un client SANS carte quand le service fidélité n'a pas répondu pendant la vente. Vide : le ticket ne dit rien (BO-03-03-30).",
+                "FIDELITE INDISPONIBLE - PRESENTEZ VOTRE CARTE LORS DE VOTRE PROCHAIN PASSAGE", null),
         new Def("training.theme", Type.TEXT, "MODE ÉCOLE",
                 "Thème de l'écran caisse en formation",
                 "Nom du thème appliqué à l'écran caisse en mode école, pour le distinguer de l'écran de vente standard (sombre, clair). Vide : la formation garde le thème habituel et seul le bandeau la signale (BO-10-07-08).",
@@ -676,6 +776,312 @@ public class PosSettingsService {
         LOGGER.info("Entering method customerClosedMessage");
         LOGGER.info("Exiting method customerClosedMessage");
         return value("customer.message-closed");
+    }
+
+    /**
+     * Whether the operator must key a password to take the post.
+     *
+     * <p>When this is off, a scanned badge opens the register on its own
+     * (LC-01-01-03): the badge IS the credential. It never lets a typed
+     * identifier in without a password — only a scan, which is a physical
+     * object the operator carries.
+     *
+     * @return true when a password is required at opening
+     */
+    public boolean passwordRequiredOnOpen() {
+        LOGGER.info("Entering method passwordRequiredOnOpen");
+        LOGGER.info("Exiting method passwordRequiredOnOpen");
+        return boolValue("auth.password-required-on-open");
+    }
+
+    /**
+     * Whether closing the register asks the operator for their password.
+     *
+     * @return true when a password is required at closing
+     */
+    public boolean passwordRequiredOnClose() {
+        LOGGER.info("Entering method passwordRequiredOnClose");
+        LOGGER.info("Exiting method passwordRequiredOnClose");
+        return boolValue("auth.password-required-on-close");
+    }
+
+    /**
+     * Whether a parked ticket left behind blocks the close until a supervisor
+     * endorses it.
+     *
+     * @return true when the endorsement is required
+     */
+    public boolean closeEndorsementOnPending() {
+        LOGGER.info("Entering method closeEndorsementOnPending");
+        LOGGER.info("Exiting method closeEndorsementOnPending");
+        return boolValue("session.close-endorsement-on-pending");
+    }
+
+    /**
+     * Whether taking the post prints an opening receipt.
+     *
+     * @return true when the opening receipt is printed
+     */
+    public boolean printOpenReceipt() {
+        LOGGER.info("Entering method printOpenReceipt");
+        LOGGER.info("Exiting method printOpenReceipt");
+        return boolValue("session.print-open-receipt");
+    }
+
+    /**
+     * Whether closing the register prints a closing receipt.
+     *
+     * @return true when the closing receipt is printed
+     */
+    public boolean printCloseReceipt() {
+        LOGGER.info("Entering method printCloseReceipt");
+        LOGGER.info("Exiting method printCloseReceipt");
+        return boolValue("session.print-close-receipt");
+    }
+
+    /**
+     * Whether the register may open a VOLATILE customer — a passing customer,
+     * without an account ({@code BO-10-04-01}).
+     *
+     * @return true when the till may create one
+     */
+    public boolean volatileCustomerCreationEnabled() {
+        LOGGER.info("Entering method volatileCustomerCreationEnabled");
+        LOGGER.info("Exiting method volatileCustomerCreationEnabled");
+        return boolValue("customer.volatile-creation-enabled");
+    }
+
+    /**
+     * Whether creating a customer IN ACCOUNT is refused, at the till and in the
+     * back office alike ({@code BO-10-04-05}, {@code BO-02-04-12}).
+     *
+     * @return true when the creation is blocked
+     */
+    public boolean accountCustomerCreationBlocked() {
+        LOGGER.info("Entering method accountCustomerCreationBlocked");
+        LOGGER.info("Exiting method accountCustomerCreationBlocked");
+        return boolValue("customer.account-creation-blocked");
+    }
+
+    /**
+     * Whether an identified customer's details are shown to the operator
+     * ({@code BO-10-04-02}).
+     *
+     * @return true when the details are shown
+     */
+    public boolean showCustomerDetails() {
+        LOGGER.info("Entering method showCustomerDetails");
+        LOGGER.info("Exiting method showCustomerDetails");
+        return boolValue("customer.show-details");
+    }
+
+    /**
+     * Whether the operator may correct a customer's details at the till
+     * ({@code BO-10-04-03}, {@code BO-10-04-04}).
+     *
+     * @return true when the correction is allowed
+     */
+    public boolean customerUpdateEnabled() {
+        LOGGER.info("Entering method customerUpdateEnabled");
+        LOGGER.info("Exiting method customerUpdateEnabled");
+        return boolValue("customer.update-enabled");
+    }
+
+    /**
+     * Whether the discount of a customer in account is announced to the
+     * operator ({@code BO-10-04-08}).
+     *
+     * @return true when the discount is announced
+     */
+    public boolean showCustomerDiscount() {
+        LOGGER.info("Entering method showCustomerDiscount");
+        LOGGER.info("Exiting method showCustomerDiscount");
+        return boolValue("customer.show-discount");
+    }
+
+    /**
+     * The segment a customer in account must belong to for their discount to
+     * apply ({@code BO-10-04-07}).
+     *
+     * @return the segment, empty when every account's discount applies
+     */
+    public String customerDiscountSegment() {
+        LOGGER.info("Entering method customerDiscountSegment");
+        LOGGER.info("Exiting method customerDiscountSegment");
+        return value("customer.discount-segment");
+    }
+
+    /**
+     * The tender key customer credit is registered under
+     * ({@code BO-10-04-09}).
+     *
+     * @return the administered key, never blank
+     */
+    public String customerCreditTender() {
+        LOGGER.info("Entering method customerCreditTender");
+        String key = value("customer.credit-tender");
+        LOGGER.info("Exiting method customerCreditTender");
+        return key == null || key.isBlank() ? "CREDIT" : key.trim();
+    }
+
+    /**
+     * Whether customer credit may settle only PART of the ticket
+     * ({@code BO-10-04-10}).
+     *
+     * @return true when a partial settlement is accepted
+     */
+    public boolean partialCreditAllowed() {
+        LOGGER.info("Entering method partialCreditAllowed");
+        LOGGER.info("Exiting method partialCreditAllowed");
+        return boolValue("customer.partial-credit-allowed");
+    }
+
+    /**
+     * The alert shown when a customer function is asked for on a register whose
+     * referential is no longer trustworthy ({@code BO-10-04-11/12}).
+     *
+     * @return the administered message
+     */
+    public String customerOfflineMessage() {
+        LOGGER.info("Entering method customerOfflineMessage");
+        LOGGER.info("Exiting method customerOfflineMessage");
+        return value("customer.offline-message");
+    }
+
+    /**
+     * The alert shown when the settlement would pass the customer's ceiling
+     * ({@code BO-10-04-13}).
+     *
+     * @return the administered message, its two tokens not yet replaced
+     */
+    public String customerOverLimitMessage() {
+        LOGGER.info("Entering method customerOverLimitMessage");
+        LOGGER.info("Exiting method customerOverLimitMessage");
+        return value("customer.over-limit-message");
+    }
+
+    /**
+     * The message a HOLDER's receipt carries when the loyalty service did not
+     * answer during the sale ({@code BO-03-03-29}).
+     *
+     * @return the administered message, its {@code {carte}} token not yet
+     *         replaced; empty when the shop prints nothing
+     */
+    public String fidelityOfflineMessage() {
+        LOGGER.info("Entering method fidelityOfflineMessage");
+        LOGGER.info("Exiting method fidelityOfflineMessage");
+        return value("fidelity.offline-message");
+    }
+
+    /**
+     * The message a receipt carries when the customer presented NO card and the
+     * loyalty service did not answer either ({@code BO-03-03-30}).
+     *
+     * @return the administered message, empty when the shop prints nothing
+     */
+    public String fidelityOfflineMessageNoCard() {
+        LOGGER.info("Entering method fidelityOfflineMessageNoCard");
+        LOGGER.info("Exiting method fidelityOfflineMessageNoCard");
+        return value("fidelity.offline-message-no-card");
+    }
+
+    /**
+     * The fiscal identifier presented at the till before the ticket is
+     * validated ({@code BO-10-04-15}).
+     *
+     * @return the administered number, empty when none is proposed
+     */
+    public String defaultTaxId() {
+        LOGGER.info("Entering method defaultTaxId");
+        LOGGER.info("Exiting method defaultTaxId");
+        return value("customer.default-tax-id");
+    }
+
+    /**
+     * The label printed in place of the default fiscal identifier
+     * ({@code BO-10-04-16}).
+     *
+     * @return the administered label
+     */
+    public String defaultTaxIdLabel() {
+        LOGGER.info("Entering method defaultTaxIdLabel");
+        LOGGER.info("Exiting method defaultTaxIdLabel");
+        return value("customer.default-tax-id-label");
+    }
+
+    /**
+     * The country codes offered at the till for a foreign fiscal identifier
+     * ({@code BO-10-04-17}).
+     *
+     * @return the administered list, comma-separated
+     */
+    public String foreignTaxIdCountries() {
+        LOGGER.info("Entering method foreignTaxIdCountries");
+        LOGGER.info("Exiting method foreignTaxIdCountries");
+        return value("customer.foreign-tax-id-countries");
+    }
+
+    /**
+     * Whether an invoice extraction carries the customer's due date
+     * ({@code BO-10-04-19}).
+     *
+     * @return true when the due date is exported
+     */
+    public boolean invoiceExportDueDate() {
+        LOGGER.info("Entering method invoiceExportDueDate");
+        LOGGER.info("Exiting method invoiceExportDueDate");
+        return boolValue("customer.invoice-export-due-date");
+    }
+
+    /**
+     * Whether an invoice extraction carries the eco-tax of the settlement
+     * ({@code BO-10-04-14}).
+     *
+     * @return true when the eco-tax is exported
+     */
+    public boolean invoiceExportEcoTax() {
+        LOGGER.info("Entering method invoiceExportEcoTax");
+        LOGGER.info("Exiting method invoiceExportEcoTax");
+        return boolValue("customer.invoice-export-ecotax");
+    }
+
+    /**
+     * Whether the registers still open are closed of their own accord as the
+     * period ends (LC-01-02-08, BO-09-01-06/09).
+     *
+     * @return true when the automatic close is armed
+     */
+    public boolean periodAutoCloseEnabled() {
+        LOGGER.info("Entering method periodAutoCloseEnabled");
+        LOGGER.info("Exiting method periodAutoCloseEnabled");
+        return boolValue("period.auto-close-enabled");
+    }
+
+    /**
+     * The moment the period ends, as the administered {@code HH:mm} text.
+     *
+     * <p>Returned as text and parsed by its consumer: a malformed row must not
+     * take the whole settings screen down, and the node that reads it is the
+     * one able to say what it does with an unreadable hour.
+     *
+     * @return the administered value, never null
+     */
+    public String periodEndTime() {
+        LOGGER.info("Entering method periodEndTime");
+        LOGGER.info("Exiting method periodEndTime");
+        return value("period.end-time");
+    }
+
+    /**
+     * How many minutes before the period ends the open registers are asked to
+     * close (BO-09-03-07).
+     *
+     * @return the lead in minutes, the catalog default when the row is corrupt
+     */
+    public int periodCloseLeadMinutes() {
+        LOGGER.info("Entering method periodCloseLeadMinutes");
+        LOGGER.info("Exiting method periodCloseLeadMinutes");
+        return intValue("period.close-lead-minutes");
     }
 
     /**

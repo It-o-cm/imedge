@@ -1,14 +1,8 @@
 package com.intermarche.pos.imports;
 
 import com.intermarche.pos.service.NomenclatureImportService;
-import jakarta.annotation.security.RolesAllowed;
+import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.POST;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.QueryParam;
-import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
 
@@ -24,7 +18,7 @@ import java.util.Map;
 
 /**
  * Loads the NOMENCLATURE file published by the gestion commerciale
- * ({@code POST /nomenclatures/import}).
+ * ({@code POST /feeds/import/NOMENCLATURE}).
  * <p>
  * The file is the pipe-separated export of the group's hierarchy: one line per
  * node, carrying where the line comes from, the level, the code and the label.
@@ -37,10 +31,24 @@ import java.util.Map;
  * <p>
  * Which scheme the file loads into is named on the query
  * ({@code ?scheme=ITM_FR&label=...&enseigne=ITM}), not guessed from the file:
- * two enseignes publish the same column names and nothing inside the file
- * distinguishes them.
+ * the published lines carry {@code NUMERO}, which identifies a node INSIDE a
+ * scheme, never the scheme itself, and two enseignes publish the same columns
+ * and the same numbers. The foreign key is missing from the file, so the
+ * caller supplies it.
+ * <p>
+ * No @Path: the ONE door is {@code POST /feeds/import/{CODE\}}, which
+ * delegates here and forwards the three query parameters. This importer was
+ * the last to keep an address of its own, on the grounds that the relay's
+ * delegation took a stream and nothing else — a property of that table, not
+ * of this domain. The table now carries the parameters.
+ * <p>
+ * {@code @ApplicationScoped} is what makes this class a bean now that it has
+ * no {@code @Path}: the JAX-RS annotation used to be its ONLY bean-defining
+ * annotation, so removing it also removed it from CDI discovery, and the two
+ * classes that inject it — the relay and the back-office screen — no longer
+ * resolved. Its nine sibling importers already carried the scope.
  */
-@Path("/nomenclatures/import")
+@ApplicationScoped
 public class NomenclatureCsvResource {
 
     /** Technical log of this class. */
@@ -74,13 +82,9 @@ public class NomenclatureCsvResource {
      * @param inputStream the published file
      * @return a JSON summary of what was loaded and what was refused
      */
-    @POST
-    @Consumes({MediaType.TEXT_PLAIN, MediaType.APPLICATION_OCTET_STREAM})
-    @Produces(MediaType.APPLICATION_JSON)
-    @RolesAllowed("ADMIN")
-    public Response importNomenclature(@QueryParam("scheme") String schemeCode,
-            @QueryParam("label") String schemeLabel,
-            @QueryParam("enseigne") String enseigneCode,
+    public Response importNomenclature(String schemeCode,
+            String schemeLabel,
+            String enseigneCode,
             InputStream inputStream) {
         LOGGER.info("Entering method importNomenclature with scheme: " + schemeCode);
         if (schemeCode == null || schemeCode.isBlank()) {

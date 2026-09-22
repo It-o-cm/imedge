@@ -51,6 +51,18 @@ public enum Feature {
     /** The TOUCH screen: how the groups are drawn on the direct-entry grid. */
     TOUCH("touch", Menu.ARTICLES, "Touches", "/admin/touches"),
 
+    /** The VAT screen: the regimes every price points at (BO-02-03-14). */
+    VAT_RATE("vat_rate", Menu.ARTICLES, "TVA", "/admin/vat-rates"),
+
+    /** The CUSTOMERS-IN-ACCOUNT referential screen (BO-02-04-22/23). */
+    CUSTOMER("customer", Menu.PARAMETRAGE, "Clients en compte", "/admin/customers"),
+
+    /** The POSTAL CODES referential screen (BO-02-04-16). */
+    POSTAL_CODE("postal_code", Menu.PARAMETRAGE, "Codes postaux", "/admin/postal-codes"),
+
+    /** The DOCUMENTS issued at the registers (BO-02-04-19). */
+    DOCUMENT("document", Menu.SUPERVISION, "Documents de caisse", "/admin/documents"),
+
     /** The PROFILES administration screen. */
     PROFILE("profile", Menu.ADMINISTRATION, "Profils", "/admin/profiles"),
 
@@ -63,8 +75,45 @@ public enum Feature {
     /** The JOURNAL screen: the line's events and movements. */
     JOURNAL("journal", Menu.SUPERVISION, "Journal", "/admin/journal"),
 
+    /** The REPORTS surface: the catalogue of states and their exports. */
+    REPORT("report", Menu.SUPERVISION, "Rapports", "/admin/reports"),
+
     /** The SYNCHRONIZATION supervision screen: the referential feeds. */
-    SYNC("sync", Menu.SUPERVISION, "Flux", "/admin/sync");
+    SYNC("sync", Menu.SUPERVISION, "Flux", "/admin/sync"),
+
+    /** The SAFE MOVEMENTS screen: expenses, receipts and their pointing (BO-05-02-01/02/06). */
+    SAFE_MOVEMENT("safe_movement", Menu.FINANCIER, "Mouvements du coffre",
+            "/admin/safe/movements"),
+
+    /** The COIN ORDER screen: the orders and their deliveries (BO-05-02-04/05). */
+    SAFE_COIN_ORDER("safe_coin_order", Menu.FINANCIER, "Demandes de monnaie",
+            "/admin/safe/coin-orders"),
+
+    /** The POUCH screen: the registers' takings brought to the safe (BO-05-02-10). */
+    SAFE_POUCH("safe_pouch", Menu.FINANCIER, "Remises au coffre", "/admin/safe/pouches"),
+
+    /** The BANK DEPOSIT screen and its accounting pieces (BO-05-02-07). */
+    SAFE_BANK_DEPOSIT("safe_bank_deposit", Menu.FINANCIER, "Remises en banque",
+            "/admin/safe/bank-deposits"),
+
+    /** The INVENTORY screen: the physical count against the ledger (BO-05-02-11). */
+    SAFE_INVENTORY("safe_inventory", Menu.FINANCIER, "Inventaire du coffre",
+            "/admin/safe/inventories"),
+
+    /** The ACCOUNTING PERIOD screen: opening and closing the safe (BO-05-02-12). */
+    SAFE_PERIOD("safe_period", Menu.FINANCIER, "Clôture du coffre", "/admin/safe/periods"),
+
+    /** The SAFE JOURNAL: the debits and credits of a period (BO-05-02-13). */
+    SAFE_JOURNAL("safe_journal", Menu.FINANCIER, "Journal du coffre", "/admin/safe/journal"),
+
+    /** The DAY HISTORY: the registers' takings by tender, day by day (BO-05-02-08/09). */
+    SAFE_DAY("safe_day", Menu.FINANCIER, "Historique des journées", "/admin/safe/days"),
+
+    /** The PAYROLL screen: who may receive an advance or a reimbursement (BO-05-02-15). */
+    EMPLOYEE("employee", Menu.FINANCIER, "Salariés", "/admin/employees"),
+
+    /** The COIN MACHINE screen: what each machine holds (BO-05-02-16). */
+    COIN_MACHINE("coin_machine", Menu.PARAMETRAGE, "Monnayeurs", "/admin/coin-machines");
 
     /** The stable storage/form token of this feature. */
     private final String key;

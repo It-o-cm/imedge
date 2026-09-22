@@ -1,0 +1,99 @@
+{!
+ ! Back-office ACCOUNTING PERIODS of the safe (BO-05-02-12): opening a period
+ ! and closing it once its movements are pointed and validated. The closure is
+ ! refused while one movement is still pending — that refusal IS the
+ ! requirement. POST -> 303 -> notice.
+!}
+{#include admin-layout}
+
+{#title}Clôture du coffre{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Clôture du coffre</h1>
+        <p class="page-sub">Périodes comptables : une seule ouverte à la fois, close une fois ses mouvements validés.</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-ghost" href="/admin/safe/movements">Mouvements</a>
+        <a class="btn btn-ghost" href="/admin/safe/journal">Journal</a>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+{#if open}
+<div class="card">
+    <h2 class="card-title">Période ouverte : {open.label}</h2>
+    <p class="card-sub">
+        Ouverte le {open.startDate} avec {open.openingBalance} € ·
+        solde actuel <strong>{balance} €</strong> ·
+        mouvements non validés <strong>{pending}</strong>
+    </p>
+    {#if pending > 0}
+    <div class="alert alert-error" role="status">
+        La clôture est refusée tant que des mouvements ne sont pas validés.
+        Pointez-les depuis l'écran <a class="link-strong" href="/admin/safe/movements">Mouvements du coffre</a>.
+    </div>
+    {/if}
+    <form method="post" action="/admin/safe/periods/close">
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">Clôturer la période</button>
+        </div>
+    </form>
+</div>
+{#else}
+<div class="card">
+    <h2 class="card-title">Ouvrir une période</h2>
+    <p class="card-sub">Le solde d'ouverture est celui que le coffre porte aujourd'hui : c'est le solde de clôture de la période précédente.</p>
+    <form method="post" action="/admin/safe/periods">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="p-label">Libellé</label>
+                <input class="input-control" id="p-label" type="text" name="label" maxlength="40" value="{suggestedLabel}" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="p-start">Premier jour</label>
+                <input class="input-control" id="p-start" type="date" name="startDate" value="{today}">
+            </div>
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">Ouvrir la période</button>
+        </div>
+    </form>
+</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">Historique des périodes</h2>
+    {#if periods.isEmpty()}
+    <div class="empty-state">
+        <p>Aucune période comptable.</p>
+        <p class="empty-hint">Ouvrez-en une pour que le coffre commence à compter.</p>
+    </div>
+    {#else}
+    <table class="data-table">
+        <thead>
+        <tr><th>Libellé</th><th>Du</th><th>Au</th><th>Solde d'ouverture €</th><th>Solde de clôture €</th><th>État</th></tr>
+        </thead>
+        <tbody>
+        {#for period in periods}
+        <tr>
+            <td>{period.label}</td>
+            <td>{period.startDate}</td>
+            <td>{period.endDate ?: '—'}</td>
+            <td>{period.openingBalance}</td>
+            <td>{period.closingBalance ?: '—'}</td>
+            <td>
+                {#if period.open}<span class="badge badge-ok">Ouverte</span>
+                {#else}<span class="badge badge-off">Close</span>{/if}
+            </td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+{/body}

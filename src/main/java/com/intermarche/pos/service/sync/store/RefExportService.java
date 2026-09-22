@@ -12,6 +12,7 @@ import com.intermarche.pos.domain.store.Pdv;
 import com.intermarche.pos.domain.catalog.Price;
 import com.intermarche.pos.domain.catalog.Product;
 import com.intermarche.pos.domain.catalog.ProductFamily;
+import com.intermarche.pos.domain.catalog.VatRate;
 import com.intermarche.pos.service.PosSettingsService;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.transaction.Transactional;
@@ -124,6 +125,8 @@ public class RefExportService {
                     .page(page, size).list().stream().map(this::toDto).toList();
             case "PRODUCTS" -> Product.<Product>find("order by ean")
                     .page(page, size).list().stream().map(this::toDto).toList();
+            case "VAT_RATES" -> VatRate.<VatRate>find("order by number")
+                    .page(page, size).list().stream().map(this::toDto).toList();
             case "PRICES" -> Price.<Price>find("order by id")
                     .page(page, size).list().stream().map(this::toDto).toList();
             case "EMPLOYEES" -> Employee.<Employee>find("order by loginName")
@@ -144,6 +147,9 @@ public class RefExportService {
                     .page(page, size).list().stream().map(this::toDto).toList();
             case "CUSTOMERS" -> com.intermarche.pos.domain.payment.AccountCustomer
                     .<com.intermarche.pos.domain.payment.AccountCustomer>find("order by accountNumber")
+                    .page(page, size).list().stream().map(this::toDto).toList();
+            case "POSTAL_CODES" -> com.intermarche.pos.domain.store.PostalCode
+                    .<com.intermarche.pos.domain.store.PostalCode>find("order by code, place")
                     .page(page, size).list().stream().map(this::toDto).toList();
             case "CURRENCIES" -> com.intermarche.pos.domain.payment.Currency
                     .<com.intermarche.pos.domain.payment.Currency>find("order by code")
@@ -224,6 +230,8 @@ public class RefExportService {
         RefPayloads.CustomerDto dto = new RefPayloads.CustomerDto();
         dto.accountNumber = customer.accountNumber;
         dto.companyName = customer.companyName;
+        dto.origin = customer.origin == null ? null : customer.origin.name();
+        dto.civility = customer.civility;
         dto.lastName = customer.lastName;
         dto.firstName = customer.firstName;
         dto.street = customer.address == null ? null : customer.address.streetLine1;
@@ -233,9 +241,38 @@ public class RefExportService {
         dto.vatNumber = customer.vatNumber;
         dto.phone = customer.phone;
         dto.email = customer.email;
+        dto.taxId = customer.taxId;
+        dto.segment = customer.segment;
+        dto.blocked = customer.blocked;
+        dto.dueDate = customer.dueDate == null ? null : customer.dueDate.toString();
+        dto.discountPercent = customer.discountPercent == null
+                ? null : customer.discountPercent.toPlainString();
         dto.creditLimit = customer.creditLimit == null ? null : customer.creditLimit.toPlainString();
         dto.creditBalance = customer.creditBalance == null
                 ? null : customer.creditBalance.toPlainString();
+        if (customer.freeFields != null) {
+            for (com.intermarche.pos.domain.payment.AccountCustomer.FreeField field : customer.freeFields) {
+                RefPayloads.FreeFieldDto fieldDto = new RefPayloads.FreeFieldDto();
+                fieldDto.slot = field.slot;
+                fieldDto.label = field.label;
+                fieldDto.value = field.value;
+                dto.freeFields.add(fieldDto);
+            }
+        }
+        return dto;
+    }
+
+    /**
+     * Maps a postal code to its snapshot payload ({@code BO-02-04-15}).
+     *
+     * @param postalCode the row
+     * @return the transport DTO
+     */
+    private RefPayloads.PostalCodeDto toDto(com.intermarche.pos.domain.store.PostalCode postalCode) {
+        RefPayloads.PostalCodeDto dto = new RefPayloads.PostalCodeDto();
+        dto.code = postalCode.code;
+        dto.place = postalCode.place;
+        dto.country = postalCode.country;
         return dto;
     }
 
@@ -367,9 +404,12 @@ public class RefExportService {
                     String.valueOf(p.forbiddenToSale), n(p.ageRestriction), n(p.checkoutLabel),
                     n(p.internalCode), String.valueOf(p.variableWeight), attributes(p.attributes));
         }
+        if (row instanceof RefPayloads.VatRateDto v) {
+            return String.join("|", n(v.number), n(v.rate), n(v.label));
+        }
         if (row instanceof RefPayloads.PriceDto p) {
             return String.join("|", n(p.productEan), n(p.priceExcludingTax), n(p.priceIncludingTax),
-                    n(p.vatRate), n(p.priority), n(p.startDateTime), n(p.endDateTime));
+                    n(p.vatNumber), n(p.priority), n(p.startDateTime), n(p.endDateTime));
         }
         if (row instanceof RefPayloads.EmployeeDto e) {
             return String.join("|", n(e.loginName), n(e.firstName), n(e.lastName), n(e.password),
@@ -443,10 +483,15 @@ public class RefExportService {
             return String.join("|", n(c.code), n(c.label), n(c.symbol), n(c.euroPerUnit),
                     String.valueOf(c.active), String.valueOf(c.displayOrder));
         }
+        if (row instanceof RefPayloads.PostalCodeDto p) {
+            return String.join("|", n(p.code), n(p.place), n(p.country));
+        }
         if (row instanceof RefPayloads.CustomerDto c) {
-            return String.join("|", n(c.accountNumber), n(c.companyName), n(c.lastName),
-                    n(c.firstName), n(c.street), n(c.postalCode), n(c.city), n(c.siret),
-                    n(c.vatNumber), n(c.phone), n(c.email), n(c.creditLimit), n(c.creditBalance));
+            return String.join("|", n(c.accountNumber), n(c.companyName), n(c.origin), n(c.civility),
+                    n(c.lastName), n(c.firstName), n(c.street), n(c.postalCode), n(c.city),
+                    n(c.siret), n(c.vatNumber), n(c.taxId), n(c.segment), n(c.phone), n(c.email),
+                    String.valueOf(c.blocked), n(c.dueDate), n(c.discountPercent),
+                    n(c.creditLimit), n(c.creditBalance), freeFields(c.freeFields));
         }
         return String.valueOf(row);
     }
@@ -459,6 +504,24 @@ public class RefExportService {
      */
     private String n(Object value) {
         return value != null ? value.toString() : "";
+    }
+
+    /**
+     * Canonical rendering of a customer's free fields: sorted by slot and
+     * joined, so the fingerprint does not move with the order the rows came
+     * back in ({@code BO-02-04-11}).
+     *
+     * @param fields the free fields, possibly null or empty
+     * @return the joined rendering, empty when there is none
+     */
+    private String freeFields(java.util.List<RefPayloads.FreeFieldDto> fields) {
+        if (fields == null || fields.isEmpty()) {
+            return "";
+        }
+        return fields.stream()
+                .sorted(java.util.Comparator.comparingInt(field -> field.slot))
+                .map(field -> field.slot + "=" + n(field.label) + "=" + n(field.value))
+                .collect(java.util.stream.Collectors.joining(";"));
     }
 
     /**
@@ -550,6 +613,20 @@ public class RefExportService {
     }
 
     /**
+     * Maps a VAT regime to its payload.
+     *
+     * @param rate the regime entity
+     * @return the payload
+     */
+    private RefPayloads.VatRateDto toDto(VatRate rate) {
+        RefPayloads.VatRateDto dto = new RefPayloads.VatRateDto();
+        dto.number = rate.number;
+        dto.rate = rate.rate;
+        dto.label = rate.label;
+        return dto;
+    }
+
+    /**
      * Maps a price row to its payload.
      *
      * @param price the price entity
@@ -560,7 +637,7 @@ public class RefExportService {
         dto.productEan = price.product != null ? price.product.ean : null;
         dto.priceExcludingTax = price.priceExcludingTax;
         dto.priceIncludingTax = price.priceIncludingTax;
-        dto.vatRate = price.vatRate;
+        dto.vatNumber = price.vatNumber();
         dto.priority = price.priority;
         dto.startDateTime = iso(price.startDateTime);
         dto.endDateTime = iso(price.endDateTime);

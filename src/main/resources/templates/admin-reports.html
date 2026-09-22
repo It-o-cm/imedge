@@ -1,0 +1,49 @@
+{!
+ ! The report CATALOGUE (BO-06): every state the node can edit, grouped by
+ ! family and stamped with the requirement it answers, so the reader holding
+ ! the questionnaire ticks it off line by line.
+ !
+ ! The list is BUILT from the ReportCatalog, never written by hand: a report
+ ! exists here because a bean implements ReportDefinition. A list maintained
+ ! beside the beans is a list somebody forgets to maintain.
+!}
+{#include admin-layout}
+
+{#title}Rapports{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Rapports</h1>
+        <p class="page-sub">États du magasin, sur la période de votre choix. Chaque rapport s'affiche, se représente en graphique et s'exporte en CSV, en tableur et en PDF.</p>
+    </div>
+</div>
+
+{#for family in families}
+<div class="card">
+    <h2 class="card-title">{family.label}</h2>
+    <table class="data-table">
+        <thead>
+        <tr>
+            <th>Rapport</th>
+            <th class="col-muted">Exigence</th>
+            <th class="col-actions">Colonnes</th>
+        </tr>
+        </thead>
+        <tbody>
+        {#for report in catalog.of(family)}
+        <tr>
+            <td><a class="link-strong" href="/admin/reports/{report.code}">{report.label}</a></td>
+            <td class="col-muted">{report.requirement}</td>
+            <td class="col-actions">{report.columns.size}</td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+</div>
+{/for}
+
+{#if families.isEmpty}
+<div class="empty-state">Aucun rapport déclaré sur ce nœud.</div>
+{/if}
+{/body}

@@ -120,6 +120,14 @@ public final class SyncPayloads {
         public String sessionNumber;
         /** The fidelity card, or null. */
         public String fidelityCard;
+        /** The loyalty earn the sale displayed, or null (BO-03-03-31). */
+        public BigDecimal fidelityEarnTotal;
+        /** The balance read when the card was attached, or null. */
+        public BigDecimal fidelityAvailableBalance;
+        /** Whether the loyalty service was unreachable during the sale. */
+        public boolean fidelityUnavailable;
+        /** The advantage lines the sale displayed, empty when it displayed none. */
+        public List<FidelityLineDto> fidelityLines = new ArrayList<>();
         /** The digital receipt key, or null. */
         public String digitalKey;
         /** The customer email, or null. */
@@ -144,6 +152,23 @@ public final class SyncPayloads {
         public List<LineDto> lines = new ArrayList<>();
         /** The registered payments. */
         public List<PaymentDto> payments = new ArrayList<>();
+    }
+
+    /**
+     * One loyalty advantage line as the selling register displayed it
+     * (BO-03-03-25).
+     *
+     * <p>It travels so a duplicata issued by the store node restates the very
+     * lines the customer was shown; the node never recomputes them, and neither
+     * does the register.
+     */
+    public static class FidelityLineDto {
+        /** The stable code of the crediting rule, or null. */
+        public String ruleCode;
+        /** The printable label of the rule, or null. */
+        public String label;
+        /** The earn amount of the line, after caps, or null. */
+        public BigDecimal amount;
     }
 
     /**
@@ -331,6 +356,58 @@ public final class SyncPayloads {
         public String phone;
         /** The electronic address, or null. */
         public String email;
+    }
+
+    /**
+     * A document issued at a register — invoice or delivery note
+     * (upsert by document number, {@code BO-02-04-19}).
+     *
+     * <p>Carries the customer block AS PRINTED and not a reference to the
+     * customer's file: the back office extracts these documents years later,
+     * and what it must show is what the paper said that day. The ticket is
+     * named by its number, the only identity the two nodes share.
+     */
+    public static class DocumentDto {
+        /** The document number (upsert key). */
+        public String documentNumber;
+        /** The kind: FACTURE or BON_LIVRAISON. */
+        public String documentType;
+        /** The register that issued it. */
+        public String terminalId;
+        /** When it was issued, ISO-8601. */
+        public String issueDate;
+        /** The number of the ticket it was drawn from. */
+        public String ticketNumber;
+        /** The account number it is addressed to, or null. */
+        public String customerAccountNumber;
+        /** The business name as printed. */
+        public String customerName;
+        /** The contact as printed, or null. */
+        public String customerContact;
+        /** The SIRET as printed, or null. */
+        public String customerSiret;
+        /** The intra-community VAT number as printed, or null. */
+        public String customerVatNumber;
+        /** The fiscal identifier as printed, or null. */
+        public String customerTaxId;
+        /** The due date as printed, {@code yyyy-MM-dd}, or null (BO-02-04-08). */
+        public String customerDueDate;
+        /** The street line as printed, or null. */
+        public String customerStreet;
+        /** The postal code as printed, or null. */
+        public String customerPostalCode;
+        /** The town as printed, or null. */
+        public String customerCity;
+        /** The tax-excluded total as printed. */
+        public BigDecimal totalExcludingTax;
+        /** The tax-included total as printed. */
+        public BigDecimal totalIncludingTax;
+        /** The tax total as printed. */
+        public BigDecimal totalVat;
+        /** The eco-tax borne by the billed sale, or null when not extracted (BO-10-04-14). */
+        public BigDecimal totalEcoTax;
+        /** How many times it had been printed when it was pushed. */
+        public int printCount;
     }
 
     /**

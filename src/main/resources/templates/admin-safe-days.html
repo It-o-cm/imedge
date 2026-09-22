@@ -1,0 +1,130 @@
+{!
+ ! Back-office DAY HISTORY (BO-05-02-08) and cashier movement validation
+ ! (BO-05-02-09): the takings of an accounting day broken down by tender over
+ ! every register, and the drawer movements of the day checked one by one.
+!}
+{#include admin-layout}
+
+{#title}Historique des journées{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Historique des journées</h1>
+        <p class="page-sub">Chiffre d'affaires ventilé par moyen de paiement, et mouvements de caisse à valider.</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-ghost" href="/admin/safe/days/export?day={day}">Extraire (CSV)</a>
+        <a class="btn btn-ghost" href="/admin/safe/pouches">Remises au coffre</a>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">Journée comptable</h2>
+    <form method="get" action="/admin/safe/days">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="h-day">Date</label>
+                <input class="input-control" id="h-day" type="date" name="day" value="{day}">
+            </div>
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">Afficher</button>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <h2 class="card-title">Chiffre d'affaires par moyen de paiement</h2>
+    <p class="card-sub">Total encaissé <strong>{total} €</strong> · total prélevé <strong>{withdrawn} €</strong></p>
+    {#if tenders.isEmpty()}
+    <div class="empty-state">
+        <p>Aucune session close ce jour-là.</p>
+    </div>
+    {#else}
+    <table class="data-table">
+        <thead>
+        <tr><th>Moyen de paiement</th><th>Montant €</th></tr>
+        </thead>
+        <tbody>
+        {#for tender in tenders}
+        <tr>
+            <td>{tender.method}</td>
+            <td>{tender.amount}</td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+
+<div class="card">
+    <h2 class="card-title">Sessions de la journée</h2>
+    {#if sessions.isEmpty()}
+    <div class="empty-state">
+        <p>Aucune session close ce jour-là.</p>
+    </div>
+    {#else}
+    <table class="data-table">
+        <thead>
+        <tr><th>Caisse</th><th>Session</th><th>Compté €</th><th>Théorique €</th><th>Écart €</th><th>Prélevé €</th></tr>
+        </thead>
+        <tbody>
+        {#for session in sessions}
+        <tr>
+            <td>{session.terminalId}</td>
+            <td>{session.sessionNumber}</td>
+            <td>{session.countedAmount ?: '—'}</td>
+            <td>{session.theoreticalAmount ?: '—'}</td>
+            <td>{session.variance ?: '—'}</td>
+            <td>{session.withdrawnAmount ?: '—'}</td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+
+<div class="card">
+    <h2 class="card-title">Mouvements des caissières</h2>
+    <p class="card-sub">Apports, prélèvements, dépenses et transferts : chacun se valide en nommant le responsable qui l'a contrôlé.</p>
+    {#if movements.isEmpty()}
+    <div class="empty-state">
+        <p>Aucun mouvement de caisse ce jour-là.</p>
+    </div>
+    {#else}
+    <table class="data-table">
+        <thead>
+        <tr><th>Heure</th><th>Caisse</th><th>Nature</th><th>Moyen</th><th>Montant €</th><th>Motif</th><th>Validé par</th><th></th></tr>
+        </thead>
+        <tbody>
+        {#for movement in movements}
+        <tr>
+            <td>{movement.movementDate}</td>
+            <td>{movement.terminalId}</td>
+            <td>{movement.type}</td>
+            <td>{movement.paymentMethod ?: 'CASH'}{#if movement.transferTo} → {movement.transferTo}{/if}</td>
+            <td>{movement.amount}</td>
+            <td>{movement.reason ?: '—'}</td>
+            <td>{movement.endorsedBy ?: '—'}</td>
+            <td>
+                {#if !movement.endorsedBy}
+                <form method="post" action="/admin/safe/days/validate">
+                    <input type="hidden" name="id" value="{movement.id}">
+                    <input type="hidden" name="day" value="{day}">
+                    <input class="input-control" type="text" name="endorsedBy" maxlength="20" placeholder="Badge" required>
+                    <button class="btn btn-small btn-primary" type="submit">Valider</button>
+                </form>
+                {/if}
+            </td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+{/body}

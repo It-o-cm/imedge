@@ -417,7 +417,9 @@ class AdminTenderResourceTest {
         assertTrue(lines[1].contains("Si rendu dû"));
         assertTrue(lines[1].contains(";2;Bloquant superviseur;"));
         assertTrue(lines[2].startsWith("010;CASH;Espèces;Non;100;;;"));
-        assertTrue(lines[2].endsWith("Non"));
+        // BO-05-02-17 : les deux dernières colonnes sont les deux bouts du
+        // transfert, ouvertes par défaut.
+        assertTrue(lines[2].endsWith("Non;Oui;Oui"));
     }
 
     /**
@@ -428,7 +430,7 @@ class AdminTenderResourceTest {
         AdminTenderResource resource = newResource();
         String csv = resource.buildCsv(List.of());
         assertEquals(1, csv.split("\n").length);
-        assertTrue(csv.endsWith("Remontee fidelite\n"));
+        assertTrue(csv.endsWith("Remontee fidelite;Transfert source;Transfert destination\n"));
     }
 
     /**

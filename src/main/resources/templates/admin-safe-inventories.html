@@ -1,0 +1,110 @@
+{!
+ ! Back-office SAFE INVENTORY (BO-05-02-11): the physical count of the safe,
+ ! denomination by denomination, against the theoretical balance the ledger
+ ! holds. A count observes; writing the discrepancy off is a movement.
+!}
+{#include admin-layout}
+
+{#title}Inventaire du coffre{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Inventaire du coffre</h1>
+        <p class="page-sub">Comptage physique comparé au solde théorique tenu par le journal.</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-ghost" href="/admin/safe/journal">Journal</a>
+        <a class="btn btn-ghost" href="/admin/safe/periods">Clôture</a>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">Nouveau comptage</h2>
+    <p class="card-sub">Solde théorique au moment du comptage : <strong>{theoretical} €</strong></p>
+    <form method="post" action="/admin/safe/inventories">
+        <table class="data-table">
+            <thead>
+            <tr><th>Billets</th><th>Valeur €</th><th>Quantité</th></tr>
+            </thead>
+            <tbody>
+            {#for denomination in notes}
+            <tr>
+                <td>{denomination.label}</td>
+                <td>{denomination.value}</td>
+                <td><input class="input-control" type="number" min="0" step="1" name="qty{denomination.name}"></td>
+            </tr>
+            {/for}
+            </tbody>
+        </table>
+        <table class="data-table">
+            <thead>
+            <tr><th>Pièces</th><th>Valeur €</th><th>Quantité</th></tr>
+            </thead>
+            <tbody>
+            {#for denomination in coins}
+            <tr>
+                <td>{denomination.label}</td>
+                <td>{denomination.value}</td>
+                <td><input class="input-control" type="number" min="0" step="1" name="qty{denomination.name}"></td>
+            </tr>
+            {/for}
+            </tbody>
+        </table>
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="i-comment">Commentaire</label>
+                <input class="input-control" id="i-comment" type="text" name="comment" maxlength="255">
+            </div>
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">Enregistrer le comptage</button>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <h2 class="card-title">Comptages</h2>
+    {#if inventories.isEmpty()}
+    <div class="empty-state">
+        <p>Aucun inventaire.</p>
+    </div>
+    {#else}
+    {#for inventory in inventories}
+    <form method="post" action="/admin/safe/inventories/adjust" id="adj-{inventory.id}">
+        <input type="hidden" name="id" value="{inventory.id}">
+    </form>
+    {/for}
+    <table class="data-table">
+        <thead>
+        <tr><th>Date</th><th>Compté €</th><th>Théorique €</th><th>Écart €</th><th>Commentaire</th><th>État</th><th></th></tr>
+        </thead>
+        <tbody>
+        {#for inventory in inventories}
+        <tr>
+            <td>{inventory.countedAt}</td>
+            <td>{inventory.countedAmountFormatted}</td>
+            <td>{inventory.theoreticalAmountFormatted}</td>
+            <td>{inventory.varianceFormatted}</td>
+            <td>{inventory.comment ?: '—'}</td>
+            <td>
+                {#if inventory.balanced}<span class="badge badge-ok">Sans écart</span>
+                {#else if inventory.adjustment}<span class="badge badge-ok">Régularisé</span>
+                {#else}<span class="badge badge-off">Écart</span>{/if}
+            </td>
+            <td>
+                {#if inventory.adjustable}
+                <button class="btn btn-small btn-primary" type="submit" form="adj-{inventory.id}">Régulariser</button>
+                {/if}
+            </td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+{/body}

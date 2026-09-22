@@ -8,6 +8,8 @@ import com.intermarche.pos.domain.catalog.ProductType;
 import com.intermarche.pos.domain.catalog.attribute.ProductAttributeCatalog;
 import com.intermarche.pos.domain.catalog.attribute.ProductAttributeDef;
 import com.intermarche.pos.domain.catalog.attribute.ProductAttributes;
+import com.intermarche.pos.ui.journal.JournalPage;
+import io.quarkus.hibernate.orm.panache.PanacheQuery;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
@@ -65,6 +67,15 @@ public class AdminArticleResource {
 
     /** Technical log of this class. */
     private static final Logger LOGGER = Logger.getLogger(AdminArticleResource.class);
+
+    /**
+     * The number of articles one page of the list shows.
+     *
+     * <p>A hundred, like the journal: enough that scrolling replaces clicking
+     * for an ordinary search, few enough that a catalog of a hundred thousand
+     * articles is never hydrated to render one screen.
+     */
+    static final int PAGE_SIZE = 100;
 
     /**
      * The attribute code under which the on-screen article-code flag is stored
@@ -138,10 +149,12 @@ public class AdminArticleResource {
      */
     @GET
     @RolesAllowed("ADMIN")
+    @Transactional
     public TemplateInstance list(@Context UriInfo uriInfo,
+                                 @QueryParam("page") @DefaultValue("1") int page,
                                  @QueryParam("notice") String notice,
                                  @QueryParam("noticeOk") @DefaultValue("true") boolean noticeOk) {
-        LOGGER.info("Entering method list with uriInfo: " + uriInfo + ", notice: " + notice + ", noticeOk: " + noticeOk);
+        LOGGER.info("Entering method list with uriInfo: " + uriInfo + ", page: " + page + ", notice: " + notice + ", noticeOk: " + noticeOk);
         MultivaluedMap<String, String> params = uriInfo.getQueryParameters();
         String selectionName = ArticleSearchCriteria.blankToNull(params.getFirst("selection"));
         ArticleSelection selection = selectionName != null
@@ -149,14 +162,14 @@ public class AdminArticleResource {
         ArticleSearchCriteria criteria = selection != null
                 ? ArticleSearchCriteria.fromQueryString(selection.criteria)
                 : ArticleSearchCriteria.fromParams(params);
-        List<Product> matches = new ArrayList<>();
-        for (Product product : Product.<Product>find("order by ean").list()) {
-            if (criteria.matches(product)) {
-                matches.add(product);
-            }
-        }
+        PanacheQuery<Product> query = criteria.find();
+        long total = query.count();
+        int number = clampPage(page, total);
+        JournalPage<Product> window = new JournalPage<>(
+                query.page(number - 1, PAGE_SIZE).list(), number, PAGE_SIZE, total);
         LOGGER.info("Exiting method list");
-        return adminArticles.data("products", matches)
+        return adminArticles.data("page", window)
+                .data("baseQuery", baseQuery(criteria, selection))
                 .data("criteria", criteria)
                 .data("selectedSelection", selection != null ? selection.name : null)
                 .data("types", ProductType.values())
@@ -164,6 +177,42 @@ public class AdminArticleResource {
                 .data("selections", ArticleSelection.listAllOrdered())
                 .data("notice", notice)
                 .data("noticeOk", noticeOk);
+    }
+
+    /**
+     * Clamps a requested page number into the pages the result actually has, so
+     * a stale link or a hand-typed number lands on the last page rather than on
+     * an empty list.
+     *
+     * @param requested the 1-based page number asked for
+     * @param total the number of matching articles
+     * @return the page number to read, between 1 and the page count
+     */
+    private int clampPage(int requested, long total) {
+        if (requested < 1) {
+            return 1;
+        }
+        return Math.min(requested, JournalPage.pageCount(total, PAGE_SIZE));
+    }
+
+    /**
+     * Renders what a page link has to carry over: the search perimeter, so that
+     * turning a page keeps the list the operator was reading.
+     *
+     * <p>A selection wins over the loose criteria, exactly as it does when the
+     * page is built: an applied selection IS the perimeter, and re-sending the
+     * criteria beside it would let the two drift apart on the next click.
+     *
+     * @param criteria the parsed criteria
+     * @param selection the applied saved selection, or null
+     * @return the query string, terminated by an ampersand when non-empty so a
+     *         page number can be appended to it
+     */
+    private String baseQuery(ArticleSearchCriteria criteria, ArticleSelection selection) {
+        String query = selection != null
+                ? "selection=" + URLEncoder.encode(selection.name, StandardCharsets.UTF_8)
+                : criteria.toQueryString();
+        return query.isEmpty() ? "" : query + "&";
     }
 
     /**
@@ -272,11 +321,11 @@ public class AdminArticleResource {
         boolean value = form.getFirst("value") != null;
         ArticleSearchCriteria criteria = ArticleSearchCriteria.fromParams(form);
         int count = 0;
-        for (Product product : Product.<Product>find("order by ean").list()) {
-            if (criteria.matches(product)) {
-                product.attributes.put(CODE_ON_SCREEN, value ? "true" : "false");
-                count++;
-            }
+        // The whole perimeter and not the page on screen: the bar says "on the
+        // N filtered articles", and N is the total, not what fits on one page.
+        for (Product product : criteria.find().list()) {
+            product.attributes.put(CODE_ON_SCREEN, value ? "true" : "false");
+            count++;
         }
         LOGGER.info("Exiting method bulkCodeOnScreen");
         return redirect("Code article à l'écran " + (value ? "activé" : "désactivé")

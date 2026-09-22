@@ -13,6 +13,7 @@ import com.intermarche.pos.domain.catalog.Price;
 import com.intermarche.pos.domain.catalog.Product;
 import com.intermarche.pos.domain.catalog.ProductFamily;
 import com.intermarche.pos.domain.catalog.ProductType;
+import com.intermarche.pos.domain.catalog.VatRate;
 import com.intermarche.pos.service.PosSettingsService;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import io.quarkus.hibernate.orm.panache.PanacheQuery;
@@ -276,6 +277,47 @@ class RefExportServiceTest {
     }
 
     /**
+     * Covers the VAT_RATES switch arm and {@code toDto(VatRate)}: the three
+     * values flow verbatim, a null label included.
+     */
+    @Test
+    void getPageMapsVatRates() {
+        RefExportService service = new RefExportService();
+        VatRate normal = mock(VatRate.class);
+        normal.number = 1;
+        normal.rate = new BigDecimal("0.2000");
+        normal.label = "Taux normal";
+        VatRate bare = mock(VatRate.class);
+        bare.number = 5;
+        bare.rate = new BigDecimal("0.0000");
+        bare.label = null;
+        PanacheQuery<VatRate> query = singlePage(0, 10, List.of(normal, bare));
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> VatRate.find("order by number")).thenReturn(query);
+            List<?> result = service.getPage("VAT_RATES", 0, 10);
+            assertEquals(2, result.size());
+            RefPayloads.VatRateDto first = (RefPayloads.VatRateDto) result.get(0);
+            assertEquals(1, first.number);
+            assertEquals(new BigDecimal("0.2000"), first.rate);
+            assertEquals("Taux normal", first.label);
+            RefPayloads.VatRateDto second = (RefPayloads.VatRateDto) result.get(1);
+            assertEquals(5, second.number);
+            assertEquals(new BigDecimal("0.0000"), second.rate);
+            assertNull(second.label);
+        }
+    }
+
+    /**
+     * VAT_RATES is applied BEFORE PRICES: a price names its regime by number,
+     * so the table has to have landed when the price rows do.
+     */
+    @Test
+    void vatRatesPrecedePricesInTheDomainOrder() {
+        assertTrue(RefPayloads.DOMAINS.contains("VAT_RATES"));
+        assertTrue(RefPayloads.DOMAINS.indexOf("VAT_RATES") < RefPayloads.DOMAINS.indexOf("PRICES"));
+    }
+
+    /**
      * Covers the PRICES switch arm and every conditional in {@code toDto(Price)}
      * and {@code iso}: the first row has a product (EAN taken) and a start but no
      * end (iso both arms), the second row has no product (EAN null) and an end
@@ -290,7 +332,7 @@ class RefExportServiceTest {
         linked.product = product;
         linked.priceExcludingTax = new BigDecimal("1.00");
         linked.priceIncludingTax = new BigDecimal("1.20");
-        linked.vatRate = new BigDecimal("0.2000");
+        when(linked.vatNumber()).thenReturn(1);
         linked.priority = 5;
         linked.startDateTime = LocalDateTime.of(2026, 1, 1, 10, 0, 30);
         linked.endDateTime = null;
@@ -298,7 +340,7 @@ class RefExportServiceTest {
         orphan.product = null;
         orphan.priceExcludingTax = new BigDecimal("2.00");
         orphan.priceIncludingTax = new BigDecimal("2.20");
-        orphan.vatRate = new BigDecimal("0.1000");
+        when(orphan.vatNumber()).thenReturn(null);
         orphan.priority = null;
         orphan.startDateTime = null;
         orphan.endDateTime = LocalDateTime.of(2026, 12, 31, 23, 59, 59);
@@ -309,11 +351,13 @@ class RefExportServiceTest {
             assertEquals(2, result.size());
             RefPayloads.PriceDto first = (RefPayloads.PriceDto) result.get(0);
             assertEquals("E1", first.productEan);
+            assertEquals(1, first.vatNumber);
             assertEquals(5, first.priority);
             assertEquals("2026-01-01T10:00:30", first.startDateTime);
             assertNull(first.endDateTime);
             RefPayloads.PriceDto second = (RefPayloads.PriceDto) result.get(1);
             assertNull(second.productEan);
+            assertNull(second.vatNumber);
             assertNull(second.priority);
             assertNull(second.startDateTime);
             assertEquals("2026-12-31T23:59:59", second.endDateTime);
@@ -632,11 +676,14 @@ class RefExportServiceTest {
         PanacheQuery<com.intermarche.pos.domain.sync.EngineFeed> engineFeeds = pagedQuery(List.of());
         PanacheQuery<com.intermarche.pos.domain.payment.AccountCustomer> customers = pagedQuery(List.of());
         PanacheQuery<com.intermarche.pos.domain.payment.Currency> currencies = pagedQuery(List.of());
+        PanacheQuery<com.intermarche.pos.domain.store.PostalCode> postalCodes = pagedQuery(List.of());
+        PanacheQuery<VatRate> vatRateQuery = pagedQuery(List.of());
         try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
             mocked.when(() -> ProductFamily.find("order by code")).thenReturn(families);
             mocked.when(() -> com.intermarche.pos.domain.setting.TouchGroupSetting
                     .find("order by familyCode")).thenReturn(touchGroups);
             mocked.when(() -> Product.find("order by ean")).thenReturn(products);
+            mocked.when(() -> VatRate.find("order by number")).thenReturn(vatRateQuery);
             mocked.when(() -> Price.find("order by id")).thenReturn(prices);
             mocked.when(() -> Employee.find("order by loginName")).thenReturn(employees);
             mocked.when(() -> CouponType.find("order by code")).thenReturn(couponTypes);
@@ -644,6 +691,7 @@ class RefExportServiceTest {
             mocked.when(() -> com.intermarche.pos.domain.sync.EngineFeed.find("order by code")).thenReturn(engineFeeds);
             mocked.when(() -> com.intermarche.pos.domain.payment.AccountCustomer.find("order by accountNumber")).thenReturn(customers);
             mocked.when(() -> com.intermarche.pos.domain.payment.Currency.find("order by code")).thenReturn(currencies);
+            mocked.when(() -> com.intermarche.pos.domain.store.PostalCode.find("order by code, place")).thenReturn(postalCodes);
             Map<String, String> fingerprints = service.getFingerprints();
             assertEquals(RefPayloads.DOMAINS, List.copyOf(fingerprints.keySet()));
             assertEquals(EMPTY_SHA256, fingerprints.get("FAMILIES"));
@@ -702,11 +750,14 @@ class RefExportServiceTest {
         PanacheQuery<com.intermarche.pos.domain.sync.EngineFeed> engineFeeds = pagedQuery(List.of());
         PanacheQuery<com.intermarche.pos.domain.payment.AccountCustomer> customers = pagedQuery(List.of());
         PanacheQuery<com.intermarche.pos.domain.payment.Currency> currencies = pagedQuery(List.of());
+        PanacheQuery<com.intermarche.pos.domain.store.PostalCode> postalCodes = pagedQuery(List.of());
+        PanacheQuery<VatRate> vatRateQuery = pagedQuery(List.of());
         try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
             mocked.when(() -> ProductFamily.find("order by code")).thenReturn(families);
             mocked.when(() -> com.intermarche.pos.domain.setting.TouchGroupSetting
                     .find("order by familyCode")).thenReturn(touchGroups);
             mocked.when(() -> Product.find("order by ean")).thenReturn(products);
+            mocked.when(() -> VatRate.find("order by number")).thenReturn(vatRateQuery);
             mocked.when(() -> Price.find("order by id")).thenReturn(prices);
             mocked.when(() -> Employee.find("order by loginName")).thenReturn(employees);
             mocked.when(() -> CouponType.find("order by code")).thenReturn(couponTypes);
@@ -714,6 +765,7 @@ class RefExportServiceTest {
             mocked.when(() -> com.intermarche.pos.domain.sync.EngineFeed.find("order by code")).thenReturn(engineFeeds);
             mocked.when(() -> com.intermarche.pos.domain.payment.AccountCustomer.find("order by accountNumber")).thenReturn(customers);
             mocked.when(() -> com.intermarche.pos.domain.payment.Currency.find("order by code")).thenReturn(currencies);
+            mocked.when(() -> com.intermarche.pos.domain.store.PostalCode.find("order by code, place")).thenReturn(postalCodes);
             Map<String, String> fingerprints = service.getFingerprints();
             // The canonical product row carries EIGHTEEN fields: the two last —
             // variableWeight and the declared attributes — joined the export
@@ -778,11 +830,14 @@ class RefExportServiceTest {
         PanacheQuery<com.intermarche.pos.domain.sync.EngineFeed> engineFeeds = pagedQuery(List.of());
         PanacheQuery<com.intermarche.pos.domain.payment.AccountCustomer> customers = pagedQuery(List.of());
         PanacheQuery<com.intermarche.pos.domain.payment.Currency> currencies = pagedQuery(List.of());
+        PanacheQuery<com.intermarche.pos.domain.store.PostalCode> postalCodes = pagedQuery(List.of());
+        PanacheQuery<VatRate> vatRateQuery = pagedQuery(List.of());
         try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
             mocked.when(() -> ProductFamily.find("order by code")).thenReturn(families);
             mocked.when(() -> com.intermarche.pos.domain.setting.TouchGroupSetting
                     .find("order by familyCode")).thenReturn(touchGroups);
             mocked.when(() -> Product.find("order by ean")).thenReturn(products);
+            mocked.when(() -> VatRate.find("order by number")).thenReturn(vatRateQuery);
             mocked.when(() -> Price.find("order by id")).thenReturn(prices);
             mocked.when(() -> Employee.find("order by loginName")).thenReturn(employees);
             mocked.when(() -> CouponType.find("order by code")).thenReturn(couponTypes);
@@ -790,6 +845,7 @@ class RefExportServiceTest {
             mocked.when(() -> com.intermarche.pos.domain.sync.EngineFeed.find("order by code")).thenReturn(engineFeeds);
             mocked.when(() -> com.intermarche.pos.domain.payment.AccountCustomer.find("order by accountNumber")).thenReturn(customers);
             mocked.when(() -> com.intermarche.pos.domain.payment.Currency.find("order by code")).thenReturn(currencies);
+            mocked.when(() -> com.intermarche.pos.domain.store.PostalCode.find("order by code, place")).thenReturn(postalCodes);
             Map<String, String> fingerprints = service.getFingerprints();
             for (String domain : RefPayloads.DOMAINS) {
                 assertEquals(EMPTY_SHA256, fingerprints.get(domain));
@@ -802,22 +858,31 @@ class RefExportServiceTest {
      * throws, so the failure is wrapped in an {@link IllegalStateException}
      * naming THAT domain and carrying the original cause.
      * <p>
-     * The domains before FAMILIES are stubbed to an empty page so the
-     * computation reaches the one that throws: the assertion is about the
-     * wrapping, not about which domain happens to come first in
-     * {@code DOMAINS} — that order changed once already (PRODUCTS moved ahead
-     * of FAMILIES so a family payload can resolve its articles).
+     * The domains before the failing one are stubbed to an empty page so the
+     * computation reaches it: the assertion is about the wrapping, not about
+     * which domain happens to come first in {@code DOMAINS} — that order
+     * changed twice already (PRODUCTS ahead of FAMILIES so a family payload
+     * can resolve its articles, then ENGINE_FEEDS ahead of both so the
+     * register has the raw file when its domain comes up).
      */
     @Test
     void getFingerprintsWrapsComputationFailure() {
         RefExportService service = new RefExportService();
         RuntimeException boom = new RuntimeException("boom");
-        PanacheQuery<Product> products = pagedQuery(List.of());
+        PanacheQuery<com.intermarche.pos.domain.sync.EngineFeed> feeds = pagedQuery(List.of());
         try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
-            mocked.when(() -> Product.find("order by ean")).thenReturn(products);
-            mocked.when(() -> ProductFamily.find("order by code")).thenThrow(boom);
+            // C'est PRODUCTS qui lève ici, et non FAMILIES : le mock statique
+            // porte sur PanacheEntityBase, où le type de l'entité est effacé,
+            // donc « order by code » désigne la MÊME invocation pour les
+            // familles et pour les flux moteur — on ne peut pas faire lever
+            // l'une sans l'autre. « order by ean » n'appartient qu'aux
+            // produits. L'assertion porte sur le nommage du domaine fautif,
+            // pas sur lequel des domaines échoue.
+            mocked.when(() -> com.intermarche.pos.domain.sync.EngineFeed.find("order by code"))
+                    .thenReturn(feeds);
+            mocked.when(() -> Product.find("order by ean")).thenThrow(boom);
             IllegalStateException ex = assertThrows(IllegalStateException.class, service::getFingerprints);
-            assertEquals("Empreinte incalculable pour FAMILIES", ex.getMessage());
+            assertEquals("Empreinte incalculable pour PRODUCTS", ex.getMessage());
             assertSame(boom, ex.getCause());
         }
     }
@@ -905,12 +970,19 @@ class RefExportServiceTest {
         price.productEan = "E1";
         price.priceExcludingTax = new BigDecimal("1.00");
         price.priceIncludingTax = new BigDecimal("1.20");
-        price.vatRate = new BigDecimal("0.2000");
+        price.vatNumber = 1;
         price.priority = 5;
         price.startDateTime = "2026-01-01T10:00:30";
         price.endDateTime = null;
-        assertEquals("E1|1.00|1.20|0.2000|5|2026-01-01T10:00:30|",
+        assertEquals("E1|1.00|1.20|1|5|2026-01-01T10:00:30|",
                 canonical.invoke(service, price));
+        RefPayloads.VatRateDto vatRate = new RefPayloads.VatRateDto();
+        vatRate.number = 1;
+        vatRate.rate = new BigDecimal("0.2000");
+        vatRate.label = "Taux normal";
+        assertEquals("1|0.2000|Taux normal", canonical.invoke(service, vatRate));
+        vatRate.label = null;
+        assertEquals("1|0.2000|", canonical.invoke(service, vatRate));
         RefPayloads.EmployeeDto employee = new RefPayloads.EmployeeDto();
         employee.loginName = "alice";
         employee.firstName = "Alice";
@@ -1181,7 +1253,46 @@ class RefExportServiceTest {
         customer.email = "a@x.fr";
         customer.creditLimit = "1000.00";
         customer.creditBalance = null;
-        assertEquals("A1|Acme|Martin|Alice|10 rue X|75008|Paris|SIR||0102|a@x.fr|1000.00|",
+        // Every administered field of BO-02-04 rides the canonical string, or a
+        // register whose customer was blocked upstream would never be told.
+        customer.origin = "INTEGRATED";
+        customer.civility = "Mme";
+        customer.taxId = "NIF-9";
+        customer.blocked = true;
+        customer.dueDate = "2026-10-31";
+        customer.discountPercent = "2.50";
+        RefPayloads.FreeFieldDto second = new RefPayloads.FreeFieldDto();
+        second.slot = 2;
+        second.label = "Tournée";
+        second.value = "B";
+        RefPayloads.FreeFieldDto first = new RefPayloads.FreeFieldDto();
+        first.slot = 1;
+        first.label = "Zone";
+        first.value = null;
+        customer.freeFields.add(second);
+        customer.freeFields.add(first);
+        assertEquals("A1|Acme|INTEGRATED|Mme|Martin|Alice|10 rue X|75008|Paris|SIR||NIF-9||0102|"
+                        + "a@x.fr|true|2026-10-31|2.50|1000.00||1=Zone=;2=Tournée=B",
+                canonical.invoke(service, customer));
+    }
+
+    /**
+     * A customer carrying no free field renders an empty last segment rather
+     * than a null: the two arms of the guard, and the fingerprint must not move
+     * from one export to the next.
+     */
+    @Test
+    void canonicalRendersACustomerWithoutFreeFields() throws Exception {
+        RefExportService service = new RefExportService();
+        Method canonical = RefExportService.class.getDeclaredMethod("canonical", Object.class);
+        canonical.setAccessible(true);
+        RefPayloads.CustomerDto customer = new RefPayloads.CustomerDto();
+        customer.accountNumber = "A2";
+        customer.companyName = "Sans champs";
+        assertEquals("A2|Sans champs||||||||||||||false|||||",
+                canonical.invoke(service, customer));
+        customer.freeFields = null;
+        assertEquals("A2|Sans champs||||||||||||||false|||||",
                 canonical.invoke(service, customer));
     }
 

@@ -45,7 +45,10 @@ import java.util.*;
  * then an error entry), which makes import ORDER matter: products before
  * families, parent families after their children.
  */
-@Path("/product-families/import")
+// No @Path: the ONE door is POST /feeds/import/{CODE}, which delegates here.
+// A second address for the same import is a second thing to secure, to
+// document and to keep in step, and the permission policy had to name them
+// one by one — an importer forgotten there was a door left open.
 @ApplicationScoped
 @RunOnVirtualThread
 public class ProductFamilyCsvResource extends ImporterCsvResource {
@@ -78,10 +81,6 @@ public class ProductFamilyCsvResource extends ImporterCsvResource {
      * @param inputStream The input stream containing CSV data.
      * @return A Response containing a JSON summary of created/updated counts and errors.
      */
-    @POST
-    @Consumes({MediaType.TEXT_PLAIN, MediaType.APPLICATION_OCTET_STREAM})
-    @Produces(MediaType.APPLICATION_JSON)
-    @RolesAllowed("ADMIN")
     public Response importProductFamilies(InputStream inputStream) {
         LOGGER.info("Entering method importProductFamilies with inputStream: " + inputStream);
         LOGGER.info("Exiting method importProductFamilies");

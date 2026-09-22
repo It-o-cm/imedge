@@ -252,6 +252,8 @@ public class RefPullService {
                     this.<RefPayloads.TouchGroupDto>pages(domain, new TypeReference<List<RefPayloads.TouchGroupDto>>() {}));
             case "PRODUCTS" -> refApplyService.applyProducts(
                     this.<RefPayloads.ProductDto>pages(domain, new TypeReference<List<RefPayloads.ProductDto>>() {}));
+            case "VAT_RATES" -> refApplyService.applyVatRates(
+                    this.<RefPayloads.VatRateDto>pages(domain, new TypeReference<List<RefPayloads.VatRateDto>>() {}));
             case "PRICES" -> refApplyService.applyPrices(
                     this.<RefPayloads.PriceDto>pages(domain, new TypeReference<List<RefPayloads.PriceDto>>() {}));
             case "EMPLOYEES" -> refApplyService.applyEmployees(
@@ -268,6 +270,8 @@ public class RefPullService {
                     this.<RefPayloads.ArticleBarcodeRangeDto>pages(domain, new TypeReference<List<RefPayloads.ArticleBarcodeRangeDto>>() {}));
             case "CUSTOMERS" -> refApplyService.applyCustomers(
                     this.<RefPayloads.CustomerDto>pages(domain, new TypeReference<List<RefPayloads.CustomerDto>>() {}));
+            case "POSTAL_CODES" -> refApplyService.applyPostalCodes(
+                    this.<RefPayloads.PostalCodeDto>pages(domain, new TypeReference<List<RefPayloads.PostalCodeDto>>() {}));
             case "CURRENCIES" -> refApplyService.applyCurrencies(
                     this.<RefPayloads.CurrencyDto>pages(domain, new TypeReference<List<RefPayloads.CurrencyDto>>() {}));
             case "SETTINGS" -> refApplyService.applySettings(

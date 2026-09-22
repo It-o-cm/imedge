@@ -193,6 +193,48 @@ public class Ticket extends BaseEntity {
     public String fidelityCard;
 
     /**
+     * The loyalty earn this sale DISPLAYED, frozen at closing; null when the
+     * sale earned nothing or the loyalty service said nothing (BO-03-03-31).
+     *
+     * <p>Frozen rather than read back: the projection lives in the register's
+     * live state and dies with the sale, so a ticket reprinted an hour later —
+     * or on another register through the store node — would otherwise carry
+     * somebody else's cagnotte, or none at all. The recomputation made at
+     * ingestion stays authoritative for the ACCOUNT; this column is what the
+     * customer was shown on the paper.
+     */
+    @Column(name = "fidelity_earn_total", precision = 19, scale = 4)
+    public BigDecimal fidelityEarnTotal;
+
+    /**
+     * The AVAILABLE balance read when the card was attached, frozen at closing;
+     * null when no card was presented or the loyalty service did not answer.
+     */
+    @Column(name = "fidelity_available_balance", precision = 19, scale = 4)
+    public BigDecimal fidelityAvailableBalance;
+
+    /**
+     * True when the loyalty service was unreachable while this sale was made
+     * (BO-03-03-29, BO-03-03-30).
+     *
+     * <p>Frozen for the same reason as the rest: a document states what
+     * happened at the till, and whether the programme answered that day is part
+     * of it. A shop that does not run the programme at all is NOT unavailable —
+     * there was nothing to reach.
+     */
+    @Column(name = "fidelity_unavailable", nullable = false)
+    public boolean fidelityUnavailable;
+
+    /**
+     * The advantage lines as displayed, frozen at closing; empty when the sale
+     * displayed none (BO-03-03-25).
+     */
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "ticket_fidelity_lines",
+            joinColumns = @JoinColumn(name = "ticket_id"))
+    public List<TicketFidelityLine> fidelityLines = new ArrayList<>();
+
+    /**
      * Ticket-level discount request kind ("AMOUNT"/"PERCENT"), or null
      * (phase: global ticket discount). The request survives a crash; the
      * allocation is recomputed at restore.

@@ -134,13 +134,30 @@ public class DashboardService {
             entry.put("number", session.sessionNumber);
             entry.put("operator", session.openingCashier != null ? session.openingCashier.getFullName() : "");
             entry.put("since", session.openingDate.format(DateTimeFormatter.ofPattern("HH:mm")));
+            // Whether a forced close is already waiting to be collected: the
+            // screen must not offer the button twice, and the office has to see
+            // that its first press is still on its way (LC-01-02-07).
+            entry.put("closing", registerCommandService.pendingCount(session.terminalId) > 0);
             sessions.add(entry);
         }
         data.put("sessions", sessions);
 
+        // The end-of-period countdown the back office must show while the
+        // automatic close approaches (BO-09-01-06). -1 means « say nothing ».
+        data.put("periodCountdown", periodCloseService.countdownMinutes());
+        data.put("periodEnd", periodCloseService.endOfPeriodLabel());
+
         LOGGER.info("Exiting method buildData");
         return data;
     }
+
+    /** The order book, read to show whether a forced close is already pending. */
+    @jakarta.inject.Inject
+    com.intermarche.pos.service.sync.RegisterCommandService registerCommandService;
+
+    /** The end-of-period closer, read for its countdown. */
+    @jakarta.inject.Inject
+    com.intermarche.pos.service.PeriodCloseService periodCloseService;
 
     /**
      * Formats an amount for the dashboard (2 decimals, French comma).

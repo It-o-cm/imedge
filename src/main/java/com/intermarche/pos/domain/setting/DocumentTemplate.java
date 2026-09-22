@@ -191,7 +191,18 @@ public class DocumentTemplate extends PanacheEntity {
          * that changed on one and not the other is an accounting defect, not an
          * ergonomic detail.
          */
-        INVOICE_A4("Facture (A4 réseau)");
+        INVOICE_A4("Facture (A4 réseau)"),
+
+        /**
+         * The slip handed over with a settlement taken on the loyalty balance
+         * (BO-03-03-10).
+         *
+         * <p>An ADDITIONAL ticket, printed after the sale receipt and not
+         * instead of it: it states one settlement — the amount taken, the card
+         * it was taken from and the sale it settled — which is what a customer
+         * disputing a cagnotte débit comes back with.
+         */
+        LOYALTY_RECEIPT("Justificatif paiement fidélité");
 
         /** The label shown on the administration screen. */
         private final String label;

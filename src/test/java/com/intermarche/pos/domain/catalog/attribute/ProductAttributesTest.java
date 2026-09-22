@@ -235,4 +235,40 @@ class ProductAttributesTest {
                 productWith(ProductAttributeCatalog.QUANTITY_TO_ENTER, "true")));
         Assertions.assertFalse(ProductAttributes.quantityToEnter(new Product()));
     }
+
+    /**
+     * ecoTax reads the article's own amount, the decimal comma of an integrated
+     * file accepted as a point (BO-10-04-14).
+     */
+    @Test
+    void ecoTaxReadsTheArticlesOwnAmount() {
+        Assertions.assertEquals(new java.math.BigDecimal("0.35"),
+                ProductAttributes.ecoTax(productWith(ProductAttributeCatalog.ECO_TAX, "0.35")));
+        Assertions.assertEquals(new java.math.BigDecimal("1.20"),
+                ProductAttributes.ecoTax(productWith(ProductAttributeCatalog.ECO_TAX, " 1,20 ")));
+    }
+
+    /**
+     * ecoTax falls back to zero on an article carrying nothing (the catalog
+     * default), on a null product, and on a BLANK value — the leg a null check
+     * alone would miss.
+     */
+    @Test
+    void ecoTaxIsZeroWhenTheArticleCarriesNone() {
+        Assertions.assertEquals(java.math.BigDecimal.ZERO,
+                ProductAttributes.ecoTax(new Product()));
+        Assertions.assertEquals(java.math.BigDecimal.ZERO, ProductAttributes.ecoTax(null));
+        Assertions.assertEquals(java.math.BigDecimal.ZERO,
+                ProductAttributes.ecoTax(productWith(ProductAttributeCatalog.ECO_TAX, "   ")));
+    }
+
+    /**
+     * ecoTax treats an unreadable amount as none rather than raising: one
+     * malformed article must not stop an invoice from being drawn.
+     */
+    @Test
+    void ecoTaxTreatsAnUnreadableAmountAsNone() {
+        Assertions.assertEquals(java.math.BigDecimal.ZERO,
+                ProductAttributes.ecoTax(productWith(ProductAttributeCatalog.ECO_TAX, "gratuit")));
+    }
 }

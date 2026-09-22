@@ -1,0 +1,185 @@
+{!
+ ! Back-office CUSTOMER IN ACCOUNT file (BO-02-04-23): everything the row
+ ! carries, the correctable part in a form (BO-02-04-12), the free fields of
+ ! BO-02-04-11 read-only — they belong to the commercial management — and the
+ ! last credit payment of the account (BO-02-04-14). The account number and the
+ ! origin are shown and never posted: one is the integration's upsert key, the
+ ! other says where the row came from.
+!}
+{#include admin-layout}
+
+{#title}Fiche client{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Fiche client</h1>
+        <p class="page-sub">Client en compte : coordonnées, conditions de crédit et champs libres.</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-ghost" href="/admin/customers">Retour à la liste</a>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+{#if !customer}
+<div class="card">
+    <div class="empty-state">
+        <p>Client inconnu.</p>
+        <p class="empty-hint">La fiche a peut-être été supprimée depuis l'ouverture de la liste.</p>
+    </div>
+</div>
+{#else}
+{! BO-10-04-05 : la même fiche sert à ouvrir un compte et à corriger le sien ;
+ ! l'entête ne s'affiche que sur une fiche existante, un compte en cours
+ ! d'ouverture n'ayant ni encours ni règlement à montrer. !}
+{#if !creating}
+<div class="card">
+    <h2 class="card-title">{customer.companyName}</h2>
+    <p class="card-sub">
+        Numéro {customer.accountNumber} ·
+        {#if customer.origin.name == 'INTEGRATED'}intégré de la gestion commerciale{#else if customer.origin.name == 'BACK_OFFICE'}ouvert au back-office{#else}créé en caisse{/if}
+        {#if customer.blocked} · <strong>compte bloqué</strong>{/if}
+    </p>
+    <dl class="field-grid">
+        <div class="field">
+            <dt class="field-label">Encours</dt>
+            <dd>{customer.creditBalance} € sur {customer.creditLimit ?: '—'} €</dd>
+        </div>
+        <div class="field">
+            <dt class="field-label">Crédit disponible</dt>
+            <dd>{customer.creditAvailable} €</dd>
+        </div>
+        <div class="field">
+            <dt class="field-label">Dernier règlement crédit</dt>
+            <dd>{#if lastMovement}{lastMovement.date} — {lastMovement.amount} €{#else}Aucun{/if}</dd>
+        </div>
+    </dl>
+</div>
+{/if}
+
+<div class="card">
+    {#if creating}
+    <h2 class="card-title">Ouverture d'un compte client</h2>
+    <p class="card-sub">Le n° de compte est saisi ici et ne pourra plus être corrigé.</p>
+    {#else}
+    <h2 class="card-title">Correction de la fiche</h2>
+    <p class="card-sub">La gestion commerciale réécrit ces champs à chaque intégration.</p>
+    {/if}
+    <form method="post" action="{#if creating}/admin/customers/new{#else}/admin/customers/edit{/if}">
+        {#if creating}
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="f-number">N° de compte</label>
+                <input class="input-control" id="f-number" type="text" name="accountNumber" value="" required>
+            </div>
+        </div>
+        {#else}
+        <input type="hidden" name="id" value="{customer.id}">
+        {/if}
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="f-company">Raison sociale</label>
+                <input class="input-control" id="f-company" type="text" name="companyName" value="{customer.companyName}" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-civility">Civilité</label>
+                <input class="input-control" id="f-civility" type="text" name="civility" value="{customer.civility ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-first">Prénom du contact</label>
+                <input class="input-control" id="f-first" type="text" name="firstName" value="{customer.firstName ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-last">Nom du contact</label>
+                <input class="input-control" id="f-last" type="text" name="lastName" value="{customer.lastName ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-street">Adresse</label>
+                <input class="input-control" id="f-street" type="text" name="street" value="{customer.address.streetLine1 ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-postal">Code postal</label>
+                <input class="input-control" id="f-postal" type="text" name="postalCode" value="{customer.address.postalCode ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-city">Ville</label>
+                <input class="input-control" id="f-city" type="text" name="city" value="{customer.address.city ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-siret">SIRET</label>
+                <input class="input-control" id="f-siret" type="text" name="siret" value="{customer.siret ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-vat">N° TVA intracommunautaire</label>
+                <input class="input-control" id="f-vat" type="text" name="vatNumber" value="{customer.vatNumber ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-nif">Numéro fiscal (NIF)</label>
+                <input class="input-control" id="f-nif" type="text" name="taxId" value="{customer.taxId ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-phone">Téléphone</label>
+                <input class="input-control" id="f-phone" type="text" name="phone" value="{customer.phone ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-email">Courriel</label>
+                <input class="input-control" id="f-email" type="text" name="email" value="{customer.email ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-due">Date d'échéance</label>
+                <input class="input-control" id="f-due" type="date" name="dueDate" value="{customer.dueDate ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-discount">Remise accordée (%)</label>
+                <input class="input-control" id="f-discount" type="text" name="discountPercent" value="{customer.discountPercent ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-limit">Plafond de crédit (€)</label>
+                <input class="input-control" id="f-limit" type="text" name="creditLimit" value="{customer.creditLimit ?: ''}">
+            </div>
+            <div class="field field-check">
+                <label class="field-label"><input type="checkbox" name="blocked" {#if customer.blocked}checked{/if}> Compte bloqué au passage en caisse</label>
+            </div>
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">Enregistrer</button>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <h2 class="card-title">Champs libres</h2>
+    <p class="card-sub">Réserve renseignée par la gestion commerciale, en lecture seule ici.</p>
+    {#if customer.freeFields.isEmpty()}
+    <div class="empty-state">
+        <p>Aucun champ libre.</p>
+    </div>
+    {#else}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>N°</th>
+                <th>Libellé</th>
+                <th>Valeur</th>
+            </tr>
+        </thead>
+        <tbody>
+            {#for field in customer.freeFields}
+            <tr>
+                <td>{field.slot}</td>
+                <td>{field.label ?: '—'}</td>
+                <td class="col-muted">{field.value ?: '—'}</td>
+            </tr>
+            {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+{/if}
+{/body}
+
+{#footer}Aucune création ici : un client en compte entre par l'intégration de la gestion commerciale.{/footer}

@@ -4,14 +4,18 @@ import com.intermarche.pos.domain.catalog.Product;
 import com.intermarche.pos.domain.catalog.ProductType;
 import com.intermarche.pos.domain.catalog.attribute.ProductAttributeCatalog;
 import com.intermarche.pos.domain.catalog.attribute.ProductAttributes;
+import io.quarkus.hibernate.orm.panache.PanacheQuery;
 import jakarta.ws.rs.core.MultivaluedHashMap;
 import jakarta.ws.rs.core.MultivaluedMap;
 
 import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -28,8 +32,14 @@ import java.util.Set;
  * of {@code JournalCriteria}, a value that fails to parse is treated as absent
  * rather than raising: a bad filter narrows nothing, it does not fault.
  * <p>
- * The matching is in-memory, over the referential the fiche list has already
- * loaded: no query is built, so it stays a pure, side-effect-free predicate.
+ * Two readings of the SAME criteria, kept side by side on purpose. {@link
+ * #matches(Product)} is the reference: a pure predicate over one article, which
+ * is what a test reads and what settles what a criterion MEANS. {@link #find()}
+ * says the same thing in JPQL, so a catalog of a hundred thousand articles is
+ * filtered by the database instead of being hydrated into objects and sieved in
+ * Java. The screen uses the query; the predicate remains the definition the
+ * query has to agree with, which is why every clause below names the arm of
+ * {@code matches} it translates.
  */
 public class ArticleSearchCriteria {
 
@@ -122,6 +132,141 @@ public class ArticleSearchCriteria {
             }
         }
         return true;
+    }
+
+    /**
+     * Builds the ordered query of the articles this criteria selects.
+     *
+     * <p>The database does the filtering. An explicit alias is used rather than
+     * Panache's bare where-fragment form, because the attribute clauses carry a
+     * sub-select and a sub-select needs to name what it is not.
+     *
+     * @return the query, ordered by EAN like the in-memory list it replaces
+     */
+    public PanacheQuery<Product> find() {
+        String where = whereClause();
+        if (where.isEmpty()) {
+            return Product.find("from Product p order by p.ean");
+        }
+        return Product.find("from Product p where " + where + " order by p.ean", parameters());
+    }
+
+    /**
+     * Renders the present criteria as a JPQL predicate over the alias {@code p}.
+     *
+     * <p>Every criterion is ANDed, and an absent one contributes nothing —
+     * the same rule as {@link #matches(Product)}, which is why an empty criteria
+     * produces an empty clause and not {@code 1=1}.
+     *
+     * @return the predicate, empty when the criteria constrains nothing
+     */
+    public String whereClause() {
+        List<String> clauses = new ArrayList<>();
+        if (text != null) {
+            // The three-field OR of matchesText, parenthesised: without the
+            // parentheses it would swallow every clause ANDed after it.
+            clauses.add("(lower(p.ean) like :text or lower(p.name) like :text"
+                    + " or lower(p.internalCode) like :text)");
+        }
+        if (type != null) {
+            clauses.add("p.productType = :type");
+        }
+        if (status == Status.ACTIVE) {
+            clauses.add("p.active = true");
+        }
+        if (status == Status.INACTIVE) {
+            clauses.add("p.active = false");
+        }
+        if (forbidden != null) {
+            clauses.add("p.forbiddenToSale = :forbidden");
+        }
+        if (eanFrom != null) {
+            clauses.add("p.ean >= :eanFrom");
+        }
+        if (eanTo != null) {
+            clauses.add("p.ean <= :eanTo");
+        }
+        int index = 0;
+        for (String code : attributes) {
+            clauses.add(attributeClause(code, index));
+            index++;
+        }
+        return String.join(" and ", clauses);
+    }
+
+    /**
+     * The predicate asking that an article carry one attribute as true.
+     *
+     * <p>A sub-select per attribute and not a join: a join would multiply the
+     * article by its attribute rows, and a second required attribute would then
+     * match nothing.
+     *
+     * <p>Two shapes, because {@code ProductAttributes.flag} resolves a MISSING
+     * value through the catalog default. An attribute defaulting to false — all
+     * of them today — is carried only by the rows that state it, so the article
+     * must be among those holding it true. An attribute defaulting to true is
+     * the mirror image: the article matches unless a row states otherwise.
+     * Writing only the first shape would put the query and {@link
+     * #matches(Product)} silently at odds the day a default-true attribute is
+     * declared.
+     *
+     * @param code the attribute code, known to the catalog
+     * @param index the position of this attribute, which names its alias and
+     *        its parameter
+     * @return the JPQL predicate over the alias {@code p}
+     */
+    private String attributeClause(String code, int index) {
+        String rows = "select a" + index + ".id from Product a" + index
+                + " join a" + index + ".attributes v" + index
+                + " where key(v" + index + ") = :attr" + index;
+        if (defaultsToTrue(code)) {
+            return "p.id not in (" + rows + " and lower(v" + index + ") <> 'true')";
+        }
+        return "p.id in (" + rows + " and lower(v" + index + ") = 'true')";
+    }
+
+    /**
+     * Tells whether the catalog default of an attribute is itself true.
+     *
+     * @param code the attribute code
+     * @return true when an article carrying no value for that code still flags
+     */
+    private boolean defaultsToTrue(String code) {
+        return Boolean.parseBoolean(ProductAttributeCatalog.defaultValue(code));
+    }
+
+    /**
+     * The values the predicate of {@link #whereClause()} binds.
+     *
+     * <p>Kept in declaration order so a failing query logs its parameters in the
+     * order the clause reads them.
+     *
+     * @return the parameters by name, empty when the criteria constrains nothing
+     */
+    public Map<String, Object> parameters() {
+        Map<String, Object> params = new LinkedHashMap<>();
+        if (text != null) {
+            // matchesText lowercases both sides and asks for containment.
+            params.put("text", "%" + text.toLowerCase() + "%");
+        }
+        if (type != null) {
+            params.put("type", type);
+        }
+        if (forbidden != null) {
+            params.put("forbidden", forbidden);
+        }
+        if (eanFrom != null) {
+            params.put("eanFrom", eanFrom);
+        }
+        if (eanTo != null) {
+            params.put("eanTo", eanTo);
+        }
+        int index = 0;
+        for (String code : attributes) {
+            params.put("attr" + index, code);
+            index++;
+        }
+        return params;
     }
 
     /**

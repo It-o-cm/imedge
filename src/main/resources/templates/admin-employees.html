@@ -1,0 +1,109 @@
+{!
+ ! Back-office PAYROLL (BO-05-02-15): the people and the companies the safe may
+ ! pay — advance, reimbursement, down-payment. Beside /admin/users, which
+ ! assigns profiles: a rank is not a right, and this screen writes no
+ ! credential. POST -> 303 -> notice.
+!}
+{#include admin-layout}
+
+{#title}Salariés{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Salariés</h1>
+        <p class="page-sub">Personnes physiques ou morales pouvant recevoir un acompte, une avance ou un remboursement du coffre.</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-ghost" href="/admin/users">Utilisateurs et profils</a>
+        <a class="btn btn-ghost" href="/admin/safe/movements">Mouvements du coffre</a>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">Recherche</h2>
+    <form method="get" action="/admin/employees">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="e-text">Nom ou identifiant</label>
+                <input class="input-control" id="e-text" type="text" name="text" value="{text}">
+            </div>
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">Rechercher</button>
+            <a class="btn btn-ghost" href="/admin/employees">Réinitialiser</a>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    {#if page.empty}
+    <div class="empty-state">
+        <p>Aucun salarié.</p>
+        <p class="empty-hint">Les comptes se créent depuis l'écran <a class="link-strong" href="/admin/users">Utilisateurs</a> ; cet écran en règle le volet financier.</p>
+    </div>
+    {#else}
+    {! Les formulaires sont déclarés hors du tableau ; les champs les visent par
+     ! l'attribut form, un formulaire imbriqué dans une ligne n'étant pas valide. !}
+    {#for employee in page.rows}
+    <form method="post" action="/admin/employees" id="emp-{employee.id}">
+        <input type="hidden" name="id" value="{employee.id}">
+    </form>
+    {/for}
+    <table class="data-table">
+        <thead>
+        <tr>
+            <th>Nom</th><th>Identifiant</th><th>Personne morale</th>
+            <th>Niveau de forçage</th><th>Plafond d'acompte €</th><th>Actif</th><th></th>
+        </tr>
+        </thead>
+        <tbody>
+        {#for employee in page.rows}
+        <tr>
+            <td>{employee.fullName}</td>
+            <td>{employee.loginName}</td>
+            <td>
+                <input type="checkbox" name="legalEntity" form="emp-{employee.id}" {#if employee.legalEntity}checked{/if}>
+            </td>
+            <td>
+                <input class="input-control" type="number" min="0" step="1" name="forcingLevel" form="emp-{employee.id}" value="{employee.forcingLevel}">
+            </td>
+            <td>
+                <input class="input-control" type="text" inputmode="decimal" name="advanceLimit" form="emp-{employee.id}" value="{employee.advanceLimit ?: ''}">
+            </td>
+            <td>
+                {#if employee.active}<span class="badge badge-ok">Actif</span>
+                {#else}<span class="badge badge-off">Inactif</span>{/if}
+            </td>
+            <td>
+                <button class="btn btn-small btn-primary" type="submit" form="emp-{employee.id}">Enregistrer</button>
+            </td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+    {! La liste dit quelle tranche du résultat elle montre plutôt que de
+     ! tronquer en silence. !}
+    <div class="pager">
+        <span class="pager-status">Fiches {page.firstIndex} à {page.lastIndex} sur {page.total}</span>
+        {#if page.pageCount > 1}
+        {#if page.first}
+        <span class="btn btn-small btn-muted is-hidden">Précédent</span>
+        {#else}
+        <a class="btn btn-small btn-muted" href="/admin/employees?{baseQuery}page={page.previous}">Précédent</a>
+        {/if}
+        <span class="pager-status">Page {page.number} / {page.pageCount}</span>
+        {#if page.last}
+        <span class="btn btn-small btn-muted is-hidden">Suivant</span>
+        {#else}
+        <a class="btn btn-small btn-muted" href="/admin/employees?{baseQuery}page={page.next}">Suivant</a>
+        {/if}
+        {/if}
+    </div>
+    {/if}
+</div>
+{/body}

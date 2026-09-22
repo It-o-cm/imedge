@@ -76,7 +76,11 @@ public final class VatBreakdown {
      */
     public void add(BigDecimal rate, BigDecimal lineTotalIncludingTax) {
         BigDecimal key = (rate != null ? rate : BigDecimal.ZERO).stripTrailingZeros();
-        ttcByRate.merge(key, lineTotalIncludingTax, BigDecimal::add);
+        // The AMOUNT is guarded like the rate: Map.merge throws on a null value
+        // rather than treating it as nothing, so one line without a total used
+        // to take the whole ventilation down — in the middle of a ticket.
+        BigDecimal amount = lineTotalIncludingTax != null ? lineTotalIncludingTax : BigDecimal.ZERO;
+        ttcByRate.merge(key, amount, BigDecimal::add);
     }
 
     /**
