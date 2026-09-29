@@ -275,6 +275,10 @@ public class PosSettingsService {
                 "Alertes caisses sur le back-office",
                 "Les appels superviseur des caisses s'affichent sur le tableau de bord du back-office. Désactivé : aucune alerte n'est remontée à l'écran (BO-10-08-01).",
                 "true", null),
+        new Def("supervisor.service-requests", Type.TEXT, "SUPERVISION",
+                "Demandes de service proposées en caisse",
+                "Motifs d'appel superviseur proposés au caissier, séparés par des points-virgules — la liste remplace les quatre boutons figés. Le caissier peut aussi envoyer un message libre. Vide : la caisse propose la saisie libre seule (EXP-84, EXP-19).",
+                "Besoin d'aide;Annulation à valider;Problème de règlement;Contrôle de prix", null),
         new Def("fidelity.advantages-enabled", Type.BOOL, "FIDÉLITÉ",
                 "Avantages fidélité sur le ticket",
                 "La section « CAGNOTTE DU JOUR » et les avantages fidélité sont imprimés sur le ticket. Désactivé : aucune section fidélité n'est imprimée (BO-10-03-15).",
@@ -1735,6 +1739,32 @@ public class PosSettingsService {
         }
         LOGGER.info("Exiting method cashMovementReasons");
         return reasons;
+    }
+
+    /**
+     * The supervisor-call service requests offered to the cashier (EXP-84),
+     * parsed from the semicolon-separated administered list; blank entries are
+     * dropped, and an empty setting yields an empty list — the cashier then has
+     * the free-message entry alone (EXP-19). Never null.
+     *
+     * @return the administered service requests, in catalog order
+     */
+    public List<String> supervisorServiceRequests() {
+        LOGGER.info("Entering method supervisorServiceRequests");
+        String raw = value("supervisor.service-requests");
+        if (raw.isBlank()) {
+            LOGGER.info("Exiting method supervisorServiceRequests");
+            return List.of();
+        }
+        List<String> requests = new ArrayList<>();
+        for (String part : raw.split(";")) {
+            String trimmed = part.trim();
+            if (!trimmed.isEmpty()) {
+                requests.add(trimmed);
+            }
+        }
+        LOGGER.info("Exiting method supervisorServiceRequests");
+        return requests;
     }
 
     /**

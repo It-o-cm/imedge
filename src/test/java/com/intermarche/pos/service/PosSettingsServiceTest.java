@@ -354,6 +354,26 @@ class PosSettingsServiceTest {
     }
 
     /**
+     * The supervisor service-request list is parsed from the semicolon row,
+     * dropping blanks; an empty setting yields an empty list — the cashier then
+     * has the free message alone (EXP-84, EXP-19; both arms).
+     */
+    @Test
+    void supervisorServiceRequestsParsesOrEmpties() {
+        PosSettingsService populated = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of(
+                    row("supervisor.service-requests", " Aide ; ; Prix ")));
+            assertEquals(List.of("Aide", "Prix"), populated.supervisorServiceRequests());
+        }
+        PosSettingsService empty = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of(row("supervisor.service-requests", "   ")));
+            assertTrue(empty.supervisorServiceRequests().isEmpty());
+        }
+    }
+
+    /**
      * The login greeting and the next-customer message read their stored rows
      * (EXP-01, EXP-03).
      */

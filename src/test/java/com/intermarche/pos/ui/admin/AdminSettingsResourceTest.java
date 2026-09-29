@@ -152,6 +152,7 @@ class AdminSettingsResourceTest {
             {"customer.invoice-export-ecotax",        "CLIENT EN CAISSE",           "b", ""},
             {"scan.ean13-check-digit",              "SCAN",                       "b", ""},
             {"dashboard.alerts-enabled",            "SUPERVISION",                "b", ""},
+            {"supervisor.service-requests",         "SUPERVISION",                "",  ""},
             {"fidelity.advantages-enabled",         "FIDÉLITÉ",                   "b", ""},
             {"fidelity.projected-label",            "FIDÉLITÉ",                   "",  ""},
             {"fidelity.allow-multiple-scan",        "FIDÉLITÉ",                   "b", ""},

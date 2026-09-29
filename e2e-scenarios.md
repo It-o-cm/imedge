@@ -1344,6 +1344,21 @@ Neuf valeurs ajoutées à `TechnicalEvent.EventType` (en fin d'enum, ordinal sta
 | Opérateur | recherche par badge sur ces types | l'identité concernée (superviseur) portée par `operatorBadgeId` |
 | Reste à faire | objets persistés structurés (apport par coupure, comptage moyens papier, bordereau autonome) | nécessitent de nouvelles entités PARTAGÉES + production côté caisse + coordination d'ordinal `SyncOutbox.EntityType` — hors périmètre nœud seul, signalé |
 
+**K9 Deux canaux back-office ↔ caisse (chantier C expert)** `AdminRegisterMessageResource`, `DashboardResource#receiveCall` [E] [R]
+
+Canal DESCENDANT (EXP-20) : message du back-office vers une caisse, porté par le canal de commandes existant (`RegisterCommand.CommandType.DISPLAY_MESSAGE`, append STRING — à reporter dans impos). Canal MONTANT (EXP-19/84) : l'endpoint `/api/supervisor/call` accepte déjà un `reason` libre (message libre, EXP-19) ; la liste des demandes de service devient un référentiel administré (`supervisor.service-requests`, EXP-84).
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| Descendant écran | `GET /admin/register-messages` ADMIN | 200 (caisses = points de caisse administrés) |
+| Descendant envoi | caisse non choisie | 303 « Choisissez une caisse destinataire. » false |
+| Descendant envoi | caisse inconnue | 303 « Caisse inconnue : <id> » false |
+| Descendant envoi | message vide | 303 « Le message est obligatoire. » false |
+| Descendant envoi | succès | `issue(terminal, DISPLAY_MESSAGE, opérateur, message)` ; 303 « Message déposé pour la caisse <id>. » true |
+| Descendant règle | affichage caisse | écran caissier seul, jamais écran client, sans interrompre la vente (rendu côté caisse, signalé) |
+| Montant libre | `POST /api/supervisor/call` reason libre | ajouté au registre (EXP-19, chemin existant) |
+| Montant liste | `supervisor.service-requests` administré | `supervisorServiceRequests()` fournit les motifs à la caisse ; vide → saisie libre seule (EXP-84) |
+
 ---
 
 ## L. Documents et gabarits [E]
