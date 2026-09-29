@@ -1329,6 +1329,21 @@ Matrice d'accès (par surface) : `/admin/journal` et ses onglets (`/functional`,
 | Jeton | jeton absent de la config (démo) | aucune authentification exigée |
 | Succès | rôle store + bon jeton | 200 « OK », appel ajouté au registre (bandeau si alertes activées) |
 
+**K8 Événements techniques de tenue de poste (chantier B expert)** `JournalService` / `journal.html` [E]
+
+Neuf valeurs ajoutées à `TechnicalEvent.EventType` (en fin d'enum, ordinal stable — à reporter dans impos côté caisse). La recherche, le filtre par case à cocher et l'affichage du journal étant génériques (`EventType.values()` alimente le filtre, `eventType in` la requête), chaque nouveau type est cherchable et filtrable sans autre code.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| Filtre | case à cocher par type | les 9 nouveaux types apparaissent dans le filtre (générique `EventType.values()`) |
+| Recherche | `eventType=DISCREPANCY_VALIDATED` | journal filtré sur la validation d'écart nominative (EXP-82) |
+| Recherche | `eventType=REGISTER_UNLOCK_FORCED` / `SESSION_FORCE_CLOSED` | déverrouillage forcé (EXP-14) et fin de journée forcée (EXP-96), deux traces distinctes |
+| Recherche | `TILL_CLOSED` / `TILL_REOPENED` | fermeture / réouverture de caisse sans clôture (§3), distinctes de LOCK et de SESSION_CLOSED |
+| Recherche | `SUPERVISOR_SESSION_OPENED` / `_CLOSED` | ouverture / fermeture de session superviseur (EXP-33) |
+| Recherche | `DRAWER_CEILING_REACHED` / `LAST_ITEM_CANCEL_REFUSED` | plafond tiroir franchi (EXP-17), refus d'annulation d'article unique (EXP-35) |
+| Opérateur | recherche par badge sur ces types | l'identité concernée (superviseur) portée par `operatorBadgeId` |
+| Reste à faire | objets persistés structurés (apport par coupure, comptage moyens papier, bordereau autonome) | nécessitent de nouvelles entités PARTAGÉES + production côté caisse + coordination d'ordinal `SyncOutbox.EntityType` — hors périmètre nœud seul, signalé |
+
 ---
 
 ## L. Documents et gabarits [E]

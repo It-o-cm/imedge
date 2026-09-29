@@ -52,14 +52,15 @@ class TechnicalEventTest {
     }
 
     /**
-     * The nested EventType enum exposes exactly its twenty-seven declared
-     * constants (twenty NF525 types, the four operator-security events, the two
-     * sync-supervision relaunch events of lot C2, and the GS1 decoding trace of
-     * LC-11-03-02).
+     * The nested EventType enum exposes exactly its thirty-six declared
+     * constants: the original twenty-seven (twenty NF525 types, the four
+     * operator-security events, the two sync-supervision relaunch events of lot
+     * C2, and the GS1 decoding trace of LC-11-03-02) plus the nine expert-caisse
+     * events appended at the end (chantier B: EXP-14/17/33/35/82/96 and §3).
      */
     @Test
-    void eventTypeEnumHasTwentySevenConstants() {
-        Assertions.assertEquals(27, TechnicalEvent.EventType.values().length);
+    void eventTypeEnumHasThirtySixConstants() {
+        Assertions.assertEquals(36, TechnicalEvent.EventType.values().length);
     }
 
     /**
@@ -104,7 +105,16 @@ class TechnicalEventTest {
                 TechnicalEvent.EventType.PASSWORD_FAILED,
                 TechnicalEvent.EventType.REFERENTIAL_PULL_FORCED,
                 TechnicalEvent.EventType.ENGINE_FEED_DELIVERY_FORCED,
-                TechnicalEvent.EventType.GS1_DECODED
+                TechnicalEvent.EventType.GS1_DECODED,
+                TechnicalEvent.EventType.REGISTER_UNLOCK_FORCED,
+                TechnicalEvent.EventType.SESSION_FORCE_CLOSED,
+                TechnicalEvent.EventType.TILL_CLOSED,
+                TechnicalEvent.EventType.TILL_REOPENED,
+                TechnicalEvent.EventType.SUPERVISOR_SESSION_OPENED,
+                TechnicalEvent.EventType.SUPERVISOR_SESSION_CLOSED,
+                TechnicalEvent.EventType.DRAWER_CEILING_REACHED,
+                TechnicalEvent.EventType.DISCREPANCY_VALIDATED,
+                TechnicalEvent.EventType.LAST_ITEM_CANCEL_REFUSED
         };
         Assertions.assertArrayEquals(expected, TechnicalEvent.EventType.values());
     }
