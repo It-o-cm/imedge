@@ -1,0 +1,69 @@
+{!
+ ! Campaign list (AdminCampaignResource): the administered campaigns with their
+ ! code, label, period, budget, offer count, state and live consumption. A
+ ! creation form opens a new campaign. The store node is the BO maître of
+ ! campaigns; the register only relays tickets.
+ !
+ ! POST -> 303 -> notice, the same admin cycle as the other back-office pages.
+ ! No inline <style>: base.css primitives only.
+!}
+{#include admin-layout}
+
+{#title}Campagnes{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Campagnes</h1>
+        <p class="page-sub">Une campagne s'administre au nœud magasin : libellé, période, budget, offres rattachées et duplication. Seule sa projection budgétaire (BUDGET_GROUPS) descend au moteur ; la consommation se lit en direct du moteur (budget global approximatif par construction).</p>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">Campagnes</h2>
+    {#if campaigns.isEmpty()}
+    <p class="page-sub">Aucune campagne n'est enregistrée.</p>
+    {#else}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Code</th><th>Libellé</th><th>Période</th><th>Budget</th>
+                <th>Offres</th><th>État</th><th>Consommation</th>
+            </tr>
+        </thead>
+        <tbody>
+            {#for c in campaigns}
+            <tr>
+                <td><a href="/admin/campaigns/fiche?code={c.code}">{c.code}</a></td>
+                <td>{c.label ?: '—'}</td>
+                <td>{c.validFrom ?: '∞'} → {c.validTo ?: '∞'}</td>
+                <td>{#if c.maxAmount}{c.maxAmount} €{/if}{#if c.maxApplications} / {c.maxApplications}{/if}{#if !c.hasBudget}—{/if}</td>
+                <td>{c.offerCodes.size()}</td>
+                <td>{c.status}</td>
+                <td>{#let s=statuses.get(c.code)}{#if s && s.available}{s.consumedAmount} / {s.maxAmount ?: '∞'} €{#else}moteur non joignable{/if}{/let}</td>
+            </tr>
+            {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+
+<div class="card">
+    <h2 class="card-title">Nouvelle campagne</h2>
+    <form method="post" action="/admin/campaigns/create">
+        <div class="form-row"><label>Code</label><input class="input-control" name="code" required></div>
+        <div class="form-row"><label>Libellé</label><input class="input-control" name="label"></div>
+        <div class="form-row"><label>Début (AAAA-MM-JJ)</label><input class="input-control" name="validFrom" type="date"></div>
+        <div class="form-row"><label>Fin exclue (AAAA-MM-JJ)</label><input class="input-control" name="validTo" type="date"></div>
+        <div class="form-row"><label>Plafond montant (€)</label><input class="input-control" name="maxAmount"></div>
+        <div class="form-row"><label>Plafond applications</label><input class="input-control" name="maxApplications"></div>
+        <div class="form-row"><label>Par PDV</label><input type="checkbox" name="perStore"></div>
+        <div class="form-row"><label>Notes</label><input class="input-control" name="notes"></div>
+        <button class="btn btn-primary" type="submit">Créer</button>
+    </form>
+</div>
+{/body}

@@ -430,63 +430,13 @@ public class AdminCouponResource {
         return redirect("Plage article supprimée.", true);
     }
 
-    /**
-     * Upserts a CHECKOUT ISLAND by its code (BO-03-06-07, BO-03-06-50).
-     *
-     * @param form the posted form (code, label, terminalIds, active)
-     * @return a 303 redirect with the notice
-     */
-    @POST
-    @Path("/island")
-    @RolesAllowed("ADMIN")
-    @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
-    @Transactional
-    public Response saveIsland(MultivaluedMap<String, String> form) {
-        LOGGER.info("Entering method saveIsland with form: " + form);
-        String code = trimmed(form, "code");
-        if (code.isEmpty()) {
-            LOGGER.info("Exiting method saveIsland");
-            return redirect("Le code de l'îlot est obligatoire.", false);
-        }
-        com.intermarche.pos.domain.store.CheckoutIsland existing =
-                com.intermarche.pos.domain.store.CheckoutIsland.find("code", code).firstResult();
-        com.intermarche.pos.domain.store.CheckoutIsland island = existing;
-        if (island == null) {
-            island = new com.intermarche.pos.domain.store.CheckoutIsland();
-            island.code = code;
-            island.persist();
-        }
-        island.label = trimmed(form, "label");
-        island.terminalIds = blankToNull(trimmed(form, "terminalIds"));
-        island.active = form.getFirst("active") != null;
-        LOGGER.info("Exiting method saveIsland");
-        return redirect(existing == null ? "Îlot créé." : "Îlot enregistré.", true);
-    }
-
-    /**
-     * Deletes a checkout island by its code.
-     *
-     * @param form the posted form (code)
-     * @return a 303 redirect with the notice
-     */
-    @POST
-    @Path("/island/delete")
-    @RolesAllowed("ADMIN")
-    @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
-    @Transactional
-    public Response deleteIsland(MultivaluedMap<String, String> form) {
-        LOGGER.info("Entering method deleteIsland with form: " + form);
-        com.intermarche.pos.domain.store.CheckoutIsland island =
-                com.intermarche.pos.domain.store.CheckoutIsland
-                        .find("code", trimmed(form, "code")).firstResult();
-        if (island == null) {
-            LOGGER.info("Exiting method deleteIsland");
-            return redirect("Îlot inconnu.", false);
-        }
-        island.delete();
-        LOGGER.info("Exiting method deleteIsland");
-        return redirect("Îlot supprimé.", true);
-    }
+    // The checkout-island CRUD moved to its own back-office screen
+    // (AdminCheckoutIslandResource, /admin/checkout-islands) when the island was
+    // promoted to a settings-bearing object with a PDV link, a promotion channel
+    // and its register relation carried by CheckoutPoint (BO-03-10). The coupon
+    // screen still READS the islands — a coupon range is accepted or refused by
+    // island code — so the list is kept on the page (see settingsPage/islands
+    // data), but it no longer edits them here.
 
     /**
      * Parses the nature of the value segment, tolerating an unknown or blank

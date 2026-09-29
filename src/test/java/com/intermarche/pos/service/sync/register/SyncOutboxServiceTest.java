@@ -348,8 +348,12 @@ class SyncOutboxServiceTest {
         ticket.fidelityEarnTotal = new BigDecimal("1.03");
         ticket.fidelityAvailableBalance = new BigDecimal("42.30");
         ticket.fidelityUnavailable = true;
+        ticket.fidelityProjectedAfterEarn = new BigDecimal("43.33");
+        ticket.fidelityBalanceAfter = new BigDecimal("39.30");
+        ticket.fidelityAnonymousProjection = true;
         ticket.fidelityLines.add(new com.intermarche.pos.domain.sale.TicketFidelityLine(
-                "SOCLE", "Cagnotte socle", new BigDecimal("0.28")));
+                "SOCLE", "Cagnotte socle", new BigDecimal("0.28"),
+                "TYPE_A", "Avantages", 1, "CAT", "Categorie"));
         TicketLine line = new TicketLine();
         line.lineNumber = 1;
         line.lineUid = "U1";
@@ -394,10 +398,18 @@ class SyncOutboxServiceTest {
             assertEquals(new BigDecimal("1.03"), out.fidelityEarnTotal);
             assertEquals(new BigDecimal("42.30"), out.fidelityAvailableBalance);
             assertTrue(out.fidelityUnavailable);
+            assertEquals(new BigDecimal("43.33"), out.fidelityProjectedAfterEarn);
+            assertEquals(new BigDecimal("39.30"), out.fidelityBalanceAfter);
+            assertTrue(out.fidelityAnonymousProjection);
             assertEquals(1, out.fidelityLines.size());
             assertEquals("SOCLE", out.fidelityLines.get(0).ruleCode);
             assertEquals("Cagnotte socle", out.fidelityLines.get(0).label);
             assertEquals(new BigDecimal("0.28"), out.fidelityLines.get(0).amount);
+            assertEquals("TYPE_A", out.fidelityLines.get(0).advantageType);
+            assertEquals("Avantages", out.fidelityLines.get(0).advantageTypeLabel);
+            assertEquals(Integer.valueOf(1), out.fidelityLines.get(0).advantageTypeOrder);
+            assertEquals("CAT", out.fidelityLines.get(0).advantageCategory);
+            assertEquals("Categorie", out.fidelityLines.get(0).advantageCategoryLabel);
             assertEquals(1, out.lines.size());
             assertEquals("U1", out.lines.get(0).lineUid);
             assertEquals("FRUITS", out.lines.get(0).familyCode);
@@ -1239,6 +1251,124 @@ class SyncOutboxServiceTest {
                     .readValue(service.prepare(1L).json, SyncPayloads.DocumentDto.class);
             assertNull(out.customerDueDate);
             assertEquals(new BigDecimal("1.50"), out.totalEcoTax);
+        }
+    }
+
+    /**
+     * Covers the entity-gone arm of the DOCUMENT case: a vanished document
+     * yields null (the {@code document == null} true arm of the DOCUMENT yield).
+     */
+    @Test
+    void prepareDocumentReturnsNullWhenDocumentGone() {
+        SyncOutboxService service = enabledService("http://store");
+        SyncOutbox row = new SyncOutbox();
+        row.entityType = SyncOutbox.EntityType.DOCUMENT;
+        row.entityId = 100L;
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> SyncOutbox.findById(1L)).thenReturn(row);
+            mocked.when(() -> com.intermarche.pos.domain.sale.Invoice.findById(100L))
+                    .thenReturn(null);
+            assertNull(service.prepare(1L));
+        }
+    }
+
+    /**
+     * Covers the null arms of the DOCUMENT mapping's {@code documentType} and
+     * {@code issueDate} ternaries, and the non-null arm of the
+     * {@code customerAddress} null-guard: a document without a type nor an issue
+     * date but with a printed address round-trips to a null document type, a null
+     * issue date and the carried address fields.
+     */
+    @Test
+    void prepareDocumentSerializesWithNullTypeAndDateAndCarriesAddress() throws Exception {
+        SyncOutboxService service = enabledService("http://store");
+        SyncOutbox row = new SyncOutbox();
+        row.entityType = SyncOutbox.EntityType.DOCUMENT;
+        row.entityId = 100L;
+        com.intermarche.pos.domain.sale.Invoice document = billedDocument();
+        document.documentType = null;
+        document.issueDate = null;
+        com.intermarche.pos.domain.store.Address address = new com.intermarche.pos.domain.store.Address();
+        address.streetLine1 = "2 avenue des Champs";
+        address.postalCode = "75008";
+        address.city = "Paris";
+        document.customerAddress = address;
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> SyncOutbox.findById(1L)).thenReturn(row);
+            mocked.when(() -> com.intermarche.pos.domain.sale.Invoice.findById(100L))
+                    .thenReturn(document);
+            SyncPayloads.DocumentDto out = new ObjectMapper()
+                    .readValue(service.prepare(1L).json, SyncPayloads.DocumentDto.class);
+            assertNull(out.documentType);
+            assertNull(out.issueDate);
+            assertEquals("2 avenue des Champs", out.customerStreet);
+            assertEquals("75008", out.customerPostalCode);
+            assertEquals("Paris", out.customerCity);
+        }
+    }
+
+    /**
+     * Covers the non-null arm of the ticket line's {@code modifierType} ternary:
+     * a line bearing a price modifier carries the modifier word into the payload,
+     * which round-trips to the enum name.
+     */
+    @Test
+    void prepareTicketSerializesLineModifierType() throws Exception {
+        SyncOutboxService service = enabledService("http://store");
+        SyncOutbox row = new SyncOutbox();
+        row.entityType = SyncOutbox.EntityType.TICKET;
+        row.entityId = 100L;
+        Ticket ticket = new Ticket();
+        ticket.ticketNumber = "K5";
+        ticket.terminalId = "T5";
+        ticket.status = Ticket.TicketStatus.CLOSED;
+        ticket.valuationStatus = Ticket.ValuationStatus.VALUATED;
+        ticket.creationDate = LocalDateTime.of(2026, 5, 5, 10, 0, 0);
+        ticket.itemCount = 1;
+        ticket.totalExcludingTax = new BigDecimal("10.00");
+        ticket.totalIncludingTax = new BigDecimal("12.00");
+        ticket.totalVat = new BigDecimal("2.00");
+        TicketLine line = new TicketLine();
+        line.lineNumber = 1;
+        line.lineUid = "U5";
+        line.productLabel = "Pomme";
+        line.quantity = new BigDecimal("1");
+        line.unitPrice = new BigDecimal("12.00");
+        line.totalPrice = new BigDecimal("12.00");
+        line.modifierType = com.intermarche.pos.ui.PriceModType.REMISE;
+        ticket.lines.add(line);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> SyncOutbox.findById(1L)).thenReturn(row);
+            mocked.when(() -> Ticket.findById(100L)).thenReturn(ticket);
+            SyncOutboxService.PreparedItem item = service.prepare(1L);
+            SyncPayloads.TicketDto out = new ObjectMapper().readValue(item.json, SyncPayloads.TicketDto.class);
+            assertEquals(1, out.lines.size());
+            assertEquals("REMISE", out.lines.get(0).modifierType);
+        }
+    }
+
+    /**
+     * Covers the null arm of the DOCUMENT mapping's {@code customerAddress}
+     * null-guard: a document without a printed address leaves the street, postal
+     * code and city null in the payload.
+     */
+    @Test
+    void prepareDocumentSerializesWithoutCustomerAddress() throws Exception {
+        SyncOutboxService service = enabledService("http://store");
+        SyncOutbox row = new SyncOutbox();
+        row.entityType = SyncOutbox.EntityType.DOCUMENT;
+        row.entityId = 100L;
+        com.intermarche.pos.domain.sale.Invoice document = billedDocument();
+        document.customerAddress = null;
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> SyncOutbox.findById(1L)).thenReturn(row);
+            mocked.when(() -> com.intermarche.pos.domain.sale.Invoice.findById(100L))
+                    .thenReturn(document);
+            SyncPayloads.DocumentDto out = new ObjectMapper()
+                    .readValue(service.prepare(1L).json, SyncPayloads.DocumentDto.class);
+            assertNull(out.customerStreet);
+            assertNull(out.customerPostalCode);
+            assertNull(out.customerCity);
         }
     }
 }

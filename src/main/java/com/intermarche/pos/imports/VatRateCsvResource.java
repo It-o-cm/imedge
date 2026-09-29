@@ -197,7 +197,7 @@ public class VatRateCsvResource extends ImporterCsvResource {
             Panache.getEntityManager().persist(rate);
         } else {
             int incomingChecksum = computeIncomingChecksum(number, data);
-            if (rate.checksum != incomingChecksum) {
+            if (rate.changedFrom(incomingChecksum)) {
                 rate = VatRate.findById(rate.id);
                 feedVatRate(data, rate);
                 counters[1]++;

@@ -124,6 +124,12 @@ public final class SyncPayloads {
         public BigDecimal fidelityEarnTotal;
         /** The balance read when the card was attached, or null. */
         public BigDecimal fidelityAvailableBalance;
+        /** The projected balance after this sale's earn (imfid response B), or null. */
+        public BigDecimal fidelityProjectedAfterEarn;
+        /** The balance after the fidelity burn, from the ledger (imfid response B), or null. */
+        public BigDecimal fidelityBalanceAfter;
+        /** Whether the earn total is an anonymous projection (imfid response C). */
+        public boolean fidelityAnonymousProjection;
         /** Whether the loyalty service was unreachable during the sale. */
         public boolean fidelityUnavailable;
         /** The advantage lines the sale displayed, empty when it displayed none. */
@@ -169,6 +175,16 @@ public final class SyncPayloads {
         public String label;
         /** The earn amount of the line, after caps, or null. */
         public BigDecimal amount;
+        /** The advantage type code the line groups under, or null (BO-03-03-25). */
+        public String advantageType;
+        /** The advantage type label, printed verbatim, or null. */
+        public String advantageTypeLabel;
+        /** The order the advantage-type groups print in, or null. */
+        public Integer advantageTypeOrder;
+        /** The advantage category code, or null. */
+        public String advantageCategory;
+        /** The advantage category label, printed verbatim, or null. */
+        public String advantageCategoryLabel;
     }
 
     /**

@@ -67,6 +67,10 @@ public class EngineFeedDeliveryService {
     @Inject
     EngineFeedService engineFeedService;
 
+    /** The keeper of the deferred deliveries this loop runs on its wake. */
+    @Inject
+    ScheduledDeliveryService scheduledDeliveryService;
+
     /** The delivery loop executor, or null when delivery is disabled. */
     private ScheduledExecutorService executor;
 
@@ -123,8 +127,26 @@ public class EngineFeedDeliveryService {
     void deliverSafely() {
         try {
             deliverPending();
+            runScheduled();
         } catch (Exception e) {
             LOGGER.warnf("Cycle de livraison moteur en échec: %s", e.getMessage());
+        }
+    }
+
+    /**
+     * Runs the deferred deliveries whose minute has passed (GB-01-01-02), once
+     * per loop wake. Each due booking is claimed as a detached snapshot, run
+     * through the same delivery path as the manual actions — the global
+     * {@link #triggerDelivery()} when it targets every feed, the targeted
+     * {@link #triggerDelivery(String)} when it names one — and its outcome is
+     * recorded (DONE or FAILED). A booking that fails does not stop the others.
+     */
+    void runScheduled() {
+        for (ScheduledDeliveryService.Due due : scheduledDeliveryService.claimDue()) {
+            String error = due.feedCode() == null
+                    ? triggerDelivery()
+                    : triggerDelivery(due.feedCode());
+            scheduledDeliveryService.markResult(due.id(), error);
         }
     }
 
@@ -162,6 +184,62 @@ public class EngineFeedDeliveryService {
             LOGGER.info("Exiting method triggerDelivery");
             return e.getMessage();
         }
+    }
+
+    /**
+     * Delivers ONE feed NOW, by code, on the caller's thread — the targeted
+     * variant of {@link #triggerDelivery()} behind the per-feed "Livrer
+     * maintenant" button (GB-01-01-01). Same delivery path, same transactional
+     * keeper, same journal as the global relaunch; only the reached feed is the
+     * one whose code matches, the others are left untouched.
+     * <p>
+     * It is ALSO the retry of a feed left in error (GB-01-01-19/30): the button
+     * on an errored row is this same call. Re-running it is safe by construction
+     * because the whole chain downstream is idempotent — the engine imports each
+     * parcel by its checksum and the till consumes each result by ticket — so a
+     * feed already applied is a no-op on the engine and a feed half-applied is
+     * completed rather than doubled. A code with nothing pending (already
+     * acknowledged, or unknown to this node) therefore returns cleanly without
+     * touching the engine.
+     *
+     * @param code the feed code to deliver
+     * @return null when the feed was delivered (or nothing was pending), or the
+     *         failure message when this feed's delivery failed
+     */
+    public String triggerDelivery(String code) {
+        LOGGER.info("Entering method triggerDelivery with code: " + code);
+        try {
+            for (EngineFeedService.PendingFeed feed : engineFeedService.pendingFeeds()) {
+                if (feed.code().equals(code)) {
+                    boolean delivered = deliver(feed);
+                    LOGGER.info("Exiting method triggerDelivery");
+                    return delivered ? null : deliveryError(code);
+                }
+            }
+            LOGGER.info("Exiting method triggerDelivery");
+            return null;
+        } catch (Exception e) {
+            LOGGER.warnf("Livraison ciblée du flux moteur %s en échec: %s", code, e.getMessage());
+            LOGGER.info("Exiting method triggerDelivery");
+            return e.getMessage();
+        }
+    }
+
+    /**
+     * Reads back the error the keeper recorded for a feed whose targeted
+     * delivery just failed, so the screen and the schedule can show WHY rather
+     * than a bare "failed".
+     *
+     * @param code the feed code whose failure was just recorded
+     * @return the recorded error, or a generic message when none is readable
+     */
+    private String deliveryError(String code) {
+        for (EngineFeedService.FeedState state : engineFeedService.feedStates()) {
+            if (code.equals(state.code()) && state.lastError() != null) {
+                return state.lastError();
+            }
+        }
+        return "livraison du flux " + code + " en échec";
     }
 
     /**

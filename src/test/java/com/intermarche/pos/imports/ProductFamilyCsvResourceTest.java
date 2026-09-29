@@ -289,8 +289,12 @@ class ProductFamilyCsvResourceTest {
         existing.checksum = incomingChecksum(resource, data) + 1;
         Map<String, Object> context = new HashMap<>();
         context.put("F1", existing);
+        existing.id = 7L;
         int[] counters = {0, 0};
-        resource.processLineLogic(data, context, counters);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> ProductFamily.findById(7L)).thenReturn(existing);
+            resource.processLineLogic(data, context, counters);
+        }
         assertEquals(0, counters[0]);
         assertEquals(1, counters[1]);
         assertEquals("Veggies", existing.description);
@@ -311,8 +315,12 @@ class ProductFamilyCsvResourceTest {
         existing.checksum = incomingChecksum(resource, data);
         Map<String, Object> context = new HashMap<>();
         context.put("F1", existing);
+        existing.id = 7L;
         int[] counters = {0, 0};
-        resource.processLineLogic(data, context, counters);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> ProductFamily.findById(7L)).thenReturn(existing);
+            resource.processLineLogic(data, context, counters);
+        }
         assertEquals(0, counters[0]);
         assertEquals(0, counters[1]);
     }

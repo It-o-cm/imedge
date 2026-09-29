@@ -4,7 +4,10 @@
  ! full map), the register-behaviour flags, the on-screen article-code flag, and
  ! the offers and sale-price history. `product` is null when the id is unknown.
  ! The commercial name, EAN, PLU, type and measures are shown read-only: their
- ! creation stays on the integration surfaces. POST -> 303 -> notice.
+ ! creation stays on the integration surfaces. The EGAlim card is read-only for
+ ! the same reason, plus one of its own: the ceiling is administered on the
+ ! EGAlim page and applied by the moteur de valorisation, never here.
+ ! POST -> 303 -> notice.
 !}
 {#include admin-layout}
 
@@ -111,6 +114,37 @@
             <div class="field field-check">
                 <label class="field-label"><input type="checkbox" name="forbiddenToSale" {#if product.forbiddenToSale}checked{/if}> Vente interdite</label>
                 <span class="field-hint">L'article est refusé au scan.</span>
+            </div>
+        </div>
+    </div>
+
+    {! EGAlim: READ-ONLY on this screen, and deliberately so. The classification
+     ! comes from the Gestion Commerciale through the article feed, the ceiling
+     ! from the EGAlim referential, and the cap itself is arbitrated by the
+     ! moteur de valorisation -- nothing here computes it. The card exists so an
+     ! operator can see under which category an article falls, and above all see
+     ! the two cases that cost money: an article classified nowhere, and an
+     ! article pointing at a regime the referential does not declare. !}
+    <div class="card">
+        <h2 class="card-title">EGAlim</h2>
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="f-egalim">Régime</label>
+                <input class="input-control" id="f-egalim" type="text" value="{product.egalimRegime ?: 'Non classé'}" disabled>
+                <span class="field-hint">Intégré depuis la Gestion Commerciale, colonne EGALIM_REGIME du flux article.</span>
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-egalim-cap">Plafond de générosité promotionnelle</label>
+                {#if egalimRegime}
+                <input class="input-control" id="f-egalim-cap" type="text" value="{#if egalimRegime.capped}{egalimRegime.capFormatted} %{#else}Non plafonné{/if}" disabled>
+                <span class="field-hint">{egalimRegime.getLabel()} — administré sur la page <a class="link-strong" href="/admin/egalim-regimes">EGAlim</a>, appliqué par le moteur de valorisation.</span>
+                {#else if product.egalimRegime}
+                <input class="input-control" id="f-egalim-cap" type="text" value="Régime inconnu" disabled>
+                <span class="field-hint">Aucun régime ne porte ce code dans le <a class="link-strong" href="/admin/egalim-regimes">référentiel EGAlim</a> : le moteur ne plafonnera pas cet article.</span>
+                {#else}
+                <input class="input-control" id="f-egalim-cap" type="text" value="—" disabled>
+                <span class="field-hint">Article non classé : aucun plafond ne s'applique.</span>
+                {/if}
             </div>
         </div>
     </div>

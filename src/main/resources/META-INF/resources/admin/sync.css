@@ -68,3 +68,31 @@
     font-style: italic;
     text-align: center;
 }
+
+.sync-table .cell-action { white-space: nowrap; }
+
+.sync-table .cell-action .card-action { display: inline; }
+
+.sync-schedule-form {
+    display: flex;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 0 0 16px;
+}
+
+.sync-schedule-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 13px;
+    color: var(--im-ink-soft);
+}
+
+.sync-schedule-field select,
+.sync-schedule-field input {
+    padding: 6px 8px;
+    border: 1px solid var(--im-line);
+    border-radius: 6px;
+    font-size: 14px;
+}

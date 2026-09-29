@@ -2,6 +2,7 @@ package com.intermarche.pos.domain.sale;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Embeddable;
+
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 
@@ -36,22 +37,69 @@ public class TicketFidelityLine {
     public BigDecimal amount;
 
     /**
+     * The advantage TYPE code the line groups under (BO-03-03-25/-33), or null
+     * on a rule predating the referential — the line then prints flat.
+     */
+    @Column(name = "advantage_type", length = 50)
+    public String advantageType;
+
+    /** The advantage type LABEL, frozen and printed verbatim, or null. */
+    @Column(name = "advantage_type_label", length = 120)
+    public String advantageTypeLabel;
+
+    /** The order the advantage-type groups print in (never the priority), or null. */
+    @Column(name = "advantage_type_order")
+    public Integer advantageTypeOrder;
+
+    /** The advantage CATEGORY code, or null when the rule carries none. */
+    @Column(name = "advantage_category", length = 50)
+    public String advantageCategory;
+
+    /** The advantage category LABEL, frozen and printed verbatim, or null. */
+    @Column(name = "advantage_category_label", length = 120)
+    public String advantageCategoryLabel;
+
+    /**
      * Default constructor for JPA.
      */
     public TicketFidelityLine() {
     }
 
     /**
-     * Freezes one displayed advantage line.
+     * Freezes one displayed advantage line without advantage grouping (legacy).
      *
      * @param ruleCode the rule code, or null
      * @param label the printable label, or null
      * @param amount the earn amount after caps, or null
      */
     public TicketFidelityLine(String ruleCode, String label, BigDecimal amount) {
+        this(ruleCode, label, amount, null, null, null, null, null);
+    }
+
+    /**
+     * Freezes one displayed advantage line, carrying its advantage grouping
+     * (BO-03-03-25) so a duplicata regroups it identically.
+     *
+     * @param ruleCode the rule code, or null
+     * @param label the printable label, or null
+     * @param amount the earn amount after caps, or null
+     * @param advantageType the advantage type code, or null
+     * @param advantageTypeLabel the advantage type label, or null
+     * @param advantageTypeOrder the group print order, or null
+     * @param advantageCategory the advantage category code, or null
+     * @param advantageCategoryLabel the advantage category label, or null
+     */
+    public TicketFidelityLine(String ruleCode, String label, BigDecimal amount,
+            String advantageType, String advantageTypeLabel, Integer advantageTypeOrder,
+            String advantageCategory, String advantageCategoryLabel) {
         this.ruleCode = ruleCode;
         this.label = label;
         this.amount = amount;
+        this.advantageType = advantageType;
+        this.advantageTypeLabel = advantageTypeLabel;
+        this.advantageTypeOrder = advantageTypeOrder;
+        this.advantageCategory = advantageCategory;
+        this.advantageCategoryLabel = advantageCategoryLabel;
     }
 
     /**

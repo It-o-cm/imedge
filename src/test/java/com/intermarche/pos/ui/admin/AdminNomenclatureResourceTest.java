@@ -1916,4 +1916,574 @@ class AdminNomenclatureResourceTest {
                     moveForm("ITM_FR", "1002", "10"))));
         }
     }
+
+    // --------------------------------------------------
+    // children — the tree's JSON listing
+    // --------------------------------------------------
+
+    /**
+     * The top level answers one JSON object per node, each carrying whether
+     * anything hangs under it: the first node has children of the level below
+     * and the others do not — the true and false arms of {@code hasPrefix} and
+     * of the {@code openable} flag together — and a node whose level is unset is
+     * written {@code null} rather than crashing, the {@code node.level == null}
+     * arm of {@code nodeJson}. The first-comma flag flips across the three rows.
+     */
+    @Test
+    void theTopLevelIsAnsweredAsJson() {
+        AdminNomenclatureResource resource = newResource();
+        Nomenclature itm = scheme("ITM_FR");
+        ProductFamily frais = node(itm, "10", 0, "FRAIS");
+        ProductFamily epicerie = node(itm, "20", 0, "EPICERIE");
+        ProductFamily hors = node(itm, "30", 0, "HORS");
+        hors.level = null;
+        ProductFamily bouch = node(itm, "1002", 1, "BOUCHERIE");
+        ProductFamily ghost = node(itm, "1099", 1, "SANS CODE");
+        ghost.code = null;
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubByCode(mocked, "ITM_FR", itm);
+            stubLevelNodes(mocked, itm, 0, List.of(frais, epicerie, hors));
+            stubLevelNodes(mocked, itm, 1, java.util.Arrays.asList(bouch, ghost));
+            Response response = resource.children("ITM_FR", null);
+            assertEquals(200, response.getStatus());
+            assertEquals("[{\"code\":\"10\",\"label\":\"FRAIS\",\"level\":0,\"openable\":true},"
+                    + "{\"code\":\"20\",\"label\":\"EPICERIE\",\"level\":0,\"openable\":false},"
+                    + "{\"code\":\"30\",\"label\":\"HORS\",\"level\":null,\"openable\":false}]",
+                    response.getEntity().toString());
+        }
+    }
+
+    /**
+     * Opening a node lists only the children of the level below whose code
+     * starts with its own (the prefix filter of {@code childrenOf}, one node
+     * kept and one dropped), with the trimmed parent and the empty
+     * level-below listing that leaves every node closed.
+     */
+    @Test
+    void openingANodeAnswersOnlyItsChildrenAsJson() {
+        AdminNomenclatureResource resource = newResource();
+        Nomenclature itm = scheme("ITM_FR");
+        ProductFamily bouch = node(itm, "1002", 1, "BOUCHERIE");
+        ProductFamily crem = node(itm, "2001", 1, "CREMERIE");
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubByCode(mocked, "ITM_FR", itm);
+            stubLevels(mocked, itm, 2, 4);
+            stubLevelNodes(mocked, itm, 1, List.of(bouch, crem));
+            stubLevelNodes(mocked, itm, 2, List.of());
+            Response response = resource.children("ITM_FR", " 10 ");
+            assertEquals(200, response.getStatus());
+            assertEquals("[{\"code\":\"1002\",\"label\":\"BOUCHERIE\",\"level\":1,"
+                    + "\"openable\":false}]", response.getEntity().toString());
+        }
+    }
+
+    /**
+     * A null scheme code and an unknown scheme code both answer 404 with an
+     * empty JSON array — the {@code schemeCode == null} arm and the
+     * {@code scheme == null} arm.
+     */
+    @Test
+    void listingChildrenOfAnUnknownSchemeAnswersNotFound() {
+        AdminNomenclatureResource nullCode = newResource();
+        Response byNull = nullCode.children(null, null);
+        assertEquals(404, byNull.getStatus());
+        assertEquals("[]", byNull.getEntity().toString());
+        AdminNomenclatureResource absent = newResource();
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubByCode(mocked, "ABSENT", null);
+            Response byAbsent = absent.children("ABSENT", null);
+            assertEquals(404, byAbsent.getStatus());
+            assertEquals("[]", byAbsent.getEntity().toString());
+        }
+    }
+
+    // --------------------------------------------------
+    // search — the tree's JSON search
+    // --------------------------------------------------
+
+    /**
+     * A search by LABEL answers the one hit, its full readable path built by
+     * climbing its declared ancestors: an ancestor the catalog knows lends its
+     * description (the {@code ancestor != null} arm of {@code pathOf}), the
+     * level whose length reaches the node's own stops the walk, and a node that
+     * does not match is skipped.
+     */
+    @Test
+    void aSearchByLabelAnswersTheHitWithItsPath() {
+        AdminNomenclatureResource resource = newResource();
+        Nomenclature itm = scheme("ITM_FR");
+        ProductFamily frais = node(itm, "10", 0, "FRAIS");
+        ProductFamily bouch = node(itm, "1002", 1, "BOUCHERIE");
+        ProductFamily trait = node(itm, "1004", 1, "TRAITEUR");
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubByCode(mocked, "ITM_FR", itm);
+            stubLevels(mocked, itm, 2, 4);
+            stubByCode(mocked, "10", frais);
+            mocked.when(() -> PanacheEntityBase.list("nomenclature.id = ?1 order by level, code",
+                    itm.id)).thenReturn(List.of(frais, bouch, trait));
+            Response response = resource.search("ITM_FR", " Bou ");
+            assertEquals(200, response.getStatus());
+            assertEquals("[{\"code\":\"1002\",\"label\":\"BOUCHERIE\",\"level\":1,"
+                    + "\"openable\":false,\"path\":\"FRAIS › BOUCHERIE\"}]",
+                    response.getEntity().toString());
+        }
+    }
+
+    /**
+     * A search by CODE answers several hits separated by a comma (the
+     * {@code found > 0} arm on the second), skips the one that matches neither
+     * field, and covers the pathless corners: a top node whose walk breaks on
+     * the first level (empty path), an ancestor the catalog does NOT know (its
+     * bare code stands in), and a hit whose label is null (the {@code null} arm
+     * of {@code escape} and of the {@code pathOf} tail).
+     */
+    @Test
+    void aSearchByCodeAnswersEveryHit() {
+        AdminNomenclatureResource resource = newResource();
+        Nomenclature itm = scheme("ITM_FR");
+        ProductFamily epicerie = node(itm, "20", 0, "EPICERIE");
+        ProductFamily frais = node(itm, "10", 0, "FRAIS");
+        ProductFamily conserves = node(itm, "2001", 1, "CONSERVES");
+        ProductFamily nameless = node(itm, "2002", 1, "X");
+        nameless.description = null;
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubByCode(mocked, "ITM_FR", itm);
+            stubLevels(mocked, itm, 2, 4);
+            stubByCode(mocked, "20", null);
+            mocked.when(() -> PanacheEntityBase.list("nomenclature.id = ?1 order by level, code",
+                    itm.id)).thenReturn(List.of(epicerie, frais, conserves, nameless));
+            Response response = resource.search("ITM_FR", "20");
+            assertEquals(200, response.getStatus());
+            assertEquals("[{\"code\":\"20\",\"label\":\"EPICERIE\",\"level\":0,\"openable\":false,"
+                    + "\"path\":\"EPICERIE\"},"
+                    + "{\"code\":\"2001\",\"label\":\"CONSERVES\",\"level\":1,\"openable\":false,"
+                    + "\"path\":\"20 › CONSERVES\"},"
+                    + "{\"code\":\"2002\",\"label\":\"\",\"level\":1,\"openable\":false,"
+                    + "\"path\":\"20 › \"}]", response.getEntity().toString());
+        }
+    }
+
+    /**
+     * The four ways a search answers nothing: an unknown scheme, a null scheme
+     * code, a blank query and a null query — each leg of
+     * {@code scheme == null || needle.isEmpty()} and of the two query-guarding
+     * ternaries.
+     */
+    @Test
+    void anEmptyOrSchemelessSearchAnswersAnEmptyArray() {
+        AdminNomenclatureResource absent = newResource();
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubByCode(mocked, "ABSENT", null);
+            Response byAbsent = absent.search("ABSENT", "bou");
+            assertEquals(200, byAbsent.getStatus());
+            assertEquals("[]", byAbsent.getEntity().toString());
+        }
+        AdminNomenclatureResource nullScheme = newResource();
+        assertEquals("[]", nullScheme.search(null, "bou").getEntity().toString());
+        AdminNomenclatureResource blankQuery = newResource();
+        Nomenclature itm = scheme("ITM_FR");
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubByCode(mocked, "ITM_FR", itm);
+            assertEquals("[]", blankQuery.search("ITM_FR", "   ").getEntity().toString());
+            assertEquals("[]", blankQuery.search("ITM_FR", null).getEntity().toString());
+        }
+    }
+
+    /**
+     * A search stops at {@code SEARCH_LIMIT} hits: past it a trailing comma is
+     * left and the scan breaks, so exactly fifty paths are written even though
+     * fifty-one nodes match — the {@code ++found > SEARCH_LIMIT} arm.
+     */
+    @Test
+    void aSearchStopsAtTheHitLimit() {
+        AdminNomenclatureResource resource = newResource();
+        Nomenclature itm = scheme("ITM_FR");
+        List<ProductFamily> crowd = new ArrayList<>();
+        for (int i = 0; i <= AdminNomenclatureResource.SEARCH_LIMIT; i++) {
+            crowd.add(node(itm, String.format("%02d", i), 0, "NODE " + i));
+        }
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubByCode(mocked, "ITM_FR", itm);
+            stubLevels(mocked, itm, 2, 4);
+            mocked.when(() -> PanacheEntityBase.list("nomenclature.id = ?1 order by level, code",
+                    itm.id)).thenReturn(crowd);
+            Response response = resource.search("ITM_FR", "node");
+            String body = response.getEntity().toString();
+            assertEquals(200, response.getStatus());
+            assertEquals(AdminNomenclatureResource.SEARCH_LIMIT,
+                    body.split("\"path\":", -1).length - 1);
+            assertTrue(body.endsWith("]"));
+        }
+    }
+
+    // --------------------------------------------------
+    // apiSaveNode, apiDeleteNode — the tree's JSON writes
+    // --------------------------------------------------
+
+    /**
+     * The tree's create goes through the very same rule the form posts use and
+     * answers a JSON verdict rather than redirecting — the {@code saving} arm of
+     * {@code verdictJson}.
+     */
+    @Test
+    void theTreeCreatesANodeAndAnswersJson() {
+        AdminNomenclatureResource resource = newResource();
+        Nomenclature itm = scheme("ITM_FR");
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubLevels(mocked, itm, 2, 4);
+            stubByCode(mocked, "ITM_FR", itm);
+            stubByCode(mocked, "10", node(itm, "10", 0, "FRAIS TRAD"));
+            stubByCode(mocked, "1002", null);
+            try (org.mockito.MockedConstruction<ProductFamily> made =
+                         org.mockito.Mockito.mockConstruction(ProductFamily.class)) {
+                Response response = resource.apiSaveNode(nodeForm("ITM_FR", "1002", "BOUCHERIE"));
+                assertEquals(200, response.getStatus());
+                assertTrue(jsonOk(response));
+                assertEquals("Nœud « 1002 » créé.", jsonMessage(response));
+            }
+        }
+    }
+
+    /**
+     * The tree's delete goes through {@code removeNode} and answers a JSON
+     * verdict — the {@code !saving} arm of {@code verdictJson}.
+     */
+    @Test
+    void theTreeDeletesANodeAndAnswersJson() {
+        AdminNomenclatureResource resource = newResource();
+        Nomenclature itm = scheme("ITM_FR");
+        ProductFamily leaf = spy(node(itm, "1002", 1, "BOUCHERIE"));
+        leaf.products = null;
+        doNothing().when(leaf).delete();
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubLevels(mocked, itm, 2, 4);
+            stubByCode(mocked, "ITM_FR", itm);
+            stubByCode(mocked, "1002", leaf);
+            stubLevelNodes(mocked, itm, 2, List.of());
+            Response response = resource.apiDeleteNode(nodeForm("ITM_FR", "1002", null));
+            assertEquals(200, response.getStatus());
+            assertTrue(jsonOk(response));
+            assertEquals("Nœud « 1002 » supprimé.", jsonMessage(response));
+            verify(leaf).delete();
+        }
+    }
+
+    /**
+     * Both tree writes refuse an unknown scheme with a 404 JSON verdict: a
+     * missing scheme field takes the {@code schemeCode.isEmpty()} arm and an
+     * absent code takes the lookup arm.
+     */
+    @Test
+    void theTreeWritesRefuseAnUnknownScheme() {
+        AdminNomenclatureResource save = newResource();
+        Response bare = save.apiSaveNode(nodeForm(null, "1002", "BOUCHERIE"));
+        assertEquals(404, bare.getStatus());
+        assertFalse(jsonOk(bare));
+        assertEquals("Nomenclature introuvable.", jsonMessage(bare));
+        AdminNomenclatureResource remove = newResource();
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubByCode(mocked, "ABSENT", null);
+            Response absent = remove.apiDeleteNode(nodeForm("ABSENT", "1002", null));
+            assertEquals(404, absent.getStatus());
+            assertFalse(jsonOk(absent));
+        }
+    }
+
+    // --------------------------------------------------
+    // NodeRow
+    // --------------------------------------------------
+
+    /**
+     * A node row says whether anything hangs under it: a node with children is
+     * openable, a leaf is not — the two arms of {@code isOpenable} — and its
+     * getters read back the code, label and level it was built with.
+     */
+    @Test
+    void aNodeRowSaysWhetherItIsOpenable() {
+        AdminNomenclatureResource.NodeRow branch =
+                new AdminNomenclatureResource.NodeRow("10", "FRAIS", 0, 3L);
+        assertEquals("10", branch.getCode());
+        assertEquals("FRAIS", branch.getLabel());
+        assertEquals(0, branch.getLevel());
+        assertEquals(3L, branch.getChildren());
+        assertTrue(branch.isOpenable());
+        AdminNomenclatureResource.NodeRow leaf =
+                new AdminNomenclatureResource.NodeRow("1002", "BOUCHERIE", 1, 0L);
+        assertFalse(leaf.isOpenable());
+    }
+
+    // --------------------------------------------------
+    // Gap-fill: the still-red arms of the guards and loops
+    // --------------------------------------------------
+
+    /**
+     * A delete posted with NO form at all reads its scheme through the null-form
+     * arm of {@code value} and finds the scheme code empty — the
+     * {@code form == null} arm of {@code value} and the
+     * {@code schemeCode.isEmpty()} arm of {@code deleteNode} at once.
+     */
+    @Test
+    void deletingWithNoFormIsRefusedThroughTheEmptyArms() {
+        AdminNomenclatureResource resource = newResource();
+        Response response = resource.deleteNode(null);
+        assertFalse(ok(response));
+        assertEquals("Nomenclature introuvable.", notice(response));
+    }
+
+    /**
+     * A move posted with an empty scheme field takes the
+     * {@code schemeCode.isEmpty()} arm and answers 404, and a move whose node
+     * code is empty takes the {@code code.isEmpty()} arm of {@code moveNode}.
+     */
+    @Test
+    void aMoveWithAnEmptySchemeOrEmptyCodeIsRefused() {
+        AdminNomenclatureResource emptyScheme = newResource();
+        Response bySchemeless = emptyScheme.apiMoveNode(moveForm(null, "1002", "20"));
+        assertEquals(404, bySchemeless.getStatus());
+        assertFalse(jsonOk(bySchemeless));
+        AdminNomenclatureResource emptyCode = newResource();
+        Nomenclature itm = scheme("ITM_FR");
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubByCode(mocked, "ITM_FR", itm);
+            Response byCodeless = emptyCode.apiMoveNode(moveForm("ITM_FR", "", "20"));
+            assertFalse(jsonOk(byCodeless));
+            assertEquals("Nœud «  » introuvable.", jsonMessage(byCodeless));
+        }
+    }
+
+    /**
+     * The move's in-memory subtree scan skips a node whose code is null rather
+     * than throwing — the {@code candidate.code != null} arm of
+     * {@code subtreeOf} — and the move still goes through for the real subtree.
+     */
+    @Test
+    void theSubtreeScanSkipsANullCodedNode() {
+        AdminNomenclatureResource resource = newResource();
+        Nomenclature itm = scheme("ITM_FR");
+        ProductFamily moved = spy(node(itm, "1002", 1, "BOUCHERIE"));
+        doNothing().when(moved).persist();
+        ProductFamily ghost = node(itm, "9999", 1, "SANS CODE");
+        ghost.code = null;
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubLevels(mocked, itm, 2, 4);
+            stubByCode(mocked, "ITM_FR", itm);
+            stubByCode(mocked, "1002", moved);
+            stubByCode(mocked, "20", node(itm, "20", 0, "EPICERIE"));
+            stubByCode(mocked, "2002", null);
+            mocked.when(() -> PanacheEntityBase.list("nomenclature.id = ?1 order by level, code",
+                    itm.id)).thenReturn(java.util.Arrays.asList(moved, ghost));
+            Response response = resource.apiMoveNode(moveForm("ITM_FR", "1002", "20"));
+            assertTrue(jsonOk(response));
+            assertEquals("2002", moved.code);
+        }
+    }
+
+    /**
+     * A search matches a node by its LABEL even when its code is null (the
+     * {@code node.code != null} false arm of {@code matches}), and leaves out a
+     * node that matches neither because its label is null (the
+     * {@code node.description != null} false arm); the null-coded hit's path is
+     * its label alone (the {@code node.code == null} arm of {@code pathOf}),
+     * while a hit deeper than every level walks its whole ancestry (the
+     * normal-completion arm of the {@code pathOf} loop).
+     */
+    @Test
+    void aSearchReadsTheCornersOfMatchesAndPath() {
+        AdminNomenclatureResource resource = newResource();
+        Nomenclature itm = scheme("ITM_FR");
+        ProductFamily ghost = node(itm, "x", 0, "XENON");
+        ghost.code = null;
+        ProductFamily dumb = node(itm, "99", 0, "N");
+        dumb.description = null;
+        ProductFamily deep = node(itm, "100200", 2, "OXO");
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubByCode(mocked, "ITM_FR", itm);
+            stubLevels(mocked, itm, 2, 4);
+            stubByCode(mocked, "10", node(itm, "10", 0, "FRAIS"));
+            stubByCode(mocked, "1002", node(itm, "1002", 1, "BOUCHERIE"));
+            mocked.when(() -> PanacheEntityBase.list("nomenclature.id = ?1 order by level, code",
+                    itm.id)).thenReturn(java.util.Arrays.asList(ghost, dumb, deep));
+            Response response = resource.search("ITM_FR", "x");
+            assertEquals("[{\"code\":\"\",\"label\":\"XENON\",\"level\":0,\"openable\":false,"
+                    + "\"path\":\"XENON\"},"
+                    + "{\"code\":\"100200\",\"label\":\"OXO\",\"level\":2,\"openable\":false,"
+                    + "\"path\":\"FRAIS › BOUCHERIE › OXO\"}]", response.getEntity().toString());
+        }
+    }
+
+    /**
+     * The page opened on a parent code of an undeclared length lists the top
+     * level (the {@code placed == null} arm of {@code levelOf}) and, with a
+     * parent longer than every level, its breadcrumb walks to the last level
+     * without a break — the normal-completion arm of the {@code crumbs} loop.
+     */
+    @Test
+    void aParentLongerThanEveryLevelWalksTheWholeBreadcrumb() {
+        AdminNomenclatureResource resource = newResource();
+        TemplateInstance instance = wireTemplate(resource);
+        Nomenclature itm = scheme("ITM_FR");
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubSchemes(mocked, List.of(itm));
+            stubLevels(mocked, itm, 2, 4);
+            stubLevelNodes(mocked, itm, 0, List.of());
+            stubByCode(mocked, "10", node(itm, "10", 0, "FRAIS"));
+            stubByCode(mocked, "1002", node(itm, "1002", 1, "BOUCHERIE"));
+            resource.nomenclaturesPage("ITM_FR", "100200", 1, null, true);
+            verify(instance).data("parent", "100200");
+            verify(instance).data("total", 0);
+            verify(instance).data(eq("crumbs"), any());
+        }
+    }
+
+    /**
+     * On the page the level listing skips a node whose code is null when a
+     * parent is opened (the {@code node.code != null} arm of {@code childrenOf})
+     * and again when counting a node's children (the same arm of
+     * {@code countChildren}), the real child being counted alongside.
+     */
+    @Test
+    void theListingAndTheChildCountSkipNullCodedNodes() {
+        AdminNomenclatureResource resource = newResource();
+        TemplateInstance instance = wireTemplate(resource);
+        Nomenclature itm = scheme("ITM_FR");
+        ProductFamily bouch = node(itm, "1002", 1, "BOUCHERIE");
+        ProductFamily ghost = node(itm, "1099", 1, "SANS CODE");
+        ghost.code = null;
+        ProductFamily crem = node(itm, "2001", 1, "CREMERIE");
+        ProductFamily child = node(itm, "10020200", 2, "BOEUF");
+        ProductFamily ghost2 = node(itm, "10020400", 2, "SANS CODE");
+        ghost2.code = null;
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubSchemes(mocked, List.of(itm));
+            stubLevels(mocked, itm, 2, 4, 8);
+            stubLevelNodes(mocked, itm, 1, java.util.Arrays.asList(bouch, ghost, crem));
+            stubLevelNodes(mocked, itm, 2, java.util.Arrays.asList(child, ghost2));
+            stubByCode(mocked, "10", node(itm, "10", 0, "FRAIS"));
+            resource.nomenclaturesPage("ITM_FR", "10", 1, null, true);
+            verify(instance).data("total", 1);
+            verify(instance).data("parent", "10");
+        }
+    }
+
+    /**
+     * A scheme that declares no level at all still draws: the next-length hint
+     * falls back on one (the {@code depth() == 0} arm of {@code nextLength}),
+     * the scheme itself being non-null.
+     */
+    @Test
+    void aSchemeWithoutLevelsProposesTheFirstLength() {
+        AdminNomenclatureResource resource = newResource();
+        TemplateInstance instance = wireTemplate(resource);
+        Nomenclature neuf = scheme("NEUF");
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubSchemes(mocked, List.of(neuf));
+            stubLevels(mocked, neuf);
+            stubLevelNodes(mocked, neuf, 0, List.of());
+            resource.nomenclaturesPage("NEUF", null, 1, null, true);
+            verify(instance).data("nextLength", 1);
+            verify(instance).data("scheme", neuf);
+        }
+    }
+
+    /**
+     * The displayed level name and its custom flag read the level table: a
+     * custom level flags the screen so (the {@code custom} true arm of
+     * {@code isCustomLevel}), a level whose label is null and one whose label is
+     * blank both fall back on a generic name (the two remaining arms of
+     * {@code levelLabel}).
+     */
+    @Test
+    void theDisplayedLevelReadsItsNameAndCustomFlag() {
+        AdminNomenclatureResource resource = newResource();
+        TemplateInstance instance = wireTemplate(resource);
+        Nomenclature itm = scheme("ITM_FR");
+        NomenclatureLevel rayon = new NomenclatureLevel();
+        rayon.nomenclature = itm;
+        rayon.rank = 0;
+        rayon.label = "Rayon";
+        rayon.codeLength = 2;
+        rayon.custom = true;
+        NomenclatureLevel nameless = new NomenclatureLevel();
+        nameless.nomenclature = itm;
+        nameless.rank = 1;
+        nameless.label = null;
+        nameless.codeLength = 4;
+        NomenclatureLevel blank = new NomenclatureLevel();
+        blank.nomenclature = itm;
+        blank.rank = 2;
+        blank.label = "  ";
+        blank.codeLength = 8;
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubSchemes(mocked, List.of(itm));
+            mocked.when(() -> PanacheEntityBase.list("nomenclature.id = ?1 order by rank",
+                    itm.id)).thenReturn(List.of(rayon, nameless, blank));
+            stubLevelNodes(mocked, itm, 0, List.of());
+            resource.nomenclaturesPage("ITM_FR", null, 1, null, true);
+            verify(instance).data("levelLabel", "Rayon");
+            verify(instance).data("levelCustom", true);
+        }
+    }
+
+    /**
+     * A blank posted length is unusable exactly like an absent one: the
+     * {@code posted.trim().isEmpty()} arm of {@code digits} refuses the whole
+     * table.
+     */
+    @Test
+    void aBlankLengthIsUnusable() {
+        AdminNomenclatureResource resource = newResource();
+        Nomenclature itm = scheme("ITM_FR");
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubByCode(mocked, "ITM_FR", itm);
+            stubLevels(mocked, itm, 2, 4);
+            itm.reloadLevels();
+            Response response = resource.saveLevels(levelForm("ITM_FR", "2", "   "));
+            assertFalse(ok(response));
+            assertEquals("Niveau 1 : le nombre de caractères doit être un entier d'au"
+                    + " moins 1.", notice(response));
+        }
+    }
+
+    /**
+     * A blank posted rank is unusable exactly like an absent one: the
+     * {@code posted.trim().isEmpty()} arm of {@code rank} leaves the lookup with
+     * nothing and the removal is refused.
+     */
+    @Test
+    void aBlankRankIsUnusable() {
+        AdminNomenclatureResource resource = newResource();
+        Nomenclature itm = scheme("ITM_FR");
+        MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
+        form.putSingle("scheme", "ITM_FR");
+        form.putSingle("rank", "   ");
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubByCode(mocked, "ITM_FR", itm);
+            Response response = resource.deleteLevel(form);
+            assertFalse(ok(response));
+            assertEquals("Niveau introuvable.", notice(response));
+        }
+    }
+
+    /**
+     * A level appended with NO label field falls back on its rank (the
+     * {@code posted == null} arm of the label default in {@code addLevel}).
+     */
+    @Test
+    void anAppendedLevelWithoutALabelFallsBackOnItsRank() {
+        AdminNomenclatureResource resource = newResource();
+        Nomenclature itm = scheme("ITM_FR");
+        MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
+        form.putSingle("scheme", "ITM_FR");
+        form.putSingle("length", "12");
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubByCode(mocked, "ITM_FR", itm);
+            stubLevels(mocked, itm, 2, 4, 8);
+            try (MockedConstruction<NomenclatureLevel> created =
+                    mockConstruction(NomenclatureLevel.class)) {
+                Response response = resource.addLevel(form);
+                assertTrue(ok(response));
+                assertEquals("Niveau 3", created.constructed().get(0).label);
+            }
+        }
+    }
 }

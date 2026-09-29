@@ -175,6 +175,22 @@ class NomenclatureTest {
     }
 
     /**
+     * A level above declared no shorter than the node's own code yields no
+     * parent even when the node sits below the top: the {@code >=} arm of the
+     * walk up, reached with a non-null level above whose length is not smaller
+     * than the node code's.
+     */
+    @Test
+    void aLevelAboveNotShorterThanTheNodeYieldsNoParent() {
+        Nomenclature itm = scheme("ITM_FR");
+        List<NomenclatureLevel> inverted = List.of(level(0, "A", 10, false),
+                level(1, "B", 5, false));
+        try (MockedStatic<PanacheEntityBase> mocked = withLevels(inverted)) {
+            assertNull(itm.parentCodeOf("10020"));
+        }
+    }
+
+    /**
      * The rank lookup answers the declared ranks and nothing beyond, and the
      * depth is the number of levels.
      */

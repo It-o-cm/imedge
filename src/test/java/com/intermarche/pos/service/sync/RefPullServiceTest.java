@@ -450,6 +450,50 @@ class RefPullServiceTest {
     }
 
     /**
+     * Covers the four remaining register switch arms of {@code applyDomain}
+     * (TOUCH_GROUPS, TENDERS, DOCUMENT_TEMPLATES and POSTAL_CODES) together
+     * with their anonymous {@link TypeReference} deserialization lines: each
+     * domain differs, is pulled page by page and applied, then its fingerprint
+     * is recorded.
+     */
+    @Test
+    void pullOnceAppliesTouchTenderTemplateAndPostalDomains() throws Exception {
+        SyncEndpoints endpoints = mock(SyncEndpoints.class);
+        when(endpoints.storeUrl()).thenReturn("http://store");
+        RefApplyService apply = mock(RefApplyService.class);
+        ObjectMapper mapper = mock(ObjectMapper.class);
+        HttpClient client = mock(HttpClient.class);
+        doAnswer(inv -> {
+            HttpRequest request = inv.getArgument(0);
+            String path = request.uri().getPath();
+            String query = request.uri().getQuery();
+            if (path.endsWith("/versions")) {
+                return resp(200, "VERSIONS");
+            }
+            if (query != null && query.contains("page=0")) {
+                return resp(200, "PAGE0");
+            }
+            return resp(200, "PAGEN");
+        }).when(client).send(any(HttpRequest.class), any());
+        Map<String, String> versions = Map.of(
+                "TOUCH_GROUPS", "t1", "TENDERS", "t2", "DOCUMENT_TEMPLATES", "t3", "POSTAL_CODES", "t4");
+        doReturn(versions).when(mapper).readValue(eq("VERSIONS"), any(TypeReference.class));
+        doReturn(List.of("row")).when(mapper).readValue(eq("PAGE0"), any(TypeReference.class));
+        doReturn(List.of()).when(mapper).readValue(eq("PAGEN"), any(TypeReference.class));
+        when(apply.lastApplied(any())).thenReturn(null);
+        RefPullService service = service(endpoints, apply, mapper, client);
+        service.pullOnce();
+        verify(apply).applyTouchGroups(any());
+        verify(apply).applyTenders(any());
+        verify(apply).applyDocumentTemplates(any());
+        verify(apply).applyPostalCodes(any());
+        verify(apply).recordApplied("TOUCH_GROUPS", "t1");
+        verify(apply).recordApplied("TENDERS", "t2");
+        verify(apply).recordApplied("DOCUMENT_TEMPLATES", "t3");
+        verify(apply).recordApplied("POSTAL_CODES", "t4");
+    }
+
+    /**
      * Covers the two skip arms of {@code pullOnce}: an absent remote
      * fingerprint (null) and one equal to the last applied fingerprint both
      * leave the domain untouched.
@@ -470,6 +514,95 @@ class RefPullServiceTest {
         verify(apply).lastApplied("FAMILIES");
         verify(apply, never()).applyFamilies(any());
         verify(apply, never()).recordApplied(any(), any());
+    }
+
+    /**
+     * Covers the error arm of {@code pullOnce}'s per-domain try/catch: one
+     * domain applies cleanly (its stale error, if any, is removed) while a
+     * second fails with a non-null message and a third fails with a null
+     * message (the {@code getMessage() == null} ternary), so both ternary arms
+     * are taken. The first failure is rethrown as an {@link IllegalStateException}
+     * and both failures are retained in {@code getLastErrors}/{@code getLastError},
+     * the succeeding domain absent. Also asserts the returned map is unmodifiable.
+     */
+    @Test
+    void pullOnceRetainsEachDomainErrorAndRethrowsFirst() throws Exception {
+        SyncEndpoints endpoints = mock(SyncEndpoints.class);
+        when(endpoints.storeUrl()).thenReturn("http://store");
+        RefApplyService apply = mock(RefApplyService.class);
+        ObjectMapper mapper = mock(ObjectMapper.class);
+        HttpClient client = mock(HttpClient.class);
+        doAnswer(inv -> {
+            HttpRequest request = inv.getArgument(0);
+            String path = request.uri().getPath();
+            String query = request.uri().getQuery();
+            if (path.endsWith("/versions")) {
+                return resp(200, "VERSIONS");
+            }
+            if (query != null && query.contains("page=0")) {
+                return resp(200, "PAGE0");
+            }
+            return resp(200, "PAGEN");
+        }).when(client).send(any(HttpRequest.class), any());
+        Map<String, String> versions = Map.of(
+                "ENGINE_FEEDS", "e1", "PRODUCTS", "p1", "FAMILIES", "f1");
+        doReturn(versions).when(mapper).readValue(eq("VERSIONS"), any(TypeReference.class));
+        doReturn(List.of("row")).when(mapper).readValue(eq("PAGE0"), any(TypeReference.class));
+        doReturn(List.of()).when(mapper).readValue(eq("PAGEN"), any(TypeReference.class));
+        when(apply.lastApplied(any())).thenReturn(null);
+        doThrow(new RuntimeException("feeds broke")).when(apply).applyEngineFeeds(any());
+        doThrow(new NullPointerException()).when(apply).applyProducts(any());
+        RefPullService service = service(endpoints, apply, mapper, client);
+        IllegalStateException ex = assertThrows(IllegalStateException.class, service::pullOnce);
+        assertEquals("ENGINE_FEEDS: feeds broke", ex.getMessage());
+        Map<String, String> errors = service.getLastErrors();
+        assertEquals("feeds broke", errors.get("ENGINE_FEEDS"));
+        assertEquals("NullPointerException", errors.get("PRODUCTS"));
+        assertNull(errors.get("FAMILIES"));
+        assertEquals("feeds broke", service.getLastError("ENGINE_FEEDS"));
+        assertEquals("NullPointerException", service.getLastError("PRODUCTS"));
+        assertNull(service.getLastError("FAMILIES"));
+        assertThrows(UnsupportedOperationException.class, () -> errors.put("X", "y"));
+        assertNull(service.getLastSuccessfulPull());
+    }
+
+    /**
+     * Covers the removal arm of {@code pullOnce}'s per-domain try/catch: a
+     * domain that failed on a previous cycle and applies cleanly on the next
+     * has its retained error cleared from {@code getLastErrors}, and the clean
+     * cycle stamps {@code getLastSuccessfulPull}.
+     */
+    @Test
+    void pullOnceClearsStaleDomainErrorOnSuccess() throws Exception {
+        SyncEndpoints endpoints = mock(SyncEndpoints.class);
+        when(endpoints.storeUrl()).thenReturn("http://store");
+        RefApplyService apply = mock(RefApplyService.class);
+        ObjectMapper mapper = mock(ObjectMapper.class);
+        HttpClient client = mock(HttpClient.class);
+        doAnswer(inv -> {
+            HttpRequest request = inv.getArgument(0);
+            String path = request.uri().getPath();
+            String query = request.uri().getQuery();
+            if (path.endsWith("/versions")) {
+                return resp(200, "VERSIONS");
+            }
+            if (query != null && query.contains("page=0")) {
+                return resp(200, "PAGE0");
+            }
+            return resp(200, "PAGEN");
+        }).when(client).send(any(HttpRequest.class), any());
+        doReturn(Map.of("FAMILIES", "f1")).when(mapper).readValue(eq("VERSIONS"), any(TypeReference.class));
+        doReturn(List.of("row")).when(mapper).readValue(eq("PAGE0"), any(TypeReference.class));
+        doReturn(List.of()).when(mapper).readValue(eq("PAGEN"), any(TypeReference.class));
+        when(apply.lastApplied(any())).thenReturn(null);
+        doThrow(new RuntimeException("first cycle broke")).doNothing().when(apply).applyFamilies(any());
+        RefPullService service = service(endpoints, apply, mapper, client);
+        assertThrows(IllegalStateException.class, service::pullOnce);
+        assertEquals("first cycle broke", service.getLastError("FAMILIES"));
+        service.pullOnce();
+        assertNull(service.getLastError("FAMILIES"));
+        assertTrue(service.getLastErrors().isEmpty());
+        assertNotNull(service.getLastSuccessfulPull());
     }
 
     /**

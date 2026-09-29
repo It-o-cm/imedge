@@ -9,12 +9,14 @@ import io.quarkus.runtime.StartupEvent;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
 
+import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -69,6 +71,7 @@ class PeriodCloseServiceTest {
         when(service.posSettingsService.periodCloseLeadMinutes()).thenReturn(lead);
         service.registerCommandService = mock(RegisterCommandService.class);
         service.technicalEventService = mock(TechnicalEventService.class);
+        service.retentionPurgeService = mock(RetentionPurgeService.class);
         return service;
     }
 
@@ -248,6 +251,17 @@ class PeriodCloseServiceTest {
     }
 
     /**
+     * A zero-lead window rejects a moment falling on the wrong hour: the false
+     * arm of the hour comparison in the single-minute test, which every
+     * same-hour case leaves untouched.
+     */
+    @Test
+    void aZeroLeadRejectsADifferentHour() {
+        PeriodCloseService service = newService(true, "23:30", 0);
+        assertFalse(service.inClosingWindow(LocalTime.of(22, 30)));
+    }
+
+    /**
      * A negative lead is read as no lead at all rather than opening a window
      * that runs backwards over the whole day.
      */
@@ -335,5 +349,58 @@ class PeriodCloseServiceTest {
         assertEquals(30L, PeriodCloseService.minutesUntil(LocalTime.of(23, 0), LocalTime.of(23, 30)));
         assertEquals(0L, PeriodCloseService.minutesUntil(LocalTime.of(23, 30), LocalTime.of(23, 30)));
         assertEquals(45L, PeriodCloseService.minutesUntil(LocalTime.of(23, 30), LocalTime.of(0, 15)));
+    }
+
+    /**
+     * Past the end of period, on a day it has not run yet, the retention sweep
+     * runs once and the day is stamped so it does not run again.
+     */
+    @Test
+    void theRetentionSweepRunsPastTheEndOfPeriod() {
+        PeriodCloseService service = newService(true, "23:30", 5);
+        LocalDate today = LocalDate.of(2026, 1, 15);
+        service.maybeSweep(LocalTime.of(23, 45), today);
+        verify(service.retentionPurgeService).sweep();
+        assertEquals(today, service.lastPurgeDay);
+    }
+
+    /**
+     * Before the end of period the sweep stays its hand: it must not read tables
+     * the day is still writing.
+     */
+    @Test
+    void theRetentionSweepWaitsForTheEndOfPeriod() {
+        PeriodCloseService service = newService(true, "23:30", 5);
+        service.maybeSweep(LocalTime.of(10, 0), LocalDate.of(2026, 1, 15));
+        verifyNoInteractions(service.retentionPurgeService);
+        assertNull(service.lastPurgeDay);
+    }
+
+    /**
+     * Once it has run for the day, a later tick past the end of period leaves it
+     * alone — the minute-a-tick loop launches exactly one sweep per period.
+     */
+    @Test
+    void theRetentionSweepRunsAtMostOnceADay() {
+        PeriodCloseService service = newService(true, "23:30", 5);
+        LocalDate today = LocalDate.of(2026, 1, 15);
+        service.lastPurgeDay = today;
+        service.maybeSweep(LocalTime.of(23, 50), today);
+        verifyNoInteractions(service.retentionPurgeService);
+    }
+
+    /**
+     * A tick past the end of period on a fresh day drives the sweep through the
+     * whole {@code tick} path, closing window included, from the real clock.
+     */
+    @Test
+    void aTickPastTheEndOfPeriodSweeps() {
+        PeriodCloseService service = newService(true,
+                LocalTime.now().minusMinutes(1).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm")), 5);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            stubOpenSessions(panache, List.of());
+            service.tick();
+        }
+        verify(service.retentionPurgeService).sweep();
     }
 }

@@ -202,6 +202,31 @@ public class Product extends BaseEntity {
     @jakarta.persistence.Column(name = "gift_card_amount", precision = 10, scale = 2)
     public java.math.BigDecimal giftCardAmount;
 
+    /**
+     * The EGAlim regime CODE this article is classified under, or null when the
+     * Gestion Commerciale states none.
+     *
+     * <p>A CODE and not a ceiling. The legal ceiling of a regime moves — the loi
+     * Travert took DPH from 34 % to 40 % — and it moves for a whole category at
+     * once; storing the number of percent on a hundred thousand article rows
+     * would mean rewriting the catalog to apply a law. The code points at the
+     * {@link EgalimRegime} row that carries the ceiling of the day.
+     *
+     * <p>This node COMPUTES nothing with it: the promotional-generosity cap is
+     * arbitrated by the valuation engine, which receives the classification
+     * through the article feed and the ceilings through the
+     * {@code EGALIM_REGIMES} feed. The column exists here so the article fiche
+     * and the article list can SHOW an operator which regime an article falls
+     * under, and so a regime absent from the referential can be seen rather
+     * than guessed.
+     *
+     * <p>Null is "not classified", which the engine treats as uncapped. It is
+     * not a synonym for the exempt regime: the exempt regime is a stated
+     * classification, null is the absence of one.
+     */
+    @jakarta.persistence.Column(name = "egalim_regime", length = 30)
+    public String egalimRegime;
+
     // --------------------------------------------------
     // Declared attributes (BO-02-03-18)
     // --------------------------------------------------
@@ -317,11 +342,15 @@ public class Product extends BaseEntity {
      * mirrors this in its incoming-checksum computation. The presentation
      * {@code icon}/{@code imageData} stay excluded, as before. {@code
      * checkoutLabel} and {@code internalCode} remain included and mirrored.
+     * {@code egalimRegime} is included for the same reason as the attributes: a
+     * reclassification arriving alone in a feed must be a detectable change,
+     * otherwise the checksum short-circuit would skip it and the fiche would
+     * keep showing the former category.
      *
      * @return Checksum integer value
      */
     @Override
     public int getChecksum() {
-        return Objects.hash(ean, plu==null? "":plu ,name, description, brand, referenceWeight, referenceVolume, productType, unitName, active, forbiddenToSale, checkoutLabel, internalCode, variableWeight, attributes);
+        return Objects.hash(ean, plu==null? "":plu ,name, description, brand, referenceWeight, referenceVolume, productType, unitName, active, forbiddenToSale, checkoutLabel, internalCode, variableWeight, egalimRegime, attributes);
     }
 }

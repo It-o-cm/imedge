@@ -214,4 +214,32 @@ class BackOfficeMenuTest {
         }
         assertEquals(Feature.values().length, paths.size());
     }
+
+    /**
+     * A null current user short-circuits the guard on its very first leg: the
+     * navigation is empty and nothing is read from the database.
+     */
+    @Test
+    void aNullCurrentUserSeesNoMenu() {
+        BackOfficeMenu menu = new BackOfficeMenu();
+        menu.currentUser = null;
+        menu.permissionService = mock(PermissionService.class);
+        assertTrue(menu.getGroups().isEmpty());
+    }
+
+    /**
+     * An operator resolved but carrying no id hides nothing: the second leg of
+     * the identity guard (a non-null operator with a null id) falls back to no
+     * hidden keys.
+     */
+    @Test
+    void anOperatorWithoutAnIdHidesNothing() {
+        BackOfficeMenu menu = menuFor("hd", true);
+        Employee operator = new Employee();
+        operator.id = null;
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubOperator(mocked, operator, Set.of());
+            assertEquals(Menu.values().length, menu.getGroups().size());
+        }
+    }
 }

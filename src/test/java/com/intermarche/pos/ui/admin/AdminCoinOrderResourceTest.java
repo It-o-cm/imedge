@@ -373,4 +373,21 @@ class AdminCoinOrderResourceTest {
         anonymous.currentUser = null;
         assertNull(anonymous.signedIn());
     }
+
+    /**
+     * A slip of an order whose wording is null leaves the line off — the null
+     * leg of the wording guard, distinct from the blank leg.
+     */
+    @Test
+    void theslipToleratesANullWording() {
+        AdminCoinOrderResource resource = newResource();
+        CoinOrder bare = new CoinOrder();
+        bare.orderNumber = "DM-3";
+        bare.requestedOn = LocalDate.of(2026, 9, 14);
+        bare.label = null;
+        bare.lines = new ArrayList<>();
+        String slip = resource.renderSlip(bare);
+        assertTrue(!slip.contains("Objet :"));
+        assertTrue(slip.startsWith("DEMANDE DE MONNAIE DM-3\n"));
+    }
 }

@@ -692,7 +692,12 @@ public class RefExportService {
         dto.code = island.code;
         dto.label = island.label;
         dto.active = island.active;
-        dto.terminalIds = island.terminalIds;
+        // terminalIds is no longer stored on the island: it is DERIVED from the
+        // CheckoutPoint relation, so the wire stays byte-compatible with a
+        // register that has not been updated (it still reads a semicolon list),
+        // while the truth of the relation lives on CheckoutPoint.
+        java.util.List<String> terminals = island.terminals();
+        dto.terminalIds = terminals.isEmpty() ? null : String.join(";", terminals);
         return dto;
     }
 

@@ -643,6 +643,132 @@ class AdminCustomerResourceTest {
     }
 
     /**
+     * The list page fed only nulls echoes each criterion back as the empty
+     * string, exercising the null arm of the four defaulting ternaries.
+     */
+    @Test
+    void theListPageEchoesEmptyStringsForNullCriteria() {
+        AdminCustomerResource resource = newResource();
+        TemplateInstance view = stub(resource.adminCustomers);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            stubAll(panache, List.of(customer("A1", "Acme", AccountCustomer.Origin.INTEGRATED)));
+            assertSame(view, resource.list(null, null, null, null, 1, null, true));
+        }
+        verify(view).data("text", "");
+        verify(view).data("taxId", "");
+        verify(view).data("origin", "");
+        verify(view).data("blocked", "");
+    }
+
+    /**
+     * The extraction of a bare customer — no origin, no address, not blocked, no
+     * due date, no discount, no credit limit, but a credit balance — walks the
+     * opposite arm of every per-cell ternary the fully-populated line did not.
+     */
+    @Test
+    void theExtractionRendersABareCustomer() {
+        AdminCustomerResource resource = newResource();
+        AccountCustomer bare = new AccountCustomer();
+        bare.accountNumber = "Z9";
+        bare.companyName = "Zeta";
+        bare.origin = null;
+        bare.address = null;
+        bare.blocked = false;
+        bare.dueDate = null;
+        bare.discountPercent = null;
+        bare.creditLimit = null;
+        bare.creditBalance = null;
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            stubAll(panache, List.of(bare));
+            Response response = resource.export(null, null, null, null);
+            assertEquals(200, response.getStatus());
+            String csv = (String) response.getEntity();
+            assertTrue(csv.contains("Z9;;Zeta;"));
+            assertTrue(csv.contains("false;;;;"));
+        }
+    }
+
+    /**
+     * A file whose address is already set keeps it untouched — the false arm of
+     * the address guard the null-address case did not reach.
+     */
+    @Test
+    void afileWithAnAddressKeepsIt() {
+        AdminCustomerResource resource = newResource();
+        stub(resource.adminCustomer);
+        AccountCustomer customer = customer("A1", "Acme", AccountCustomer.Origin.INTEGRATED);
+        Address original = customer.address;
+        TypedQuery<Object[]> query = mock(TypedQuery.class);
+        when(resource.entityManager.createQuery(anyString(), eq(Object[].class))).thenReturn(query);
+        when(query.setParameter("account", "A1")).thenReturn(query);
+        when(query.setMaxResults(1)).thenReturn(query);
+        when(query.getResultList()).thenReturn(List.of());
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> AccountCustomer.findById(1L)).thenReturn(customer);
+            resource.edit(1L, null, true);
+        }
+        assertSame(original, customer.address);
+    }
+
+    /**
+     * A search over a customer whose account number, business name and contact
+     * are all null matches nothing — the null-value arm of the fragment reader.
+     */
+    @Test
+    void aTextSearchOverANamelessCustomerMatchesNothing() {
+        AdminCustomerResource resource = newResource();
+        AccountCustomer nameless = new AccountCustomer();
+        nameless.accountNumber = null;
+        nameless.companyName = null;
+        nameless.address = new Address();
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            stubAll(panache, List.of(nameless));
+            assertTrue(resource.search("zzz", null, null, null).isEmpty());
+        }
+    }
+
+    /**
+     * A save whose id is absent or blank is an unknown customer, exercising both
+     * the null and the blank arms of the identifier reader.
+     */
+    @Test
+    void savingWithAnAbsentOrBlankIdIsRefused() {
+        AdminCustomerResource resource = newResource();
+        MultivaluedMap<String, String> absent = new MultivaluedHashMap<>();
+        absent.add("companyName", "Acme");
+        Response first = resource.save(absent);
+        assertEquals(303, first.getStatus());
+        assertTrue(first.getLocation().toString().contains("noticeOk=false"));
+        MultivaluedMap<String, String> blank = new MultivaluedHashMap<>();
+        blank.add("id", "   ");
+        Response second = resource.save(blank);
+        assertEquals(303, second.getStatus());
+        assertTrue(second.getLocation().toString().contains("noticeOk=false"));
+    }
+
+    /**
+     * A save carrying a blank due date clears it — the blank arm of the date
+     * reader that the null and unreadable cases did not reach.
+     */
+    @Test
+    void savingWithABlankDueDateClearsIt() {
+        AdminCustomerResource resource = newResource();
+        AccountCustomer customer = mock(AccountCustomer.class);
+        customer.dueDate = LocalDate.of(2026, 1, 1);
+        customer.address = new Address();
+        MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
+        form.add("id", "1");
+        form.add("companyName", "Acme");
+        form.add("dueDate", "   ");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> AccountCustomer.findById(1L)).thenReturn(customer);
+            resource.save(form);
+        }
+        assertNull(customer.dueDate);
+        verify(customer).persist();
+    }
+
+    /**
      * An opening with the blocking checkbox ABSENT and no fiscal identifier leaves
      * the account open and its identifier null — the false arms of both guards.
      */

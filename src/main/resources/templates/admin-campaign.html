@@ -1,0 +1,98 @@
+{!
+ ! Campaign fiche (AdminCampaignResource): edit a campaign's fields and its
+ ! budget, associate or dissociate offer codes, and duplicate it (GB-01-06-15).
+ ! The live consumption panel reads the engine through the dedicated query URL;
+ ! when that is not configured the panel says "moteur non joignable" without
+ ! breaking the page.
+ !
+ ! POST -> 303 -> notice, the same admin cycle as the other back-office pages.
+ ! No inline <style>: base.css primitives only.
+!}
+{#include admin-layout}
+
+{#title}Campagne {campaign.code ?: ''}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Campagne {campaign.code ?: ''}</h1>
+        <p class="page-sub"><a href="/admin/campaigns">← Toutes les campagnes</a></p>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+{#if campaign}
+<div class="card">
+    <h2 class="card-title">Fiche</h2>
+    <form method="post" action="/admin/campaigns/save">
+        <input type="hidden" name="code" value="{campaign.code}">
+        <div class="form-row"><label>Libellé</label><input class="input-control" name="label" value="{campaign.label ?: ''}"></div>
+        <div class="form-row"><label>Début (AAAA-MM-JJ)</label><input class="input-control" name="validFrom" type="date" value="{campaign.validFrom ?: ''}"></div>
+        <div class="form-row"><label>Fin exclue (AAAA-MM-JJ)</label><input class="input-control" name="validTo" type="date" value="{campaign.validTo ?: ''}"></div>
+        <div class="form-row"><label>Plafond montant (€)</label><input class="input-control" name="maxAmount" value="{campaign.maxAmount ?: ''}"></div>
+        <div class="form-row"><label>Plafond applications</label><input class="input-control" name="maxApplications" value="{campaign.maxApplications ?: ''}"></div>
+        <div class="form-row"><label>Par PDV</label><input type="checkbox" name="perStore" {#if campaign.perStore}checked{/if}></div>
+        <div class="form-row"><label>Notes</label><input class="input-control" name="notes" value="{campaign.notes ?: ''}"></div>
+        <div class="form-row"><label>État</label><span>{campaign.status}</span></div>
+        <button class="btn btn-primary" type="submit">Enregistrer</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2 class="card-title">Consommation</h2>
+    {#if status && status.available}
+    <div class="form-row"><label>Montant</label><span>{status.consumedAmount} / {status.maxAmount ?: '∞'} € (reste {status.remainingAmount ?: '∞'})</span></div>
+    <div class="form-row"><label>Applications</label><span>{status.consumedCount} / {status.maxApplications ?: '∞'} (reste {status.remainingCount ?: '∞'})</span></div>
+    <ul>
+        {#for st in status.byStore}
+        <li>{st.storeCode} : {st.consumedAmount} € / {st.consumedCount}</li>
+        {/for}
+    </ul>
+    <p class="page-sub">Lu du moteur le {status.readAt} (budget global approximatif par construction).</p>
+    {#else}
+    <p class="page-sub">Moteur non joignable — consommation non lue.</p>
+    {/if}
+</div>
+
+<div class="card">
+    <h2 class="card-title">Offres rattachées</h2>
+    <ul>
+        {#for offerCode in campaign.offerCodes}
+        <li>
+            <span>{offerCode}</span>
+            <form method="post" action="/admin/campaigns/offers">
+                <input type="hidden" name="code" value="{campaign.code}">
+                <input type="hidden" name="offerCode" value="{offerCode}">
+                <input type="hidden" name="action" value="remove">
+                <button class="btn btn-muted" type="submit">Dissocier</button>
+            </form>
+        </li>
+        {/for}
+    </ul>
+    <form method="post" action="/admin/campaigns/offers">
+        <input type="hidden" name="code" value="{campaign.code}">
+        <div class="form-row">
+            <label>Rattacher une offre</label>
+            <input class="input-control" name="offerCode">
+            <input type="hidden" name="action" value="add">
+            <button class="btn btn-primary" type="submit">Rattacher</button>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <h2 class="card-title">Dupliquer</h2>
+    <form method="post" action="/admin/campaigns/duplicate">
+        <input type="hidden" name="code" value="{campaign.code}">
+        <div class="form-row"><label>Nouveau code</label><input class="input-control" name="newCode" required></div>
+        <div class="form-row"><label>Dupliquer aussi les offres</label><input type="checkbox" name="withOffers"></div>
+        <button class="btn btn-primary" type="submit">Dupliquer</button>
+    </form>
+</div>
+{#else}
+<p class="page-sub">Campagne introuvable.</p>
+{/if}
+{/body}

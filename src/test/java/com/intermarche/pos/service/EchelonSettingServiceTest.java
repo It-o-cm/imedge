@@ -2,6 +2,7 @@ package com.intermarche.pos.service;
 
 import com.intermarche.pos.domain.setting.EchelonLevel;
 import com.intermarche.pos.domain.setting.EchelonSetting;
+import com.intermarche.pos.domain.store.CheckoutPoint;
 import com.intermarche.pos.domain.store.Enseigne;
 import com.intermarche.pos.domain.store.Pdv;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
@@ -489,6 +490,142 @@ class EchelonSettingServiceTest {
             panache.when(() -> EchelonSetting.list(SETTING_FOR_ECHELON, EchelonLevel.PDV, "12345"))
                     .thenReturn(List.of());
             assertEquals("inherited", service.resolve("12345", catalogKey).orElse(null));
+        }
+    }
+
+    // --- Five-level resolution: ISLAND and CHECKOUT_POINT (BO-03-09/03-10) ---
+
+    /** The query string of {@link CheckoutPoint#findByTerminal}. */
+    private static final String POINT_BY_TERMINAL = "terminalId";
+
+    /**
+     * Stubs {@code CheckoutPoint.findByTerminal(terminal)} to return the row.
+     *
+     * @param panache the active static mock
+     * @param terminalId the terminal to match
+     * @param row the checkout point to resolve, or null
+     */
+    @SuppressWarnings("unchecked")
+    private void stubPoint(MockedStatic<PanacheEntityBase> panache, String terminalId, CheckoutPoint row) {
+        PanacheQuery<CheckoutPoint> query = mock(PanacheQuery.class);
+        when(query.firstResult()).thenReturn(row);
+        panache.when(() -> CheckoutPoint.find(POINT_BY_TERMINAL, terminalId)).thenReturn(query);
+    }
+
+    /**
+     * Builds a checkout point pointing at an island.
+     *
+     * @param terminalId the terminal identifier
+     * @param islandCode the island code, or null
+     * @return the built point
+     */
+    private CheckoutPoint point(String terminalId, String islandCode) {
+        CheckoutPoint point = new CheckoutPoint();
+        point.terminalId = terminalId;
+        point.islandCode = islandCode;
+        return point;
+    }
+
+    /**
+     * A null terminal falls back to the PDV resolution alone: neither the island
+     * nor the checkout-point layer is consulted.
+     */
+    @Test
+    void resolveForTerminalNullTerminalFallsBackToPdv() {
+        EchelonSettingService service = new EchelonSettingService();
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            stubPdv(panache, "12345", pdv("12345", null));
+            panache.when(() -> EchelonSetting.list(SETTING_FOR_ECHELON, EchelonLevel.PDV, "12345"))
+                    .thenReturn(List.of(row("k", "pdv")));
+            Map<String, String> resolved = service.resolveForTerminal("12345", null, LocalDate.of(2026, 6, 15));
+            assertEquals("pdv", resolved.get("k"));
+        }
+    }
+
+    /**
+     * The full five-level precedence: a value posed on the checkout point wins
+     * over the island's, which wins over the PDV's — and each level contributes
+     * the keys the more specific ones leave untouched.
+     */
+    @Test
+    void resolveForTerminalCheckoutPointWinsOverIslandOverPdv() {
+        EchelonSettingService service = new EchelonSettingService();
+        LocalDate asOf = LocalDate.of(2026, 6, 15);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            stubPdv(panache, "12345", pdv("12345", null));
+            stubPoint(panache, "POS01", point("POS01", "AVANT"));
+            panache.when(() -> EchelonSetting.list(SETTING_FOR_ECHELON, EchelonLevel.PDV, "12345"))
+                    .thenReturn(List.of(row("k", "pdv"), row("m", "pdvM"), row("onlyPdv", "P")));
+            panache.when(() -> EchelonSetting.list(SETTING_FOR_ECHELON, EchelonLevel.ISLAND, "AVANT"))
+                    .thenReturn(List.of(row("k", "island"), row("m", "islandM"), row("onlyIsland", "I")));
+            panache.when(() -> EchelonSetting.list(SETTING_FOR_ECHELON, EchelonLevel.CHECKOUT_POINT, "POS01"))
+                    .thenReturn(List.of(row("k", "point")));
+            Map<String, String> resolved = service.resolveForTerminal("12345", "POS01", asOf);
+            assertEquals("point", resolved.get("k"));
+            assertEquals("islandM", resolved.get("m"));
+            assertEquals("I", resolved.get("onlyIsland"));
+            assertEquals("P", resolved.get("onlyPdv"));
+        }
+    }
+
+    /**
+     * A terminal with no checkout point skips the island layer but still takes a
+     * value posed directly on its identifier at the CHECKOUT_POINT level.
+     */
+    @Test
+    void resolveForTerminalWithNoPointSkipsTheIslandLayer() {
+        EchelonSettingService service = new EchelonSettingService();
+        LocalDate asOf = LocalDate.of(2026, 6, 15);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            stubPdv(panache, "12345", pdv("12345", null));
+            stubPoint(panache, "POS01", null);
+            panache.when(() -> EchelonSetting.list(SETTING_FOR_ECHELON, EchelonLevel.PDV, "12345"))
+                    .thenReturn(List.of(row("k", "pdv")));
+            panache.when(() -> EchelonSetting.list(SETTING_FOR_ECHELON, EchelonLevel.CHECKOUT_POINT, "POS01"))
+                    .thenReturn(List.of(row("k", "point")));
+            Map<String, String> resolved = service.resolveForTerminal("12345", "POS01", asOf);
+            assertEquals("point", resolved.get("k"));
+        }
+    }
+
+    /**
+     * A checkout point tied to no island skips the island layer (the
+     * {@code islandCode != null} arm), the checkout-point layer still applying.
+     */
+    @Test
+    void resolveForTerminalWithPointButNoIslandSkipsTheIslandLayer() {
+        EchelonSettingService service = new EchelonSettingService();
+        LocalDate asOf = LocalDate.of(2026, 6, 15);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            stubPdv(panache, "12345", pdv("12345", null));
+            stubPoint(panache, "POS01", point("POS01", null));
+            panache.when(() -> EchelonSetting.list(SETTING_FOR_ECHELON, EchelonLevel.PDV, "12345"))
+                    .thenReturn(List.of(row("k", "pdv")));
+            panache.when(() -> EchelonSetting.list(SETTING_FOR_ECHELON, EchelonLevel.CHECKOUT_POINT, "POS01"))
+                    .thenReturn(List.of(row("j", "point")));
+            Map<String, String> resolved = service.resolveForTerminal("12345", "POS01", asOf);
+            assertEquals("pdv", resolved.get("k"));
+            assertEquals("point", resolved.get("j"));
+        }
+    }
+
+    /**
+     * The public {@code resolveForTerminal} delegates to the dated core with the
+     * current day; with only immediate rows it returns the resolved values.
+     */
+    @Test
+    void resolveForTerminalPublicUsesToday() {
+        EchelonSettingService service = new EchelonSettingService();
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            stubPdv(panache, "12345", pdv("12345", null));
+            stubPoint(panache, "POS01", point("POS01", "AVANT"));
+            panache.when(() -> EchelonSetting.list(SETTING_FOR_ECHELON, EchelonLevel.PDV, "12345"))
+                    .thenReturn(List.of());
+            panache.when(() -> EchelonSetting.list(SETTING_FOR_ECHELON, EchelonLevel.ISLAND, "AVANT"))
+                    .thenReturn(List.of());
+            panache.when(() -> EchelonSetting.list(SETTING_FOR_ECHELON, EchelonLevel.CHECKOUT_POINT, "POS01"))
+                    .thenReturn(List.of(row("k", "point")));
+            assertEquals("point", service.resolveForTerminal("12345", "POS01").get("k"));
         }
     }
 }

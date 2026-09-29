@@ -30,8 +30,17 @@ public enum Feature {
     /** The ECHELON parameters screen: country, enseigne, point of sale. */
     ECHELON("echelon", Menu.PARAMETRAGE, "Échelons", "/admin/echelons"),
 
+    /** The CHECKOUT POINT screen: the registers as administered objects (BO-03-09). */
+    CHECKOUT_POINT("checkout_point", Menu.PARAMETRAGE, "Points de caisse", "/admin/checkout-points"),
+
+    /** The CHECKOUT ISLAND screen: the register groups as settings-bearing objects (BO-03-10). */
+    CHECKOUT_ISLAND("checkout_island", Menu.PARAMETRAGE, "Îlots de caisse", "/admin/checkout-islands"),
+
     /** The TENDER referential screen: the administered settlement methods. */
     TENDER("tender", Menu.PARAMETRAGE, "Règlements", "/admin/tenders"),
+
+    /** The CURRENCY referential screen: foreign and legacy currency rates (EXP-22, LC-02-05-02). */
+    CURRENCY("currency", Menu.PARAMETRAGE, "Devises", "/admin/currencies"),
 
     /** The DOCUMENT TEMPLATE screen: the administered layouts. */
     TEMPLATE("template", Menu.PARAMETRAGE, "Gabarits", "/admin/templates"),
@@ -53,6 +62,12 @@ public enum Feature {
 
     /** The VAT screen: the regimes every price points at (BO-02-03-14). */
     VAT_RATE("vat_rate", Menu.ARTICLES, "TVA", "/admin/vat-rates"),
+
+    /** The EGALIM screen: the legal categories that cap promotional generosity. */
+    EGALIM_REGIME("egalim_regime", Menu.ARTICLES, "EGAlim", "/admin/egalim-regimes"),
+
+    /** The CAMPAIGN screen: generosity campaigns and their budgets (GB-01-06-15). */
+    CAMPAIGN("campaign", Menu.ARTICLES, "Campagnes", "/admin/campaigns"),
 
     /** The CUSTOMERS-IN-ACCOUNT referential screen (BO-02-04-22/23). */
     CUSTOMER("customer", Menu.PARAMETRAGE, "Clients en compte", "/admin/customers"),

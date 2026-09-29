@@ -151,6 +151,20 @@ class ReportCriteriaTest {
     }
 
     /**
+     * A parameter present but carrying an empty value list is read as absent (the
+     * empty-list arm of the first-value read), falling back to the current day.
+     */
+    @Test
+    void presentButEmptyValueListIsReadAsAbsent() {
+        MultivaluedMap<String, String> params = params();
+        params.put("period", new java.util.ArrayList<>());
+        params.put("reference", new java.util.ArrayList<>());
+        ReportCriteria criteria = ReportCriteria.fromParams(params);
+        assertEquals(ReportPeriod.TODAY, criteria.period);
+        assertNull(criteria.reference);
+    }
+
+    /**
      * A blank option is stored as no option at all.
      */
     @Test

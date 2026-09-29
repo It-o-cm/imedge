@@ -101,6 +101,20 @@ public class ProductCsvResource extends ImporterCsvResource {
     static final String COL_ATTRIBUTES = "ATTRIBUTES";
 
     /**
+     * Header name of the OPTIONAL EGAlim classification: the CODE of the regime
+     * the article falls under, as the {@code EGALIM_REGIMES} referential
+     * declares it ({@code FOOD_34}, {@code DPH_40}, {@code EXEMPT}…).
+     *
+     * <p>A code and never a number of percent: the ceiling belongs to the
+     * regime and moves with the law, the classification belongs to the article
+     * and moves with the Gestion Commerciale. A feed not carrying the column
+     * leaves the classification untouched, like every other optional column; a
+     * column present with an empty cell UNCLASSIFIES the article, which is what
+     * a Gestion Commerciale emptying the field means.
+     */
+    static final String COL_EGALIM_REGIME = "EGALIM_REGIME";
+
+    /**
      * Header of the column naming the article's place in the NOMENCLATURE
      * (BO-02-03-14): the code of the node it is filed under, usually the
      * sous-famille. Optional — a feed that does not carry it leaves the
@@ -192,7 +206,7 @@ public class ProductCsvResource extends ImporterCsvResource {
         } else {
             // Update existing if data changed (Checksum Optimization)
             int incomingChecksum = computeIncomingChecksum(data, product);
-            if (product.checksum != incomingChecksum) {
+            if (product.changedFrom(incomingChecksum)) {
                 product = Product.findById(product.id);
                 feedProduct(data, product);
                 counters[1]++; // Updated
@@ -263,9 +277,35 @@ public class ProductCsvResource extends ImporterCsvResource {
         if (data.has(COL_VARIABLE_WEIGHT)) {
             product.variableWeight = safeParseBoolean(data, COL_VARIABLE_WEIGHT);
         }
+        if (data.has(COL_EGALIM_REGIME)) {
+            product.egalimRegime = egalimRegime(data);
+        }
         if (data.has(COL_ATTRIBUTES)) {
             mergeAttributes(product.attributes, safeGet(data, COL_ATTRIBUTES));
         }
+    }
+
+    /**
+     * Reads the EGAlim classification of one line, normalized the way the
+     * referential stores it.
+     *
+     * <p>Upper-cased and trimmed, because the code is matched against the
+     * {@code EGALIM_REGIMES} referential and against what the valuation engine
+     * holds: a catalog answering {@code food_34} where the referential says
+     * {@code FOOD_34} classifies an article under a category nothing carries,
+     * and the screen would show it as unknown. A blank cell lands as NULL and
+     * not as "", so "unclassified" has ONE representation.
+     *
+     * @param data the parsed CSV line
+     * @return the regime code, or null when the cell is empty
+     */
+    private String egalimRegime(LineData data) {
+        String raw = safeGet(data, COL_EGALIM_REGIME);
+        if (raw == null) {
+            return null;
+        }
+        String trimmed = raw.trim().toUpperCase(java.util.Locale.ROOT);
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     /**
@@ -341,6 +381,8 @@ public class ProductCsvResource extends ImporterCsvResource {
                 ? safeGet(data, COL_INTERNAL_CODE) : existing.internalCode;
         boolean variableWeight = data.has(COL_VARIABLE_WEIGHT)
                 ? safeParseBoolean(data, COL_VARIABLE_WEIGHT) : existing.variableWeight;
+        String egalimRegime = data.has(COL_EGALIM_REGIME)
+                ? egalimRegime(data) : existing.egalimRegime;
         return Objects.hash(
                 data.code,                                      // ean
                 plu == null ? "" : plu,                         // plu
@@ -356,6 +398,7 @@ public class ProductCsvResource extends ImporterCsvResource {
                 checkoutLabel,                                  // checkoutLabel
                 internalCode,                                   // internalCode
                 variableWeight,                                 // variableWeight
+                egalimRegime,                                   // egalimRegime
                 incomingAttributes(data, existing)              // attributes (BO-02-03-18)
         );
     }

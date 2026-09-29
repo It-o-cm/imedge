@@ -1,10 +1,20 @@
 package com.intermarche.pos.imports;
 
 import com.intermarche.pos.domain.payment.AccountCustomer;
+import io.quarkus.hibernate.orm.panache.Panache;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
+import jakarta.persistence.EntityManager;
+import jakarta.ws.rs.core.Response;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.MockedStatic;
 
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
+import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -12,7 +22,10 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.verify;
@@ -179,6 +192,52 @@ class AccountCustomerCsvResourceTest {
     }
 
     /**
+     * A free-field pair whose two cells are BOTH missing from the row — the
+     * label and the value indices both fall beyond the line's cells, so each
+     * reads as null — is not a field: this exercises the null arms of the
+     * emptiness guard that an empty-string cell never reaches.
+     */
+    @Test
+    void afreePairWithBothCellsMissingIsNotAField() {
+        List<String> columns = List.of(AccountCustomerCsvResource.COL_ACCOUNT_NUMBER,
+                "FREE_1_LABEL", "FREE_1_VALUE");
+        List<AccountCustomer.FreeField> fields = resource.freeFields(row(columns, "A1"));
+        assertTrue(fields.isEmpty());
+    }
+
+    /**
+     * A FULL import blocks the accounts the file did not carry once the reading
+     * is done: an empty file makes the block query fire over every unblocked
+     * account, and the endpoint answers 200.
+     */
+    @Test
+    void afullImportBlocksTheAbsentAccountsAfterReading() {
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> AccountCustomer.list("blocked = false")).thenReturn(List.of());
+            InputStream stream = new ByteArrayInputStream(
+                    "ACCOUNT_NUMBER|COMPANY_NAME\n".getBytes(StandardCharsets.UTF_8));
+            Response response = resource.importCustomers(stream, "full");
+            assertEquals(200, response.getStatus());
+            panache.verify(() -> AccountCustomer.list("blocked = false"));
+        }
+    }
+
+    /**
+     * A DELTA import blocks nothing: the mode is not full, so the block query
+     * is never issued and the endpoint still answers 200.
+     */
+    @Test
+    void adeltaImportBlocksNothing() {
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            InputStream stream = new ByteArrayInputStream(
+                    "ACCOUNT_NUMBER|COMPANY_NAME\n".getBytes(StandardCharsets.UTF_8));
+            Response response = resource.importCustomers(stream, null);
+            assertEquals(200, response.getStatus());
+            panache.verifyNoInteractions();
+        }
+    }
+
+    /**
      * A file declaring no free-field column yields none.
      */
     @Test
@@ -230,6 +289,232 @@ class AccountCustomerCsvResourceTest {
             panache.when(() -> AccountCustomer.find("accountNumber", "A1")).thenReturn(query);
             List<String> columns = List.of(AccountCustomerCsvResource.COL_ACCOUNT_NUMBER);
             assertEquals(known, resource.findEntityForLine(row(columns, "A1")));
+        }
+    }
+
+    /**
+     * The nineteen consumed columns, in the order the wire schema declares
+     * them, for the rows that exercise the create and update paths.
+     *
+     * @return the header names of every column this importer reads
+     */
+    private List<String> allColumns() {
+        return List.of(AccountCustomerCsvResource.COL_ACCOUNT_NUMBER,
+                AccountCustomerCsvResource.COL_COMPANY_NAME,
+                AccountCustomerCsvResource.COL_CIVILITY,
+                AccountCustomerCsvResource.COL_LAST_NAME,
+                AccountCustomerCsvResource.COL_FIRST_NAME,
+                AccountCustomerCsvResource.COL_STREET_LINE1,
+                AccountCustomerCsvResource.COL_POSTAL_CODE,
+                AccountCustomerCsvResource.COL_CITY,
+                AccountCustomerCsvResource.COL_SIRET,
+                AccountCustomerCsvResource.COL_VAT_NUMBER,
+                AccountCustomerCsvResource.COL_TAX_ID,
+                AccountCustomerCsvResource.COL_SEGMENT,
+                AccountCustomerCsvResource.COL_PHONE,
+                AccountCustomerCsvResource.COL_EMAIL,
+                AccountCustomerCsvResource.COL_BLOCKED,
+                AccountCustomerCsvResource.COL_DUE_DATE,
+                AccountCustomerCsvResource.COL_DISCOUNT_PERCENT,
+                AccountCustomerCsvResource.COL_CREDIT_LIMIT,
+                AccountCustomerCsvResource.COL_CREDIT_BALANCE);
+    }
+
+    /**
+     * An account absent from the pre-fetched map is CREATED: it is stamped as
+     * integrated, fed from the row and handed to the entity manager, and the
+     * created counter — not the updated one — moves. A row that names none of
+     * the optional columns leaves every optional field null, its due date
+     * unread and its balance floored at zero, and its address non-null because
+     * a fresh account already carries an empty one.
+     */
+    @Test
+    void anUnknownAccountIsCreatedAndPersisted() {
+        try (MockedStatic<Panache> panache = mockStatic(Panache.class)) {
+            EntityManager em = mock(EntityManager.class);
+            panache.when(Panache::getEntityManager).thenReturn(em);
+            List<String> columns = List.of(AccountCustomerCsvResource.COL_ACCOUNT_NUMBER,
+                    AccountCustomerCsvResource.COL_COMPANY_NAME);
+            int[] counters = {0, 0};
+            resource.processLineLogic(row(columns, "A1", "Acme"), new HashMap<>(), counters);
+            ArgumentCaptor<AccountCustomer> captor = ArgumentCaptor.forClass(AccountCustomer.class);
+            verify(em).persist(captor.capture());
+            AccountCustomer created = captor.getValue();
+            assertEquals(1, counters[0]);
+            assertEquals(0, counters[1]);
+            assertEquals("A1", created.accountNumber);
+            assertEquals(AccountCustomer.Origin.INTEGRATED, created.origin);
+            assertEquals("Acme", created.companyName);
+            assertNull(created.civility);
+            assertNull(created.dueDate);
+            assertNull(created.creditLimit);
+            assertEquals(BigDecimal.ZERO, created.creditBalance);
+            assertNotNull(created.address);
+            assertTrue(created.freeFields.isEmpty());
+        }
+    }
+
+    /**
+     * A create reads every column the file declares: the contact, the address,
+     * the fiscal identifiers, the flags, a readable due date, the two decimals
+     * and the balance the row carries rather than the floored zero.
+     */
+    @Test
+    void aCreateReadsEveryColumnItIsGiven() {
+        try (MockedStatic<Panache> panache = mockStatic(Panache.class)) {
+            EntityManager em = mock(EntityManager.class);
+            panache.when(Panache::getEntityManager).thenReturn(em);
+            int[] counters = {0, 0};
+            resource.processLineLogic(row(allColumns(), "A1", "Acme", "M.", "Doe", "John",
+                    "1 rue", "75001", "Paris", "SIR123", "FR99", "TAX7", "GOLD",
+                    "0102030405", "a@b.c", "true", "2026-01-15", "5.00", "1000.00", "250.00"),
+                    new HashMap<>(), counters);
+            ArgumentCaptor<AccountCustomer> captor = ArgumentCaptor.forClass(AccountCustomer.class);
+            verify(em).persist(captor.capture());
+            AccountCustomer created = captor.getValue();
+            assertEquals(1, counters[0]);
+            assertEquals("M.", created.civility);
+            assertEquals("Doe", created.lastName);
+            assertEquals("John", created.firstName);
+            assertEquals("1 rue", created.address.streetLine1);
+            assertEquals("75001", created.address.postalCode);
+            assertEquals("Paris", created.address.city);
+            assertEquals("SIR123", created.siret);
+            assertEquals("FR99", created.vatNumber);
+            assertEquals("TAX7", created.taxId);
+            assertEquals("GOLD", created.segment);
+            assertEquals("0102030405", created.phone);
+            assertEquals("a@b.c", created.email);
+            assertTrue(created.blocked);
+            assertEquals(LocalDate.of(2026, 1, 15), created.dueDate);
+            assertEquals(new BigDecimal("5.00"), created.discountPercent);
+            assertEquals(new BigDecimal("1000.00"), created.creditLimit);
+            assertEquals(new BigDecimal("250.00"), created.creditBalance);
+        }
+    }
+
+    /**
+     * A due date the row declares but leaves EMPTY reads as none: the empty
+     * cell is told apart from an absent column, and both leave the date null.
+     */
+    @Test
+    void anEmptyDueDateCellReadsAsNoDate() {
+        try (MockedStatic<Panache> panache = mockStatic(Panache.class)) {
+            EntityManager em = mock(EntityManager.class);
+            panache.when(Panache::getEntityManager).thenReturn(em);
+            List<String> columns = List.of(AccountCustomerCsvResource.COL_ACCOUNT_NUMBER,
+                    AccountCustomerCsvResource.COL_COMPANY_NAME,
+                    AccountCustomerCsvResource.COL_DUE_DATE);
+            int[] counters = {0, 0};
+            resource.processLineLogic(row(columns, "A1", "Acme", ""), new HashMap<>(), counters);
+            ArgumentCaptor<AccountCustomer> captor = ArgumentCaptor.forClass(AccountCustomer.class);
+            verify(em).persist(captor.capture());
+            assertNull(captor.getValue().dueDate);
+            assertEquals(1, counters[0]);
+        }
+    }
+
+    /**
+     * An unreadable due date is dropped rather than failing the row: a cell
+     * that is not an ISO date leaves the account's due date null.
+     */
+    @Test
+    void anUnreadableDueDateIsIgnored() {
+        try (MockedStatic<Panache> panache = mockStatic(Panache.class)) {
+            EntityManager em = mock(EntityManager.class);
+            panache.when(Panache::getEntityManager).thenReturn(em);
+            List<String> columns = List.of(AccountCustomerCsvResource.COL_ACCOUNT_NUMBER,
+                    AccountCustomerCsvResource.COL_COMPANY_NAME,
+                    AccountCustomerCsvResource.COL_DUE_DATE);
+            int[] counters = {0, 0};
+            resource.processLineLogic(row(columns, "A1", "Acme", "not-a-date"),
+                    new HashMap<>(), counters);
+            ArgumentCaptor<AccountCustomer> captor = ArgumentCaptor.forClass(AccountCustomer.class);
+            verify(em).persist(captor.capture());
+            assertNull(captor.getValue().dueDate);
+            assertEquals(1, counters[0]);
+        }
+    }
+
+    /**
+     * An account present in the map but carrying NO stored checksum — the case
+     * of a column added by a schema update on an existing table — is rewritten:
+     * the row is re-read through {@code findById} on the detached entity, fed
+     * onto it, and the updated counter moves. Its missing address is created
+     * afresh in the feeding.
+     */
+    @Test
+    void anUpdateWithNoStoredChecksumRewritesTheAccount() {
+        AccountCustomer existing = new AccountCustomer();
+        existing.id = 7L;
+        existing.accountNumber = "A1";
+        existing.address = null;
+        existing.checksum = null;
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> AccountCustomer.findById(7L)).thenReturn(existing);
+            Map<String, Object> map = new HashMap<>();
+            map.put("A1", existing);
+            int[] counters = {0, 0};
+            List<String> columns = List.of(AccountCustomerCsvResource.COL_ACCOUNT_NUMBER,
+                    AccountCustomerCsvResource.COL_COMPANY_NAME);
+            resource.processLineLogic(row(columns, "A1", "Acme"), map, counters);
+            assertEquals(0, counters[0]);
+            assertEquals(1, counters[1]);
+            assertEquals("Acme", existing.companyName);
+            assertEquals(AccountCustomer.Origin.INTEGRATED, existing.origin);
+            assertNotNull(existing.address);
+        }
+    }
+
+    /**
+     * An account whose stored checksum no longer matches the incoming row is
+     * rewritten: after a first feed leaves it consistent, a checksum bumped by
+     * one is seen as stale and the second pass rewrites it again.
+     */
+    @Test
+    void anUpdateWithAStaleChecksumRewritesTheAccount() {
+        AccountCustomer existing = new AccountCustomer();
+        existing.id = 8L;
+        existing.accountNumber = "A1";
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> AccountCustomer.findById(8L)).thenReturn(existing);
+            Map<String, Object> map = new HashMap<>();
+            map.put("A1", existing);
+            int[] counters = {0, 0};
+            List<String> columns = List.of(AccountCustomerCsvResource.COL_ACCOUNT_NUMBER,
+                    AccountCustomerCsvResource.COL_COMPANY_NAME);
+            ImporterCsvResource.LineData line = row(columns, "A1", "Acme");
+            resource.processLineLogic(line, map, counters);
+            existing.checksum = existing.getChecksum() + 1;
+            resource.processLineLogic(line, map, counters);
+            assertEquals(0, counters[0]);
+            assertEquals(2, counters[1]);
+        }
+    }
+
+    /**
+     * An account whose stored checksum already matches the incoming row is
+     * SKIPPED: re-importing the same file is a no-op, and the updated counter
+     * does not move on the second pass.
+     */
+    @Test
+    void anUpdateWhoseChecksumMatchesIsSkipped() {
+        AccountCustomer existing = new AccountCustomer();
+        existing.id = 9L;
+        existing.accountNumber = "A1";
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> AccountCustomer.findById(9L)).thenReturn(existing);
+            Map<String, Object> map = new HashMap<>();
+            map.put("A1", existing);
+            int[] counters = {0, 0};
+            List<String> columns = List.of(AccountCustomerCsvResource.COL_ACCOUNT_NUMBER,
+                    AccountCustomerCsvResource.COL_COMPANY_NAME);
+            ImporterCsvResource.LineData line = row(columns, "A1", "Acme");
+            resource.processLineLogic(line, map, counters);
+            existing.checksum = existing.getChecksum();
+            resource.processLineLogic(line, map, counters);
+            assertEquals(0, counters[0]);
+            assertEquals(1, counters[1]);
         }
     }
 }

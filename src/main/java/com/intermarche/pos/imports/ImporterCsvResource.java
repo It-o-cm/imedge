@@ -479,7 +479,6 @@ public abstract class ImporterCsvResource {
      * @return An {@link Executor} containing the result or the exception.
      */
     public <R> Executor<R> withTransaction(Supplier<R> processing) {
-        LOGGER.info("Entering method withTransaction with processing: " + processing);
         Executor<R> executor = new Executor<>();
         R result;
         try {
@@ -499,7 +498,6 @@ public abstract class ImporterCsvResource {
         } finally {
             Panache.getEntityManager().clear();
         }
-        LOGGER.info("Exiting method withTransaction");
         return executor;
     }
 

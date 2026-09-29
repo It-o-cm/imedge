@@ -44,6 +44,9 @@ class EngineFeedDeliveryServiceTest {
     /** The mocked feed keeper handing snapshots and recording outcomes. */
     private EngineFeedService engineFeedService;
 
+    /** The mocked deferred-delivery keeper (claim due, record outcome). */
+    private ScheduledDeliveryService scheduledDeliveryService;
+
     /** The local fake engine. */
     private HttpServer server;
 
@@ -83,6 +86,8 @@ class EngineFeedDeliveryServiceTest {
         service.timeoutMillis = 5000;
         engineFeedService = mock(EngineFeedService.class);
         service.engineFeedService = engineFeedService;
+        scheduledDeliveryService = mock(ScheduledDeliveryService.class);
+        service.scheduledDeliveryService = scheduledDeliveryService;
     }
 
     /**
@@ -360,5 +365,130 @@ class EngineFeedDeliveryServiceTest {
     void getDeliverySecondsReturnsConfiguredCadence() {
         service.deliverySeconds = 45;
         assertEquals(45L, service.getDeliverySeconds());
+    }
+
+    /**
+     * Normative case 2 — targeted delivery: {@code triggerDelivery(code)} delivers
+     * ONLY the named feed (acknowledged, its version recorded), and leaves every
+     * other pending feed untouched (delivered arm of the ternary, match arm of the
+     * loop).
+     */
+    @Test
+    void triggerDeliveryForCodeDeliversOnlyThatFeed() {
+        when(engineFeedService.pendingFeeds())
+                .thenReturn(List.of(pending("PRODUCTS", "VERSIONPRODUCTS1", null),
+                        pending("OFFERS", "VERSIONOFFERS0001", null)));
+        assertNull(service.triggerDelivery("OFFERS"));
+        verify(engineFeedService).markApplied("OFFERS", "VERSIONOFFERS0001");
+        verify(engineFeedService, never()).markApplied(eq("PRODUCTS"), any());
+        assertEquals(1, bodyByPath.size());
+        assertEquals("CONTENT-OFFERS", bodyByPath.get("/offers/import"));
+    }
+
+    /**
+     * {@code triggerDelivery(code)} for a code with nothing pending (already
+     * acknowledged, or unknown to this node) runs the loop to exhaustion without
+     * a match and returns null — the idempotent no-op arm.
+     */
+    @Test
+    void triggerDeliveryForCodeWithNothingPendingIsNoOp() {
+        when(engineFeedService.pendingFeeds())
+                .thenReturn(List.of(pending("PRODUCTS", "VERSIONPRODUCTS1", null)));
+        assertNull(service.triggerDelivery("OFFERS"));
+        verify(engineFeedService, never()).markApplied(any(), any());
+        assertTrue(bodyByPath.isEmpty());
+    }
+
+    /**
+     * Normative case 2/3 — a targeted delivery that the engine rejects returns the
+     * error the keeper recorded for that feed (not-delivered arm of the ternary,
+     * matched-with-error arm of {@code deliveryError}).
+     */
+    @Test
+    void triggerDeliveryForCodeSurfacesRecordedError() {
+        statusByPath.put("/offers/import", 503);
+        when(engineFeedService.pendingFeeds())
+                .thenReturn(List.of(pending("OFFERS", "VERSIONOFFERS0001", null)));
+        when(engineFeedService.feedStates()).thenReturn(List.of(
+                new EngineFeedService.FeedState("OFFERS", "v", null, false, "HTTP 503 boom", null, null)));
+        assertEquals("HTTP 503 boom", service.triggerDelivery("OFFERS"));
+        verify(engineFeedService).markError(eq("OFFERS"), any());
+    }
+
+    /**
+     * A targeted delivery that fails while the keeper exposes no readable error
+     * for that feed falls back to a generic message ({@code deliveryError} runs its
+     * loop with a code that never matches with an error, then the generic return).
+     */
+    @Test
+    void triggerDeliveryForCodeFallsBackToGenericError() {
+        statusByPath.put("/offers/import", 503);
+        when(engineFeedService.pendingFeeds())
+                .thenReturn(List.of(pending("OFFERS", "VERSIONOFFERS0001", null)));
+        // First entry a DIFFERENT code (code.equals false arm), second the target
+        // with no readable error (matched-but-null-error arm): neither yields a
+        // message, so the generic fallback is returned.
+        when(engineFeedService.feedStates()).thenReturn(List.of(
+                new EngineFeedService.FeedState("PRODUCTS", "v", null, false, "other", null, null),
+                new EngineFeedService.FeedState("OFFERS", "v", null, false, null, null, null)));
+        assertEquals("livraison du flux OFFERS en échec", service.triggerDelivery("OFFERS"));
+    }
+
+    /**
+     * {@code triggerDelivery(code)} catch arm: an error reaching the pending-feed
+     * lookup is caught and its message returned.
+     */
+    @Test
+    void triggerDeliveryForCodeReturnsErrorMessageOnFailure() {
+        when(engineFeedService.pendingFeeds()).thenThrow(new RuntimeException("db down"));
+        assertEquals("db down", service.triggerDelivery("OFFERS"));
+    }
+
+    /**
+     * {@code deliverSafely} never lets an exception escape the loop: an error in
+     * {@code deliverPending} (here the pending-feed lookup throwing) is swallowed
+     * by the outer catch, and the schedule pass is not reached this tick.
+     */
+    @Test
+    void deliverSafelySwallowsUnexpectedError() {
+        when(engineFeedService.pendingFeeds()).thenThrow(new RuntimeException("boom"));
+        service.deliverSafely();
+        verify(scheduledDeliveryService, never()).claimDue();
+    }
+
+    /**
+     * Normative case 4 — a due schedule is run on the loop's wake and recorded
+     * DONE: {@code runScheduled} claims a targeted and an every-feed booking, runs
+     * each through the delivery path, and records a null (success) outcome for both.
+     */
+    @Test
+    void runScheduledRunsDueBookingsAndRecordsDone() {
+        when(scheduledDeliveryService.claimDue()).thenReturn(List.of(
+                new ScheduledDeliveryService.Due(1L, "OFFERS"),
+                new ScheduledDeliveryService.Due(2L, null)));
+        when(engineFeedService.pendingFeeds())
+                .thenReturn(List.of(pending("OFFERS", "VERSIONOFFERS0001", null)));
+        service.runScheduled();
+        verify(engineFeedService, org.mockito.Mockito.atLeastOnce()).markApplied("OFFERS", "VERSIONOFFERS0001");
+        verify(scheduledDeliveryService).markResult(1L, null);
+        verify(scheduledDeliveryService).markResult(2L, null);
+    }
+
+    /**
+     * Normative case 4 — a due targeted schedule whose delivery fails is recorded
+     * FAILED with the surfaced message ({@code feedCode != null} arm of
+     * {@code runScheduled}).
+     */
+    @Test
+    void runScheduledRecordsFailedOnDeliveryError() {
+        statusByPath.put("/offers/import", 503);
+        when(scheduledDeliveryService.claimDue()).thenReturn(List.of(
+                new ScheduledDeliveryService.Due(1L, "OFFERS")));
+        when(engineFeedService.pendingFeeds())
+                .thenReturn(List.of(pending("OFFERS", "VERSIONOFFERS0001", null)));
+        when(engineFeedService.feedStates()).thenReturn(List.of(
+                new EngineFeedService.FeedState("OFFERS", "v", null, false, "HTTP 503 boom", null, null)));
+        service.runScheduled();
+        verify(scheduledDeliveryService).markResult(1L, "HTTP 503 boom");
     }
 }

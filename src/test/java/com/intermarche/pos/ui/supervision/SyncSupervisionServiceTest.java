@@ -1,19 +1,24 @@
 package com.intermarche.pos.ui.supervision;
 
 import com.intermarche.pos.domain.sync.RefState;
+import com.intermarche.pos.domain.sync.ScheduledDelivery;
 import com.intermarche.pos.service.sync.EngineFeedDeliveryService;
 import com.intermarche.pos.service.sync.EngineFeedService;
 import com.intermarche.pos.service.sync.RefPullService;
+import com.intermarche.pos.service.sync.ScheduledDeliveryService;
 import com.intermarche.pos.service.sync.register.SyncOutboxService;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
@@ -52,9 +57,34 @@ class SyncSupervisionServiceTest {
         service.engineFeedService = engine;
         service.refPullService = pull;
         service.engineFeedDeliveryService = delivery;
+        service.scheduledDeliveryService = mock(ScheduledDeliveryService.class);
         service.syncOutboxService = outbox;
         service.pushIntervalSeconds = 10L;
         return service;
+    }
+
+    /**
+     * Builds a real {@link ScheduledDelivery} POJO (no persistence, only field
+     * reads) for the "Planifications" projection.
+     *
+     * @param id the booking id
+     * @param feedCode the target feed code, or null for every feed
+     * @param scheduledAt the booked minute
+     * @param createdBy the author
+     * @param status the lifecycle state
+     * @param message the failure reason, or null
+     * @return the populated row
+     */
+    private ScheduledDelivery scheduled(Long id, String feedCode, LocalDateTime scheduledAt,
+            String createdBy, ScheduledDelivery.Status status, String message) {
+        ScheduledDelivery row = new ScheduledDelivery();
+        row.id = id;
+        row.feedCode = feedCode;
+        row.scheduledAt = scheduledAt;
+        row.createdBy = createdBy;
+        row.status = status;
+        row.message = message;
+        return row;
     }
 
     /**
@@ -193,6 +223,95 @@ class SyncSupervisionServiceTest {
             assertFalse(view.engineError);
             assertEquals(4L, view.outboxCount);
             assertFalse(view.healthy);
+        }
+    }
+
+    /**
+     * The "Planifications" projection: a pending every-feed booking (null feedCode
+     * arm → "Tous les flux" label, {@code pending} true) and a failed targeted
+     * booking (non-null feedCode arm, {@code pending} false, message carried). The
+     * schedule form's feed-code list mirrors the delivery catalog.
+     */
+    @Test
+    void buildProjectsScheduledDeliveries() {
+        EngineFeedService engine = mock(EngineFeedService.class);
+        RefPullService pull = mock(RefPullService.class);
+        EngineFeedDeliveryService delivery = mock(EngineFeedDeliveryService.class);
+        SyncOutboxService outbox = mock(SyncOutboxService.class);
+        when(engine.feedStates()).thenReturn(List.of());
+        when(pull.getLastSuccessfulPull()).thenReturn(null);
+        when(pull.getPullSeconds()).thenReturn(300L);
+        when(delivery.getDeliverySeconds()).thenReturn(30L);
+        when(outbox.backlog()).thenReturn(List.of());
+        SyncSupervisionService service = service(engine, pull, delivery, outbox);
+        ScheduledDeliveryService scheduledService = mock(ScheduledDeliveryService.class);
+        service.scheduledDeliveryService = scheduledService;
+        when(scheduledService.list()).thenReturn(List.of(
+                scheduled(1L, null, LocalDateTime.of(2026, 9, 26, 15, 0), "admin",
+                        ScheduledDelivery.Status.PENDING, null),
+                scheduled(2L, "OFFERS", LocalDateTime.of(2026, 9, 26, 16, 0), "admin",
+                        ScheduledDelivery.Status.FAILED, "HTTP 503")));
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> RefState.list("order by domain")).thenReturn(List.of());
+            SyncSupervisionService.SyncView view = service.build();
+            assertEquals(2, view.schedules.size());
+            SyncSupervisionService.ScheduledRow every = view.schedules.get(0);
+            assertEquals(1L, every.id);
+            assertEquals("Tous les flux", every.feedCode);
+            assertEquals("26/09 15:00:00", every.scheduledAt);
+            assertEquals("admin", every.createdBy);
+            assertEquals("PENDING", every.status);
+            assertTrue(every.pending);
+            assertNull(every.message);
+            SyncSupervisionService.ScheduledRow targeted = view.schedules.get(1);
+            assertEquals("OFFERS", targeted.feedCode);
+            assertEquals("FAILED", targeted.status);
+            assertFalse(targeted.pending);
+            assertEquals("HTTP 503", targeted.message);
+            assertEquals(EngineFeedService.CATALOG.size(), view.feedCodes.size());
+            assertEquals("STORES", view.feedCodes.get(0));
+        }
+    }
+
+    /**
+     * The pull-only failure back-fill: {@code getLastErrors()} carries a domain
+     * that already produced a {@code RefState} row (FAMILIES — the equals guard
+     * matches, {@code alreadyListed} becomes true, the {@code !alreadyListed}
+     * false arm skips it so no duplicate row is added) and a pull-only domain
+     * that never applied (CUSTOMERS — the equals guard never matches across the
+     * listed rows, {@code alreadyListed} stays false, the {@code !alreadyListed}
+     * true arm appends a dash-fingerprint row carrying only its error). This
+     * exercises the whole 192-207 back-fill block both arms of both guards.
+     */
+    @Test
+    void buildBackfillsPullOnlyFailures() {
+        EngineFeedService engine = mock(EngineFeedService.class);
+        RefPullService pull = mock(RefPullService.class);
+        EngineFeedDeliveryService delivery = mock(EngineFeedDeliveryService.class);
+        SyncOutboxService outbox = mock(SyncOutboxService.class);
+        when(engine.feedStates()).thenReturn(List.of());
+        when(pull.getLastSuccessfulPull()).thenReturn(null);
+        when(pull.getPullSeconds()).thenReturn(300L);
+        when(delivery.getDeliverySeconds()).thenReturn(30L);
+        when(outbox.backlog()).thenReturn(List.of());
+        Map<String, String> failures = new LinkedHashMap<>();
+        failures.put("FAMILIES", "stale");
+        failures.put("CUSTOMERS", "HTTP 500");
+        when(pull.getLastErrors()).thenReturn(failures);
+        SyncSupervisionService service = service(engine, pull, delivery, outbox);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> RefState.list("order by domain"))
+                    .thenReturn(List.of(refState("FAMILIES", "ffffffffffffFF", LocalDateTime.of(2026, 9, 11, 7, 0))));
+            SyncSupervisionService.SyncView view = service.build();
+            assertEquals(2, view.pulls.size());
+            SyncSupervisionService.PullRow families = view.pulls.get(0);
+            assertEquals("FAMILIES", families.domain);
+            assertEquals("ffffffffffff", families.fingerprint);
+            SyncSupervisionService.PullRow customers = view.pulls.get(1);
+            assertEquals("CUSTOMERS", customers.domain);
+            assertEquals("—", customers.fingerprint);
+            assertEquals("—", customers.appliedAt);
+            assertEquals("HTTP 500", customers.lastError);
         }
     }
 }

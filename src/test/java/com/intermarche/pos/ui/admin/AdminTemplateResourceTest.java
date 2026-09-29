@@ -868,4 +868,97 @@ class AdminTemplateResourceTest {
                     type + " n'annonce pas le bon nombre de données");
         }
     }
+
+    /**
+     * A layout carrying a NULL label is offered by its code alone — the
+     * short-circuit arm of the label guard, distinct from the blank arm.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void aLayoutWithANullLabelIsOfferedByItsCodeAlone() {
+        AdminTemplateResource resource = newResource();
+        TemplateInstance instance = wireTemplate(resource);
+        DocumentTemplate bare = new DocumentTemplate();
+        bare.code = "NUL_LIBELLE";
+        bare.label = null;
+        bare.documentType = DocumentTemplate.DocumentType.SALE_RECEIPT;
+        when(resource.documentTemplateService.sampleData(any())).thenReturn(Map.of());
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> DocumentTemplate.list("order by documentType, priority, code"))
+                    .thenReturn(List.of(bare));
+            resource.templatesPage(null, null);
+            ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
+            verify(instance).data(eq("newPicks"), captor.capture());
+            List<AdminTemplateResource.Pick> picks =
+                    (List<AdminTemplateResource.Pick>) captor.getValue();
+            AdminTemplateResource.Pick found = picks.stream()
+                    .filter(p -> p.getKey().equals("template:NUL_LIBELLE"))
+                    .findFirst().orElseThrow();
+            assertEquals("NUL_LIBELLE", found.getLabel());
+        }
+    }
+
+    /**
+     * A save posting NO source at all stores the empty source rather than
+     * throwing — the null arm of the source read.
+     */
+    @Test
+    void savingWithoutASourceStoresTheEmptySource() {
+        AdminTemplateResource resource = newResource();
+        when(resource.documentTemplateService.parseError("")).thenReturn(null);
+        MultivaluedMap<String, String> posted = form("code", "VIDE", "label", "Vide",
+                "documentType", "SALE_RECEIPT", "width", "42");
+        PanacheQuery<DocumentTemplate> absent = queryOf(null);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
+                MockedConstruction<DocumentTemplate> created =
+                        mockConstruction(DocumentTemplate.class)) {
+            panache.when(() -> DocumentTemplate.find("code", "VIDE")).thenReturn(absent);
+            assertEquals("Gabarit créé.", notice(resource.saveTemplate(posted)));
+            assertEquals("", created.constructed().get(0).source);
+        }
+    }
+
+    /**
+     * A draft carrying no card belongs to no card at all — the null arm of the
+     * {@code isFor} guard — and is not the creation card either.
+     */
+    @Test
+    void aDraftWithNoCardBelongsToNoCard() {
+        AdminTemplateResource.Draft draft = new AdminTemplateResource.Draft(null,
+                DocumentTemplate.DocumentType.SALE_RECEIPT, "s", null, null);
+        assertFalse(draft.isFor("TICKET"));
+        assertFalse(draft.isNew());
+    }
+
+    /**
+     * A preview exposes the picker entries and the references its card carries —
+     * the two accessors the template reads.
+     */
+    @Test
+    void aPreviewExposesItsPicksAndReferences() {
+        DocumentTemplate template = stored();
+        List<AdminTemplateResource.Pick> picks =
+                List.of(new AdminTemplateResource.Pick("k", "l", "t", true));
+        List<DocumentTemplateService.Reference> references = List.of();
+        AdminTemplateResource.Preview preview =
+                new AdminTemplateResource.Preview(template, "R", picks, references);
+        assertSame(picks, preview.getPicks());
+        assertSame(references, preview.getReferences());
+    }
+
+    /**
+     * The JSON escape maps a null value to the empty string — the null arm of a
+     * guard no real reference reaches, exercised on the helper directly.
+     *
+     * @throws Exception when the helper cannot be reached by reflection
+     */
+    @Test
+    void escapeMapsANullValueToTheEmptyString() throws Exception {
+        AdminTemplateResource resource = newResource();
+        java.lang.reflect.Method escape =
+                AdminTemplateResource.class.getDeclaredMethod("escape", String.class);
+        escape.setAccessible(true);
+        assertEquals("", escape.invoke(resource, (String) null));
+        assertEquals("a b", escape.invoke(resource, "a\nb"));
+    }
 }

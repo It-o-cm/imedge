@@ -2,6 +2,7 @@ package com.intermarche.pos.ui.admin;
 
 import com.intermarche.pos.domain.catalog.ArticleAttributeDefinition;
 import com.intermarche.pos.domain.catalog.ArticleSelection;
+import com.intermarche.pos.domain.catalog.EgalimRegime;
 import com.intermarche.pos.domain.catalog.Price;
 import com.intermarche.pos.domain.catalog.Product;
 import com.intermarche.pos.domain.catalog.ProductType;
@@ -55,6 +56,15 @@ import org.jboss.logging.Logger;
  * how the attributes reach the till. This screen carries NO sale behaviour — it
  * reads and administers; the register consumption of what it sets (the on-screen
  * article code, BO-10-02-35) lives on the sale surface, in its own lot.
+ * <p>
+ * The EGAlim classification is SHOWN and never edited here, on the fiche and in
+ * the list alike: the classification is integrated from the Gestion Commerciale
+ * with the article, the ceiling is administered on {@code
+ * /admin/egalim-regimes}, and the cap itself is arbitrated by the moteur de
+ * valorisation. What this screen adds is the reading an operator cannot get
+ * anywhere else — which category an article falls under, what the ceiling of
+ * that category is today, and the two silent cases: an article classified
+ * nowhere, and an article naming a regime the referential does not declare.
  * <p>
  * "Deleting" an article is a deactivation (BO-02-03-33): the {@code active}
  * flag is cleared, never a row removed, because sold ticket lines hold product
@@ -169,6 +179,7 @@ public class AdminArticleResource {
                 query.page(number - 1, PAGE_SIZE).list(), number, PAGE_SIZE, total);
         LOGGER.info("Exiting method list");
         return adminArticles.data("page", window)
+                .data("egalimCaps", egalimCaps())
                 .data("baseQuery", baseQuery(criteria, selection))
                 .data("criteria", criteria)
                 .data("selectedSelection", selection != null ? selection.name : null)
@@ -177,6 +188,32 @@ public class AdminArticleResource {
                 .data("selections", ArticleSelection.listAllOrdered())
                 .data("notice", notice)
                 .data("noticeOk", noticeOk);
+    }
+
+    /**
+     * Renders every EGAlim regime of the referential as the one line the list
+     * prints beside an article: its ceiling, or the words saying it has none.
+     *
+     * <p>Read ONCE per page and not once per row: the referential holds a
+     * handful of categories against a hundred thousand articles, and a lookup
+     * per line would turn a page of a hundred articles into a hundred queries
+     * for three answers.
+     *
+     * <p>A code the map does not answer is a classification the referential
+     * does not declare — the list says so rather than printing an empty cell,
+     * because an article pointing at a regime nobody administers is exactly the
+     * case an operator must see: the valuation engine will not cap it.
+     *
+     * @return the regime code → ceiling text map, empty when nothing is administered
+     */
+    private Map<String, String> egalimCaps() {
+        LOGGER.info("Entering method egalimCaps");
+        Map<String, String> caps = new TreeMap<>();
+        for (EgalimRegime regime : EgalimRegime.listAllOrdered()) {
+            caps.put(regime.code, regime.isCapped() ? regime.getCapFormatted() + " %" : "non plafonné");
+        }
+        LOGGER.info("Exiting method egalimCaps");
+        return caps;
     }
 
     /**
@@ -239,6 +276,7 @@ public class AdminArticleResource {
         Price currentPrice = product != null ? Price.findCurrentPrice(product.id) : null;
         LOGGER.info("Exiting method edit");
         return adminArticle.data("product", product)
+                .data("egalimRegime", product != null ? EgalimRegime.findByCode(product.egalimRegime) : null)
                 .data("attributes", product != null ? attributeRows(product) : List.of())
                 .data("customAttributes", product != null ? customAttributeRows(product) : List.of())
                 .data("allAttributes", allAttributes(product))

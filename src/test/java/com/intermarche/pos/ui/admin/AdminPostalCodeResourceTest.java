@@ -358,4 +358,72 @@ class AdminPostalCodeResourceTest {
         verify(stored).delete();
         verify(stored, never()).persist();
     }
+
+    /**
+     * A non-null but blank fragment yields an empty base query: the isBlank leg
+     * of the guard (distinct from the null leg) returns no carried criterion.
+     */
+    @Test
+    void aBlankFragmentYieldsAnEmptyBaseQuery() {
+        AdminPostalCodeResource resource = newResource();
+        TemplateInstance instance = mock(TemplateInstance.class);
+        when(resource.adminPostalCodes.data(anyString(), any())).thenReturn(instance);
+        when(instance.data(anyString(), any())).thenReturn(instance);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            stubAll(panache, List.of(row("75008", "Paris")));
+            assertSame(instance, resource.list("   ", 1, null, true));
+        }
+        verify(instance).data("baseQuery", "");
+    }
+
+    /**
+     * A pair that now belongs to a DIFFERENT row while editing is refused: the
+     * clash exists and its id differs from the edited row's id (the true leg of
+     * the identity guard).
+     */
+    @Test
+    void aPairMovedToAnotherRowIsRefused() {
+        AdminPostalCodeResource resource = newResource();
+        PostalCode edited = mock(PostalCode.class);
+        edited.id = 7L;
+        PostalCode clash = row("75008", "Paris");
+        clash.id = 9L;
+        MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
+        form.add("id", "7");
+        form.add("code", "75008");
+        form.add("place", "Paris");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> PostalCode.findById(7L)).thenReturn(edited);
+            stubPair(panache, "75008", "Paris", clash);
+            Response response = resource.save(form);
+            assertTrue(response.getLocation().toString().contains("noticeOk=false"));
+        }
+        verify(edited, never()).persist();
+    }
+
+    /**
+     * A blank id and a blank country are treated as absent: the isBlank leg of
+     * longValue makes the save a creation, and the isBlank leg of blankToNull
+     * drops the country to null.
+     */
+    @Test
+    void aBlankIdAndBlankCountryAreTreatedAsAbsent() {
+        AdminPostalCodeResource resource = newResource();
+        MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
+        form.add("id", "   ");
+        form.add("code", "75008");
+        form.add("place", "Paris");
+        form.add("country", "   ");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
+             MockedConstruction<PostalCode> construction = mockConstruction(PostalCode.class)) {
+            stubPair(panache, "75008", "Paris", null);
+            Response response = resource.save(form);
+            assertTrue(response.getLocation().toString().contains("noticeOk=true"));
+            assertEquals(1, construction.constructed().size());
+            PostalCode built = construction.constructed().get(0);
+            assertEquals("75008", built.code);
+            assertEquals("Paris", built.place);
+            assertEquals(null, built.country);
+        }
+    }
 }

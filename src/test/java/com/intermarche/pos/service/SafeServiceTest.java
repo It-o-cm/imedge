@@ -374,6 +374,25 @@ class SafeServiceTest {
     }
 
     /**
+     * A null VAT line in the posted breakdown is dropped: the false arm of the
+     * per-line null guard, which every non-null case leaves untouched.
+     */
+    @Test
+    void anullVatLineIsDropped() {
+        SafeService service = new SafeService();
+        List<SafeVatLine> posted = new ArrayList<>();
+        posted.add(null);
+        posted.add(new SafeVatLine(new BigDecimal("5.50"), new BigDecimal("10.00"),
+                new BigDecimal("0.55")));
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
+                MockedConstruction<SafeMovement> created = mockConstruction(SafeMovement.class)) {
+            stubOpenPeriod(panache, openPeriod("0.00"));
+            assertEquals(1, service.record(SafeMovementType.EXPENSE, BigDecimal.ONE, "A", null,
+                    null, null, null, posted).vatLines.size());
+        }
+    }
+
+    /**
      * Nothing is written when no period is open: the one door, shut.
      */
     @Test

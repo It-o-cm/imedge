@@ -1,0 +1,141 @@
+{! Checkout-point administration: the register as an administered object
+ ! (BO-03-09). Each row is a save form (hidden terminalId) with a delete button
+ ! via formaction; a new-point form sits at the bottom. Mirrors admin-vat-rates. !}
+{#include admin-layout}
+
+{#title}Points de caisse{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Points de caisse</h1>
+        <p class="page-sub">La caisse vue du back-office : activation, rattachement à un îlot, type de TPV, hôtesse technique pour le libre-service, afficheurs et modèle de menu (BO-03-09).</p>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">Points de caisse</h2>
+    {#if points.isEmpty()}
+    <p class="page-sub">Aucun point de caisse n'est administré.</p>
+    {#else}
+    {#for point in points}
+    <form method="post" action="/admin/checkout-points/save" class="field-grid">
+        <input type="hidden" name="terminalId" value="{point.terminalId}">
+        <div class="field">
+            <span class="field-label">{point.terminalId}</span>
+        </div>
+        <div class="field">
+            <label class="field-label" for="pl-{point.terminalId}">Libellé</label>
+            <input class="input-control" id="pl-{point.terminalId}" type="text" name="label" maxlength="100" value="{point.label ?: ''}">
+        </div>
+        <div class="field">
+            <label class="field-label" for="pi-{point.terminalId}">Îlot</label>
+            <select class="input-control" id="pi-{point.terminalId}" name="islandCode">
+                <option value="">—</option>
+                {#for island in islands}
+                <option value="{island.code}" {#if point.islandCode == island.code}selected{/if}>{island.code} — {island.label}</option>
+                {/for}
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-label" for="pp-{point.terminalId}">Point de vente</label>
+            <select class="input-control" id="pp-{point.terminalId}" name="pdvNumber">
+                <option value="">—</option>
+                {#for pdv in pdvs}
+                <option value="{pdv.pdvNumber}" {#if point.pdvNumber == pdv.pdvNumber}selected{/if}>{pdv.pdvNumber} — {pdv.name}</option>
+                {/for}
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-label" for="pt-{point.terminalId}">Type de TPV</label>
+            <select class="input-control" id="pt-{point.terminalId}" name="tpvType">
+                {#for type in tpvTypes}
+                <option value="{type}" {#if point.tpvType == type}selected{/if}>{type.label}</option>
+                {/for}
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-label" for="ph-{point.terminalId}">Hôtesse technique (badge)</label>
+            <input class="input-control" id="ph-{point.terminalId}" type="text" name="technicalHostessBadge" maxlength="20" value="{point.technicalHostessBadge ?: ''}">
+        </div>
+        <div class="field">
+            <label class="field-label" for="pcd-{point.terminalId}">Afficheur caissière</label>
+            <select class="input-control" id="pcd-{point.terminalId}" name="cashierDisplayType">
+                {#for type in displayTypes}
+                <option value="{type}" {#if point.cashierDisplayType == type}selected{/if}>{type.label}</option>
+                {/for}
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-label" for="pcr-{point.terminalId}">Résolution caissière</label>
+            <input class="input-control" id="pcr-{point.terminalId}" type="text" name="cashierDisplayResolution" maxlength="32" value="{point.cashierDisplayResolution ?: ''}">
+        </div>
+        <div class="field">
+            <label class="field-label" for="pkd-{point.terminalId}">Afficheur client</label>
+            <select class="input-control" id="pkd-{point.terminalId}" name="customerDisplayType">
+                {#for type in displayTypes}
+                <option value="{type}" {#if point.customerDisplayType == type}selected{/if}>{type.label}</option>
+                {/for}
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-label" for="pkr-{point.terminalId}">Résolution client</label>
+            <input class="input-control" id="pkr-{point.terminalId}" type="text" name="customerDisplayResolution" maxlength="32" value="{point.customerDisplayResolution ?: ''}">
+        </div>
+        <div class="field">
+            <label class="field-label" for="pm-{point.terminalId}">Modèle de menu</label>
+            <input class="input-control" id="pm-{point.terminalId}" type="text" name="menuTemplateCode" maxlength="50" value="{point.menuTemplateCode ?: ''}">
+        </div>
+        <div class="field">
+            <label class="field-label" for="pa-{point.terminalId}">Actif</label>
+            <input id="pa-{point.terminalId}" type="checkbox" name="active" {#if point.active}checked{/if}>
+        </div>
+        <div class="page-actions">
+            <button class="btn btn-primary" type="submit">Enregistrer</button>
+            <button class="btn btn-muted" type="submit" formaction="/admin/checkout-points/delete">Supprimer</button>
+        </div>
+    </form>
+    {/for}
+    {/if}
+</div>
+
+<div class="card">
+    <h2 class="card-title">Nouveau point de caisse</h2>
+    <form method="post" action="/admin/checkout-points/save" class="field-grid">
+        <div class="field">
+            <label class="field-label" for="new-term">Identifiant terminal</label>
+            <input class="input-control" id="new-term" type="text" name="terminalId" maxlength="50" required>
+        </div>
+        <div class="field">
+            <label class="field-label" for="new-plabel">Libellé</label>
+            <input class="input-control" id="new-plabel" type="text" name="label" maxlength="100">
+        </div>
+        <div class="field">
+            <label class="field-label" for="new-pisland">Îlot</label>
+            <select class="input-control" id="new-pisland" name="islandCode">
+                <option value="">—</option>
+                {#for island in islands}
+                <option value="{island.code}">{island.code} — {island.label}</option>
+                {/for}
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-label" for="new-ptype">Type de TPV</label>
+            <select class="input-control" id="new-ptype" name="tpvType">
+                {#for type in tpvTypes}
+                <option value="{type}">{type.label}</option>
+                {/for}
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-label" for="new-pactive">Actif</label>
+            <input id="new-pactive" type="checkbox" name="active" checked>
+        </div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">Créer le point</button></div>
+    </form>
+</div>
+{/body}

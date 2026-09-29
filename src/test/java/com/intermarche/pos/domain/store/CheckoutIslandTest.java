@@ -1,6 +1,7 @@
 package com.intermarche.pos.domain.store;
 
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
+import io.quarkus.hibernate.orm.panache.PanacheQuery;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
@@ -10,124 +11,196 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for {@link CheckoutIsland}, targeting 100% branch coverage.
  * <p>
- * Instance methods run on plain instances; the two static finders resolve the
- * Panache {@code list} finder, which under plain {@code mvn test} falls back to
- * {@link PanacheEntityBase}, so they are intercepted with
+ * The island's register relation is no longer a semicolon string on the island:
+ * it is read from {@link CheckoutPoint}. Instance methods therefore resolve the
+ * Panache finders on both entities, which under plain {@code mvn test} fall back
+ * to {@link PanacheEntityBase}, so they are intercepted with
  * {@link org.mockito.Mockito#mockStatic}.
  * <p>
- * Branch enumeration (every leg exercised): {@code terminals} covers the null
- * arm, the blank arm, the empty-entry arm and the trimming arm;
- * {@code holds} covers the null arm, the blank arm, the found arm and the
- * not-found arm; {@code findByTerminal} covers the null arm, the blank arm, the
- * empty-list arm, the null-entry arm, the no-match arm and the match arm.
+ * Branch enumeration (every leg exercised): {@code terminals} covers the empty
+ * and the non-empty relation; {@code holds} covers the null arm, the blank arm,
+ * the found arm and the not-found arm; {@code findByCode} covers the null arm,
+ * the blank arm and the found arm; {@code findByTerminal} covers the no-point
+ * arm, the point-without-island arm, the unknown-island arm, the inactive-island
+ * arm and the active-island arm; {@code listActive} forwards the order.
  */
 class CheckoutIslandTest {
 
-    /** The finder clause the active listing uses. */
+    /** The finder clause the active island listing uses. */
     private static final String ACTIVE = "active = true order by code";
 
+    /** The finder clause {@code CheckoutPoint.listByIsland} uses. */
+    private static final String BY_ISLAND = "islandCode = ?1 and active = true order by terminalId";
+
     /**
-     * Builds an island holding the given raw terminal list.
+     * Builds an island.
      *
      * @param code the island code
-     * @param terminalIds the raw semicolon list, or null
+     * @param active whether it is in service
      * @return the island
      */
-    private CheckoutIsland island(String code, String terminalIds) {
+    private CheckoutIsland island(String code, boolean active) {
         CheckoutIsland island = new CheckoutIsland();
         island.code = code;
         island.label = "Ligne " + code;
-        island.terminalIds = terminalIds;
+        island.active = active;
         return island;
     }
 
     /**
-     * The attached registers are split, trimmed, and the empty entries a
-     * hand-typed list leaves behind are dropped.
+     * Builds a checkout point.
+     *
+     * @param terminalId the terminal identifier
+     * @param islandCode the island it points at, or null
+     * @return the point
      */
-    @Test
-    void theAttachedRegistersAreSplitAndTrimmed() {
-        assertEquals(List.of("POS01", "POS02", "POS03"),
-                island("AVANT", " POS01 ; POS02;;POS03 ; ").terminals());
+    private CheckoutPoint point(String terminalId, String islandCode) {
+        CheckoutPoint point = new CheckoutPoint();
+        point.terminalId = terminalId;
+        point.islandCode = islandCode;
+        return point;
     }
 
     /**
-     * An island holding no register answers an empty list, whether the column
-     * is null or blank (the two legs of the same guard).
+     * Wraps a first-result in a Panache query mock.
+     *
+     * @param result the row the query resolves, or null
+     * @param <T> the row type
+     * @return the query mock
+     */
+    @SuppressWarnings("unchecked")
+    private <T> PanacheQuery<T> query(T result) {
+        PanacheQuery<T> query = mock(PanacheQuery.class);
+        when(query.firstResult()).thenReturn(result);
+        return query;
+    }
+
+    /**
+     * The attached registers are read from the active checkout points of the
+     * island, in the order the relation returns them.
      */
     @Test
-    void anIslandWithoutRegistersHoldsNone() {
-        assertTrue(island("AVANT", null).terminals().isEmpty());
-        assertTrue(island("AVANT", "   ").terminals().isEmpty());
-        assertTrue(island("AVANT", ";;;").terminals().isEmpty());
+    void theAttachedRegistersComeFromTheCheckoutPoints() {
+        CheckoutIsland island = island("AVANT", true);
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(() -> CheckoutPoint.list(BY_ISLAND, "AVANT"))
+                    .thenReturn(List.of(point("POS01", "AVANT"), point("POS02", "AVANT")));
+            assertEquals(List.of("POS01", "POS02"), island.terminals());
+        }
+    }
+
+    /**
+     * An island with no active checkout point holds no register.
+     */
+    @Test
+    void anIslandWithoutPointsHoldsNone() {
+        CheckoutIsland island = island("AVANT", true);
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(() -> CheckoutPoint.list(BY_ISLAND, "AVANT")).thenReturn(List.of());
+            assertTrue(island.terminals().isEmpty());
+        }
     }
 
     /**
      * {@code holds} recognises an attached register, trimming what it is given,
-     * and refuses one the island does not list.
+     * and refuses one the island's points do not list.
      */
     @Test
     void holdsRecognisesAnAttachedRegister() {
-        CheckoutIsland island = island("AVANT", "POS01;POS02");
-        assertTrue(island.holds("POS01"));
-        assertTrue(island.holds("  POS02  "));
-        assertFalse(island.holds("POS09"));
+        CheckoutIsland island = island("AVANT", true);
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(() -> CheckoutPoint.list(BY_ISLAND, "AVANT"))
+                    .thenReturn(List.of(point("POS01", "AVANT"), point("POS02", "AVANT")));
+            assertTrue(island.holds("POS01"));
+            assertTrue(island.holds("  POS02  "));
+            assertFalse(island.holds("POS09"));
+        }
     }
 
     /**
-     * A null or blank register belongs to no island (the two legs of the first
-     * guard).
+     * A null or blank register belongs to no island (the two legs of the guard),
+     * answered without touching the relation.
      */
     @Test
     void anUnnamedRegisterBelongsToNoIsland() {
-        CheckoutIsland island = island("AVANT", "POS01");
+        CheckoutIsland island = island("AVANT", true);
         assertFalse(island.holds(null));
         assertFalse(island.holds("   "));
     }
 
     /**
-     * {@code findByTerminal} answers the active island listing the register,
-     * skipping a null row and an island that does not list it.
+     * {@code findByCode} answers the row for a code, and short-circuits a null or
+     * blank code without a query.
      */
     @Test
-    void findByTerminalAnswersTheIslandOfTheRegister() {
-        CheckoutIsland other = island("COMPTOIR", "POS08;POS09");
-        CheckoutIsland wanted = island("AVANT", "POS01;POS02");
+    void findByCodeResolvesOrShortCircuits() {
+        CheckoutIsland island = island("AVANT", true);
+        PanacheQuery<CheckoutIsland> islandQuery = query(island);
         try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
-            ms.when(() -> CheckoutIsland.list(ACTIVE))
-                    .thenReturn(java.util.Arrays.asList(null, other, wanted));
-            assertSame(wanted, CheckoutIsland.findByTerminal("POS02"));
+            ms.when(() -> CheckoutIsland.find("code", "AVANT")).thenReturn(islandQuery);
+            assertSame(island, CheckoutIsland.findByCode("AVANT"));
+        }
+        assertNull(CheckoutIsland.findByCode(null));
+        assertNull(CheckoutIsland.findByCode("   "));
+    }
+
+    /**
+     * {@code findByTerminal} answers the active island the register's checkout
+     * point points at.
+     */
+    @Test
+    void findByTerminalAnswersTheActiveIslandOfTheRegister() {
+        CheckoutIsland island = island("AVANT", true);
+        PanacheQuery<CheckoutPoint> pointQuery = query(point("POS02", "AVANT"));
+        PanacheQuery<CheckoutIsland> islandQuery = query(island);
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(() -> CheckoutPoint.find("terminalId", "POS02")).thenReturn(pointQuery);
+            ms.when(() -> CheckoutIsland.find("code", "AVANT")).thenReturn(islandQuery);
+            assertSame(island, CheckoutIsland.findByTerminal("POS02"));
         }
     }
 
     /**
-     * A register no active island lists belongs to none, and so does every
-     * register when the store administers no island at all.
+     * A register with no checkout point, or a point tied to no island, belongs to
+     * no island (the two early arms).
      */
     @Test
-    void aRegisterOutsideEveryIslandBelongsToNone() {
-        CheckoutIsland other = island("COMPTOIR", "POS08");
+    void findByTerminalIsNullWithoutAPointOrAnIsland() {
+        PanacheQuery<CheckoutPoint> noPoint = query(null);
+        PanacheQuery<CheckoutPoint> pointNoIsland = query(point("POS02", null));
         try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
-            ms.when(() -> CheckoutIsland.list(ACTIVE)).thenReturn(List.of(other));
+            ms.when(() -> CheckoutPoint.find("terminalId", "POS01")).thenReturn(noPoint);
             assertNull(CheckoutIsland.findByTerminal("POS01"));
-            ms.when(() -> CheckoutIsland.list(ACTIVE)).thenReturn(List.of());
-            assertNull(CheckoutIsland.findByTerminal("POS01"));
+            ms.when(() -> CheckoutPoint.find("terminalId", "POS02")).thenReturn(pointNoIsland);
+            assertNull(CheckoutIsland.findByTerminal("POS02"));
         }
     }
 
     /**
-     * A null or blank register is answered without touching the database, which
-     * is what the absence of any static stubbing here asserts.
+     * A point pointing at an unknown or a DEACTIVATED island resolves to none:
+     * an island rule must stay silent once the island is out of service.
      */
     @Test
-    void findByTerminalShortCircuitsOnAnUnnamedRegister() {
-        assertNull(CheckoutIsland.findByTerminal(null));
-        assertNull(CheckoutIsland.findByTerminal("   "));
+    void findByTerminalIsNullForAnUnknownOrInactiveIsland() {
+        PanacheQuery<CheckoutPoint> ghostPoint = query(point("POS03", "GHOST"));
+        PanacheQuery<CheckoutIsland> ghostIsland = query(null);
+        PanacheQuery<CheckoutPoint> oldPoint = query(point("POS04", "OLD"));
+        PanacheQuery<CheckoutIsland> oldIsland = query(island("OLD", false));
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(() -> CheckoutPoint.find("terminalId", "POS03")).thenReturn(ghostPoint);
+            ms.when(() -> CheckoutIsland.find("code", "GHOST")).thenReturn(ghostIsland);
+            assertNull(CheckoutIsland.findByTerminal("POS03"));
+            ms.when(() -> CheckoutPoint.find("terminalId", "POS04")).thenReturn(oldPoint);
+            ms.when(() -> CheckoutIsland.find("code", "OLD")).thenReturn(oldIsland);
+            assertNull(CheckoutIsland.findByTerminal("POS04"));
+        }
     }
 
     /**
@@ -135,7 +208,7 @@ class CheckoutIslandTest {
      */
     @Test
     void listActiveForwardsTheAdministeredOrder() {
-        CheckoutIsland island = island("AVANT", "POS01");
+        CheckoutIsland island = island("AVANT", true);
         try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
             ms.when(() -> CheckoutIsland.list(ACTIVE)).thenReturn(List.of(island));
             assertEquals(List.of(island), CheckoutIsland.listActive());
@@ -143,10 +216,15 @@ class CheckoutIslandTest {
     }
 
     /**
-     * A fresh island is in service: a store creating one means to use it.
+     * A fresh island is in service and gives change, its channel the point of
+     * sale: a store creating one means to use it.
      */
     @Test
-    void aFreshIslandIsInService() {
-        assertTrue(new CheckoutIsland().active);
+    void aFreshIslandIsInServiceWithSaneDefaults() {
+        CheckoutIsland island = new CheckoutIsland();
+        assertTrue(island.active);
+        assertTrue(island.changeGivingAllowed);
+        assertFalse(island.autoPeriodCloseDeclaration);
+        assertEquals(PromotionChannel.POINT_OF_SALE, island.promotionChannel);
     }
 }

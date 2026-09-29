@@ -1031,4 +1031,26 @@ class AdminProductFamilyResourceTest {
             assertTrue(member.active);
         }
     }
+
+    /**
+     * {@code list} clamps a page number below one back to the first page — the
+     * requested-below-one arm of the clamp.
+     */
+    @Test
+    void listClampsAPageBelowOneToTheFirst() {
+        AdminProductFamilyResource resource = newResource();
+        TemplateInstance instance = wire(resource.adminArticleGroups);
+        PanacheQuery<ProductFamily> all = listQuery(List.of());
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> ProductFamily.find("order by code")).thenReturn(all);
+            assertEquals(instance, resource.list(null, true, 0, null));
+        }
+        ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
+        verify(resource.adminArticleGroups).data(eq("page"), captor.capture());
+        @SuppressWarnings("unchecked")
+        com.intermarche.pos.ui.journal.JournalPage<AdminProductFamilyResource.GroupRow> window =
+                (com.intermarche.pos.ui.journal.JournalPage<AdminProductFamilyResource.GroupRow>)
+                        captor.getValue();
+        assertEquals(1, window.number);
+    }
 }

@@ -1,0 +1,81 @@
+{!
+ ! The EGAlim screen: the legal categories that cap the promotional generosity
+ ! of an article, and the ceiling each one imposes.
+ !
+ ! ONE LINE per regime, in ONE grid, like the VAT screen and for the same
+ ! reason: a regime is four short values, and a field sized for a paragraph in
+ ! front of two digits tells the operator the two digits are a paragraph. The
+ ! rows share the grid, each form being `display: contents`, so the columns
+ ! hold whatever the cells contain on any engine.
+ !
+ ! The screen speaks PERCENT -- 34 -- and the row stores the fraction, which is
+ ! the form the valuation engine computes with. An EMPTY ceiling is not zero:
+ ! it is the absence of a ceiling, which is how the exempt category is stated.
+ ! Zero would mean "no generosity allowed at all", the exact opposite, so the
+ ! line shows an explicit "non plafonné" rather than a bare empty cell.
+ !
+ ! The CODE is what the article feed states and what the engine matches on:
+ ! upper-cased on save, unique, and editable at the price the page names --
+ ! nothing detaches here, but the next file naming the old code finds nothing.
+ !
+ ! POST -> 303 -> notice, the same admin cycle as the other back-office pages.
+ ! No inline <style>: base.css and articles.css primitives only.
+!}
+{#include admin-layout}
+
+{#title}EGAlim{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>EGAlim</h1>
+        <p class="page-sub">La catégorie légale d'un article décide du plafond de générosité promotionnelle qu'il peut recevoir. Le code est ce que porte le flux article ; le plafond est ce que dit la loi aujourd'hui.</p>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">Régimes</h2>
+    {#if rows.isEmpty()}
+    <p class="page-sub">Aucun régime n'est enregistré. Tant que la table est vide, aucun article n'est classé et le moteur ne plafonne rien : la garde tourne et ne corrige jamais.</p>
+    {#else}
+    <div class="egalim-grid">
+        <span class="egalim-head egalim-code">Code</span>
+        <span class="egalim-head egalim-cap">Plafond</span>
+        <span class="egalim-head"></span>
+        <span class="egalim-head">Libellé</span>
+        <span class="egalim-head"></span>
+        <span class="egalim-head"></span>
+        {#for row in rows}
+        <form method="post" action="/admin/egalim-regimes/save">
+            <input type="hidden" name="id" value="{row.id}">
+            <input class="input-control egalim-code" type="text" name="code" maxlength="30" value="{row.code}" required aria-label="Code du régime">
+            <input class="input-control egalim-cap" type="text" name="capPercent" value="{row.getCapFormatted()}" placeholder="—" aria-label="Plafond en pourcentage">
+            <span class="egalim-unit">{#if row.capped}%{#else}non plafonné{/if}</span>
+            <input class="input-control egalim-label" type="text" name="label" maxlength="80" value="{row.label ?: ''}" placeholder="Sans libellé" aria-label="Libellé du régime">
+            <button class="btn btn-primary" type="submit">Enregistrer</button>
+            <span class="egalim-remove">
+                <button class="btn btn-muted" type="submit" formaction="/admin/egalim-regimes/delete">Retirer</button>
+            </span>
+        </form>
+        {/for}
+    </div>
+    <p class="page-sub">Un plafond vide signifie « non plafonné » : c'est ainsi que se déclare la catégorie exemptée. Retirer un régime ne casse rien ici, mais les articles qui le portent cessent d'être plafonnés au prochain panier valorisé. Corriger un code ne détache aucun article, en revanche le prochain fichier qui nomme l'ancien code ne trouvera plus rien.</p>
+    {/if}
+</div>
+
+<div class="card">
+    <h2 class="card-title">Nouveau régime</h2>
+    <form method="post" action="/admin/egalim-regimes/save" class="egalim-new">
+        <input class="input-control egalim-code" type="text" name="code" maxlength="30" required aria-label="Code du régime" placeholder="FOOD">
+        <input class="input-control egalim-cap" type="text" name="capPercent" aria-label="Plafond en pourcentage" placeholder="34">
+        <span class="egalim-unit">%</span>
+        <input class="input-control egalim-label" type="text" name="label" maxlength="80" placeholder="Alimentaire et petfood" aria-label="Libellé du régime">
+        <button class="btn btn-primary" type="submit">Créer</button>
+        <span class="egalim-remove"></span>
+    </form>
+</div>
+{/body}

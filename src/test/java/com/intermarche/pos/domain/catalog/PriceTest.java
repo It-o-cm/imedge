@@ -222,4 +222,51 @@ class PriceTest {
                 price.startDateTime, price.endDateTime);
         Assertions.assertEquals(expected, price.getChecksum());
     }
+
+    /**
+     * vatRate reads the rate through the named regime (false arm of the ternary).
+     */
+    @Test
+    void vatRateReadsTheRegimeRate() {
+        Price price = new Price();
+        VatRate regime = new VatRate();
+        regime.rate = new BigDecimal("0.0550");
+        price.vat = regime;
+        Assertions.assertEquals(new BigDecimal("0.0550"), price.vatRate());
+    }
+
+    /**
+     * vatRate answers null when the price names no regime (true arm of the
+     * ternary).
+     */
+    @Test
+    void vatRateIsNullWhenNoRegime() {
+        Price price = new Price();
+        price.vat = null;
+        Assertions.assertNull(price.vatRate());
+    }
+
+    /**
+     * vatNumber reads the number through the named regime (false arm of the
+     * ternary).
+     */
+    @Test
+    void vatNumberReadsTheRegimeNumber() {
+        Price price = new Price();
+        VatRate regime = new VatRate();
+        regime.number = 3;
+        price.vat = regime;
+        Assertions.assertEquals(3, price.vatNumber());
+    }
+
+    /**
+     * vatNumber answers null when the price names no regime (true arm of the
+     * ternary).
+     */
+    @Test
+    void vatNumberIsNullWhenNoRegime() {
+        Price price = new Price();
+        price.vat = null;
+        Assertions.assertNull(price.vatNumber());
+    }
 }

@@ -209,10 +209,14 @@ public class TicketRenderService {
                 && ticket.fidelityEarnTotal.signum() > 0) {
             sb.append(formatLine("CAGNOTTE DU JOUR",
                     "+" + DF.format(ticket.fidelityEarnTotal) + " E"));
-            for (com.intermarche.pos.domain.sale.TicketFidelityLine earnLine
-                    : ticket.fidelityLines) {
-                sb.append(formatLine("  " + earnLine.getLabel(),
-                        "+" + DF.format(earnLine.amount) + " E"));
+            appendFidelityAdvantages(sb, ticket);
+            // imfid response B: the forecast balance after the sale, under the
+            // administered label, marked PREVISIONNEL — nothing is credited
+            // before the ingestion (BO-03-03-31). Absent when no card resolved.
+            if (ticket.fidelityProjectedAfterEarn != null) {
+                sb.append(formatLine(posSettingsService.fidelityProjectedLabel(),
+                        DF.format(ticket.fidelityProjectedAfterEarn) + " E"));
+                sb.append(center("(PREVISIONNEL)", WIDTH)).append("\n");
             }
         }
         sb.append(formatLine("Dont TVA", DF.format(ticket.totalVat) + " E"));
@@ -351,6 +355,87 @@ public class TicketRenderService {
      * @param ticket the sale to describe
      * @return the loyalty values, every one of them already formatted
      */
+    /**
+     * Appends the frozen advantage lines of a sale, GROUPED by advantage type
+     * and the groups ordered by {@code advantageTypeOrder} ascending (imfid
+     * response A, BO-03-03-25/-33). The stored labels are printed verbatim and
+     * no code is ever translated; the order is the received one, never any
+     * evaluation priority.
+     * <p>
+     * When NO line carries a type (rules predating the referential), the output
+     * is the flat list exactly as before this grouping existed — so an
+     * old-ticket duplicata is byte-identical. When some lines carry a type they
+     * are grouped and ordered, and any remaining untyped lines are appended flat
+     * after the groups.
+     *
+     * @param sb the receipt buffer
+     * @param ticket the sale whose frozen advantage lines are printed
+     */
+    private void appendFidelityAdvantages(StringBuilder sb, Ticket ticket) {
+        java.util.List<com.intermarche.pos.domain.sale.TicketFidelityLine> allLines =
+                ticket.fidelityLines == null ? java.util.List.of() : ticket.fidelityLines;
+        boolean anyTyped = false;
+        for (com.intermarche.pos.domain.sale.TicketFidelityLine line : allLines) {
+            if (line.advantageType != null) {
+                anyTyped = true;
+                break;
+            }
+        }
+        if (!anyTyped) {
+            for (com.intermarche.pos.domain.sale.TicketFidelityLine line : allLines) {
+                sb.append(formatLine("  " + line.getLabel(), "+" + DF.format(line.amount) + " E"));
+            }
+            return;
+        }
+        java.util.LinkedHashMap<String,
+                java.util.List<com.intermarche.pos.domain.sale.TicketFidelityLine>> groups =
+                new java.util.LinkedHashMap<>();
+        java.util.List<com.intermarche.pos.domain.sale.TicketFidelityLine> untyped =
+                new java.util.ArrayList<>();
+        for (com.intermarche.pos.domain.sale.TicketFidelityLine line : allLines) {
+            if (line.advantageType == null) {
+                untyped.add(line);
+            } else {
+                groups.computeIfAbsent(line.advantageType, key -> new java.util.ArrayList<>()).add(line);
+            }
+        }
+        java.util.List<String> orderedKeys = new java.util.ArrayList<>(groups.keySet());
+        orderedKeys.sort(java.util.Comparator.comparingInt(key -> groupOrder(groups.get(key))));
+        for (String key : orderedKeys) {
+            java.util.List<com.intermarche.pos.domain.sale.TicketFidelityLine> lines = groups.get(key);
+            String header = lines.get(0).advantageTypeLabel;
+            sb.append(header == null ? key : header).append("\n");
+            for (com.intermarche.pos.domain.sale.TicketFidelityLine line : lines) {
+                sb.append(formatLine("  " + line.getLabel(), "+" + DF.format(line.amount) + " E"));
+            }
+        }
+        for (com.intermarche.pos.domain.sale.TicketFidelityLine line : untyped) {
+            sb.append(formatLine("  " + line.getLabel(), "+" + DF.format(line.amount) + " E"));
+        }
+    }
+
+    /**
+     * The print order of an advantage-type group: the {@code advantageTypeOrder}
+     * of its first line, or {@link Integer#MAX_VALUE} when the group carries
+     * none (so unordered groups fall to the end).
+     *
+     * @param lines the group's lines, never empty
+     * @return the ordering key
+     */
+    private int groupOrder(java.util.List<com.intermarche.pos.domain.sale.TicketFidelityLine> lines) {
+        Integer order = lines.get(0).advantageTypeOrder;
+        return order == null ? Integer.MAX_VALUE : order;
+    }
+
+    /**
+     * Builds the loyalty zone's template data: the same columns the register
+     * exposes, so an administered layout renders a duplicata identically to its
+     * original — including the advantage grouping (imfid response A) and the
+     * projected/after balances (imfid response B/C) frozen on the ticket.
+     *
+     * @param ticket the sale to describe
+     * @return the loyalty values, every one of them already formatted
+     */
     private java.util.Map<String, Object> fidelityData(Ticket ticket) {
         boolean present = ticket.fidelityCard != null && !ticket.fidelityCard.isBlank();
         java.util.List<java.util.Map<String, Object>> lines = new java.util.ArrayList<>();
@@ -358,10 +443,17 @@ public class TicketRenderService {
                 : ticket.fidelityLines == null
                         ? java.util.List.<com.intermarche.pos.domain.sale.TicketFidelityLine>of()
                         : ticket.fidelityLines) {
-            lines.add(java.util.Map.of(
-                    "ruleCode", safe(line.ruleCode),
-                    "label", line.getLabel(),
-                    "amount", line.getAmountFormatted()));
+            java.util.Map<String, Object> lineData = new java.util.HashMap<>();
+            lineData.put("ruleCode", safe(line.ruleCode));
+            lineData.put("label", line.getLabel());
+            lineData.put("amount", line.getAmountFormatted());
+            lineData.put("advantageType", safe(line.advantageType));
+            lineData.put("advantageTypeLabel", safe(line.advantageTypeLabel));
+            lineData.put("advantageTypeOrder", line.advantageTypeOrder == null
+                    ? "" : String.valueOf(line.advantageTypeOrder));
+            lineData.put("advantageCategory", safe(line.advantageCategory));
+            lineData.put("advantageCategoryLabel", safe(line.advantageCategoryLabel));
+            lines.add(lineData);
         }
         java.util.Map<String, Object> data = new java.util.HashMap<>();
         data.put("card", safe(ticket.fidelityCard));
@@ -371,6 +463,12 @@ public class TicketRenderService {
         data.put("lines", lines);
         data.put("availableBalance", ticket.fidelityAvailableBalance == null
                 ? "" : DF.format(ticket.fidelityAvailableBalance));
+        data.put("projectedAfterEarn", ticket.fidelityProjectedAfterEarn == null
+                ? "" : DF.format(ticket.fidelityProjectedAfterEarn));
+        data.put("projectedLabel", posSettingsService.fidelityProjectedLabel());
+        data.put("balanceAfter", ticket.fidelityBalanceAfter == null
+                ? "" : DF.format(ticket.fidelityBalanceAfter));
+        data.put("anonymousProjection", ticket.fidelityAnonymousProjection);
         data.put("usedAmount", DF.format(loyaltyPaid(ticket)));
         data.put("unavailable", ticket.fidelityUnavailable);
         data.put("message", unavailableMessage(ticket, present));

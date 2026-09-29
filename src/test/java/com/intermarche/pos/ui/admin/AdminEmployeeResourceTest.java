@@ -293,4 +293,34 @@ class AdminEmployeeResourceTest {
         assertEquals(BigDecimal.ZERO, resource.paidTo(null));
         assertEquals(BigDecimal.ZERO, resource.paidTo(new Employee()));
     }
+
+    /**
+     * A filtered list echoes the typed text back to the page — the non-null arm
+     * of the text guard, opposite the empty-page arm.
+     */
+    @Test
+    void afilteredListEchoesTheTypedText() {
+        AdminEmployeeResource resource = newResource();
+        TemplateInstance view = stub(resource.adminEmployees);
+        Employee doe = employee("Doe", "Jane", "jdoe");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            stubAll(panache, List.of(doe));
+            resource.list("doe", 1, null, true);
+        }
+        verify(view).data("text", "doe");
+    }
+
+    /**
+     * The search matches on the login alone, when neither name carries the
+     * fragment — the true arm of the login leg of the compound guard.
+     */
+    @Test
+    void thesearchMatchesOnTheLoginAlone() {
+        AdminEmployeeResource resource = newResource();
+        Employee onlyLogin = employee("Zzz", "Yyy", "special");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            stubAll(panache, List.of(onlyLogin));
+            assertEquals(List.of(onlyLogin), resource.search("special"));
+        }
+    }
 }

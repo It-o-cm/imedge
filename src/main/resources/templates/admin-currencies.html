@@ -1,0 +1,91 @@
+{! Currency administration: foreign and legacy currency rates, descended to the
+ ! registers by the CURRENCIES pull. Each row is a save form (hidden code) with a
+ ! delete button via formaction; a new-currency form sits at the bottom. Mirrors
+ ! admin-vat-rates. !}
+{#include admin-layout}
+
+{#title}Devises{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Devises</h1>
+        <p class="page-sub">Le taux de conversion en euros d'une devise étrangère ou héritée (le franc, 6,55957). Administré ici, il descend aux caisses par le tirage référentiel — rien n'est figé dans le logiciel de caisse (EXP-22, LC-02-05-02).</p>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">Devises</h2>
+    {#if currencies.isEmpty()}
+    <p class="page-sub">Aucune devise n'est administrée.</p>
+    {#else}
+    {#for currency in currencies}
+    <form method="post" action="/admin/currencies/save" class="field-grid">
+        <input type="hidden" name="code" value="{currency.code}">
+        <div class="field">
+            <span class="field-label">{currency.code}</span>
+        </div>
+        <div class="field">
+            <label class="field-label" for="cl-{currency.code}">Libellé</label>
+            <input class="input-control" id="cl-{currency.code}" type="text" name="label" maxlength="40" value="{currency.label ?: ''}">
+        </div>
+        <div class="field">
+            <label class="field-label" for="cs-{currency.code}">Symbole</label>
+            <input class="input-control" id="cs-{currency.code}" type="text" name="symbol" maxlength="5" value="{currency.symbol ?: ''}">
+        </div>
+        <div class="field">
+            <label class="field-label" for="cr-{currency.code}">Euros pour une unité</label>
+            <input class="input-control" id="cr-{currency.code}" type="text" name="euroPerUnit" value="{currency.euroPerUnit}">
+        </div>
+        <div class="field">
+            <label class="field-label" for="co-{currency.code}">Ordre</label>
+            <input class="input-control" id="co-{currency.code}" type="number" name="displayOrder" min="0" value="{currency.displayOrder}">
+        </div>
+        <div class="field">
+            <label class="field-label" for="ca-{currency.code}">Active</label>
+            <input id="ca-{currency.code}" type="checkbox" name="active" {#if currency.active}checked{/if}>
+        </div>
+        <div class="page-actions">
+            <button class="btn btn-primary" type="submit">Enregistrer</button>
+            <button class="btn btn-muted" type="submit" formaction="/admin/currencies/delete">Supprimer</button>
+        </div>
+    </form>
+    {/for}
+    {/if}
+</div>
+
+<div class="card">
+    <h2 class="card-title">Nouvelle devise</h2>
+    <form method="post" action="/admin/currencies/save" class="field-grid">
+        <div class="field">
+            <label class="field-label" for="new-code">Code ISO</label>
+            <input class="input-control" id="new-code" type="text" name="code" maxlength="3" required>
+        </div>
+        <div class="field">
+            <label class="field-label" for="new-label">Libellé</label>
+            <input class="input-control" id="new-label" type="text" name="label" maxlength="40">
+        </div>
+        <div class="field">
+            <label class="field-label" for="new-symbol">Symbole</label>
+            <input class="input-control" id="new-symbol" type="text" name="symbol" maxlength="5">
+        </div>
+        <div class="field">
+            <label class="field-label" for="new-rate">Euros pour une unité</label>
+            <input class="input-control" id="new-rate" type="text" name="euroPerUnit" placeholder="6,55957" required>
+        </div>
+        <div class="field">
+            <label class="field-label" for="new-order">Ordre</label>
+            <input class="input-control" id="new-order" type="number" name="displayOrder" min="0" value="0">
+        </div>
+        <div class="field">
+            <label class="field-label" for="new-active">Active</label>
+            <input id="new-active" type="checkbox" name="active" checked>
+        </div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">Créer la devise</button></div>
+    </form>
+</div>
+{/body}

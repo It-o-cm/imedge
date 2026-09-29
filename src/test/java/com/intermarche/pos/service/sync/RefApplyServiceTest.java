@@ -1085,7 +1085,12 @@ class RefApplyServiceTest {
         try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class);
                 MockedConstruction<EchelonSetting> created = mockConstruction(EchelonSetting.class)) {
             service.applyEchelonSettings(List.of(dated, immediate));
-            mocked.verify(EchelonSetting::deleteAll, times(1));
+            // The wipe is scoped to the CENTRAL levels: the node-local ISLAND and
+            // CHECKOUT_POINT rows must survive a central pull (BO-03-09/03-10).
+            mocked.verify(() -> EchelonSetting.delete(
+                    org.mockito.ArgumentMatchers.eq("level in ?1"),
+                    org.mockito.ArgumentMatchers.any(java.util.List.class)), times(1));
+            mocked.verify(EchelonSetting::deleteAll, never());
             assertEquals(2, created.constructed().size());
             EchelonSetting first = created.constructed().get(0);
             assertEquals(EchelonLevel.ENSEIGNE, first.level);
@@ -1410,8 +1415,9 @@ class RefApplyServiceTest {
     // --- Îlots de caisse (BO-03-06-07, BO-03-06-50) ---
 
     /**
-     * {@code applyCheckoutIslands} covers the insert arm, the update arm and
-     * the three deactivation arms.
+     * {@code applyCheckoutIslands} covers the insert arm, the update arm and the
+     * three deactivation arms, and rebuilds the register relation as checkout
+     * points from the backward-compatible {@code terminalIds} string.
      */
     @Test
     void applyCheckoutIslandsInsertsUpdatesAndDeactivates() {
@@ -1444,26 +1450,46 @@ class RefApplyServiceTest {
                 queryReturning(null);
         PanacheQuery<com.intermarche.pos.domain.store.CheckoutIsland> existingQuery =
                 queryReturning(existing);
+        PanacheQuery<com.intermarche.pos.domain.store.CheckoutPoint> noPoint =
+                queryReturning(null);
         try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class);
                 MockedConstruction<com.intermarche.pos.domain.store.CheckoutIsland> created =
-                        mockConstruction(com.intermarche.pos.domain.store.CheckoutIsland.class)) {
+                        mockConstruction(com.intermarche.pos.domain.store.CheckoutIsland.class);
+                MockedConstruction<com.intermarche.pos.domain.store.CheckoutPoint> points =
+                        mockConstruction(com.intermarche.pos.domain.store.CheckoutPoint.class)) {
             mocked.when(() -> com.intermarche.pos.domain.store.CheckoutIsland
                     .find("code", "AVANT")).thenReturn(absentQuery);
             mocked.when(() -> com.intermarche.pos.domain.store.CheckoutIsland
                     .find("code", "COMPTOIR")).thenReturn(existingQuery);
             mocked.when(com.intermarche.pos.domain.store.CheckoutIsland::listAll)
                     .thenReturn(List.of(seen, absentActive, absentInactive));
+            // reconstruction: every listed terminal is new, no stale point remains
+            mocked.when(() -> com.intermarche.pos.domain.store.CheckoutPoint
+                    .find("terminalId", "POS01")).thenReturn(noPoint);
+            mocked.when(() -> com.intermarche.pos.domain.store.CheckoutPoint
+                    .find("terminalId", "POS02")).thenReturn(noPoint);
+            mocked.when(() -> com.intermarche.pos.domain.store.CheckoutPoint
+                    .find("terminalId", "POS08")).thenReturn(noPoint);
+            mocked.when(() -> com.intermarche.pos.domain.store.CheckoutPoint
+                    .list("islandCode = ?1", "AVANT")).thenReturn(List.of());
+            mocked.when(() -> com.intermarche.pos.domain.store.CheckoutPoint
+                    .list("islandCode = ?1", "COMPTOIR")).thenReturn(List.of());
             service.applyCheckoutIslands(List.of(insert, update));
             com.intermarche.pos.domain.store.CheckoutIsland inserted = created.constructed().get(0);
             assertEquals("AVANT", inserted.code);
             assertEquals("Ligne avant", inserted.label);
-            assertEquals("POS01;POS02", inserted.terminalIds);
             assertTrue(inserted.active);
             verify(inserted, times(1)).persist();
 
             assertEquals("Comptoir", existing.label);
-            assertEquals("POS08", existing.terminalIds);
             verify(existing, times(1)).persist();
+
+            // three registers rebuilt as checkout points (POS01, POS02, POS08)
+            assertEquals(3, points.constructed().size());
+            assertEquals("POS01", points.constructed().get(0).terminalId);
+            assertEquals("AVANT", points.constructed().get(0).islandCode);
+            assertTrue(points.constructed().get(0).active);
+            verify(points.constructed().get(0), times(1)).persist();
 
             assertTrue(seen.active);
             verify(seen, never()).persist();
@@ -1471,6 +1497,71 @@ class RefApplyServiceTest {
             verify(absentActive, times(1)).persist();
             assertFalse(absentInactive.active);
             verify(absentInactive, never()).persist();
+        }
+    }
+
+    /**
+     * {@code reconstructPoints} rebuilds the island&rarr;register relation from
+     * the semicolon list: it creates a missing point, reactivates and re-points
+     * an existing one, and deactivates a stale point no longer listed.
+     */
+    @Test
+    void reconstructPointsCreatesReactivatesAndDeactivates() {
+        RefApplyService service = new RefApplyService();
+        com.intermarche.pos.domain.store.CheckoutPoint kept =
+                mock(com.intermarche.pos.domain.store.CheckoutPoint.class);
+        kept.terminalId = "POS01";
+        kept.active = false;
+        com.intermarche.pos.domain.store.CheckoutPoint stale =
+                mock(com.intermarche.pos.domain.store.CheckoutPoint.class);
+        stale.terminalId = "POS09";
+        stale.active = true;
+        PanacheQuery<com.intermarche.pos.domain.store.CheckoutPoint> keptQuery = queryReturning(kept);
+        PanacheQuery<com.intermarche.pos.domain.store.CheckoutPoint> noPoint = queryReturning(null);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class);
+                MockedConstruction<com.intermarche.pos.domain.store.CheckoutPoint> points =
+                        mockConstruction(com.intermarche.pos.domain.store.CheckoutPoint.class)) {
+            mocked.when(() -> com.intermarche.pos.domain.store.CheckoutPoint
+                    .find("terminalId", "POS01")).thenReturn(keptQuery);
+            mocked.when(() -> com.intermarche.pos.domain.store.CheckoutPoint
+                    .find("terminalId", "POS02")).thenReturn(noPoint);
+            mocked.when(() -> com.intermarche.pos.domain.store.CheckoutPoint
+                    .list("islandCode = ?1", "AVANT")).thenReturn(List.of(kept, stale));
+            service.reconstructPoints("AVANT", " POS01 ; POS02 ; ; ");
+            // existing point re-pointed and reactivated
+            assertEquals("AVANT", kept.islandCode);
+            assertTrue(kept.active);
+            verify(kept, times(1)).persist();
+            // missing terminal created
+            assertEquals(1, points.constructed().size());
+            assertEquals("POS02", points.constructed().get(0).terminalId);
+            verify(points.constructed().get(0), times(1)).persist();
+            // stale point no longer listed is deactivated
+            assertFalse(stale.active);
+            verify(stale, times(1)).persist();
+        }
+    }
+
+    /**
+     * {@code reconstructPoints} with a null list deactivates every point of the
+     * island and creates none — the empty-relation arm.
+     */
+    @Test
+    void reconstructPointsWithNoTerminalsDeactivatesAll() {
+        RefApplyService service = new RefApplyService();
+        com.intermarche.pos.domain.store.CheckoutPoint stale =
+                mock(com.intermarche.pos.domain.store.CheckoutPoint.class);
+        stale.terminalId = "POS09";
+        stale.active = true;
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class);
+                MockedConstruction<com.intermarche.pos.domain.store.CheckoutPoint> points =
+                        mockConstruction(com.intermarche.pos.domain.store.CheckoutPoint.class)) {
+            mocked.when(() -> com.intermarche.pos.domain.store.CheckoutPoint
+                    .list("islandCode = ?1", "AVANT")).thenReturn(List.of(stale));
+            service.reconstructPoints("AVANT", null);
+            assertTrue(points.constructed().isEmpty());
+            assertFalse(stale.active);
+            verify(stale, times(1)).persist();
         }
     }
 
@@ -1756,6 +1847,208 @@ class RefApplyServiceTest {
             service.applyDocumentTemplates(List.of(unknown, absent));
             assertNull(created.constructed().get(0).documentType);
             assertNull(created.constructed().get(1).documentType);
+        }
+    }
+
+    /**
+     * Covers the kept arm of the {@code applyTouchGroups} delete loop: a listed
+     * setting whose family code is still named by the snapshot ({@code seen}
+     * contains it) is left in place, so {@code !seen.contains(...)} is false and
+     * {@code delete()} is never called on it. A stale row not in the snapshot is
+     * deleted in the same pass, exercising both arms of the guard.
+     */
+    @Test
+    void applyTouchGroupsKeepsTheStillNamedRow() {
+        RefApplyService service = new RefApplyService();
+        RefPayloads.TouchGroupDto dto = new RefPayloads.TouchGroupDto();
+        dto.familyCode = "F1";
+        dto.pinned = true;
+        dto.buttonSize = "LARGE";
+        dto.displayOrder = 1;
+        dto.salesVolume = 3L;
+        TouchGroupSetting existing = mock(TouchGroupSetting.class);
+        TouchGroupSetting kept = mock(TouchGroupSetting.class);
+        kept.familyCode = "F1";
+        TouchGroupSetting stale = mock(TouchGroupSetting.class);
+        stale.familyCode = "GONE";
+        PanacheQuery<TouchGroupSetting> existingQuery = queryReturning(existing);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> TouchGroupSetting.find("familyCode", "F1")).thenReturn(existingQuery);
+            mocked.when(() -> TouchGroupSetting.listAll()).thenReturn(List.of(kept, stale));
+            service.applyTouchGroups(List.of(dto));
+            assertEquals("LARGE", existing.buttonSize);
+            verify(kept, never()).delete();
+            verify(stale, times(1)).delete();
+        }
+    }
+
+    // --------------------------------------------------
+    // applyPostalCodes (BO-02-04-15)
+    // --------------------------------------------------
+
+    /**
+     * Covers every arm of {@code applyPostalCodes}: a pair unknown on the
+     * register is inserted (findPair-null arm), a known pair is updated
+     * (findPair-present arm), a listed row still named by the snapshot is kept
+     * (seen-contains false-delete arm) and a listed row the snapshot no longer
+     * names is DELETED, not deactivated (seen-absent true-delete arm). The
+     * deleted row carries a null code and a null place, which drives both null
+     * arms of the {@code pairOf} key composer.
+     */
+    @Test
+    void applyPostalCodesUpsertsAndDeletesTheAbsent() {
+        RefApplyService service = new RefApplyService();
+        RefPayloads.PostalCodeDto insert = new RefPayloads.PostalCodeDto();
+        insert.code = "69001";
+        insert.place = "Lyon";
+        insert.country = "FR";
+        RefPayloads.PostalCodeDto update = new RefPayloads.PostalCodeDto();
+        update.code = "75002";
+        update.place = "Paris";
+        update.country = "FR";
+        com.intermarche.pos.domain.store.PostalCode existing =
+                mock(com.intermarche.pos.domain.store.PostalCode.class);
+        com.intermarche.pos.domain.store.PostalCode seen =
+                mock(com.intermarche.pos.domain.store.PostalCode.class);
+        seen.code = "69001";
+        seen.place = "Lyon";
+        com.intermarche.pos.domain.store.PostalCode stale =
+                mock(com.intermarche.pos.domain.store.PostalCode.class);
+        stale.code = null;
+        stale.place = null;
+        PanacheQuery<com.intermarche.pos.domain.store.PostalCode> absentQuery =
+                queryReturning(null);
+        PanacheQuery<com.intermarche.pos.domain.store.PostalCode> existingQuery =
+                queryReturning(existing);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class);
+                MockedConstruction<com.intermarche.pos.domain.store.PostalCode> created =
+                        mockConstruction(com.intermarche.pos.domain.store.PostalCode.class)) {
+            mocked.when(() -> com.intermarche.pos.domain.store.PostalCode
+                    .find("code = ?1 and place = ?2", "69001", "Lyon")).thenReturn(absentQuery);
+            mocked.when(() -> com.intermarche.pos.domain.store.PostalCode
+                    .find("code = ?1 and place = ?2", "75002", "Paris")).thenReturn(existingQuery);
+            mocked.when(() -> com.intermarche.pos.domain.store.PostalCode.listAll())
+                    .thenReturn(List.of(seen, stale));
+            service.applyPostalCodes(List.of(insert, update));
+            com.intermarche.pos.domain.store.PostalCode inserted = created.constructed().get(0);
+            assertEquals("69001", inserted.code);
+            assertEquals("Lyon", inserted.place);
+            assertEquals("FR", inserted.country);
+            verify(inserted, times(1)).persist();
+            assertEquals("FR", existing.country);
+            verify(existing, times(1)).persist();
+            verify(seen, never()).delete();
+            verify(stale, times(1)).delete();
+        }
+    }
+
+    /**
+     * An empty postal-code snapshot deletes every listed pair: a referential
+     * emptied upstream empties on the register too, since a postal code carries
+     * no foreign key that would forbid the deletion.
+     */
+    @Test
+    void applyPostalCodesEmptyPayloadDeletesEveryListedPair() {
+        RefApplyService service = new RefApplyService();
+        com.intermarche.pos.domain.store.PostalCode stale =
+                mock(com.intermarche.pos.domain.store.PostalCode.class);
+        stale.code = "13001";
+        stale.place = "Marseille";
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> com.intermarche.pos.domain.store.PostalCode.listAll())
+                    .thenReturn(List.of(stale));
+            service.applyPostalCodes(List.of());
+            verify(stale, times(1)).delete();
+        }
+    }
+
+    // --------------------------------------------------
+    // applyCustomers — origin, due date and free fields
+    // --------------------------------------------------
+
+    /**
+     * Covers the readable arms of the {@code origin} and {@code date} helpers and
+     * the free-field replacement: an inserted customer carries a known origin
+     * (both guard-false arms, valueOf success), a parseable due date (both
+     * guard-false arms, parse success) and one free field, so the free-field
+     * loop body runs on a freshly created list ({@code freeFields == null} true
+     * arm, {@code dto.freeFields != null} true arm). An updated customer that
+     * already carries a free-field list has it CLEARED and left empty because
+     * the snapshot names none ({@code freeFields == null} false arm,
+     * {@code dto.freeFields != null} false arm), and its blank origin and blank
+     * due date fall back to REGISTER and null (the {@code isBlank} true arms).
+     */
+    @Test
+    void applyCustomersReadsOriginDueDateAndReplacesFreeFields() {
+        RefApplyService service = new RefApplyService();
+        RefPayloads.CustomerDto insert = new RefPayloads.CustomerDto();
+        insert.accountNumber = "ACC1";
+        insert.companyName = "Alpha SARL";
+        insert.origin = "INTEGRATED";
+        insert.dueDate = "2026-05-15";
+        RefPayloads.FreeFieldDto field = new RefPayloads.FreeFieldDto();
+        field.slot = 1;
+        field.label = "Contact";
+        field.value = "Jean";
+        insert.freeFields = new ArrayList<>(List.of(field));
+        RefPayloads.CustomerDto update = new RefPayloads.CustomerDto();
+        update.accountNumber = "ACC2";
+        update.companyName = "Beta SA";
+        update.origin = "   ";
+        update.dueDate = "   ";
+        update.freeFields = null;
+        AccountCustomer existing = mock(AccountCustomer.class);
+        existing.address = new Address();
+        existing.freeFields = new ArrayList<>();
+        existing.freeFields.add(new AccountCustomer.FreeField(9, "Stale", "Old"));
+        PanacheQuery<AccountCustomer> absentQuery = queryReturning(null);
+        PanacheQuery<AccountCustomer> existingQuery = queryReturning(existing);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class);
+                MockedConstruction<AccountCustomer> created = mockConstruction(AccountCustomer.class)) {
+            mocked.when(() -> AccountCustomer.find("accountNumber", "ACC1")).thenReturn(absentQuery);
+            mocked.when(() -> AccountCustomer.find("accountNumber", "ACC2")).thenReturn(existingQuery);
+            service.applyCustomers(List.of(insert, update));
+            AccountCustomer inserted = created.constructed().get(0);
+            assertEquals(AccountCustomer.Origin.INTEGRATED, inserted.origin);
+            assertEquals(LocalDate.of(2026, 5, 15), inserted.dueDate);
+            assertEquals(1, inserted.freeFields.size());
+            assertEquals(1, inserted.freeFields.get(0).slot);
+            assertEquals("Contact", inserted.freeFields.get(0).label);
+            assertEquals("Jean", inserted.freeFields.get(0).value);
+            verify(inserted, times(1)).persist();
+            assertEquals(AccountCustomer.Origin.REGISTER, existing.origin);
+            assertNull(existing.dueDate);
+            assertTrue(existing.freeFields.isEmpty());
+            verify(existing, times(1)).persist();
+        }
+    }
+
+    /**
+     * Covers the catch arms of the {@code origin} and {@code date} helpers: an
+     * origin word this version does not know is read as REGISTER rather than
+     * failing the pull (valueOf's IllegalArgumentException), and a malformed due
+     * date is read as no date rather than as an incident (parse's
+     * DateTimeParseException) — one bad row must not stop the whole referential.
+     */
+    @Test
+    void applyCustomersToleratesUnknownOriginAndMalformedDueDate() {
+        RefApplyService service = new RefApplyService();
+        RefPayloads.CustomerDto dto = new RefPayloads.CustomerDto();
+        dto.accountNumber = "ACC9";
+        dto.companyName = "Gamma";
+        dto.origin = "MARTIENNE";
+        dto.dueDate = "35/13/2026";
+        dto.freeFields = null;
+        PanacheQuery<AccountCustomer> absentQuery = queryReturning(null);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class);
+                MockedConstruction<AccountCustomer> created = mockConstruction(AccountCustomer.class)) {
+            mocked.when(() -> AccountCustomer.find("accountNumber", "ACC9")).thenReturn(absentQuery);
+            service.applyCustomers(List.of(dto));
+            AccountCustomer inserted = created.constructed().get(0);
+            assertEquals(AccountCustomer.Origin.REGISTER, inserted.origin);
+            assertNull(inserted.dueDate);
+            assertTrue(inserted.freeFields.isEmpty());
+            verify(inserted, times(1)).persist();
         }
     }
 }

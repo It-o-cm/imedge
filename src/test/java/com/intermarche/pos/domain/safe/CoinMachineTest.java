@@ -104,6 +104,16 @@ class CoinMachineTest {
     }
 
     /**
+     * A machine with a running total formats it to two decimals — the non-null
+     * arm of the declared guard in the formatter.
+     */
+    @Test
+    void amachineWithARunningTotalFormatsIt() {
+        CoinMachine machine = machine("300.5");
+        assertEquals("300.50", machine.getDeclaredAmountFormatted());
+    }
+
+    /**
      * The code finder resolves a machine, padding tolerated, and answers null on
      * a null or blank code — the three legs of its guard.
      */

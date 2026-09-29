@@ -1,0 +1,113 @@
+{! Checkout-island administration: the island promoted to a settings-bearing
+ ! object (BO-03-10). Each row is a save form (hidden code) with a delete button
+ ! via formaction; a new-island form sits at the bottom. Mirrors admin-vat-rates. !}
+{#include admin-layout}
+
+{#title}Îlots de caisse{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Îlots de caisse</h1>
+        <p class="page-sub">Le groupe de caisses qu'un magasin pilote ensemble — ligne avant, comptoir, drive. L'îlot porte son point de vente, son canal de promotion et le rendu monnaie ; les caisses s'y rattachent depuis l'écran des points de caisse (BO-03-10).</p>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">Îlots</h2>
+    {#if islands.isEmpty()}
+    <p class="page-sub">Aucun îlot n'est administré.</p>
+    {#else}
+    {#for island in islands}
+    <form method="post" action="/admin/checkout-islands/save" class="field-grid">
+        <input type="hidden" name="code" value="{island.code}">
+        <div class="field">
+            <span class="field-label">{island.code}</span>
+            <span class="field-hint">{#for terminal in island.terminals()}{terminal} {/for}</span>
+        </div>
+        <div class="field">
+            <label class="field-label" for="il-{island.code}">Libellé</label>
+            <input class="input-control" id="il-{island.code}" type="text" name="label" maxlength="100" value="{island.label ?: ''}">
+        </div>
+        <div class="field">
+            <label class="field-label" for="ip-{island.code}">Point de vente</label>
+            <select class="input-control" id="ip-{island.code}" name="pdvNumber">
+                <option value="">—</option>
+                {#for pdv in pdvs}
+                <option value="{pdv.pdvNumber}" {#if island.pdvNumber == pdv.pdvNumber}selected{/if}>{pdv.pdvNumber} — {pdv.name}</option>
+                {/for}
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-label" for="ic-{island.code}">Canal de promotion</label>
+            <select class="input-control" id="ic-{island.code}" name="promotionChannel">
+                {#for channel in channels}
+                <option value="{channel}" {#if island.promotionChannel == channel}selected{/if}>{channel.label}</option>
+                {/for}
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-label" for="ig-{island.code}">Rendu monnaie</label>
+            <input id="ig-{island.code}" type="checkbox" name="changeGivingAllowed" {#if island.changeGivingAllowed}checked{/if}>
+        </div>
+        <div class="field">
+            <label class="field-label" for="iac-{island.code}">Déclaration auto. fin de période</label>
+            <input id="iac-{island.code}" type="checkbox" name="autoPeriodCloseDeclaration" {#if island.autoPeriodCloseDeclaration}checked{/if}>
+        </div>
+        <div class="field">
+            <label class="field-label" for="ia-{island.code}">Actif</label>
+            <input id="ia-{island.code}" type="checkbox" name="active" {#if island.active}checked{/if}>
+        </div>
+        <div class="page-actions">
+            <button class="btn btn-primary" type="submit">Enregistrer</button>
+            <button class="btn btn-muted" type="submit" formaction="/admin/checkout-islands/delete">Supprimer</button>
+        </div>
+    </form>
+    {/for}
+    {/if}
+</div>
+
+<div class="card">
+    <h2 class="card-title">Nouvel îlot</h2>
+    <form method="post" action="/admin/checkout-islands/save" class="field-grid">
+        <div class="field">
+            <label class="field-label" for="new-code">Code</label>
+            <input class="input-control" id="new-code" type="text" name="code" maxlength="50" required>
+        </div>
+        <div class="field">
+            <label class="field-label" for="new-label">Libellé</label>
+            <input class="input-control" id="new-label" type="text" name="label" maxlength="100">
+        </div>
+        <div class="field">
+            <label class="field-label" for="new-pdv">Point de vente</label>
+            <select class="input-control" id="new-pdv" name="pdvNumber">
+                <option value="">—</option>
+                {#for pdv in pdvs}
+                <option value="{pdv.pdvNumber}">{pdv.pdvNumber} — {pdv.name}</option>
+                {/for}
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-label" for="new-channel">Canal de promotion</label>
+            <select class="input-control" id="new-channel" name="promotionChannel">
+                {#for channel in channels}
+                <option value="{channel}">{channel.label}</option>
+                {/for}
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-label" for="new-change">Rendu monnaie</label>
+            <input id="new-change" type="checkbox" name="changeGivingAllowed" checked>
+        </div>
+        <div class="field">
+            <label class="field-label" for="new-active">Actif</label>
+            <input id="new-active" type="checkbox" name="active" checked>
+        </div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">Créer l'îlot</button></div>
+    </form>
+</div>
+{/body}

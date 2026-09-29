@@ -148,13 +148,25 @@ public class SyncIngestService {
         ticket.fidelityEarnTotal = dto.fidelityEarnTotal;
         ticket.fidelityAvailableBalance = dto.fidelityAvailableBalance;
         ticket.fidelityUnavailable = dto.fidelityUnavailable;
+        // BO-03-03-28/31: the projected/after balances and the anonymous-projection
+        // flag frozen by the selling register. A register not yet updated pushes a
+        // payload without them: the DTO defaults (null, null, false) then persist,
+        // and the ticket reads exactly as before — backward-compatible on the wire.
+        ticket.fidelityProjectedAfterEarn = dto.fidelityProjectedAfterEarn;
+        ticket.fidelityBalanceAfter = dto.fidelityBalanceAfter;
+        ticket.fidelityAnonymousProjection = dto.fidelityAnonymousProjection;
         if (ticket.fidelityLines == null) {
             ticket.fidelityLines = new java.util.ArrayList<>();
         }
         ticket.fidelityLines.clear();
         for (SyncPayloads.FidelityLineDto earnDto : dto.fidelityLines) {
+            // BO-03-03-25: the advantage grouping travels with each line so a
+            // duplicata regroups identically; a line from an un-updated register
+            // carries null grouping and prints flat, as today.
             ticket.fidelityLines.add(new com.intermarche.pos.domain.sale.TicketFidelityLine(
-                    earnDto.ruleCode, earnDto.label, earnDto.amount));
+                    earnDto.ruleCode, earnDto.label, earnDto.amount,
+                    earnDto.advantageType, earnDto.advantageTypeLabel, earnDto.advantageTypeOrder,
+                    earnDto.advantageCategory, earnDto.advantageCategoryLabel));
         }
         ticket.digitalKey = dto.digitalKey;
         ticket.customerEmail = dto.customerEmail;

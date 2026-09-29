@@ -190,6 +190,42 @@ class ReportFormatTest {
     }
 
     /**
+     * An {@code Integer} is read through its long value (its own arm of the
+     * integral compound guard).
+     */
+    @Test
+    void decimalReadsAnInteger() {
+        assertEquals(0, BigDecimal.valueOf(7L).compareTo(ReportFormat.decimal(Integer.valueOf(7))));
+    }
+
+    /**
+     * A {@code Short} is read through its long value (its own arm of the
+     * integral compound guard).
+     */
+    @Test
+    void decimalReadsAShort() {
+        assertEquals(0, BigDecimal.valueOf(9L).compareTo(ReportFormat.decimal(Short.valueOf((short) 9))));
+    }
+
+    /**
+     * A {@code Byte} is read through its long value (its own arm of the
+     * integral compound guard).
+     */
+    @Test
+    void decimalReadsAByte() {
+        assertEquals(0, BigDecimal.valueOf(5L).compareTo(ReportFormat.decimal(Byte.valueOf((byte) 5))));
+    }
+
+    /**
+     * A {@code Double} falls past the integral guard and is read through its
+     * double value (the compound guard's all-false leg).
+     */
+    @Test
+    void decimalReadsADoubleThroughItsDoubleValue() {
+        assertEquals(0, BigDecimal.valueOf(2.5d).compareTo(ReportFormat.decimal(Double.valueOf(2.5d))));
+    }
+
+    /**
      * A count column is numeric, a text column is not.
      */
     @Test

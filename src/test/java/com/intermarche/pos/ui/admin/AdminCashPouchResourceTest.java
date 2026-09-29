@@ -26,10 +26,12 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -290,5 +292,23 @@ class AdminCashPouchResourceTest {
         AdminCashPouchResource anonymous = newResource();
         anonymous.currentUser = null;
         assertNull(anonymous.signedIn());
+    }
+
+    /**
+     * A null withdrawn total is shown as zero: the null arm of the amount
+     * format, forced by stubbing the day total to null on a spy since the real
+     * accumulator never yields null.
+     */
+    @Test
+    void aNullWithdrawnTotalIsShownAsZero() {
+        AdminCashPouchResource resource = spy(newResource());
+        TemplateInstance view = stub(resource.adminSafePouches);
+        doReturn(null).when(resource).withdrawnOf(any());
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            stubSessions(panache, LocalDate.now(), List.of());
+            stubPouches(panache, List.of());
+            assertSame(view, resource.list(null, null, true));
+        }
+        verify(view).data("withdrawn", "0.00");
     }
 }

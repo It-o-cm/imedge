@@ -3,6 +3,7 @@ package com.intermarche.pos.service;
 import com.intermarche.pos.domain.session.CashSession;
 import com.intermarche.pos.domain.session.TechnicalEvent;
 import com.intermarche.pos.domain.sync.RegisterCommand;
+import com.intermarche.pos.domain.util.DateTimeProvider;
 import com.intermarche.pos.service.sync.RegisterCommandService;
 import io.quarkus.runtime.StartupEvent;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -11,6 +12,7 @@ import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import org.jboss.logging.Logger;
 
+import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -74,6 +76,17 @@ public class PeriodCloseService {
     /** The electronic journal the requirement asks these orders to land in. */
     @Inject TechnicalEventService technicalEventService;
 
+    /** The end-of-period data-retention sweep (BO-10-08-03 to -26). */
+    @Inject RetentionPurgeService retentionPurgeService;
+
+    /**
+     * The day the retention sweep last ran, so it runs at most once a period.
+     * <p>In memory rather than persisted: a restart re-runs it the same evening,
+     * which is harmless — the sweep is idempotent, deleting nothing on a second
+     * pass because the first already took what was stale.
+     */
+    LocalDate lastPurgeDay;
+
     /** Seconds between two examinations of the clock. */
     long tickSeconds = 60L;
 
@@ -117,19 +130,44 @@ public class PeriodCloseService {
     @Transactional
     public void tick() {
         LOGGER.info("Entering method tick");
-        if (!posSettingsService.periodAutoCloseEnabled()) {
-            LOGGER.info("Exiting method tick: automatic close disarmed");
+        LocalTime now = LocalTime.now();
+        if (posSettingsService.periodAutoCloseEnabled() && inClosingWindow(now)) {
+            List<CashSession> open = CashSession.list("status", CashSession.SessionStatus.OPEN);
+            for (CashSession session : open) {
+                order(session.terminalId);
+            }
+            LOGGER.info("Closing window: " + open.size() + " register(s) still open");
+        }
+        maybeSweep(now, DateTimeProvider.now().toLocalDate());
+        LOGGER.info("Exiting method tick");
+    }
+
+    /**
+     * Runs the data-retention sweep once, when the period has ended.
+     *
+     * <p>The sweep hooks onto this end-of-period loop rather than a parallel
+     * scheduler, but it must not run WHILE the day closes: it waits until the
+     * clock has reached the end of period (past the closing window that precedes
+     * it), then runs once and stamps the day, so the minute-a-tick loop does not
+     * launch it again. The two guards are the whole of it — nothing to sweep is
+     * decided by the policies themselves, each inert while its parameter is zero.
+     *
+     * @param now the moment examined
+     * @param today the day examined, from the freezable clock
+     */
+    void maybeSweep(LocalTime now, LocalDate today) {
+        LOGGER.info("Entering method maybeSweep");
+        if (today.equals(lastPurgeDay)) {
+            LOGGER.info("Exiting method maybeSweep: already swept today");
             return;
         }
-        if (!inClosingWindow(LocalTime.now())) {
-            LOGGER.info("Exiting method tick: outside the closing window");
+        if (now.isBefore(endOfPeriod())) {
+            LOGGER.info("Exiting method maybeSweep: end of period not reached");
             return;
         }
-        List<CashSession> open = CashSession.list("status", CashSession.SessionStatus.OPEN);
-        for (CashSession session : open) {
-            order(session.terminalId);
-        }
-        LOGGER.info("Exiting method tick with " + open.size() + " register(s) still open");
+        retentionPurgeService.sweep();
+        lastPurgeDay = today;
+        LOGGER.info("Exiting method maybeSweep: sweep run");
     }
 
     /**

@@ -1,19 +1,23 @@
 package com.intermarche.pos.ui.supervision;
 
 import com.intermarche.pos.domain.session.TechnicalEvent;
+import com.intermarche.pos.security.CurrentUser;
 import com.intermarche.pos.service.CashSessionService;
 import com.intermarche.pos.service.TechnicalEventService;
 import com.intermarche.pos.service.sync.EngineFeedDeliveryService;
 import com.intermarche.pos.service.sync.RefPullService;
+import com.intermarche.pos.service.sync.ScheduledDeliveryService;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.DefaultValue;
+import jakarta.ws.rs.FormParam;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
@@ -23,6 +27,8 @@ import java.math.BigDecimal;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
 import org.jboss.logging.Logger;
 
 /**
@@ -62,9 +68,13 @@ public class SyncSupervisionResource {
     @Inject
     RefPullService refPullService;
 
-    /** The engine feed delivery loop (manual relaunch). */
+    /** The engine feed delivery loop (manual relaunch, targeted variant). */
     @Inject
     EngineFeedDeliveryService engineFeedDeliveryService;
+
+    /** The deferred deliveries keeper (booking, listing, cancellation). */
+    @Inject
+    ScheduledDeliveryService scheduledDeliveryService;
 
     /** The cash session service (local force-close). */
     @Inject
@@ -73,6 +83,10 @@ public class SyncSupervisionResource {
     /** The technical journal (the two relaunches are journaled). */
     @Inject
     TechnicalEventService technicalEventService;
+
+    /** Who is asking, so a booking can name the administrator who created it. */
+    @Inject
+    CurrentUser currentUser;
 
     /**
      * Shows the sync supervision page.
@@ -140,6 +154,138 @@ public class SyncSupervisionResource {
                 "Livraison manuelle des flux moteur en échec: " + error);
         LOGGER.info("Exiting method relaunchDelivery");
         return redirect("Livraison des flux moteur en échec : " + error, false);
+    }
+
+    /**
+     * Delivers ONE feed NOW, by code, from its per-row "Livrer maintenant"
+     * button (GB-01-01-01), and — on the very same button when the row is in
+     * error — replays it (GB-01-01-19/30). Delegates to the targeted delivery
+     * variant, journals the act under the same {@code ENGINE_FEED_DELIVERY_FORCED}
+     * type as the global relaunch (naming the feed), and redirects with the notice.
+     * <p>
+     * The replay is safe by construction — the downstream chain is idempotent
+     * (the engine imports each parcel by checksum, the till consumes each result
+     * by ticket) — so pressing the button on a feed already delivered, or on one
+     * left half-applied by an outage, never double-applies anything; see
+     * {@link EngineFeedDeliveryService#triggerDelivery(String)}.
+     *
+     * @param code the feed code to deliver
+     * @return a 303 redirect to the page with the notice
+     */
+    @POST
+    @Path("/deliver/{code}")
+    @RolesAllowed("ADMIN")
+    public Response relaunchDeliveryFor(@PathParam("code") String code) {
+        LOGGER.info("Entering method relaunchDeliveryFor with code: " + code);
+        String error = engineFeedDeliveryService.triggerDelivery(code);
+        if (error == null) {
+            technicalEventService.log(TechnicalEvent.EventType.ENGINE_FEED_DELIVERY_FORCED,
+                    "Livraison manuelle du flux moteur " + code + " réussie");
+            LOGGER.info("Exiting method relaunchDeliveryFor");
+            return redirect("Flux " + code + " livré.", true);
+        }
+        technicalEventService.log(TechnicalEvent.EventType.ENGINE_FEED_DELIVERY_FORCED,
+                "Livraison manuelle du flux moteur " + code + " en échec: " + error);
+        LOGGER.info("Exiting method relaunchDeliveryFor");
+        return redirect("Livraison du flux " + code + " en échec : " + error, false);
+    }
+
+    /**
+     * Books a deferred delivery (GB-01-01-02) for a feed (or every feed) at a
+     * chosen minute; the existing delivery loop runs it on its next wake. A
+     * blank feed code books every feed; a missing or malformed date is refused
+     * with a red notice.
+     *
+     * @param feedCode the feed code to deliver, blank for every feed
+     * @param scheduledAt the local date-time (ISO {@code yyyy-MM-ddTHH:mm}) to run at
+     * @return a 303 redirect to the page with the notice
+     */
+    @POST
+    @Path("/schedule")
+    @RolesAllowed("ADMIN")
+    public Response schedule(@FormParam("feedCode") String feedCode,
+                             @FormParam("scheduledAt") String scheduledAt) {
+        LOGGER.info("Entering method schedule with feedCode: " + feedCode + ", scheduledAt: " + scheduledAt);
+        if (scheduledAt == null || scheduledAt.isBlank()) {
+            LOGGER.info("Exiting method schedule");
+            return redirect("Date de planification manquante.", false);
+        }
+        LocalDateTime when;
+        try {
+            when = LocalDateTime.parse(scheduledAt);
+        } catch (DateTimeParseException e) {
+            LOGGER.info("Exiting method schedule");
+            return redirect("Date de planification invalide.", false);
+        }
+        scheduledDeliveryService.schedule(feedCode, when, currentUser.getName());
+        LOGGER.info("Exiting method schedule");
+        return redirect("Livraison planifiée.", true);
+    }
+
+    /**
+     * Cancels a still-pending deferred delivery (GB-01-01-02) and redirects with
+     * the notice; a booking already run (DONE/FAILED) or gone cannot be
+     * cancelled and yields a red notice.
+     *
+     * @param id the booking identifier
+     * @return a 303 redirect to the page with the notice
+     */
+    @POST
+    @Path("/schedule/{id}/cancel")
+    @RolesAllowed("ADMIN")
+    public Response cancelSchedule(@PathParam("id") Long id) {
+        LOGGER.info("Entering method cancelSchedule with id: " + id);
+        boolean cancelled = scheduledDeliveryService.cancel(id);
+        LOGGER.info("Exiting method cancelSchedule");
+        return cancelled
+                ? redirect("Planification annulée.", true)
+                : redirect("Planification introuvable ou déjà exécutée.", false);
+    }
+
+    /**
+     * Renders the engine-feed table body alone, for the 2-second auto-refresh
+     * (GB-01-01-20/30) that swaps table bodies in place without reloading.
+     *
+     * @return the {@code feeds} fragment of the supervision page
+     */
+    @GET
+    @Path("/feeds")
+    @RolesAllowed("ADMIN")
+    @Produces(MediaType.TEXT_HTML)
+    public TemplateInstance feedsFragment() {
+        LOGGER.info("Entering method feedsFragment");
+        LOGGER.info("Exiting method feedsFragment");
+        return adminSync.getFragment("feeds").data("view", syncSupervisionService.build());
+    }
+
+    /**
+     * Renders the referential-pull table body alone, for the auto-refresh.
+     *
+     * @return the {@code pulls} fragment of the supervision page
+     */
+    @GET
+    @Path("/pulls")
+    @RolesAllowed("ADMIN")
+    @Produces(MediaType.TEXT_HTML)
+    public TemplateInstance pullsFragment() {
+        LOGGER.info("Entering method pullsFragment");
+        LOGGER.info("Exiting method pullsFragment");
+        return adminSync.getFragment("pulls").data("view", syncSupervisionService.build());
+    }
+
+    /**
+     * Renders the store-outbox table body alone, for the auto-refresh.
+     *
+     * @return the {@code backlog} fragment of the supervision page
+     */
+    @GET
+    @Path("/outbox")
+    @RolesAllowed("ADMIN")
+    @Produces(MediaType.TEXT_HTML)
+    public TemplateInstance outboxFragment() {
+        LOGGER.info("Entering method outboxFragment");
+        LOGGER.info("Exiting method outboxFragment");
+        return adminSync.getFragment("backlog").data("view", syncSupervisionService.build());
     }
 
     /**

@@ -23,6 +23,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -631,6 +632,61 @@ class PriceCsvResourceTest {
         java.util.Map<String, Integer> header = new java.util.LinkedHashMap<>();
         for (int i = 0; i < TEST_HEADER.length; i++) header.put(TEST_HEADER[i], i);
         return new ImporterCsvResource.LineData(lineNumber, header, cells, TEST_HEADER[0]);
+    }
+
+    /**
+     * {@code resolveVat} — reached through {@code computeIncomingChecksum} —
+     * names the regime by NUMBER when the feed declares VAT_NUMBER (the
+     * {@code number != null} true arm at L389): the number wins over the rate
+     * because it names a referential line without interpretation, so the
+     * checksum hashes the regime the number resolves to.
+     *
+     * @throws Exception on reflection failure
+     */
+    @Test
+    void incomingChecksumResolvesVatByNumberWhenDeclared() throws Exception {
+        PriceCsvResource resource = new PriceCsvResource();
+        String[] names = {"EAN", "PRICE_EXCL_TAX", "PRICE_INCL_TAX", "VAT_NUMBER",
+                "PRIORITY", "START_DATE", "END_DATE"};
+        java.util.Map<String, Integer> header = new java.util.LinkedHashMap<>();
+        for (int i = 0; i < names.length; i++) header.put(names[i], i);
+        ImporterCsvResource.LineData data = new ImporterCsvResource.LineData(1, header,
+                new String[]{"111", "1.5", "2.5", "1", "5", "2020-12-31T00:00:00", "2021-01-31T00:00:00"},
+                "EAN");
+        Product product = new Product();
+        product.ean = "111";
+        try (MockedStatic<VatRate> vatRates = mockStatic(VatRate.class)) {
+            vatRates.when(() -> VatRate.findByNumber(1)).thenReturn(REGIME);
+            int checksum = incomingChecksum(resource, data, product);
+            assertEquals(Objects.hash("111", new BigDecimal("1.5"), new BigDecimal("2.5"),
+                    REGIME.number, 5, LocalDateTime.of(2020, 12, 31, 0, 0),
+                    LocalDateTime.of(2021, 1, 31, 0, 0)), checksum);
+            vatRates.verify(() -> VatRate.findByNumber(1));
+        }
+    }
+
+    /**
+     * {@code resolveVat} — reached through {@code computeIncomingChecksum} —
+     * hashes a null VAT number when the referential knows no regime for the
+     * line's rate (the {@code vat == null} arm of the L410 ternary): a row
+     * resolving to no regime leaves the price without one, which the scan paths
+     * survive by falling back on the administered default.
+     *
+     * @throws Exception on reflection failure
+     */
+    @Test
+    void incomingChecksumHashesNullVatWhenRegimeUnknown() throws Exception {
+        PriceCsvResource resource = new PriceCsvResource();
+        ImporterCsvResource.LineData data = line(1, fullParts());
+        Product product = new Product();
+        product.ean = "111";
+        try (MockedStatic<VatRate> vatRates = mockStatic(VatRate.class)) {
+            vatRates.when(() -> VatRate.findByRate(new BigDecimal("0.2"))).thenReturn(null);
+            int checksum = incomingChecksum(resource, data, product);
+            assertEquals(Objects.hash("111", new BigDecimal("1.5"), new BigDecimal("2.5"),
+                    null, 5, LocalDateTime.of(2020, 12, 31, 0, 0),
+                    LocalDateTime.of(2021, 1, 31, 0, 0)), checksum);
+        }
     }
 
 }

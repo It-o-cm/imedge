@@ -4,12 +4,19 @@ import com.intermarche.pos.domain.safe.AccountingPeriod;
 import com.intermarche.pos.domain.safe.SafeMovement;
 import com.intermarche.pos.domain.safe.SafeMovementType;
 import com.intermarche.pos.domain.safe.SafeVatLine;
+import io.quarkus.hibernate.orm.panache.Panache;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import io.quarkus.hibernate.orm.panache.PanacheQuery;
+import jakarta.persistence.EntityManager;
+import jakarta.ws.rs.core.Response;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedConstruction;
 import org.mockito.MockedStatic;
 
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -22,7 +29,9 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -262,5 +271,74 @@ class SafeReceiptCsvResourceTest {
                     resource.findEntityForLine(row("R-1", "Station", "120,00", "2026-09-15")));
             assertNull(resource.findEntityForLine(row("R-9", "Station", "120,00", "2026-09-15")));
         }
+    }
+
+    /**
+     * A reference the safe has never seen is CREATED PENDING when a period is
+     * open: the movement is stamped AUTOMATIC_RECEIPT, dated, valued and
+     * persisted, and the created counter — not the updated one — is stepped.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void anewRowWithAnOpenPeriodIsCreated() {
+        int[] counters = new int[2];
+        AccountingPeriod period = mock(AccountingPeriod.class);
+        EntityManager entityManager = mock(EntityManager.class);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
+                MockedStatic<Panache> panacheStatic = mockStatic(Panache.class);
+                MockedConstruction<SafeMovement> construction = mockConstruction(SafeMovement.class)) {
+            PanacheQuery<AccountingPeriod> query = mock(PanacheQuery.class);
+            when(query.firstResult()).thenReturn(period);
+            panache.when(() -> AccountingPeriod.find("status = ?1 order by startDate desc",
+                    AccountingPeriod.PeriodStatus.OPEN)).thenReturn(query);
+            panacheStatic.when(Panache::getEntityManager).thenReturn(entityManager);
+            resource.processLineLogic(
+                    row("R-3", "Station", "120,00", "2026-09-15", "20,00", "100,00", "20,00"),
+                    new HashMap<>(), counters);
+            assertEquals(1, counters[0]);
+            assertEquals(0, counters[1]);
+            SafeMovement created = construction.constructed().get(0);
+            assertEquals(SafeMovementType.AUTOMATIC_RECEIPT, created.type);
+            assertEquals("R-3", created.reference);
+            assertSame(period, created.period);
+            assertEquals(SafeMovement.MovementStatus.PENDING, created.status);
+            assertEquals(new BigDecimal("120.00"), created.amount);
+            assertEquals("Station", created.label);
+            assertEquals(LocalDate.of(2026, 9, 15), created.movementDate);
+            assertEquals(1, created.vatLines.size());
+            verify(entityManager).persist(created);
+        }
+    }
+
+    /**
+     * A row whose wording cell is absent altogether — not merely blank — also
+     * falls back to the reference-derived label: the null arm of that guard, the
+     * blank arm being covered elsewhere.
+     */
+    @Test
+    void arowWithAnAbsentWordingFallsBack() {
+        int[] counters = new int[2];
+        SafeMovement movement = existing("R-5", true);
+        Map<String, Object> known = new HashMap<>();
+        known.put("R-5", movement);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> SafeMovement.findById(3L)).thenReturn(movement);
+            resource.processLineLogic(row("R-5", null, "150,00", "2026-09-16"), known, counters);
+        }
+        assertEquals("Recette intégrée R-5", movement.label);
+    }
+
+    /**
+     * The public entry point delegates to the staged import keyed on REFERENCE
+     * with AMOUNT required: a header missing AMOUNT is refused with a 400, which
+     * proves the key and required columns this importer hands down.
+     */
+    @Test
+    void theentryPointDelegatesKeyedOnReferenceRequiringAmount() {
+        InputStream stream = new ByteArrayInputStream(
+                "REFERENCE\nR-1".getBytes(StandardCharsets.UTF_8));
+        Response response = resource.importReceipts(stream);
+        assertEquals(Response.Status.BAD_REQUEST.getStatusCode(), response.getStatus());
+        assertTrue(response.getEntity().toString().contains(SafeReceiptCsvResource.COL_AMOUNT));
     }
 }

@@ -47,6 +47,13 @@ class EngineFeedServiceTest {
         assertTrue(indexOf("VAT_RATES") < indexOf("PRICES"));
         assertEquals("/vat-rates/import",
                 EngineFeedService.catalogEntry("VAT_RATES").orElseThrow().enginePath());
+        // Load-bearing too: an article states a regime CODE and never a ceiling,
+        // so an engine holding articles it has no ceilings for caps them at the
+        // values compiled into its own enum instead of the administered ones.
+        assertTrue(indexOf("EGALIM_REGIMES") >= 0);
+        assertTrue(indexOf("EGALIM_REGIMES") < indexOf("PRODUCTS"));
+        assertEquals("/egalim-regimes/import",
+                EngineFeedService.catalogEntry("EGALIM_REGIMES").orElseThrow().enginePath());
     }
 
     /**

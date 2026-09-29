@@ -255,11 +255,29 @@ class SyncIngestServiceTest {
         dto.fidelityEarnTotal = new BigDecimal("1.03");
         dto.fidelityAvailableBalance = new BigDecimal("42.30");
         dto.fidelityUnavailable = true;
+        // BO-03-03-28/31: the projected/after balances and the anonymous flag an
+        // up-to-date register pushes.
+        dto.fidelityProjectedAfterEarn = new BigDecimal("43.33");
+        dto.fidelityBalanceAfter = new BigDecimal("39.30");
+        dto.fidelityAnonymousProjection = true;
         SyncPayloads.FidelityLineDto earnDto = new SyncPayloads.FidelityLineDto();
         earnDto.ruleCode = "SOCLE";
         earnDto.label = "Cagnotte socle";
         earnDto.amount = new BigDecimal("0.28");
+        // BO-03-03-25: the advantage grouping an up-to-date register pushes.
+        earnDto.advantageType = "TYPE_A";
+        earnDto.advantageTypeLabel = "Avantages";
+        earnDto.advantageTypeOrder = 1;
+        earnDto.advantageCategory = "CAT";
+        earnDto.advantageCategoryLabel = "Categorie";
         dto.fidelityLines.add(earnDto);
+        // A line from an un-updated register: no advantage grouping — it must
+        // persist with null grouping (backward compatibility on the wire).
+        SyncPayloads.FidelityLineDto legacyEarn = new SyncPayloads.FidelityLineDto();
+        legacyEarn.ruleCode = "LEGACY";
+        legacyEarn.label = "Ancienne ligne";
+        legacyEarn.amount = new BigDecimal("0.10");
+        dto.fidelityLines.add(legacyEarn);
         dto.itemCount = 3;
         dto.totalExcludingTax = new BigDecimal("10.00");
         dto.totalIncludingTax = new BigDecimal("12.00");
@@ -335,10 +353,20 @@ class SyncIngestServiceTest {
             assertEquals(new BigDecimal("1.03"), ticket.fidelityEarnTotal);
             assertEquals(new BigDecimal("42.30"), ticket.fidelityAvailableBalance);
             assertTrue(ticket.fidelityUnavailable);
-            assertEquals(1, ticket.fidelityLines.size());
+            assertEquals(new BigDecimal("43.33"), ticket.fidelityProjectedAfterEarn);
+            assertEquals(new BigDecimal("39.30"), ticket.fidelityBalanceAfter);
+            assertTrue(ticket.fidelityAnonymousProjection);
+            assertEquals(2, ticket.fidelityLines.size());
             assertEquals("SOCLE", ticket.fidelityLines.get(0).ruleCode);
             assertEquals("Cagnotte socle", ticket.fidelityLines.get(0).label);
             assertEquals(new BigDecimal("0.28"), ticket.fidelityLines.get(0).amount);
+            assertEquals("TYPE_A", ticket.fidelityLines.get(0).advantageType);
+            assertEquals("Avantages", ticket.fidelityLines.get(0).advantageTypeLabel);
+            assertEquals(Integer.valueOf(1), ticket.fidelityLines.get(0).advantageTypeOrder);
+            assertEquals("CAT", ticket.fidelityLines.get(0).advantageCategory);
+            assertEquals("Categorie", ticket.fidelityLines.get(0).advantageCategoryLabel);
+            assertNull(ticket.fidelityLines.get(1).advantageType);
+            assertNull(ticket.fidelityLines.get(1).advantageTypeOrder);
             assertEquals(3, createdLines.constructed().size());
             assertSame(plaster, createdLines.constructed().get(0).product);
             assertSame(apple, createdLines.constructed().get(1).product);
@@ -536,6 +564,59 @@ class SyncIngestServiceTest {
             mocked.when(() -> Ticket.find("ticketNumber", "K4")).thenReturn(ticketQuery);
             mocked.when(Store::findAll).thenReturn(storeQuery);
             assertThrows(IllegalStateException.class, () -> service.ingestTicket(dto));
+        }
+    }
+
+    /**
+     * Covers the {@code fidelityLines == null} false arm of {@code ingestTicket}
+     * (line 151): an existing ticket already holding a non-null loyalty-line list
+     * has that very list reused — cleared in place, not reconstructed — and
+     * refilled from the payload, which is the wholesale-replacement idempotency the
+     * upsert relies on.
+     */
+    @Test
+    void ingestTicketReusesExistingFidelityLineList() {
+        SyncIngestService service = serviceWith();
+        SyncPayloads.TicketDto dto = new SyncPayloads.TicketDto();
+        dto.ticketNumber = "K9";
+        dto.terminalId = "T9";
+        dto.status = "CLOSED";
+        dto.creationDate = "2026-09-09T10:00:00";
+        dto.storeCode = "ST1";
+        dto.cashierLogin = "alice";
+        dto.sessionNumber = null;
+        dto.itemCount = 0;
+        dto.totalExcludingTax = new BigDecimal("1.00");
+        dto.totalIncludingTax = new BigDecimal("1.00");
+        dto.totalVat = new BigDecimal("0.00");
+        dto.valuationStatus = "NOT_VALUATED";
+        SyncPayloads.FidelityLineDto earnDto = new SyncPayloads.FidelityLineDto();
+        earnDto.ruleCode = "SOCLE";
+        earnDto.label = "Cagnotte socle";
+        earnDto.amount = new BigDecimal("0.28");
+        dto.fidelityLines.add(earnDto);
+        Ticket existing = mock(Ticket.class);
+        existing.lines = new ArrayList<>();
+        existing.payments = new ArrayList<>();
+        List<com.intermarche.pos.domain.sale.TicketFidelityLine> priorLines = new ArrayList<>();
+        priorLines.add(new com.intermarche.pos.domain.sale.TicketFidelityLine("OLD", "Ancienne", BigDecimal.ONE));
+        existing.fidelityLines = priorLines;
+        Store store = mock(Store.class);
+        Employee cashier = mock(Employee.class);
+        PanacheQuery<Ticket> ticketQuery = queryReturning(existing);
+        PanacheQuery<Store> storeQuery = queryReturning(store);
+        PanacheQuery<Employee> cashierQuery = queryReturning(cashier);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> Ticket.find("ticketNumber", "K9")).thenReturn(ticketQuery);
+            mocked.when(() -> Store.find("code", "ST1")).thenReturn(storeQuery);
+            mocked.when(() -> Employee.find("loginName", "alice")).thenReturn(cashierQuery);
+            service.ingestTicket(dto);
+            assertSame(priorLines, existing.fidelityLines);
+            assertEquals(1, existing.fidelityLines.size());
+            assertEquals("SOCLE", existing.fidelityLines.get(0).ruleCode);
+            assertEquals("Cagnotte socle", existing.fidelityLines.get(0).label);
+            assertEquals(new BigDecimal("0.28"), existing.fidelityLines.get(0).amount);
+            verify(existing, times(1)).persist();
         }
     }
 
@@ -1499,6 +1580,118 @@ class SyncIngestServiceTest {
             service.ingestDocument(dto);
             assertEquals(BigDecimal.ZERO, existing.totalEcoTax);
             assertNull(existing.customerDueDate);
+        }
+    }
+
+    /**
+     * Covers the insert arm of {@code ingestDocument} (line 413 {@code document ==
+     * null} true) together with the branches only a full create-push reaches: a
+     * null document type defaulting to {@code FACTURE} (line 418 true arm), a
+     * non-null ticket number resolved to a held ticket (line 424 false arm), a
+     * non-null customer account number resolved to a held account (line 427 false
+     * arm), all three amount totals arriving null and stored as zero (lines 443,
+     * 445 and 447 null arms), a null customer address building a fresh one (line
+     * 437 true arm) and an unreadable due date swallowed by {@code parseDay}'s
+     * catch (lines 474/475). A fresh row and a fresh address are constructed,
+     * stamped and persisted.
+     */
+    @Test
+    void ingestDocumentCreatesResolvingTicketAndCustomerWithZeroTotals() {
+        SyncIngestService service = new SyncIngestService();
+        SyncPayloads.DocumentDto dto = new SyncPayloads.DocumentDto();
+        dto.documentNumber = "C04-F000999";
+        dto.documentType = null;
+        dto.terminalId = "C04";
+        dto.issueDate = "2026-09-10T18:42:00";
+        dto.ticketNumber = "K1";
+        dto.customerAccountNumber = "AC1";
+        dto.customerName = "ACME";
+        dto.customerStreet = "1 rue des Lilas";
+        dto.customerPostalCode = "75001";
+        dto.customerCity = "Paris";
+        dto.customerDueDate = "pas-une-date";
+        dto.totalExcludingTax = null;
+        dto.totalIncludingTax = null;
+        dto.totalVat = null;
+        dto.totalEcoTax = null;
+        dto.printCount = 2;
+        Ticket ticket = mock(Ticket.class);
+        com.intermarche.pos.domain.payment.AccountCustomer customer =
+                mock(com.intermarche.pos.domain.payment.AccountCustomer.class);
+        PanacheQuery<com.intermarche.pos.domain.sale.Invoice> found = queryReturning(null);
+        PanacheQuery<Ticket> ticketQuery = queryReturning(ticket);
+        PanacheQuery<com.intermarche.pos.domain.payment.AccountCustomer> customerQuery =
+                queryReturning(customer);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class);
+                MockedConstruction<com.intermarche.pos.domain.sale.Invoice> created =
+                        mockConstruction(com.intermarche.pos.domain.sale.Invoice.class);
+                MockedConstruction<com.intermarche.pos.domain.store.Address> addresses =
+                        mockConstruction(com.intermarche.pos.domain.store.Address.class)) {
+            mocked.when(() -> com.intermarche.pos.domain.sale.Invoice
+                    .find("documentNumber", "C04-F000999")).thenReturn(found);
+            mocked.when(() -> Ticket.find("ticketNumber", "K1")).thenReturn(ticketQuery);
+            mocked.when(() -> com.intermarche.pos.domain.payment.AccountCustomer
+                    .find("accountNumber", "AC1")).thenReturn(customerQuery);
+            service.ingestDocument(dto);
+            com.intermarche.pos.domain.sale.Invoice document = created.constructed().get(0);
+            assertEquals("C04-F000999", document.documentNumber);
+            assertEquals(com.intermarche.pos.domain.sale.DocumentType.FACTURE, document.documentType);
+            assertSame(ticket, document.ticket);
+            assertEquals("K1", document.ticketNumber);
+            assertSame(customer, document.customer);
+            assertEquals("AC1", document.customerAccountNumber);
+            assertEquals(1, addresses.constructed().size());
+            com.intermarche.pos.domain.store.Address address = addresses.constructed().get(0);
+            assertSame(address, document.customerAddress);
+            assertEquals("1 rue des Lilas", address.streetLine1);
+            assertEquals("75001", address.postalCode);
+            assertEquals("Paris", address.city);
+            assertEquals(BigDecimal.ZERO, document.totalExcludingTax);
+            assertEquals(BigDecimal.ZERO, document.totalIncludingTax);
+            assertEquals(BigDecimal.ZERO, document.totalVat);
+            assertEquals(BigDecimal.ZERO, document.totalEcoTax);
+            assertNull(document.customerDueDate);
+            assertEquals(2, document.printCount);
+            verify(document, times(1)).persist();
+        }
+    }
+
+    /**
+     * Covers the address-reuse arm of {@code ingestDocument} (line 437
+     * {@code customerAddress == null} false) and the blank-date arm of
+     * {@code parseDay} (line 469, {@code text == null} false + {@code isBlank()}
+     * true): an existing document already carrying a customer address keeps it in
+     * place (no new address constructed), and a blank due date reads back as null,
+     * the refreshed row being persisted.
+     */
+    @Test
+    void ingestDocumentReusesAddressAndTreatsBlankDueDateAsNone() {
+        SyncIngestService service = new SyncIngestService();
+        SyncPayloads.DocumentDto dto = documentDto();
+        dto.customerDueDate = "   ";
+        dto.customerStreet = "9 quai neuf";
+        dto.customerPostalCode = "33000";
+        dto.customerCity = "Bordeaux";
+        com.intermarche.pos.domain.sale.Invoice existing =
+                mock(com.intermarche.pos.domain.sale.Invoice.class);
+        com.intermarche.pos.domain.store.Address address =
+                mock(com.intermarche.pos.domain.store.Address.class);
+        existing.customerAddress = address;
+        PanacheQuery<com.intermarche.pos.domain.sale.Invoice> found = queryReturning(existing);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class);
+                MockedConstruction<com.intermarche.pos.domain.store.Address> addresses =
+                        mockConstruction(com.intermarche.pos.domain.store.Address.class)) {
+            mocked.when(() -> com.intermarche.pos.domain.sale.Invoice
+                    .find("documentNumber", "C04-F000123")).thenReturn(found);
+            service.ingestDocument(dto);
+            assertTrue(addresses.constructed().isEmpty());
+            assertSame(address, existing.customerAddress);
+            assertEquals("9 quai neuf", address.streetLine1);
+            assertEquals("33000", address.postalCode);
+            assertEquals("Bordeaux", address.city);
+            assertEquals("ACME", existing.customerName);
+            assertNull(existing.customerDueDate);
+            verify(existing, times(1)).persist();
         }
     }
 }

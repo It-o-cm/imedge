@@ -212,7 +212,8 @@ class ProductTest {
         product.name = "Melon";
         product.productType = ProductType.WEIGHT;
         int expected = Objects.hash("3760001", "", "Melon", null, null, null, null,
-                ProductType.WEIGHT, null, true, false, null, null, false, product.attributes);
+                ProductType.WEIGHT, null, true, false, null, null, false, null,
+                product.attributes);
         Assertions.assertEquals(expected, product.getChecksum());
     }
 
@@ -236,9 +237,11 @@ class ProductTest {
         product.forbiddenToSale = true;
         product.checkoutLabel = "MELON JAUNE";
         product.internalCode = "INT-42";
+        product.egalimRegime = "FOOD_34";
         int expected = Objects.hash("3760001", "1234", "Melon", "Sweet", "Farm",
                 new BigDecimal("1.500"), new BigDecimal("0.750"), ProductType.UNIT,
-                "pcs", false, true, "MELON JAUNE", "INT-42", false, product.attributes);
+                "pcs", false, true, "MELON JAUNE", "INT-42", false, "FOOD_34",
+                product.attributes);
         Assertions.assertEquals(expected, product.getChecksum());
     }
 
@@ -260,5 +263,42 @@ class ProductTest {
         with.productType = ProductType.UNIT;
         with.attributes.put("MEAL_VOUCHER_ELIGIBLE", "true");
         Assertions.assertNotEquals(without.getChecksum(), with.getChecksum());
+    }
+
+    /**
+     * getChecksum folds the EGAlim classification: an article reclassified and
+     * nothing else must be seen as changed, otherwise the checksum
+     * short-circuit would skip the line and the fiche would keep showing the
+     * former category. The unclassified state is a value of its own, distinct
+     * from every declared regime.
+     */
+    @Test
+    void getChecksumFoldsTheEgalimRegime() {
+        Product unclassified = new Product();
+        unclassified.ean = "3760001";
+        unclassified.name = "Melon";
+        unclassified.productType = ProductType.UNIT;
+        Product food = new Product();
+        food.ean = "3760001";
+        food.name = "Melon";
+        food.productType = ProductType.UNIT;
+        food.egalimRegime = "FOOD_34";
+        Product dph = new Product();
+        dph.ean = "3760001";
+        dph.name = "Melon";
+        dph.productType = ProductType.UNIT;
+        dph.egalimRegime = "DPH_40";
+        Assertions.assertNotEquals(unclassified.getChecksum(), food.getChecksum());
+        Assertions.assertNotEquals(food.getChecksum(), dph.getChecksum());
+    }
+
+    /**
+     * A freshly built article carries NO classification: null is "not
+     * classified", which is not the exempt regime — the exempt regime is a
+     * stated classification, null is the absence of one.
+     */
+    @Test
+    void aNewProductCarriesNoEgalimRegime() {
+        Assertions.assertNull(new Product().egalimRegime);
     }
 }

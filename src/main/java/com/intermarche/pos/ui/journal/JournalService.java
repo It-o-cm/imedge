@@ -594,7 +594,79 @@ public class JournalService {
                 formatAmount(ticket.totalExcludingTax),
                 formatAmount(ticket.totalVat),
                 lines,
-                payments);
+                payments,
+                fidelityGroups(ticket));
+    }
+
+    /**
+     * Builds the grouped loyalty advantage zone of a ticket for the journal
+     * detail: the frozen advantage lines grouped by advantage type and ordered
+     * by the received {@code advantageTypeOrder} (BO-03-03-25), the stored labels
+     * kept verbatim.
+     * <p>
+     * A ticket predating the referential — no line carrying a type — yields a
+     * SINGLE group with an empty header holding the flat list, so it shows as it
+     * did before; a ticket with no advantage line yields an empty list. Untyped
+     * lines mixed with typed ones fall into a trailing empty-header group.
+     *
+     * @param ticket the sale whose loyalty zone is described
+     * @return the groups, never null
+     */
+    private List<JournalTicketDetail.FidelityGroup> fidelityGroups(Ticket ticket) {
+        List<com.intermarche.pos.domain.sale.TicketFidelityLine> allLines =
+                ticket.fidelityLines == null ? List.of() : ticket.fidelityLines;
+        List<JournalTicketDetail.FidelityGroup> result = new ArrayList<>();
+        if (allLines.isEmpty()) {
+            return result;
+        }
+        boolean anyTyped = false;
+        for (com.intermarche.pos.domain.sale.TicketFidelityLine line : allLines) {
+            if (line.advantageType != null) {
+                anyTyped = true;
+                break;
+            }
+        }
+        if (!anyTyped) {
+            List<JournalTicketDetail.FidelityAdvantage> flat = new ArrayList<>();
+            for (com.intermarche.pos.domain.sale.TicketFidelityLine line : allLines) {
+                flat.add(new JournalTicketDetail.FidelityAdvantage(line.getLabel(), formatAmount(line.amount)));
+            }
+            result.add(new JournalTicketDetail.FidelityGroup("", flat));
+            return result;
+        }
+        java.util.LinkedHashMap<String,
+                List<com.intermarche.pos.domain.sale.TicketFidelityLine>> groups =
+                new java.util.LinkedHashMap<>();
+        List<com.intermarche.pos.domain.sale.TicketFidelityLine> untyped = new ArrayList<>();
+        for (com.intermarche.pos.domain.sale.TicketFidelityLine line : allLines) {
+            if (line.advantageType == null) {
+                untyped.add(line);
+            } else {
+                groups.computeIfAbsent(line.advantageType, key -> new ArrayList<>()).add(line);
+            }
+        }
+        List<String> orderedKeys = new ArrayList<>(groups.keySet());
+        orderedKeys.sort(java.util.Comparator.comparingInt(key -> {
+            Integer order = groups.get(key).get(0).advantageTypeOrder;
+            return order == null ? Integer.MAX_VALUE : order;
+        }));
+        for (String key : orderedKeys) {
+            List<com.intermarche.pos.domain.sale.TicketFidelityLine> groupLines = groups.get(key);
+            String header = groupLines.get(0).advantageTypeLabel;
+            List<JournalTicketDetail.FidelityAdvantage> advantages = new ArrayList<>();
+            for (com.intermarche.pos.domain.sale.TicketFidelityLine line : groupLines) {
+                advantages.add(new JournalTicketDetail.FidelityAdvantage(line.getLabel(), formatAmount(line.amount)));
+            }
+            result.add(new JournalTicketDetail.FidelityGroup(header == null ? key : header, advantages));
+        }
+        if (!untyped.isEmpty()) {
+            List<JournalTicketDetail.FidelityAdvantage> flat = new ArrayList<>();
+            for (com.intermarche.pos.domain.sale.TicketFidelityLine line : untyped) {
+                flat.add(new JournalTicketDetail.FidelityAdvantage(line.getLabel(), formatAmount(line.amount)));
+            }
+            result.add(new JournalTicketDetail.FidelityGroup("", flat));
+        }
+        return result;
     }
 
     // --------------------------------------------------

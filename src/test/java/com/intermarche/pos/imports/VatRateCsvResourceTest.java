@@ -5,11 +5,14 @@ import io.quarkus.hibernate.orm.panache.Panache;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import io.quarkus.hibernate.orm.panache.PanacheQuery;
 import jakarta.persistence.EntityManager;
+import jakarta.ws.rs.core.Response;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
 
+import java.io.ByteArrayInputStream;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -373,5 +376,19 @@ class VatRateCsvResourceTest {
     @Test
     void importerNamesTheVatEngineFeed() {
         assertEquals("VAT_RATES", resource.feedCode());
+    }
+
+    /**
+     * {@code importVatRates} logs and forwards the stream to the base importer
+     * with the VAT_NUMBER key and the RATE required column; a header-only body
+     * produces a zero-count JSON with a 200 status, exercising the entry
+     * method's log-and-delegate body.
+     */
+    @Test
+    void importVatRatesDelegatesToTheBaseImporter() {
+        Response response = resource.importVatRates(new ByteArrayInputStream(
+                "VAT_NUMBER|RATE|LABEL\n".getBytes(StandardCharsets.UTF_8)));
+        assertEquals(200, response.getStatus());
+        assertEquals("{\"createdCount\":0, \"updatedCount\":0}", response.getEntity());
     }
 }

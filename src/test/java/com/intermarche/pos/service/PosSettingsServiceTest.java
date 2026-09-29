@@ -245,6 +245,131 @@ class PosSettingsServiceTest {
     }
 
     /**
+     * A retention parameter reads its stored value, and an absent row falls to
+     * the catalog default of zero — the unlimited-retention default that keeps a
+     * fresh node from deleting a thing (BO-10-08).
+     */
+    @Test
+    void retentionSettingReadsTheStoredValueOrDefaultsToZero() {
+        PosSettingsService service = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of(row("retention.sales-days", "30")));
+            assertEquals(30, service.retentionSetting("retention.sales-days"));
+            assertEquals(0, service.retentionSetting("retention.customers-days"));
+        }
+    }
+
+    /**
+     * The projected-cagnotte label reads its stored row, and an absent row falls
+     * to the catalog default (BO-03-03-31) — the label imedge prints before the
+     * forecast balance ported from impos.
+     */
+    @Test
+    void fidelityProjectedLabelReadsTheStoredValueOrDefault() {
+        PosSettingsService service = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of(row("fidelity.projected-label", "SOLDE A VENIR")));
+            assertEquals("SOLDE A VENIR", service.fidelityProjectedLabel());
+        }
+        PosSettingsService fresh = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of());
+            assertEquals("CAGNOTTE PREVISIONNELLE", fresh.fidelityProjectedLabel());
+        }
+    }
+
+    /**
+     * The drawer-content ceiling and the cash-discrepancy threshold read their
+     * stored decimal rows (EXP-17, EXP-82).
+     */
+    @Test
+    void drawerCeilingAndDiscrepancyThresholdReadTheirRows() {
+        PosSettingsService service = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of(
+                    row("drawer.content-ceiling", "1500.00"),
+                    row("cash.discrepancy-threshold", "2.50")));
+            assertEquals(new java.math.BigDecimal("1500.00"), service.drawerContentCeiling());
+            assertEquals(new java.math.BigDecimal("2.50"), service.cashDiscrepancyThreshold());
+        }
+    }
+
+    /**
+     * The cash-float mode normalizes to FLOATING when so administered, and to
+     * FIXED for the default and for any unknown value (both arms, EXP-95).
+     */
+    @Test
+    void cashFloatModeNormalizesBothArms() {
+        PosSettingsService floating = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of(row("cash.float-mode", " floating ")));
+            assertEquals("FLOATING", floating.cashFloatMode());
+        }
+        PosSettingsService unknown = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of(row("cash.float-mode", "weird")));
+            assertEquals("FIXED", unknown.cashFloatMode());
+        }
+        PosSettingsService def = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of());
+            assertEquals("FIXED", def.cashFloatMode());
+        }
+    }
+
+    /**
+     * The endorsement scope normalizes to PER_TICKET when so administered, and to
+     * PER_OPERATION for the default and any unknown value (both arms, EXP-33).
+     */
+    @Test
+    void endorsementScopeNormalizesBothArms() {
+        PosSettingsService perTicket = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of(row("auth.endorsement-scope", " per_ticket ")));
+            assertEquals("PER_TICKET", perTicket.endorsementScope());
+        }
+        PosSettingsService def = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of());
+            assertEquals("PER_OPERATION", def.endorsementScope());
+        }
+    }
+
+    /**
+     * The authorization matrix reads a per-function endorsement flag; a stored
+     * false disables the endorsement, the catalog default requires it (EXP-32).
+     */
+    @Test
+    void endorsementRequiredReadsTheMatrixFlagBothArms() {
+        PosSettingsService off = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of(row("auth.endorse-refund", "false")));
+            assertFalse(off.endorsementRequired("auth.endorse-refund"));
+        }
+        PosSettingsService def = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of());
+            assertTrue(def.endorsementRequired("auth.endorse-discount"));
+        }
+    }
+
+    /**
+     * The login greeting and the next-customer message read their stored rows
+     * (EXP-01, EXP-03).
+     */
+    @Test
+    void loginGreetingAndNextCustomerMessageReadTheirRows() {
+        PosSettingsService service = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of(
+                    row("ui.login-greeting", "Bienvenue"),
+                    row("customer.next-customer-message", "SUIVANT")));
+            assertEquals("Bienvenue", service.loginGreeting());
+            assertEquals("SUIVANT", service.nextCustomerMessage());
+        }
+    }
+
+    /**
      * {@code intValue} falls back to the catalog default on a corrupt row
      * (parse-fail arm).
      */
@@ -730,6 +855,176 @@ class PosSettingsServiceTest {
         try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
             ms.when(PanacheEntityBase::listAll).thenReturn(List.of());
             assertTrue(service.cashMovementTenders().isEmpty());
+        }
+    }
+
+    /**
+     * The remaining boolean accessors each project their stored row: session,
+     * customer, period, fidelity and drawer/transfer/abandon flags not exercised
+     * above, driven with values opposite to their catalog default so a wrong key
+     * mapping would surface.
+     */
+    @Test
+    void remainingBooleanAccessorsProjectStoredValues() {
+        PosSettingsService service = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of(
+                    row("auth.password-required-on-open", "false"),
+                    row("auth.password-required-on-close", "true"),
+                    row("session.close-endorsement-on-pending", "false"),
+                    row("session.print-open-receipt", "true"),
+                    row("session.print-close-receipt", "true"),
+                    row("customer.volatile-creation-enabled", "false"),
+                    row("customer.account-creation-blocked", "false"),
+                    row("customer.show-details", "false"),
+                    row("customer.update-enabled", "true"),
+                    row("customer.show-discount", "false"),
+                    row("customer.partial-credit-allowed", "false"),
+                    row("customer.invoice-export-due-date", "false"),
+                    row("customer.invoice-export-ecotax", "true"),
+                    row("period.auto-close-enabled", "true"),
+                    row("fidelity.show-holder-name", "false"),
+                    row("fidelity.jv-promotion-enabled", "false"),
+                    row("drawer.withdrawal-print", "false"),
+                    row("drawer.transfer-print", "false"),
+                    row("abandon.print-detail", "false")));
+            assertFalse(service.passwordRequiredOnOpen());
+            assertTrue(service.passwordRequiredOnClose());
+            assertFalse(service.closeEndorsementOnPending());
+            assertTrue(service.printOpenReceipt());
+            assertTrue(service.printCloseReceipt());
+            assertFalse(service.volatileCustomerCreationEnabled());
+            assertFalse(service.accountCustomerCreationBlocked());
+            assertFalse(service.showCustomerDetails());
+            assertTrue(service.customerUpdateEnabled());
+            assertFalse(service.showCustomerDiscount());
+            assertFalse(service.partialCreditAllowed());
+            assertFalse(service.invoiceExportDueDate());
+            assertTrue(service.invoiceExportEcoTax());
+            assertTrue(service.periodAutoCloseEnabled());
+            assertFalse(service.fidelityShowHolderName());
+            assertFalse(service.fidelityJvPromotionEnabled());
+            assertFalse(service.drawerWithdrawalPrint());
+            assertFalse(service.drawerTransferPrint());
+            assertFalse(service.abandonPrintDetail());
+        }
+    }
+
+    /**
+     * The remaining text accessors each project their stored row: customer,
+     * period, fidelity, invoice, GS1, tender, abandon and drawer text values not
+     * exercised above.
+     */
+    @Test
+    void remainingTextAccessorsProjectStoredValues() {
+        PosSettingsService service = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of(
+                    row("customer.discount-segment", "GOLD"),
+                    row("customer.offline-message", "HORS LIGNE"),
+                    row("customer.over-limit-message", "PLAFOND {plafond}"),
+                    row("customer.default-tax-id", "111111111"),
+                    row("customer.default-tax-id-label", "CLIENT"),
+                    row("customer.foreign-tax-id-countries", "ES,FR"),
+                    row("period.end-time", "22:00"),
+                    row("customer.account-pattern", "^CC\\d{8}$"),
+                    row("fidelity.card-pattern", "^299\\d{10}$"),
+                    row("fidelity.url", "http://fid"),
+                    row("fidelity.user", "caisse01"),
+                    row("training.theme", "sombre"),
+                    row("invoice.document-types", "FACTURE;BON_LIVRAISON"),
+                    row("invoice.document-output", "FACTURE:A4"),
+                    row("invoice.auto-print", "CREDIT:FACTURE"),
+                    row("gs1.expiry-alert", "INFO"),
+                    row("tender.restricted", "TR:MEAL_VOUCHER_ELIGIBLE:Titres"),
+                    row("abandon.reasons", "Erreur;Client parti"),
+                    row("drawer.withdrawal-methods", "CASH:Especes"),
+                    row("drawer.transfer-methods", "CHEQUE:Cheques"),
+                    row("abandon.partial-payment", "BLOCK"),
+                    row("abandon.print", "ALWAYS"),
+                    row("gs1.coupon-expiry-alert", "INFO"),
+                    row("gs1.gdti-coupon-types", "9526000:CADEAU"),
+                    row("gs1.gcn-coupon-type", "COUPON")));
+            assertEquals("GOLD", service.customerDiscountSegment());
+            assertEquals("HORS LIGNE", service.customerOfflineMessage());
+            assertEquals("PLAFOND {plafond}", service.customerOverLimitMessage());
+            assertEquals("111111111", service.defaultTaxId());
+            assertEquals("CLIENT", service.defaultTaxIdLabel());
+            assertEquals("ES,FR", service.foreignTaxIdCountries());
+            assertEquals("22:00", service.periodEndTime());
+            assertEquals("^CC\\d{8}$", service.customerAccountPattern());
+            assertEquals("^299\\d{10}$", service.fidelityCardPattern());
+            assertEquals("http://fid", service.fidelityUrl());
+            assertEquals("caisse01", service.fidelityUser());
+            assertEquals("sombre", service.trainingTheme());
+            assertEquals("FACTURE;BON_LIVRAISON", service.invoiceDocumentTypes());
+            assertEquals("FACTURE:A4", service.invoiceDocumentOutput());
+            assertEquals("CREDIT:FACTURE", service.invoiceAutoPrint());
+            assertEquals("INFO", service.gs1ExpiryAlert());
+            assertEquals("TR:MEAL_VOUCHER_ELIGIBLE:Titres", service.restrictedTenders());
+            assertEquals("Erreur;Client parti", service.abandonReasons());
+            assertEquals("CASH:Especes", service.drawerWithdrawalMethods());
+            assertEquals("CHEQUE:Cheques", service.drawerTransferMethods());
+            assertEquals("BLOCK", service.abandonPartialPayment());
+            assertEquals("ALWAYS", service.abandonPrint());
+            assertEquals("INFO", service.gs1CouponExpiryAlert());
+            assertEquals("9526000:CADEAU", service.gs1GiftCouponTypes());
+            assertEquals("COUPON", service.gs1CouponType());
+        }
+    }
+
+    /**
+     * The remaining integer accessors each project their stored row
+     * ({@code periodCloseLeadMinutes}, {@code invoiceSlipLines},
+     * {@code gs1ExpiryWarnDays}).
+     */
+    @Test
+    void remainingIntegerAccessorsProjectStoredValues() {
+        PosSettingsService service = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of(
+                    row("period.close-lead-minutes", "8"),
+                    row("invoice.slip-lines", "40"),
+                    row("gs1.expiry-warn-days", "3")));
+            assertEquals(8, service.periodCloseLeadMinutes());
+            assertEquals(40, service.invoiceSlipLines());
+            assertEquals(3, service.gs1ExpiryWarnDays());
+        }
+    }
+
+    /**
+     * The remaining decimal accessors each project their stored row
+     * ({@code lineMaxDiscountAmount}, {@code globalMaxDiscountAmount}).
+     */
+    @Test
+    void remainingDecimalAccessorsProjectStoredValues() {
+        PosSettingsService service = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of(
+                    row("discount.line-max-amount", "10.00"),
+                    row("discount.global-max-amount", "25.50")));
+            assertEquals(0, new java.math.BigDecimal("10.00").compareTo(service.lineMaxDiscountAmount()));
+            assertEquals(0, new java.math.BigDecimal("25.50").compareTo(service.globalMaxDiscountAmount()));
+        }
+    }
+
+    /**
+     * {@code customerCreditTender} trims a stored non-blank key (else arm) and
+     * folds a blank stored value back to {@code CREDIT} (isBlank true arm).
+     */
+    @Test
+    void customerCreditTenderTrimsOrFoldsToDefault() {
+        PosSettingsService trimmed = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll)
+                    .thenReturn(List.of(row("customer.credit-tender", "  ACOMPTE  ")));
+            assertEquals("ACOMPTE", trimmed.customerCreditTender());
+        }
+        PosSettingsService blank = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll)
+                    .thenReturn(List.of(row("customer.credit-tender", "   ")));
+            assertEquals("CREDIT", blank.customerCreditTender());
         }
     }
 }

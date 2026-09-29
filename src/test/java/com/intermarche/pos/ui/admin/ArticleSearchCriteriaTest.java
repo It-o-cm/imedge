@@ -8,6 +8,9 @@ import jakarta.ws.rs.core.MultivaluedMap;
 import java.util.List;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
+
+import static org.mockito.Mockito.mockStatic;
 
 /**
  * Unit tests for {@link ArticleSearchCriteria}, targeting 100% branch coverage.
@@ -664,5 +667,26 @@ class ArticleSearchCriteriaTest {
                 + " and p.ean <= :eanTo", criteria.whereClause());
         Assertions.assertEquals(List.of("text", "type", "forbidden", "eanFrom", "eanTo"),
                 List.copyOf(criteria.parameters().keySet()));
+    }
+
+    /**
+     * An attribute whose catalog default is itself true takes the MIRROR clause:
+     * the article matches unless a row states otherwise. No catalog attribute
+     * defaults true today, so the branch is only reachable by making the catalog
+     * answer true for a code — which is exactly what pins the {@code not in} shape
+     * the query relies on the day a default-true attribute is declared.
+     */
+    @Test
+    void aTrueDefaultAttributeTakesTheMirrorClause() {
+        try (MockedStatic<ProductAttributeCatalog> catalog =
+                mockStatic(ProductAttributeCatalog.class)) {
+            catalog.when(() -> ProductAttributeCatalog.defaultValue("TRUE_DEF")).thenReturn("true");
+            ArticleSearchCriteria criteria = new ArticleSearchCriteria();
+            criteria.attributes.add("TRUE_DEF");
+            Assertions.assertEquals("p.id not in (select a0.id from Product a0"
+                    + " join a0.attributes v0 where key(v0) = :attr0"
+                    + " and lower(v0) <> 'true')", criteria.whereClause());
+            Assertions.assertEquals("TRUE_DEF", criteria.parameters().get("attr0"));
+        }
     }
 }

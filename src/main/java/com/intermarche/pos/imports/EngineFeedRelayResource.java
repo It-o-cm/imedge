@@ -30,6 +30,7 @@ import org.jboss.logging.Logger;
  * treatment.
  * <ul>
  *   <li>Codes the node consumes itself (STORES, PRODUCTS, FAMILIES, VAT_RATES,
+ *       EGALIM_REGIMES,
  *       PRICES, EMPLOYEES, CUSTOMERS, POSTAL_CODES, SAFE_RECEIPTS) are
  *       DELEGATED to their import bean: the file is applied to the node's
  *       referential, and the bean captures the verbatim copy for the engine
@@ -79,6 +80,10 @@ public class EngineFeedRelayResource {
     /** The dedicated VAT importer (VAT_RATES delegation). */
     @Inject
     VatRateCsvResource vatRateCsvResource;
+
+    /** The dedicated EGAlim importer (EGALIM_REGIMES delegation). */
+    @Inject
+    EgalimRegimeCsvResource egalimRegimeCsvResource;
 
     /** The dedicated customer importer (CUSTOMERS delegation). */
     @Inject
@@ -197,6 +202,7 @@ public class EngineFeedRelayResource {
                 Map.entry("PRODUCTS", productCsvResource::importProducts),
                 Map.entry("FAMILIES", productFamilyCsvResource::importProductFamilies),
                 Map.entry("VAT_RATES", vatRateCsvResource::importVatRates),
+                Map.entry("EGALIM_REGIMES", egalimRegimeCsvResource::importEgalimRegimes),
                 Map.entry("PRICES", priceCsvResource::importPrices),
                 Map.entry("EMPLOYEES", employeeCsvResource::importEmployees),
                 Map.entry("CUSTOMERS",

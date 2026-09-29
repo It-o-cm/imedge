@@ -1473,7 +1473,9 @@ class RefExportServiceTest {
         island.code = "AVANT";
         island.label = "Ligne avant";
         island.active = true;
-        island.terminalIds = "POS01;POS02";
+        // terminalIds is no longer a column: the export DERIVES it from the
+        // island's checkout points, so the wire stays byte-compatible.
+        when(island.terminals()).thenReturn(List.of("POS01", "POS02"));
         PanacheQuery<com.intermarche.pos.domain.store.CheckoutIsland> query =
                 singlePage(0, 10, List.of(island));
         try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
@@ -1709,5 +1711,199 @@ class RefExportServiceTest {
         assertTrue(RefPayloads.DOMAINS.contains("DOCUMENT_TEMPLATES"));
         assertEquals(RefPayloads.DOMAINS.indexOf("TENDERS") + 1,
                 RefPayloads.DOMAINS.indexOf("DOCUMENT_TEMPLATES"));
+    }
+
+    // --------------------------------------------------
+    // Gap-fill: TOUCH_GROUPS / POSTAL_CODES arms, the
+    // non-null customer ternaries with their free fields,
+    // the coupon field/control null arms, and the null
+    // list arms of the two coupon canonical helpers.
+    // --------------------------------------------------
+
+    /**
+     * Covers the TOUCH_GROUPS switch arm and {@code toDto(TouchGroupSetting)}:
+     * the administered touch configuration flows verbatim into the payload, a
+     * domain the existing suite only reached through {@code canonical}.
+     */
+    @Test
+    void getPageMapsTouchGroups() {
+        RefExportService service = new RefExportService();
+        com.intermarche.pos.domain.setting.TouchGroupSetting setting =
+                mock(com.intermarche.pos.domain.setting.TouchGroupSetting.class);
+        setting.familyCode = "F1";
+        setting.pinned = true;
+        setting.buttonSize = "LARGE";
+        setting.displayOrder = 3;
+        setting.salesVolume = 99L;
+        PanacheQuery<com.intermarche.pos.domain.setting.TouchGroupSetting> query =
+                singlePage(0, 10, List.of(setting));
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> com.intermarche.pos.domain.setting.TouchGroupSetting
+                    .find("order by familyCode")).thenReturn(query);
+            List<?> result = service.getPage("TOUCH_GROUPS", 0, 10);
+            assertEquals(1, result.size());
+            RefPayloads.TouchGroupDto dto = (RefPayloads.TouchGroupDto) result.get(0);
+            assertEquals("F1", dto.familyCode);
+            assertTrue(dto.pinned);
+            assertEquals("LARGE", dto.buttonSize);
+            assertEquals(3, dto.displayOrder);
+            assertEquals(99L, dto.salesVolume);
+        }
+    }
+
+    /**
+     * Covers the POSTAL_CODES switch arm and {@code toDto(PostalCode)}: the
+     * three fields flow verbatim into the payload.
+     */
+    @Test
+    void getPageMapsPostalCodes() {
+        RefExportService service = new RefExportService();
+        com.intermarche.pos.domain.store.PostalCode postalCode =
+                mock(com.intermarche.pos.domain.store.PostalCode.class);
+        postalCode.code = "75008";
+        postalCode.place = "Paris";
+        postalCode.country = "FR";
+        PanacheQuery<com.intermarche.pos.domain.store.PostalCode> query =
+                singlePage(0, 10, List.of(postalCode));
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> com.intermarche.pos.domain.store.PostalCode
+                    .find("order by code, place")).thenReturn(query);
+            List<?> result = service.getPage("POSTAL_CODES", 0, 10);
+            assertEquals(1, result.size());
+            RefPayloads.PostalCodeDto dto = (RefPayloads.PostalCodeDto) result.get(0);
+            assertEquals("75008", dto.code);
+            assertEquals("Paris", dto.place);
+            assertEquals("FR", dto.country);
+        }
+    }
+
+    /**
+     * Covers the {@link RefPayloads.PostalCodeDto} {@code instanceof} true arm
+     * of {@code canonical}: a postal code renders field by field, a null
+     * country exercising the empty {@code n} arm alongside the non-null ones.
+     * Invoked reflectively because the production flow only ever feeds
+     * already-mapped DTOs to {@code canonical}.
+     *
+     * @throws Exception if reflection fails
+     */
+    @Test
+    void canonicalRendersAPostalCode() throws Exception {
+        RefExportService service = new RefExportService();
+        Method canonical = RefExportService.class.getDeclaredMethod("canonical", Object.class);
+        canonical.setAccessible(true);
+        RefPayloads.PostalCodeDto dto = new RefPayloads.PostalCodeDto();
+        dto.code = "75008";
+        dto.place = "Paris";
+        dto.country = "FR";
+        assertEquals("75008|Paris|FR", canonical.invoke(service, dto));
+        dto.country = null;
+        assertEquals("75008|Paris|", canonical.invoke(service, dto));
+    }
+
+    /**
+     * Covers the non-null arms of the {@code origin}, {@code dueDate} and
+     * {@code discountPercent} ternaries of {@code toDto(AccountCustomer)} and
+     * the true arm of the {@code freeFields != null} guard with its iteration:
+     * a customer carrying an origin, a due date, a discount and two free fields
+     * renders every one of them, whereas the existing customer fixtures left all
+     * four unset (the null / empty arms).
+     */
+    @Test
+    void getPageMapsACustomerWithOriginDueDateDiscountAndFreeFields() {
+        RefExportService service = new RefExportService();
+        com.intermarche.pos.domain.payment.AccountCustomer customer =
+                mock(com.intermarche.pos.domain.payment.AccountCustomer.class);
+        customer.accountNumber = "A3";
+        customer.companyName = "Gamma";
+        customer.origin = com.intermarche.pos.domain.payment.AccountCustomer.Origin.INTEGRATED;
+        customer.dueDate = LocalDate.of(2026, 10, 31);
+        customer.discountPercent = new BigDecimal("2.50");
+        com.intermarche.pos.domain.payment.AccountCustomer.FreeField zone =
+                new com.intermarche.pos.domain.payment.AccountCustomer.FreeField(1, "Zone", "A");
+        com.intermarche.pos.domain.payment.AccountCustomer.FreeField tour =
+                new com.intermarche.pos.domain.payment.AccountCustomer.FreeField(2, "Tournée", "B");
+        customer.freeFields = new java.util.ArrayList<>(List.of(zone, tour));
+        PanacheQuery<com.intermarche.pos.domain.payment.AccountCustomer> query =
+                singlePage(0, 10, List.of(customer));
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> com.intermarche.pos.domain.payment.AccountCustomer
+                    .find("order by accountNumber")).thenReturn(query);
+            RefPayloads.CustomerDto dto =
+                    (RefPayloads.CustomerDto) service.getPage("CUSTOMERS", 0, 10).get(0);
+            assertEquals("A3", dto.accountNumber);
+            assertEquals("INTEGRATED", dto.origin);
+            assertEquals("2026-10-31", dto.dueDate);
+            assertEquals("2.50", dto.discountPercent);
+            assertEquals(2, dto.freeFields.size());
+            assertEquals(1, dto.freeFields.get(0).slot);
+            assertEquals("Zone", dto.freeFields.get(0).label);
+            assertEquals("A", dto.freeFields.get(0).value);
+            assertEquals(2, dto.freeFields.get(1).slot);
+            assertEquals("Tournée", dto.freeFields.get(1).label);
+            assertEquals("B", dto.freeFields.get(1).value);
+        }
+    }
+
+    /**
+     * Covers the non-null {@code dateFormat} arm of a coupon field and the null
+     * {@code level} arm of a coupon control in {@code toDto(CouponType)}: the
+     * field names a date layout (rendered by name) while the control names a
+     * kind but leaves its level unset (rendered null), the two arms the
+     * existing fixtures never reached.
+     */
+    @Test
+    void getPageMapsACouponFieldDateFormatAndALevellessControl() {
+        RefExportService service = new RefExportService();
+        CouponType type = mock(CouponType.class);
+        type.code = "C4";
+        type.amountSource = CouponType.AmountSource.ENCODED;
+        CouponField dated = new CouponField();
+        dated.role = CouponField.Role.DATE_START;
+        dated.offsetPosition = 5;
+        dated.fieldLength = 6;
+        dated.kind = CouponField.Kind.NUMERIC;
+        dated.dateFormat = CouponField.DateFormat.DDMMYY;
+        type.fields = new java.util.ArrayList<>(List.of(dated));
+        CouponControl levelless = new CouponControl();
+        levelless.kind = CouponControl.Kind.EXPIRED;
+        levelless.level = null;
+        levelless.message = "PERIME";
+        type.controls = new java.util.ArrayList<>(List.of(levelless));
+        PanacheQuery<CouponType> query = singlePage(0, 10, List.of(type));
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> CouponType.find("order by code")).thenReturn(query);
+            RefPayloads.CouponTypeDto dto =
+                    (RefPayloads.CouponTypeDto) service.getPage("COUPON_TYPES", 0, 10).get(0);
+            assertEquals(1, dto.fields.size());
+            assertEquals("DATE_START", dto.fields.get(0).role);
+            assertEquals("DDMMYY", dto.fields.get(0).dateFormat);
+            assertEquals(1, dto.controls.size());
+            assertEquals("EXPIRED", dto.controls.get(0).kind);
+            assertNull(dto.controls.get(0).level);
+            assertEquals("PERIME", dto.controls.get(0).message);
+        }
+    }
+
+    /**
+     * Covers the {@code == null} arm of the two coupon canonical helpers
+     * ({@code couponFields} and {@code couponControls}): a coupon type whose
+     * field and control lists are null renders both trailing segments empty,
+     * whereas the existing fixtures only ever exercised the empty-but-non-null
+     * and the populated arms. Invoked reflectively because {@code toDto} always
+     * hands these helpers a non-null list in the production flow.
+     *
+     * @throws Exception if reflection fails
+     */
+    @Test
+    void canonicalRendersACouponTypeWithNullFieldAndControlLists() throws Exception {
+        RefExportService service = new RefExportService();
+        Method canonical = RefExportService.class.getDeclaredMethod("canonical", Object.class);
+        canonical.setAccessible(true);
+        RefPayloads.CouponTypeDto dto = new RefPayloads.CouponTypeDto();
+        dto.code = "C5";
+        dto.amountSource = "MANUAL";
+        dto.fields = null;
+        dto.controls = null;
+        assertEquals("C5|||MANUAL||0|false|false||||false|||", canonical.invoke(service, dto));
     }
 }

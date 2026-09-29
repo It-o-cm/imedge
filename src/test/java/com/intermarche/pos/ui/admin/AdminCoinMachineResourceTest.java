@@ -369,4 +369,38 @@ class AdminCoinMachineResourceTest {
                     .contains("monnayeurs.csv"));
         }
     }
+
+    /**
+     * A CREATION whose code is already taken is refused — the machine-null arm of
+     * the clash guard, distinct from the correction-of-another-row arm.
+     */
+    @Test
+    void acreationWhoseCodeIsAlreadyTakenIsRefused() {
+        AdminCoinMachineResource resource = newResource();
+        CoinMachine existing = machine("MON-01", "300.00");
+        existing.id = 1L;
+        MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
+        form.add("code", "MON-01");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
+                MockedConstruction<CoinMachine> created = mockConstruction(CoinMachine.class)) {
+            stubCode(panache, "MON-01", existing);
+            assertTrue(resource.save(form).getLocation().toString().contains("noticeOk=false"));
+            assertTrue(created.constructed().isEmpty());
+        }
+    }
+
+    /**
+     * The amount formatter maps a null amount to zero — the null arm of a guard
+     * no reachable caller reaches, exercised on the helper directly.
+     *
+     * @throws Exception when the helper cannot be reached by reflection
+     */
+    @Test
+    void formatMapsAnullAmountToZero() throws Exception {
+        AdminCoinMachineResource resource = newResource();
+        java.lang.reflect.Method format =
+                AdminCoinMachineResource.class.getDeclaredMethod("format", BigDecimal.class);
+        format.setAccessible(true);
+        assertEquals("0.00", format.invoke(resource, (BigDecimal) null));
+    }
 }

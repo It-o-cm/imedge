@@ -102,6 +102,21 @@ class CoinMachineServiceTest {
     }
 
     /**
+     * A cash payment carrying no applied amount is skipped: the false arm of
+     * the amount guard, taken while the {@code instanceof} arm is true, which no
+     * amount-bearing cash payment reaches.
+     */
+    @Test
+    void acashPaymentWithoutAnAmountIsSkipped() {
+        CoinMachineService service = new CoinMachineService();
+        Ticket ticket = new Ticket();
+        ticket.terminalId = "C01";
+        ticket.payments.add(new CashPayment(null, new BigDecimal("50.00")));
+        ticket.payments.add(new CashPayment(new BigDecimal("12.00"), new BigDecimal("20.00")));
+        assertEquals(new BigDecimal("12.00"), service.cashOf(ticket));
+    }
+
+    /**
      * A new ticket moves the machine of its register by its whole cash.
      */
     @Test

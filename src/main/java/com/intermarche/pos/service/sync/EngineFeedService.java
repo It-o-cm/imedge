@@ -48,15 +48,28 @@ public class EngineFeedService {
      * engine attaches every price to the regime carrying its rate, so a price
      * file delivered to an engine with an empty regime table is rejected line
      * by line and the engine prices nothing.
+     *
+     * <p>EGALIM_REGIMES comes BEFORE PRODUCTS for the same kind of reason: an
+     * article states a regime CODE and never a ceiling, so an engine holding
+     * articles it has no ceilings for caps them at whatever its own code
+     * carries. Delivering the ceilings first makes the administered figure the
+     * one that computes, from the very first basket.
+     *
+     * <p>BUDGET_GROUPS comes BEFORE OFFERS: an offer may reference its budget
+     * group by code, so a group unknown to the engine when the offer arrives
+     * rejects that offer line. This feed is PROJECTED from the node's campaigns
+     * (the node is the BO maître of campaigns), not imported from a file.
      */
     public static final List<FeedDef> CATALOG = List.of(
             new FeedDef("STORES", "/stores/import"),
             new FeedDef("STORE_GROUPS", "/store-groups/import"),
+            new FeedDef("EGALIM_REGIMES", "/egalim-regimes/import"),
             new FeedDef("PRODUCTS", "/products/import"),
             new FeedDef("FAMILIES", "/product-families/import"),
             new FeedDef("CATEGORY_STORAGES", "/product-category-storages/import"),
             new FeedDef("VAT_RATES", "/vat-rates/import"),
             new FeedDef("PRICES", "/prices/import"),
+            new FeedDef("BUDGET_GROUPS", "/budget-groups/import"),
             new FeedDef("OFFERS", "/offers/import"));
 
     /**

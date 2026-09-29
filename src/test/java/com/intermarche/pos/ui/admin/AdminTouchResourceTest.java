@@ -11,6 +11,7 @@ import jakarta.ws.rs.core.MultivaluedHashMap;
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedConstruction;
 import org.mockito.MockedStatic;
 
 import java.util.List;
@@ -23,7 +24,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.doNothing;
@@ -540,6 +543,34 @@ class AdminTouchResourceTest {
             Response response = resource.saveImages(form("imgCode", "PLU7", "imgData", "raw"));
             assertRedirect(response, true);
             assertEquals("data:x", target.imageData);
+        }
+    }
+
+    /**
+     * {@code saveConfig} on a group that has never been configured creates a
+     * default row and writes into it — the setting-null arm of {@code settingFor},
+     * opposite the found-row arm every other case takes.
+     */
+    @Test
+    void saveConfigCreatesADefaultRowWhenTheGroupHasNoneYet() {
+        AdminTouchResource resource = newResource();
+        ProductFamily f = new ProductFamily();
+        f.id = 42L;
+        f.code = "NEW";
+        PanacheQuery<TouchGroupSetting> absent = mock(PanacheQuery.class);
+        when(absent.firstResult()).thenReturn(null);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class);
+                MockedConstruction<TouchGroupSetting> created =
+                        mockConstruction(TouchGroupSetting.class)) {
+            mocked.when(() -> ProductFamily.findById(42L)).thenReturn(f);
+            mocked.when(() -> TouchGroupSetting.find("familyCode", "NEW")).thenReturn(absent);
+            Response response = resource.saveConfig(
+                    form("id", "42", "buttonSize", "NORMAL", "displayOrder", "2", "salesVolume", "5"));
+            assertRedirect(response, true);
+            TouchGroupSetting createdRow = created.constructed().get(0);
+            assertEquals("NORMAL", createdRow.buttonSize);
+            assertEquals(2, createdRow.displayOrder);
+            verify(createdRow).persist();
         }
     }
 }

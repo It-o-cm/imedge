@@ -32,12 +32,13 @@
             <button class="btn btn-primary" type="submit">Relancer la livraison</button>
         </form>
     </div>
-    <p class="card-sub">Livraison automatique toutes les {view.deliverySeconds} s.</p>
+    <p class="card-sub">Livraison automatique toutes les {view.deliverySeconds} s. État rafraîchi toutes les 2 s.</p>
     <table class="sync-table">
         <thead>
-            <tr><th>Code</th><th>Version</th><th>Appliquée</th><th>Version moteur</th><th>Reçu</th><th>Appliqué</th><th>Dernière erreur</th></tr>
+            <tr><th>Code</th><th>Version</th><th>Appliquée</th><th>Version moteur</th><th>Reçu</th><th>Appliqué</th><th>Dernière erreur</th><th>Action</th></tr>
         </thead>
-        <tbody>
+        <tbody id="sync-feeds" data-refresh-url="/admin/sync/feeds">
+            {#fragment id=feeds}
             {#for feed in view.feeds}
             <tr class="{#if feed.lastError}row-error{/if}">
                 <td>{feed.code}</td>
@@ -47,11 +48,18 @@
                 <td>{feed.receivedAt}</td>
                 <td>{feed.appliedAt}</td>
                 <td class="cell-error">{#if feed.lastError}{feed.lastError}{#else}—{/if}</td>
+                <td class="cell-action">
+                    <form method="post" action="/admin/sync/deliver/{feed.code}" class="card-action"
+                          data-confirm="{#if feed.lastError}Rejouer{#else}Livrer maintenant{/if} le flux {feed.code} ?">
+                        <button class="btn btn-small" type="submit">{#if feed.lastError}Rejouer{#else}Livrer maintenant{/if}</button>
+                    </form>
+                </td>
             </tr>
             {/for}
             {#if view.feeds.isEmpty()}
-            <tr><td colspan="7" class="cell-empty">Aucun flux moteur reçu sur ce nœud.</td></tr>
+            <tr><td colspan="8" class="cell-empty">Aucun flux moteur reçu sur ce nœud.</td></tr>
             {/if}
+            {/fragment}
         </tbody>
     </table>
 </div>
@@ -66,19 +74,22 @@
     <p class="card-sub">Tirage automatique toutes les {view.pullSeconds} s. Dernier tirage réussi : {view.lastPull}.</p>
     <table class="sync-table">
         <thead>
-            <tr><th>Domaine</th><th>Empreinte appliquée</th><th>Appliqué</th></tr>
+            <tr><th>Domaine</th><th>Empreinte appliquée</th><th>Appliqué</th><th>Dernière erreur</th></tr>
         </thead>
-        <tbody>
+        <tbody id="sync-pulls" data-refresh-url="/admin/sync/pulls">
+            {#fragment id=pulls}
             {#for pull in view.pulls}
-            <tr>
+            <tr class="{#if pull.lastError}row-error{/if}">
                 <td>{pull.domain}</td>
                 <td class="mono">{pull.fingerprint}</td>
                 <td>{pull.appliedAt}</td>
+                <td class="cell-error">{#if pull.lastError}{pull.lastError}{#else}—{/if}</td>
             </tr>
             {/for}
             {#if view.pulls.isEmpty()}
-            <tr><td colspan="3" class="cell-empty">Aucun référentiel appliqué (nœud fraîchement démarré).</td></tr>
+            <tr><td colspan="4" class="cell-empty">Aucun référentiel appliqué (nœud fraîchement démarré).</td></tr>
             {/if}
+            {/fragment}
         </tbody>
     </table>
 </div>
@@ -90,7 +101,8 @@
         <thead>
             <tr><th>Type</th><th>En attente</th><th>Tentatives max</th><th>Dernière erreur</th></tr>
         </thead>
-        <tbody>
+        <tbody id="sync-outbox" data-refresh-url="/admin/sync/outbox">
+            {#fragment id=backlog}
             {#for row in view.backlog}
             <tr class="{#if row.lastError}row-error{/if}">
                 <td>{row.type}</td>
@@ -101,6 +113,55 @@
             {/for}
             {#if view.backlog.isEmpty()}
             <tr><td colspan="4" class="cell-empty">Outbox vide — nœud entièrement synchronisé.</td></tr>
+            {/if}
+            {/fragment}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h2 class="card-title">Planifications</h2>
+    <p class="card-sub">Livraisons différées : la boucle de livraison les exécute à son réveil (précision à la minute). Une planification en attente reste annulable.</p>
+    <form method="post" action="/admin/sync/schedule" class="sync-schedule-form">
+        <label class="sync-schedule-field">
+            <span>Flux</span>
+            <select name="feedCode">
+                <option value="">Tous les flux</option>
+                {#for code in view.feedCodes}
+                <option value="{code}">{code}</option>
+                {/for}
+            </select>
+        </label>
+        <label class="sync-schedule-field">
+            <span>Date et heure</span>
+            <input type="datetime-local" name="scheduledAt" required>
+        </label>
+        <button class="btn btn-primary" type="submit">Planifier</button>
+    </form>
+    <table class="sync-table">
+        <thead>
+            <tr><th>Flux</th><th>Échéance</th><th>Demandé par</th><th>État</th><th>Message</th><th>Action</th></tr>
+        </thead>
+        <tbody>
+            {#for row in view.schedules}
+            <tr>
+                <td>{row.feedCode}</td>
+                <td>{row.scheduledAt}</td>
+                <td>{row.createdBy}</td>
+                <td>{row.status}</td>
+                <td class="cell-error">{#if row.message}{row.message}{#else}—{/if}</td>
+                <td class="cell-action">
+                    {#if row.pending}
+                    <form method="post" action="/admin/sync/schedule/{row.id}/cancel" class="card-action"
+                          data-confirm="Annuler la planification du flux {row.feedCode} ?">
+                        <button class="btn btn-small btn-danger" type="submit">Annuler</button>
+                    </form>
+                    {#else}—{/if}
+                </td>
+            </tr>
+            {/for}
+            {#if view.schedules.isEmpty()}
+            <tr><td colspan="6" class="cell-empty">Aucune livraison planifiée.</td></tr>
             {/if}
         </tbody>
     </table>
@@ -117,6 +178,8 @@
     <p class="card-sub">Aucune session ouverte sur ce nœud.</p>
     {/if}
 </div>
+<script src="/admin/confirm.js"></script>
+<script src="/admin/sync-refresh.js"></script>
 {/body}
 
 {#footer}La supervision est locale à ce nœud : elle n'affiche jamais l'état d'une autre caisse (une caisse coupée du réseau continue de vendre).{/footer}

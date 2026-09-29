@@ -172,3 +172,63 @@
     align-items: center;
     column-gap: 8px;
 }
+
+/* The EGAlim screen: same one-line-per-row grid as the VAT screen, with a
+   wider first column -- a regime is named by a word, not by a number. */
+.egalim-grid {
+    display: grid;
+    grid-template-columns: 150px 80px auto minmax(0, 1fr) 100px 92px;
+    align-items: center;
+    column-gap: 8px;
+    row-gap: 8px;
+}
+
+.egalim-grid > form {
+    display: contents;
+}
+
+.egalim-grid .egalim-cap {
+    text-align: right;
+}
+
+.egalim-unit {
+    font-size: 12px;
+    color: var(--im-ink-soft);
+    white-space: nowrap;
+}
+
+.egalim-remove {
+    display: flex;
+    justify-content: flex-end;
+}
+
+/* The column captions, which are grid cells like the rest. */
+.egalim-head {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .4px;
+    color: var(--im-ink-soft);
+    padding-bottom: 4px;
+}
+
+.egalim-head.egalim-cap {
+    text-align: right;
+}
+
+/* The creation line reuses the same tracks so its fields sit under the ones
+   above, and its button under the save buttons. */
+.egalim-new {
+    display: grid;
+    grid-template-columns: 150px 80px auto minmax(0, 1fr) 100px 92px;
+    align-items: center;
+    column-gap: 8px;
+}
+
+/* The EGAlim cell of the article list: the regime code read as a mark, the
+   ceiling read as a comment beside it. Nowrap, because "non plafonné" broken
+   over two lines in a dense table reads as two different answers. */
+.egalim-mark {
+    font-weight: 600;
+    white-space: nowrap;
+}

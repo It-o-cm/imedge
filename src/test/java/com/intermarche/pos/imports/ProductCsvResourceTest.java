@@ -762,4 +762,194 @@ class ProductCsvResourceTest {
         assertNotEquals(permittedChecksum, forbiddenChecksum);
     }
 
+    /**
+     * Header including the optional EGALIM_REGIME column appended after the
+     * canonical nine.
+     */
+    private static final String[] EGALIM_HEADER = {"EAN", "NAME", "DESCRIPTION", "BRAND",
+            "REFERENCE_WEIGHT", "REFERENCE_VOLUME", "PRODUCT_TYPE", "UNIT_NAME", "ACTIVE",
+            "EGALIM_REGIME"};
+
+    /**
+     * Builds a line under the EGALIM_REGIME-bearing header. A 9-cell row still
+     * DECLARES the column ({@code has} is true) but carries no cell for it
+     * ({@code get} returns null), which is the short-row case.
+     *
+     * @param lineNumber the 1-based line number
+     * @param cells the raw cells
+     * @return the parsed line bound to the EGALIM_REGIME header
+     */
+    private static ImporterCsvResource.LineData egalimLine(int lineNumber, String[] cells) {
+        java.util.Map<String, Integer> header = new java.util.LinkedHashMap<>();
+        for (int i = 0; i < EGALIM_HEADER.length; i++) header.put(EGALIM_HEADER[i], i);
+        return new ImporterCsvResource.LineData(lineNumber, header, cells, EGALIM_HEADER[0]);
+    }
+
+    /**
+     * {@code feedProduct} classifies the article from a declared
+     * EGALIM_REGIME cell, UPPER-CASED: the code is matched against the EGAlim
+     * referential and against what the valuation engine holds, and a catalog
+     * answering {@code food_34} where the referential says {@code FOOD_34}
+     * classifies the article under a category nothing carries.
+     *
+     * @throws Exception on reflection failure
+     */
+    @Test
+    void feedProductReadsAndNormalisesTheEgalimRegime() throws Exception {
+        ProductCsvResource resource = new ProductCsvResource();
+        Product product = new Product();
+        String[] cells = {"111", "Milk", "", "", "", "", "", "", "true", "  food_34 "};
+        feedProduct(resource, egalimLine(1, cells), product);
+        assertEquals("FOOD_34", product.egalimRegime);
+    }
+
+    /**
+     * {@code feedProduct} on a DECLARED but EMPTY cell UNCLASSIFIES the
+     * article, and lands it as null rather than as "": that is what a Gestion
+     * Commerciale emptying the field means, and "unclassified" must have ONE
+     * representation.
+     *
+     * @throws Exception on reflection failure
+     */
+    @Test
+    void feedProductBlankEgalimCellUnclassifiesTheArticle() throws Exception {
+        ProductCsvResource resource = new ProductCsvResource();
+        Product product = new Product();
+        product.egalimRegime = "FOOD_34";
+        String[] cells = {"111", "Milk", "", "", "", "", "", "", "true", "   "};
+        feedProduct(resource, egalimLine(1, cells), product);
+        assertNull(product.egalimRegime);
+    }
+
+    /**
+     * {@code feedProduct} on a header that DECLARES the column but a row that
+     * carries no such cell reads null and unclassifies too — the
+     * {@code raw == null} leg of the guard, which a short row produces.
+     *
+     * @throws Exception on reflection failure
+     */
+    @Test
+    void feedProductNullEgalimCellUnclassifiesTheArticle() throws Exception {
+        ProductCsvResource resource = new ProductCsvResource();
+        Product product = new Product();
+        product.egalimRegime = "DPH_40";
+        String[] cells = {"111", "Milk", "", "", "", "", "", "", "true"};
+        feedProduct(resource, egalimLine(1, cells), product);
+        assertNull(product.egalimRegime);
+    }
+
+    /**
+     * {@code feedProduct} on a header WITHOUT the column leaves the
+     * classification untouched — the {@code has} false arm, the touch rule
+     * every optional column follows: a feed that does not speak of EGAlim does
+     * not reclassify.
+     *
+     * @throws Exception on reflection failure
+     */
+    @Test
+    void feedProductLeavesTheEgalimRegimeAloneWhenTheColumnIsAbsent() throws Exception {
+        ProductCsvResource resource = new ProductCsvResource();
+        Product product = new Product();
+        product.egalimRegime = "FOOD_34";
+        feedProduct(resource, line(1, fullParts()), product);
+        assertEquals("FOOD_34", product.egalimRegime);
+    }
+
+    /**
+     * {@code computeIncomingChecksum} mirrors the same two arms: an absent
+     * column reads the existing classification (so a re-import of an unchanged
+     * file stays a no-op), a declared column that reclassifies flips the
+     * checksum (so the line is applied rather than skipped).
+     *
+     * @throws Exception on reflection failure
+     */
+    @Test
+    void computeIncomingChecksumMirrorsTheEgalimTouchRule() throws Exception {
+        ProductCsvResource resource = new ProductCsvResource();
+        Product existing = new Product();
+        existing.ean = "111";
+        existing.egalimRegime = "FOOD_34";
+        int absent = incomingChecksum(resource, line(1, fullParts()), existing);
+        int declaredSame = incomingChecksum(resource, egalimLine(1, new String[]{"111", "Milk",
+                "Fresh milk", "BrandX", "1.500", "2.000", "unit", "kg", "true", "FOOD_34"}), existing);
+        int declaredOther = incomingChecksum(resource, egalimLine(1, new String[]{"111", "Milk",
+                "Fresh milk", "BrandX", "1.500", "2.000", "unit", "kg", "true", "DPH_40"}), existing);
+        int declaredNone = incomingChecksum(resource, egalimLine(1, new String[]{"111", "Milk",
+                "Fresh milk", "BrandX", "1.500", "2.000", "unit", "kg", "true", ""}), existing);
+        assertEquals(absent, declaredSame);
+        assertNotEquals(absent, declaredOther);
+        assertNotEquals(absent, declaredNone);
+    }
+
+    /**
+     * Header including the optional NOMENCLATURE column appended after the
+     * canonical nine.
+     */
+    private static final String[] NOMENCLATURE_HEADER = {"EAN", "NAME", "DESCRIPTION", "BRAND",
+            "REFERENCE_WEIGHT", "REFERENCE_VOLUME", "PRODUCT_TYPE", "UNIT_NAME", "ACTIVE",
+            "NOMENCLATURE"};
+
+    /**
+     * Builds a header-bound row declaring the optional NOMENCLATURE column.
+     *
+     * @param lineNumber the 1-based line number
+     * @param cells the raw cells of the row
+     * @return the header-bound line
+     */
+    private static ImporterCsvResource.LineData nomenclatureLine(int lineNumber, String[] cells) {
+        java.util.Map<String, Integer> header = new java.util.LinkedHashMap<>();
+        for (int i = 0; i < NOMENCLATURE_HEADER.length; i++) header.put(NOMENCLATURE_HEADER[i], i);
+        return new ImporterCsvResource.LineData(lineNumber, header, cells, NOMENCLATURE_HEADER[0]);
+    }
+
+    /**
+     * {@code processLineLogic} files the article under the nomenclature node
+     * when the feed declares the NOMENCLATURE column (the {@code has} true arm
+     * at L219): the filing is applied OUTSIDE the checksum shortcut, so an
+     * article moved from one sous-famille to another is re-filed even when
+     * nothing else on the row changed.
+     */
+    @Test
+    void processLineLogicFilesArticleUnderNomenclatureWhenColumnDeclared() {
+        ProductCsvResource resource = new ProductCsvResource();
+        String[] cells = {"555", "Yogurt", "", "", "", "", "", "", "true", "SOUS_FAMILLE_42"};
+        ImporterCsvResource.LineData data = nomenclatureLine(1, cells);
+        Map<String, Object> context = new HashMap<>();
+        int[] counters = {0, 0};
+        try (MockedStatic<Panache> panache = mockStatic(Panache.class);
+                MockedStatic<com.intermarche.pos.domain.catalog.ProductFamily> families =
+                        mockStatic(com.intermarche.pos.domain.catalog.ProductFamily.class)) {
+            EntityManager em = mock(EntityManager.class);
+            panache.when(Panache::getEntityManager).thenReturn(em);
+            resource.processLineLogic(data, context, counters);
+            ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
+            verify(em).persist(captor.capture());
+            Product persisted = captor.getValue();
+            families.verify(() -> com.intermarche.pos.domain.catalog.ProductFamily
+                    .fileUnderNomenclature(persisted, "SOUS_FAMILLE_42"));
+        }
+    }
+
+    /**
+     * {@code processLineLogic} leaves the article's filing untouched when the
+     * feed does not carry the NOMENCLATURE column (the {@code has} false arm at
+     * L219): a feed built before the nomenclature extension keeps its filing.
+     */
+    @Test
+    void processLineLogicLeavesFilingAloneWhenNomenclatureColumnAbsent() {
+        ProductCsvResource resource = new ProductCsvResource();
+        ImporterCsvResource.LineData data = line(1, fullParts());
+        Map<String, Object> context = new HashMap<>();
+        int[] counters = {0, 0};
+        try (MockedStatic<Panache> panache = mockStatic(Panache.class);
+                MockedStatic<com.intermarche.pos.domain.catalog.ProductFamily> families =
+                        mockStatic(com.intermarche.pos.domain.catalog.ProductFamily.class)) {
+            EntityManager em = mock(EntityManager.class);
+            panache.when(Panache::getEntityManager).thenReturn(em);
+            resource.processLineLogic(data, context, counters);
+            verify(em).persist(org.mockito.ArgumentMatchers.any(Product.class));
+            families.verifyNoInteractions();
+        }
+    }
+
 }

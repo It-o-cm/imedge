@@ -567,8 +567,8 @@ public class RefApplyService {
             }
             island.label = dto.label;
             island.active = dto.active;
-            island.terminalIds = dto.terminalIds;
             island.persist();
+            reconstructPoints(dto.code, dto.terminalIds);
             seen.add(dto.code);
         }
         long deactivated = 0;
@@ -584,6 +584,49 @@ public class RefApplyService {
         LOGGER.infof("Référentiel îlots appliqué: %d ligne(s), %d désactivé(s)",
                 dtos.size(), deactivated);
         LOGGER.info("Exiting method applyCheckoutIslands");
+    }
+
+    /**
+     * Rebuilds the island&rarr;register relation on the receiving side from the
+     * backward-compatible {@code terminalIds} string: each listed terminal gets
+     * an active {@link com.intermarche.pos.domain.store.CheckoutPoint} pointing at
+     * the island, and a point of this island no longer listed is deactivated. The
+     * relation the store node holds as first-class checkout points travels the
+     * wire as the historical semicolon list, so an un-updated register still
+     * reads it, and an updated register rebuilds the objects.
+     *
+     * @param islandCode the island the terminals belong to
+     * @param terminalIds the semicolon list of terminal identifiers, or null
+     */
+    void reconstructPoints(String islandCode, String terminalIds) {
+        Set<String> wanted = new java.util.LinkedHashSet<>();
+        if (terminalIds != null) {
+            for (String raw : terminalIds.split(";")) {
+                String trimmed = raw.trim();
+                if (!trimmed.isEmpty()) {
+                    wanted.add(trimmed);
+                }
+            }
+        }
+        for (String terminal : wanted) {
+            com.intermarche.pos.domain.store.CheckoutPoint point =
+                    com.intermarche.pos.domain.store.CheckoutPoint.findByTerminal(terminal);
+            if (point == null) {
+                point = new com.intermarche.pos.domain.store.CheckoutPoint();
+                point.terminalId = terminal;
+            }
+            point.islandCode = islandCode;
+            point.active = true;
+            point.persist();
+        }
+        for (com.intermarche.pos.domain.store.CheckoutPoint point
+                : com.intermarche.pos.domain.store.CheckoutPoint
+                        .<com.intermarche.pos.domain.store.CheckoutPoint>list("islandCode = ?1", islandCode)) {
+            if (!wanted.contains(point.terminalId) && point.active) {
+                point.active = false;
+                point.persist();
+            }
+        }
     }
 
     /**
@@ -1085,7 +1128,13 @@ public class RefApplyService {
     @Transactional
     public void applyEchelonSettings(List<RefPayloads.EchelonSettingDto> dtos) {
         LOGGER.info("Entering method applyEchelonSettings with dtos: " + dtos);
-        EchelonSetting.deleteAll();
+        // Wholesale replacement of the CENTRAL levels only. The two levels below
+        // the PDV — ISLAND and CHECKOUT_POINT — are administered locally on this
+        // store node and are NOT part of the central snapshot, so a central pull
+        // must not wipe them (a plain deleteAll() would silently destroy the
+        // island and per-terminal settings on every pull).
+        EchelonSetting.delete("level in ?1",
+                List.of(EchelonLevel.COUNTRY, EchelonLevel.ENSEIGNE, EchelonLevel.PDV));
         for (RefPayloads.EchelonSettingDto dto : dtos) {
             EchelonSetting row = new EchelonSetting();
             row.level = EchelonLevel.valueOf(dto.level);

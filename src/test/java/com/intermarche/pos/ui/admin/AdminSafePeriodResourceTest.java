@@ -169,4 +169,24 @@ class AdminSafePeriodResourceTest {
         anonymous.currentUser = null;
         assertNull(anonymous.signedIn());
     }
+
+    /**
+     * A null balance is shown as zero: the null arm of the amount format.
+     */
+    @Test
+    void aNullBalanceIsShownAsZero() {
+        AdminSafePeriodResource resource = newResource();
+        TemplateInstance view = stub(resource.adminSafePeriods);
+        AccountingPeriod open = new AccountingPeriod();
+        when(resource.safeService.openPeriod()).thenReturn(open);
+        when(resource.safeService.balance()).thenReturn(null);
+        when(resource.safeService.countPending(open)).thenReturn(0L);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            PanacheQuery<AccountingPeriod> query = mock(PanacheQuery.class);
+            when(query.list()).thenReturn(List.of(open));
+            panache.when(() -> AccountingPeriod.find("order by startDate desc")).thenReturn(query);
+            assertSame(view, resource.list(null, true));
+        }
+        verify(view).data("balance", "0.00");
+    }
 }

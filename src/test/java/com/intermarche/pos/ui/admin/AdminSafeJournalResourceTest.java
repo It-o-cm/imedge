@@ -232,4 +232,41 @@ class AdminSafeJournalResourceTest {
         String csv = String.valueOf(resource.export("2026-09-01", "2026-09-30").getEntity());
         assertTrue(csv.contains(";Recette;Mouvement;;;30.00;30.00;Valide"));
     }
+
+    /**
+     * The extraction without a last day stops today — the null arm of that guard
+     * in the export path.
+     */
+    @Test
+    void theextractionWithoutAlastDayStopsToday() {
+        AdminSafeJournalResource resource = newResource();
+        when(resource.safeService.journal(any(), any())).thenReturn(List.of());
+        Response response = resource.export("2026-09-01", null);
+        assertTrue(response.getHeaderString("Content-Disposition")
+                .contains("journal-coffre-2026-09-01-" + LocalDate.now() + ".csv"));
+    }
+
+    /**
+     * The column totals tolerate a movement with no kind — the null arm of the
+     * kind guard, which writes in neither column — and a matching movement with
+     * no amount, counted as zero and formatted as zero.
+     */
+    @Test
+    void thecolumnTotalsTolerateAnullKindAndAnullAmount() {
+        AdminSafeJournalResource resource = newResource();
+        TemplateInstance view = stub(resource.adminSafeJournal);
+        SafeMovement kindless = new SafeMovement();
+        kindless.type = null;
+        kindless.amount = new BigDecimal("5.00");
+        kindless.movementDate = LocalDate.of(2026, 9, 15);
+        SafeMovement amountless = new SafeMovement();
+        amountless.type = SafeMovementType.POUCH;
+        amountless.amount = null;
+        amountless.movementDate = LocalDate.of(2026, 9, 15);
+        when(resource.safeService.journal(LocalDate.of(1970, 1, 1), LocalDate.of(2026, 8, 31)))
+                .thenReturn(List.of());
+        when(resource.safeService.journal(LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30)))
+                .thenReturn(List.of(kindless, amountless));
+        assertSame(view, resource.journal("2026-09-01", "2026-09-30"));
+    }
 }

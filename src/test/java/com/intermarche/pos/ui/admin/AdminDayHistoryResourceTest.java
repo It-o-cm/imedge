@@ -314,4 +314,19 @@ class AdminDayHistoryResourceTest {
             assertSame(employee, resource.employeeOf(5L));
         }
     }
+
+    /**
+     * A null amount inside the sum counts as zero — the null arm of that guard —
+     * and a printable row of a null total shows it as zero rather than exploding.
+     */
+    @Test
+    void thesumAndTheRowsTolerateNullAmounts() {
+        AdminDayHistoryResource resource = newResource();
+        assertEquals(BigDecimal.ZERO,
+                resource.sum(java.util.Arrays.asList((BigDecimal) null)));
+        Map<String, BigDecimal> totals = new LinkedHashMap<>();
+        totals.put("CASH", null);
+        List<AdminDayHistoryResource.TenderRow> rows = resource.rowsOf(totals);
+        assertEquals("0.00", rows.get(0).getAmount());
+    }
 }

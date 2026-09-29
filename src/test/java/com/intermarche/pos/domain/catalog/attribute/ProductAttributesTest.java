@@ -237,6 +237,16 @@ class ProductAttributesTest {
     }
 
     /**
+     * legalWarranty reflects the LEGAL_WARRANTY attribute, both arms.
+     */
+    @Test
+    void legalWarrantyReflectsAttribute() {
+        Assertions.assertTrue(ProductAttributes.legalWarranty(
+                productWith(ProductAttributeCatalog.LEGAL_WARRANTY, "true")));
+        Assertions.assertFalse(ProductAttributes.legalWarranty(new Product()));
+    }
+
+    /**
      * ecoTax reads the article's own amount, the decimal comma of an integrated
      * file accepted as a point (BO-10-04-14).
      */

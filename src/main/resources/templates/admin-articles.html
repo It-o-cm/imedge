@@ -127,6 +127,7 @@
                 <th>Libellé encaissement</th>
                 <th>Code interne</th>
                 <th>Type</th>
+                <th>EGAlim</th>
                 <th>Statut</th>
                 <th class="col-actions">Actions</th>
             </tr>
@@ -139,6 +140,11 @@
                 <td class="col-muted">{product.checkoutLabel ?: '—'}</td>
                 <td class="col-muted">{product.internalCode ?: '—'}</td>
                 <td class="col-muted">{product.productType ?: '—'}</td>
+                {! The ceiling comes from the map built once for the page, not from a
+                 ! lookup per row. A code the referential does not declare is named as
+                 ! such: the moteur de valorisation will not cap that article, and an
+                 ! empty cell would hide it. !}
+                <td>{#if product.egalimRegime}<span class="egalim-mark">{product.egalimRegime}</span> <span class="col-muted">{egalimCaps.get(product.egalimRegime) ?: 'non référencé'}</span>{#else}<span class="col-muted">Non classé</span>{/if}</td>
                 <td>{#if product.active}<span class="badge badge-ok">Actif</span>{#else}<span class="badge badge-off">Désactivé</span>{/if}</td>
                 <td class="col-actions">
                     <a class="btn btn-small btn-ghost" href="/admin/articles/edit?id={product.id}">Modifier</a>

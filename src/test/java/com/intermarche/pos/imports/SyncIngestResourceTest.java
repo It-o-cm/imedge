@@ -126,6 +126,38 @@ class SyncIngestResourceTest {
     }
 
     /**
+     * {@code ingestCustomer} succeeds with 200 when the node is a store and no
+     * token is configured, running the customer ingestion lambda to completion
+     * (LC-08-04-09).
+     */
+    @Test
+    void customerOkWhenStoreAndNoTokenConfigured() {
+        SyncIngestService service = mock(SyncIngestService.class);
+        SyncPayloads.CustomerDto dto = new SyncPayloads.CustomerDto();
+        SyncIngestResource resource = resource("store", Optional.empty(), service);
+        Response response = resource.ingestCustomer(null, dto);
+        assertEquals(200, response.getStatus());
+        assertEquals("OK", response.getEntity());
+        verify(service).ingestCustomer(dto);
+    }
+
+    /**
+     * {@code ingestDocument} succeeds with 200 when the presented token matches
+     * the configured one, running the document ingestion lambda to completion
+     * (BO-02-04-19).
+     */
+    @Test
+    void documentOkWhenTokenMatches() {
+        SyncIngestService service = mock(SyncIngestService.class);
+        SyncPayloads.DocumentDto dto = new SyncPayloads.DocumentDto();
+        SyncIngestResource resource = resource("store", Optional.of("secret"), service);
+        Response response = resource.ingestDocument("secret", dto);
+        assertEquals(200, response.getStatus());
+        assertEquals("OK", response.getEntity());
+        verify(service).ingestDocument(dto);
+    }
+
+    /**
      * {@code ingestSession} refuses a non-store node with 403 (role-check true
      * arm) and never touches the service.
      */

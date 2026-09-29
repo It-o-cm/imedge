@@ -2,6 +2,7 @@ package com.intermarche.pos.ui.admin;
 
 import com.intermarche.pos.domain.catalog.ArticleAttributeDefinition;
 import com.intermarche.pos.domain.catalog.ArticleSelection;
+import com.intermarche.pos.domain.catalog.EgalimRegime;
 import com.intermarche.pos.domain.catalog.Price;
 import com.intermarche.pos.domain.catalog.Product;
 import com.intermarche.pos.domain.catalog.ProductType;
@@ -175,12 +176,16 @@ class AdminArticleResourceTest {
     }
 
     /**
-     * Stubs the empty saved-selection list every {@code list} call reads.
+     * Stubs the two referential reads every {@code list} call issues beside the
+     * article query: the saved selections offered by the search form, and the
+     * EGAlim regimes the list renders beside each article. Both empty, which is
+     * what a test not concerned with them wants.
      *
      * @param panache the active Panache mock
      */
     private void stubSelectionList(MockedStatic<PanacheEntityBase> panache) {
         panache.when(() -> ArticleSelection.list("order by name")).thenReturn(List.of());
+        panache.when(() -> EgalimRegime.list("order by code")).thenReturn(List.of());
     }
 
     /**
@@ -743,5 +748,189 @@ class AdminArticleResourceTest {
         PanacheQuery<ArticleSelection> query = mock(PanacheQuery.class);
         when(query.firstResult()).thenReturn(selection);
         return query;
+    }
+
+    /**
+     * Builds a single-result Panache query mock over the EGAlim code finder.
+     *
+     * @param regime the regime to return, possibly null
+     * @return the query mock
+     */
+    @SuppressWarnings("unchecked")
+    private PanacheQuery<EgalimRegime> regimeQuery(EgalimRegime regime) {
+        PanacheQuery<EgalimRegime> query = mock(PanacheQuery.class);
+        when(query.firstResult()).thenReturn(regime);
+        return query;
+    }
+
+    /**
+     * {@code list} renders each EGAlim regime as the one line the article list
+     * prints beside an article — the ceiling for a capped regime, the words
+     * saying it has none for an uncapped one (both arms of the ternary) — and
+     * reads the referential ONCE for the whole page rather than once per row.
+     */
+    @Test
+    void listRendersTheEgalimCeilingsOncePerPage() {
+        AdminArticleResource resource = newResource();
+        TemplateInstance instance = wire(resource.adminArticles);
+        MultivaluedMap<String, String> params = new MultivaluedHashMap<>();
+        Product unit = product("2", ProductType.UNIT);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            PanacheQuery<Product> products = productQuery(List.of(unit));
+            panache.when(() -> Product.find("from Product p order by p.ean")).thenReturn(products);
+            panache.when(() -> ArticleSelection.list("order by name")).thenReturn(List.of());
+            panache.when(() -> EgalimRegime.list("order by code")).thenReturn(List.of(
+                    new EgalimRegime("FOOD_34", "Alimentaire", new java.math.BigDecimal("0.3400")),
+                    new EgalimRegime("EXEMPT", "Hors champ", null)));
+            resource.list(uriInfo(params), 1, null, true);
+        }
+        verify(instance).data("egalimCaps",
+                Map.of("FOOD_34", "34 %", "EXEMPT", "non plafonné"));
+    }
+
+    /**
+     * {@code list} over an EMPTY EGAlim referential hands the template an empty
+     * map rather than null: the list then names every classified article as
+     * unreferenced, which is exactly true — nothing is administered, so the
+     * valuation engine caps nothing.
+     */
+    @Test
+    void listWithoutAnyAdministeredRegime() {
+        AdminArticleResource resource = newResource();
+        TemplateInstance instance = wire(resource.adminArticles);
+        MultivaluedMap<String, String> params = new MultivaluedHashMap<>();
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            PanacheQuery<Product> products = productQuery(List.of(product("2", ProductType.UNIT)));
+            panache.when(() -> Product.find("from Product p order by p.ean")).thenReturn(products);
+            stubSelectionList(panache);
+            resource.list(uriInfo(params), 1, null, true);
+        }
+        verify(instance).data("egalimCaps", Map.of());
+    }
+
+    /**
+     * {@code edit} of a classified article resolves its regime, so the fiche can
+     * print the ceiling and the label beside the code.
+     */
+    @Test
+    void editResolvesTheEgalimRegimeOfAClassifiedArticle() {
+        AdminArticleResource resource = newResource();
+        TemplateInstance instance = wire(resource.adminArticle);
+        Product product = product("3", ProductType.UNIT);
+        product.id = 3L;
+        product.egalimRegime = "FOOD_34";
+        EgalimRegime food = new EgalimRegime("FOOD_34", "Alimentaire", new java.math.BigDecimal("0.3400"));
+        LocalDateTime now = LocalDateTime.of(2026, 9, 1, 10, 0);
+        // The query mocks are built BEFORE the static mock: creating a mock inside a
+        // when(...) lambda stubs a mock while another stubbing is unfinished, which
+        // Mockito refuses with UnfinishedStubbingException.
+        PanacheQuery<Price> noCurrentPrice = priceQuery(null);
+        PanacheQuery<EgalimRegime> foundRegime = regimeQuery(food);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
+             MockedStatic<DateTimeProvider> time = mockStatic(DateTimeProvider.class)) {
+            time.when(DateTimeProvider::now).thenReturn(now);
+            panache.when(() -> Product.findById(3L)).thenReturn(product);
+            panache.when(() -> Price.list(HISTORY_QUERY, 3L)).thenReturn(List.of());
+            panache.when(() -> Price.find(CURRENT_QUERY, 3L, now)).thenReturn(noCurrentPrice);
+            panache.when(() -> ArticleAttributeDefinition.list("order by code")).thenReturn(List.of());
+            panache.when(() -> EgalimRegime.find("code", "FOOD_34")).thenReturn(foundRegime);
+            resource.edit(3L);
+        }
+        verify(instance).data("egalimRegime", food);
+    }
+
+    /**
+     * {@code edit} of an article classified under a code NOBODY administers
+     * resolves to null, which the fiche shows as an unknown regime rather than
+     * as a ceiling — the case that costs money, since the engine will not cap
+     * that article.
+     */
+    @Test
+    void editOfAnArticleClassifiedUnderAnUnknownRegime() {
+        AdminArticleResource resource = newResource();
+        TemplateInstance instance = wire(resource.adminArticle);
+        Product product = product("4", ProductType.UNIT);
+        product.id = 4L;
+        product.egalimRegime = "GHOST";
+        LocalDateTime now = LocalDateTime.of(2026, 9, 1, 10, 0);
+        PanacheQuery<Price> noCurrentPrice = priceQuery(null);
+        PanacheQuery<EgalimRegime> noRegime = regimeQuery(null);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
+             MockedStatic<DateTimeProvider> time = mockStatic(DateTimeProvider.class)) {
+            time.when(DateTimeProvider::now).thenReturn(now);
+            panache.when(() -> Product.findById(4L)).thenReturn(product);
+            panache.when(() -> Price.list(HISTORY_QUERY, 4L)).thenReturn(List.of());
+            panache.when(() -> Price.find(CURRENT_QUERY, 4L, now)).thenReturn(noCurrentPrice);
+            panache.when(() -> ArticleAttributeDefinition.list("order by code")).thenReturn(List.of());
+            panache.when(() -> EgalimRegime.find("code", "GHOST")).thenReturn(noRegime);
+            resource.edit(4L);
+        }
+        verify(instance).data("egalimRegime", null);
+    }
+
+    /**
+     * {@code edit} of an UNCLASSIFIED article never reaches the referential at
+     * all — the null-code guard of the finder — and the fiche shows "non
+     * classé" rather than an unknown regime: the two states are different and
+     * the screen must not conflate them.
+     */
+    @Test
+    void editOfAnUnclassifiedArticleNeverReadsTheReferential() {
+        AdminArticleResource resource = newResource();
+        TemplateInstance instance = wire(resource.adminArticle);
+        Product product = product("5", ProductType.UNIT);
+        product.id = 5L;
+        LocalDateTime now = LocalDateTime.of(2026, 9, 1, 10, 0);
+        PanacheQuery<Price> noCurrentPrice = priceQuery(null);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
+             MockedStatic<DateTimeProvider> time = mockStatic(DateTimeProvider.class)) {
+            time.when(DateTimeProvider::now).thenReturn(now);
+            panache.when(() -> Product.findById(5L)).thenReturn(product);
+            panache.when(() -> Price.list(HISTORY_QUERY, 5L)).thenReturn(List.of());
+            panache.when(() -> Price.find(CURRENT_QUERY, 5L, now)).thenReturn(noCurrentPrice);
+            panache.when(() -> ArticleAttributeDefinition.list("order by code")).thenReturn(List.of());
+            resource.edit(5L);
+        }
+        assertNull(product.egalimRegime);
+        verify(instance).data("egalimRegime", null);
+    }
+
+    /**
+     * {@code edit} with a null id resolves no regime at all: the product-null
+     * arm of the ternary, which must not call the finder.
+     */
+    @Test
+    void editWithNullIdResolvesNoEgalimRegime() {
+        AdminArticleResource resource = newResource();
+        TemplateInstance instance = wire(resource.adminArticle);
+        resource.edit(null);
+        verify(instance).data("egalimRegime", null);
+    }
+
+    /**
+     * {@code list} clamps a page number below one back to the first page — the
+     * requested-below-one arm of the clamp.
+     */
+    @Test
+    void listClampsAPageBelowOneToTheFirst() {
+        AdminArticleResource resource = newResource();
+        TemplateInstance instance = wire(resource.adminArticles);
+        MultivaluedMap<String, String> params = new MultivaluedHashMap<>();
+        params.putSingle("type", "WEIGHT");
+        Product weighed = product("1", ProductType.WEIGHT);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            PanacheQuery<Product> products = productQuery(List.of(weighed));
+            panache.when(() -> Product.find(typeQuery(),
+                    Map.of("type", ProductType.WEIGHT))).thenReturn(products);
+            stubSelectionList(panache);
+            assertEquals(instance, resource.list(uriInfo(params), 0, null, true));
+        }
+        org.mockito.ArgumentCaptor<Object> captor =
+                org.mockito.ArgumentCaptor.forClass(Object.class);
+        verify(resource.adminArticles).data(
+                org.mockito.ArgumentMatchers.eq("page"), captor.capture());
+        @SuppressWarnings("unchecked")
+        JournalPage<Product> window = (JournalPage<Product>) captor.getValue();
+        assertEquals(1, window.number);
     }
 }

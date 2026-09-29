@@ -459,6 +459,22 @@ class CouponPatternServiceTest {
     }
 
     /**
+     * validate skips a null right field and a role-less right field when
+     * pairing overlaps behind a left field that does carry a role: the two
+     * legs of the inner guard the outer-loop skips can never reach.
+     */
+    @Test
+    void validateSkipsANullOrRoleLessRightField() {
+        CouponType type = range(null, 12, CouponType.AmountSource.MANUAL);
+        add(type, CouponField.Role.TICKET_NUMBER, 0, 4);
+        type.fields.add(null);
+        add(type, null, 4, 4);
+        List<String> problems = service.validate(type);
+        Assertions.assertTrue(problems.stream().anyMatch(p -> p.contains("n'a pas de rôle")));
+        Assertions.assertFalse(problems.stream().anyMatch(p -> p.contains("se chevauchent")));
+    }
+
+    /**
      * validate refuses an encoded amount with nowhere to read it.
      */
     @Test
@@ -669,6 +685,17 @@ class CouponPatternServiceTest {
         ArticleBarcodeRange range = articleRange();
         range.prefix = "2.";
         Assertions.assertEquals("^2\\.\\d{11}$", new CouponPatternService().buildRangePattern(range));
+    }
+
+    /**
+     * A range carrying no prefix writes a single run over the whole code: the
+     * null arm of the prefix fallback in {@code buildRangePattern}.
+     */
+    @Test
+    void anArticleRangeWithoutAPrefixWritesOneRun() {
+        ArticleBarcodeRange range = articleRange();
+        range.prefix = null;
+        Assertions.assertEquals("^\\d{13}$", new CouponPatternService().buildRangePattern(range));
     }
 
     /**

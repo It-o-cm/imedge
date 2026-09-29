@@ -44,6 +44,7 @@ class EngineFeedRelayResourceTest {
         resource.priceCsvResource = mock(PriceCsvResource.class);
         resource.employeeCsvResource = mock(EmployeeCsvResource.class);
         resource.vatRateCsvResource = mock(VatRateCsvResource.class);
+        resource.egalimRegimeCsvResource = mock(EgalimRegimeCsvResource.class);
         resource.accountCustomerCsvResource = mock(AccountCustomerCsvResource.class);
         resource.postalCodeCsvResource = mock(PostalCodeCsvResource.class);
         resource.safeReceiptCsvResource = mock(SafeReceiptCsvResource.class);

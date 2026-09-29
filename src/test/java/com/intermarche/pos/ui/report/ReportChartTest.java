@@ -139,6 +139,45 @@ class ReportChartTest {
     }
 
     /**
+     * A row too short to carry its value while the chart is nonetheless drawn is
+     * plotted at no height, and its missing label reads as empty (the in-loop
+     * short-row arms of both the value read and the label read).
+     */
+    @Test
+    void shortRowInsideADrawnChartIsPlottedFlat() {
+        List<List<Object>> rows = Arrays.asList(
+                Arrays.asList("A", "Label", 1L, new BigDecimal("100"), null, null),
+                List.of("B"));
+        String svg = ReportChart.svg(drawable(rows));
+        assertTrue(svg.contains("height=\"240\""));
+        assertTrue(svg.contains("height=\"0\""));
+    }
+
+    /**
+     * A negative label column makes every bar's label empty (the {@code index < 0}
+     * arm of the label read) while the chart is still drawn.
+     */
+    @Test
+    void negativeLabelColumnYieldsEmptyLabels() {
+        List<List<Object>> rows = List.of(
+                Arrays.asList("A", "Label", 1L, new BigDecimal("5"), null, null));
+        ReportFixture fixture = new ReportFixture(3, rows) {
+            /**
+             * {@inheritDoc}
+             *
+             * @return a negative label column, so no label can be read
+             */
+            @Override
+            public int chartLabelColumn() {
+                return -1;
+            }
+        };
+        String svg = ReportChart.svg(new ReportData(fixture, rows));
+        assertTrue(svg.contains("<title> : "));
+        assertTrue(svg.contains("<rect "));
+    }
+
+    /**
      * A single day reads as one date rather than as a range.
      */
     @Test

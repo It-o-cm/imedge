@@ -221,4 +221,38 @@ class BaseEntityTest {
         TestEntity e = new TestEntity(77);
         Assertions.assertEquals(77, e.getChecksum());
     }
+
+    /**
+     * A row whose checksum was never computed is reported as CHANGED rather
+     * than raising: the first leg of the guard, the one a direct
+     * {@code checksum != incoming} comparison reaches by unboxing a null.
+     */
+    @Test
+    void changedFromReportsArowWithoutAchecksumAsChanged() {
+        TestEntity e = new TestEntity(12);
+        e.checksum = null;
+        Assertions.assertTrue(e.changedFrom(12));
+    }
+
+    /**
+     * A row whose stored checksum equals the incoming one is unchanged: the
+     * second leg false, which is what skips the rewrite.
+     */
+    @Test
+    void changedFromReportsAnIdenticalRowAsUnchanged() {
+        TestEntity e = new TestEntity(12);
+        e.checksum = 12;
+        Assertions.assertFalse(e.changedFrom(12));
+    }
+
+    /**
+     * A row whose stored checksum differs is changed: the second leg true,
+     * reached only once the first leg found a checksum.
+     */
+    @Test
+    void changedFromReportsAdifferentRowAsChanged() {
+        TestEntity e = new TestEntity(12);
+        e.checksum = 99;
+        Assertions.assertTrue(e.changedFrom(12));
+    }
 }

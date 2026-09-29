@@ -1,17 +1,19 @@
 package com.intermarche.pos.service.sync.register;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.intermarche.pos.domain.session.CashMovement;
-import com.intermarche.pos.domain.session.CashSession;
-import com.intermarche.pos.domain.sync.SyncOutbox;
 import com.intermarche.pos.domain.payment.CashPayment;
-import com.intermarche.pos.domain.sale.Refund;
-import com.intermarche.pos.domain.sale.RefundLine;
-import com.intermarche.pos.domain.session.TechnicalEvent;
-import com.intermarche.pos.domain.sale.Ticket;
-import com.intermarche.pos.domain.sale.TicketLine;
 import com.intermarche.pos.domain.payment.TicketPayment;
 import com.intermarche.pos.domain.payment.VoucherPayment;
+import com.intermarche.pos.domain.sale.Refund;
+import com.intermarche.pos.domain.sale.RefundLine;
+import com.intermarche.pos.domain.sale.Ticket;
+import com.intermarche.pos.domain.sale.TicketLine;
+import com.intermarche.pos.domain.session.CashMovement;
+import com.intermarche.pos.domain.session.CashSession;
+import com.intermarche.pos.domain.session.TechnicalEvent;
+import com.intermarche.pos.domain.sync.SyncOutbox;
+import com.intermarche.pos.service.sync.SyncEndpoints;
+import com.intermarche.pos.service.sync.SyncPayloads;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
@@ -20,8 +22,6 @@ import org.jboss.logging.Logger;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
-import com.intermarche.pos.service.sync.SyncEndpoints;
-import com.intermarche.pos.service.sync.SyncPayloads;
 
 /**
  * Transactional half of the store synchronization: enqueues outbox rows in
@@ -356,12 +356,20 @@ public class SyncOutboxService {
         // document as the original.
         dto.fidelityEarnTotal = ticket.fidelityEarnTotal;
         dto.fidelityAvailableBalance = ticket.fidelityAvailableBalance;
+        dto.fidelityProjectedAfterEarn = ticket.fidelityProjectedAfterEarn;
+        dto.fidelityBalanceAfter = ticket.fidelityBalanceAfter;
+        dto.fidelityAnonymousProjection = ticket.fidelityAnonymousProjection;
         dto.fidelityUnavailable = ticket.fidelityUnavailable;
         for (com.intermarche.pos.domain.sale.TicketFidelityLine earnLine : ticket.fidelityLines) {
             SyncPayloads.FidelityLineDto earnDto = new SyncPayloads.FidelityLineDto();
             earnDto.ruleCode = earnLine.ruleCode;
             earnDto.label = earnLine.label;
             earnDto.amount = earnLine.amount;
+            earnDto.advantageType = earnLine.advantageType;
+            earnDto.advantageTypeLabel = earnLine.advantageTypeLabel;
+            earnDto.advantageTypeOrder = earnLine.advantageTypeOrder;
+            earnDto.advantageCategory = earnLine.advantageCategory;
+            earnDto.advantageCategoryLabel = earnLine.advantageCategoryLabel;
             dto.fidelityLines.add(earnDto);
         }
         dto.digitalKey = ticket.digitalKey;

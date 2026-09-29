@@ -1123,6 +1123,109 @@ class JournalServiceTest {
         assertEquals(1, detail.payments.size());
         assertEquals("CARD", detail.payments.get(0).method);
         assertEquals("3,00", detail.payments.get(0).amount);
+        assertTrue(detail.fidelityGroups.isEmpty());
+    }
+
+    /**
+     * Builds a minimal CLOSED ticket carrying the given loyalty lines, for the
+     * journal grouping tests.
+     *
+     * @param lines the frozen loyalty lines
+     * @return the ticket
+     */
+    private Ticket ticketWithFidelity(com.intermarche.pos.domain.sale.TicketFidelityLine... lines) {
+        Ticket ticket = new Ticket();
+        ticket.ticketNumber = "C04-00000009";
+        ticket.terminalId = "C04";
+        ticket.status = Ticket.TicketStatus.CLOSED;
+        ticket.creationDate = LocalDateTime.of(2026, 8, 31, 10, 0);
+        ticket.totalIncludingTax = new BigDecimal("3.00");
+        ticket.totalExcludingTax = new BigDecimal("2.85");
+        ticket.totalVat = new BigDecimal("0.15");
+        for (com.intermarche.pos.domain.sale.TicketFidelityLine line : lines) {
+            ticket.fidelityLines.add(line);
+        }
+        return ticket;
+    }
+
+    /**
+     * A ticket predating the referential — its lines carrying no advantage type —
+     * yields a single empty-header group holding the flat list, so the journal
+     * shows it exactly as before the grouping existed.
+     */
+    @Test
+    void buildDetailGroupsUntypedFidelityLinesFlat() {
+        EntityManager em = mock(EntityManager.class);
+        Ticket ticket = ticketWithFidelity(
+                new com.intermarche.pos.domain.sale.TicketFidelityLine("R1", "Cagnotte socle", new BigDecimal("0.28")),
+                new com.intermarche.pos.domain.sale.TicketFidelityLine("R2", "Bon plan", new BigDecimal("0.12")));
+        when(em.find(Ticket.class, 1L)).thenReturn(ticket);
+        JournalTicketDetail detail = serviceWith(em).buildDetail(1L);
+        assertEquals(1, detail.fidelityGroups.size());
+        assertEquals("", detail.fidelityGroups.get(0).header);
+        assertEquals(2, detail.fidelityGroups.get(0).advantages.size());
+        assertEquals("Cagnotte socle", detail.fidelityGroups.get(0).advantages.get(0).label);
+        assertEquals("0,28", detail.fidelityGroups.get(0).advantages.get(0).amount);
+    }
+
+    /**
+     * A ticket whose loyalty-line collection is null — a sale ingested from an
+     * older register — yields an empty group list (the null arm of the guard).
+     */
+    @Test
+    void buildDetailWithNullFidelityLinesYieldsNoGroups() {
+        EntityManager em = mock(EntityManager.class);
+        Ticket ticket = ticketWithFidelity();
+        ticket.fidelityLines = null;
+        when(em.find(Ticket.class, 1L)).thenReturn(ticket);
+        JournalTicketDetail detail = serviceWith(em).buildDetail(1L);
+        assertTrue(detail.fidelityGroups.isEmpty());
+    }
+
+    /**
+     * A ticket whose advantage lines are ALL typed leaves no untyped tail (the
+     * false arm of the untyped-tail guard): the groups are exactly the typed ones.
+     */
+    @Test
+    void buildDetailGroupsTypedFidelityLinesWithoutAnUntypedTail() {
+        EntityManager em = mock(EntityManager.class);
+        Ticket ticket = ticketWithFidelity(
+                new com.intermarche.pos.domain.sale.TicketFidelityLine("R1", "Avantage jour", new BigDecimal("0.30"),
+                        "A", "Avantages", 1, null, null),
+                new com.intermarche.pos.domain.sale.TicketFidelityLine("R2", "Bonus soir", new BigDecimal("0.20"),
+                        "B", "Bonus", 2, null, null));
+        when(em.find(Ticket.class, 1L)).thenReturn(ticket);
+        JournalTicketDetail detail = serviceWith(em).buildDetail(1L);
+        assertEquals(2, detail.fidelityGroups.size());
+        assertEquals("Avantages", detail.fidelityGroups.get(0).header);
+        assertEquals("Bonus", detail.fidelityGroups.get(1).header);
+    }
+
+    /**
+     * A ticket with typed advantage lines groups them by type, orders the groups
+     * by the received order (the null-order group last, header falling back to
+     * the type code when its label is null), and appends the untyped lines flat
+     * in a trailing empty-header group.
+     */
+    @Test
+    void buildDetailGroupsTypedFidelityLinesAndOrders() {
+        EntityManager em = mock(EntityManager.class);
+        Ticket ticket = ticketWithFidelity(
+                new com.intermarche.pos.domain.sale.TicketFidelityLine("R2", "Bonus soir", new BigDecimal("0.20"),
+                        "B", "Bonus", 2, null, null),
+                new com.intermarche.pos.domain.sale.TicketFidelityLine("R1", "Avantage jour", new BigDecimal("0.30"),
+                        "A", "Avantages", 1, null, null),
+                new com.intermarche.pos.domain.sale.TicketFidelityLine("R3", "Sans ordre", new BigDecimal("0.10"),
+                        "Z", null, null, null, null),
+                new com.intermarche.pos.domain.sale.TicketFidelityLine("R4", "Ligne libre", new BigDecimal("0.05")));
+        when(em.find(Ticket.class, 1L)).thenReturn(ticket);
+        JournalTicketDetail detail = serviceWith(em).buildDetail(1L);
+        assertEquals(4, detail.fidelityGroups.size());
+        assertEquals("Avantages", detail.fidelityGroups.get(0).header);
+        assertEquals("Bonus", detail.fidelityGroups.get(1).header);
+        assertEquals("Z", detail.fidelityGroups.get(2).header);
+        assertEquals("", detail.fidelityGroups.get(3).header);
+        assertEquals("Ligne libre", detail.fidelityGroups.get(3).advantages.get(0).label);
     }
 
     /**

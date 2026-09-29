@@ -1,9 +1,11 @@
 package com.intermarche.pos.ui.supervision;
 
 import com.intermarche.pos.domain.sync.RefState;
+import com.intermarche.pos.domain.sync.ScheduledDelivery;
 import com.intermarche.pos.service.sync.EngineFeedDeliveryService;
 import com.intermarche.pos.service.sync.EngineFeedService;
 import com.intermarche.pos.service.sync.RefPullService;
+import com.intermarche.pos.service.sync.ScheduledDeliveryService;
 import com.intermarche.pos.service.sync.register.SyncOutboxService;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -13,6 +15,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import org.jboss.logging.Logger;
 
 /**
@@ -59,6 +62,10 @@ public class SyncSupervisionService {
     @Inject
     EngineFeedDeliveryService engineFeedDeliveryService;
 
+    /** The deferred deliveries keeper (the "Planifications" section). */
+    @Inject
+    ScheduledDeliveryService scheduledDeliveryService;
+
     /** The store outbox (push backlog). */
     @Inject
     SyncOutboxService syncOutboxService;
@@ -85,6 +92,24 @@ public class SyncSupervisionService {
         public String appliedAt;
     }
 
+    /** One deferred-delivery row, pre-formatted for the "Planifications" section. */
+    public static class ScheduledRow {
+        /** The booking identifier (cancel target). */
+        public Long id;
+        /** The target feed code, or a "every feed" label when it covers all. */
+        public String feedCode;
+        /** The booked minute, formatted. */
+        public String scheduledAt;
+        /** The administrator who booked it. */
+        public String createdBy;
+        /** The lifecycle state (PENDING, DONE, FAILED). */
+        public String status;
+        /** Whether the booking is still PENDING (so it may be cancelled). */
+        public boolean pending;
+        /** The failure reason when FAILED, otherwise null. */
+        public String message;
+    }
+
     /** One referential-pull row: a domain and its last applied fingerprint. */
     public static class PullRow {
         /** The referential domain (FAMILIES, PRODUCTS...). */
@@ -93,6 +118,16 @@ public class SyncSupervisionService {
         public String fingerprint;
         /** When the snapshot was applied. */
         public String appliedAt;
+        /**
+         * The last integration failure of this domain, or null when it applied.
+         *
+         * <p>A pull domain that failed used to leave no trace here: a
+         * {@code RefState} row is written only on success. The domains that are
+         * also engine feeds carried their error on the feed row above; the ten
+         * that are pull-only — CUSTOMERS, the clients en compte, among them —
+         * carried none.
+         */
+        public String lastError;
     }
 
     /** The whole assembled view. */
@@ -103,6 +138,10 @@ public class SyncSupervisionService {
         public List<PullRow> pulls = new ArrayList<>();
         /** The store-outbox backlog rows, in drain order. */
         public List<SyncOutboxService.BacklogRow> backlog = new ArrayList<>();
+        /** The deferred deliveries, newest booking first. */
+        public List<ScheduledRow> schedules = new ArrayList<>();
+        /** The catalog feed codes, for the "schedule a delivery" form. */
+        public List<String> feedCodes = new ArrayList<>();
         /** When the last full pull cycle succeeded, or a dash when none. */
         public String lastPull;
         /** The referential-pull cadence, in seconds. */
@@ -147,7 +186,38 @@ public class SyncSupervisionService {
             row.domain = state.domain;
             row.fingerprint = shortHash(state.fingerprint);
             row.appliedAt = stamp(state.appliedAt);
+            row.lastError = refPullService.getLastError(state.domain);
             view.pulls.add(row);
+        }
+        for (Map.Entry<String, String> failure : refPullService.getLastErrors().entrySet()) {
+            boolean alreadyListed = false;
+            for (PullRow listed : view.pulls) {
+                if (failure.getKey().equals(listed.domain)) {
+                    alreadyListed = true;
+                }
+            }
+            if (!alreadyListed) {
+                PullRow row = new PullRow();
+                row.domain = failure.getKey();
+                row.fingerprint = "—";
+                row.appliedAt = "—";
+                row.lastError = failure.getValue();
+                view.pulls.add(row);
+            }
+        }
+        for (ScheduledDelivery scheduled : scheduledDeliveryService.list()) {
+            ScheduledRow row = new ScheduledRow();
+            row.id = scheduled.id;
+            row.feedCode = scheduled.feedCode == null ? "Tous les flux" : scheduled.feedCode;
+            row.scheduledAt = stamp(scheduled.scheduledAt);
+            row.createdBy = scheduled.createdBy;
+            row.status = scheduled.status.name();
+            row.pending = scheduled.status == ScheduledDelivery.Status.PENDING;
+            row.message = scheduled.message;
+            view.schedules.add(row);
+        }
+        for (EngineFeedService.FeedDef def : EngineFeedService.CATALOG) {
+            view.feedCodes.add(def.code());
         }
         view.backlog = syncOutboxService.backlog();
         long outboxCount = 0;

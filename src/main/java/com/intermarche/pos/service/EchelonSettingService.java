@@ -2,6 +2,7 @@ package com.intermarche.pos.service;
 
 import com.intermarche.pos.domain.setting.EchelonLevel;
 import com.intermarche.pos.domain.setting.EchelonSetting;
+import com.intermarche.pos.domain.store.CheckoutPoint;
 import com.intermarche.pos.domain.store.Enseigne;
 import com.intermarche.pos.domain.store.Pdv;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -103,6 +104,53 @@ public class EchelonSettingService {
         LOGGER.info("Entering method resolve with pdvNumber: " + pdvNumber + ", key: " + key);
         LOGGER.info("Exiting method resolve");
         return Optional.ofNullable(resolveForPdv(pdvNumber).get(key));
+    }
+
+    /**
+     * Resolves every inherited parameter of a single TERMINAL, walking the full
+     * five-level chain COUNTRY &rarr; ENSEIGNE &rarr; PDV &rarr; ISLAND &rarr;
+     * CHECKOUT_POINT, the more specific echelon overriding the less specific.
+     *
+     * <p>This is the geste the fifteen partial lines ask for: a value posed on
+     * one terminal wins over its island's, which wins over the PDV's, and so on
+     * down to the catalog default. The terminal's island is read from its
+     * {@link CheckoutPoint}; a terminal with no checkout point carries no island
+     * layer but still takes a value posed directly on its identifier at the
+     * CHECKOUT_POINT level. Node-local overrides are NOT included — that layer is
+     * {@link PosSettingsService}'s.
+     *
+     * @param pdvNumber the node's point-of-vente number, or null
+     * @param terminalId the terminal identifier, or null for the PDV resolution alone
+     * @return the values in effect for that terminal today, never null
+     */
+    public Map<String, String> resolveForTerminal(String pdvNumber, String terminalId) {
+        LOGGER.info("Entering method resolveForTerminal with pdvNumber: " + pdvNumber + ", terminalId: " + terminalId);
+        LOGGER.info("Exiting method resolveForTerminal");
+        return resolveForTerminal(pdvNumber, terminalId, LocalDate.now());
+    }
+
+    /**
+     * Resolves every inherited parameter of a terminal AS OF a given day — the
+     * testable, deterministic core of {@link #resolveForTerminal(String, String)}.
+     * A value whose effect date is still in the future is ignored until the day
+     * comes (BO-03-12-03/04).
+     *
+     * @param pdvNumber the node's point-of-vente number, or null
+     * @param terminalId the terminal identifier, or null for the PDV resolution alone
+     * @param asOf the reference day used to gate the effect date
+     * @return the values in effect for that terminal that day, never null
+     */
+    Map<String, String> resolveForTerminal(String pdvNumber, String terminalId, LocalDate asOf) {
+        Map<String, String> merged = resolveForPdv(pdvNumber, asOf);
+        if (terminalId == null) {
+            return merged;
+        }
+        CheckoutPoint point = CheckoutPoint.findByTerminal(terminalId);
+        if (point != null && point.islandCode != null) {
+            overlay(merged, EchelonLevel.ISLAND, point.islandCode, asOf);
+        }
+        overlay(merged, EchelonLevel.CHECKOUT_POINT, terminalId, asOf);
+        return merged;
     }
 
     /**

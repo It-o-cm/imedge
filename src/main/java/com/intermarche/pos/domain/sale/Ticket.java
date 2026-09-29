@@ -214,6 +214,31 @@ public class Ticket extends BaseEntity {
     public BigDecimal fidelityAvailableBalance;
 
     /**
+     * The PROJECTED balance after this sale's earn (imfid response B,
+     * {@code balances.projectedAfterEarn}), frozen at closing so a duplicata
+     * restates the same forecast; null when no card resolved. A forecast only —
+     * nothing is credited before ingestion (BO-03-03-31).
+     */
+    @Column(name = "fidelity_projected_after_earn", precision = 19, scale = 4)
+    public BigDecimal fidelityProjectedAfterEarn;
+
+    /**
+     * The balance AFTER the fidelity burn, read from the ledger at confirmation
+     * (imfid response B), frozen at closing and printed as SOLDE APRES; null
+     * when no burn was confirmed. Never recomputed by the register.
+     */
+    @Column(name = "fidelity_balance_after", precision = 19, scale = 4)
+    public BigDecimal fidelityBalanceAfter;
+
+    /**
+     * True when {@link #fidelityEarnTotal} is an ANONYMOUS projection for a
+     * card-less ticket (imfid response C) — « ce que vous auriez gagné avec la
+     * carte » — rather than an earned amount (BO-03-03-28).
+     */
+    @Column(name = "fidelity_anonymous_projection", nullable = false)
+    public boolean fidelityAnonymousProjection;
+
+    /**
      * True when the loyalty service was unreachable while this sale was made
      * (BO-03-03-29, BO-03-03-30).
      *

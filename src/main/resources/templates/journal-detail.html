@@ -111,6 +111,27 @@
         </tbody>
     </table>
 </div>
+
+{#if !ticket.fidelityGroups.isEmpty()}
+<div class="card">
+    <h2 class="card-title">Fidélité</h2>
+    <table class="data-table">
+        <tbody>
+            {#for group in ticket.fidelityGroups}
+            {#if group.header}
+            <tr><th colspan="2">{group.header}</th></tr>
+            {/if}
+            {#for advantage in group.advantages}
+            <tr>
+                <td>{advantage.label}</td>
+                <td>{advantage.amount}</td>
+            </tr>
+            {/for}
+            {/for}
+        </tbody>
+    </table>
+</div>
+{/if}
 {#else}
 <div class="card">
     <p class="col-muted">Ce ticket n'existe pas sur ce nœud.</p>

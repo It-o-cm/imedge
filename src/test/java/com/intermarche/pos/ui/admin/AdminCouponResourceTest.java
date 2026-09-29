@@ -1097,102 +1097,80 @@ class AdminCouponResourceTest {
         }
     }
 
-    // ------------------------------------------------------ ÎLOTS DE CAISSE
+    // The checkout-island CRUD moved to AdminCheckoutIslandResource when the
+    // island was promoted (BO-03-10); the coupon screen only lists islands now,
+    // covered by pageHandsTheTemplateTheRangesAndTheCatalogs.
 
     /**
-     * {@code saveIsland} refuses a blank code (first guard).
+     * {@code saveField} skips a null field when it purges the role: the null leg
+     * of both the copy's and the stored list's removeIf predicate is exercised,
+     * and the null survives the write.
      */
     @Test
-    void saveIslandRejectsABlankCode() {
-        Response response = newResource().saveIsland(form());
-        assertEquals(303, response.getStatus());
-        assertTrue(response.getLocation().toString().contains("noticeOk=false"));
-    }
-
-    /**
-     * {@code saveIsland} inserts an island when none carries the code,
-     * persisting it exactly once.
-     */
-    @Test
-    void saveIslandInsertsWhenAbsent() {
+    void saveFieldSkipsNullFieldsWhenReplacing() {
         AdminCouponResource resource = newResource();
+        CouponType existing = stored("GIFT");
+        existing.fields.add(null);
+        withField(existing, CouponField.Role.PRICE);
         MultivaluedMap<String, String> form = form();
-        form.putSingle("code", " AVANT ");
-        form.putSingle("label", "Ligne avant");
-        form.putSingle("terminalIds", " POS01;POS02 ");
-        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
-             MockedConstruction<com.intermarche.pos.domain.store.CheckoutIsland> construction =
-                     mockConstruction(com.intermarche.pos.domain.store.CheckoutIsland.class)) {
-            PanacheQuery<com.intermarche.pos.domain.store.CheckoutIsland> query = mock(PanacheQuery.class);
-            when(query.firstResult()).thenReturn(null);
-            panache.when(() -> com.intermarche.pos.domain.store.CheckoutIsland
-                    .find("code", "AVANT")).thenReturn(query);
-            Response response = resource.saveIsland(form);
+        form.putSingle("code", "GIFT");
+        form.putSingle("role", "PRICE");
+        form.putSingle("kind", "NUMERIC");
+        form.putSingle("offsetPosition", "6");
+        form.putSingle("fieldLength", "4");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            stubFind(panache, "GIFT", existing);
+            Response response = resource.saveField(form);
             assertTrue(response.getLocation().toString().contains("noticeOk=true"));
-            com.intermarche.pos.domain.store.CheckoutIsland created =
-                    construction.constructed().get(0);
-            assertEquals("AVANT", created.code);
-            assertEquals("Ligne avant", created.label);
-            assertEquals("POS01;POS02", created.terminalIds);
-            assertFalse(created.active);
-            verify(created, times(1)).persist();
+            assertEquals(2, existing.fields.size());
+            assertTrue(existing.fields.contains(null));
         }
     }
 
     /**
-     * {@code saveIsland} updates the stored row when one carries the code, and
-     * an empty register list lands as null (the blank arm).
+     * {@code saveControl} keeps a control of another kind while it purges the
+     * posted one: the false leg of the kind predicate is exercised.
      */
     @Test
-    @SuppressWarnings("unchecked")
-    void saveIslandUpdatesWhenPresent() {
+    void saveControlKeepsControlsOfOtherKinds() {
         AdminCouponResource resource = newResource();
-        com.intermarche.pos.domain.store.CheckoutIsland stored =
-                new com.intermarche.pos.domain.store.CheckoutIsland();
-        stored.code = "AVANT";
+        CouponType existing = stored("GIFT");
+        CouponControl other = new CouponControl();
+        other.kind = CouponControl.Kind.DUPLICATE;
+        existing.controls.add(other);
         MultivaluedMap<String, String> form = form();
-        form.putSingle("code", "AVANT");
-        form.putSingle("label", "Comptoir");
-        form.putSingle("terminalIds", "   ");
-        form.putSingle("active", "on");
+        form.putSingle("code", "GIFT");
+        form.putSingle("kind", "EXPIRED");
+        form.putSingle("level", "INFO");
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
-            PanacheQuery<com.intermarche.pos.domain.store.CheckoutIsland> query = mock(PanacheQuery.class);
-            when(query.firstResult()).thenReturn(stored);
-            panache.when(() -> com.intermarche.pos.domain.store.CheckoutIsland
-                    .find("code", "AVANT")).thenReturn(query);
-            Response response = resource.saveIsland(form);
-            assertTrue(response.getLocation().toString().contains("enregistr%C3%A9"));
+            stubFind(panache, "GIFT", existing);
+            Response response = resource.saveControl(form);
+            assertTrue(response.getLocation().toString().contains("noticeOk=true"));
+            assertEquals(2, existing.controls.size());
+            assertTrue(existing.controls.contains(other));
         }
-        assertEquals("Comptoir", stored.label);
-        assertNull(stored.terminalIds);
-        assertTrue(stored.active);
     }
 
     /**
-     * {@code deleteIsland} refuses a code no stored island carries, and deletes
-     * the row when one does.
+     * {@code deleteControl} keeps a control of another kind and reports nothing
+     * removed: the false leg of the kind predicate is exercised.
      */
     @Test
-    @SuppressWarnings("unchecked")
-    void deleteIslandRefusesAnUnknownCodeAndDeletesAKnownOne() {
+    void deleteControlKeepsControlsOfOtherKinds() {
         AdminCouponResource resource = newResource();
+        CouponType existing = stored("GIFT");
+        CouponControl other = new CouponControl();
+        other.kind = CouponControl.Kind.EXPIRED;
+        existing.controls.add(other);
         MultivaluedMap<String, String> form = form();
-        form.putSingle("code", "AVANT");
+        form.putSingle("code", "GIFT");
+        form.putSingle("kind", "DUPLICATE");
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
-            PanacheQuery<com.intermarche.pos.domain.store.CheckoutIsland> absent = mock(PanacheQuery.class);
-            when(absent.firstResult()).thenReturn(null);
-            panache.when(() -> com.intermarche.pos.domain.store.CheckoutIsland
-                    .find("code", "AVANT")).thenReturn(absent);
-            assertTrue(resource.deleteIsland(form).getLocation().toString().contains("noticeOk=false"));
-
-            com.intermarche.pos.domain.store.CheckoutIsland stored =
-                    mock(com.intermarche.pos.domain.store.CheckoutIsland.class);
-            PanacheQuery<com.intermarche.pos.domain.store.CheckoutIsland> present = mock(PanacheQuery.class);
-            when(present.firstResult()).thenReturn(stored);
-            panache.when(() -> com.intermarche.pos.domain.store.CheckoutIsland
-                    .find("code", "AVANT")).thenReturn(present);
-            assertTrue(resource.deleteIsland(form).getLocation().toString().contains("noticeOk=true"));
-            verify(stored).delete();
+            stubFind(panache, "GIFT", existing);
+            Response response = resource.deleteControl(form);
+            assertTrue(response.getLocation().toString().contains("noticeOk=false"));
+            assertEquals(1, existing.controls.size());
+            assertTrue(existing.controls.contains(other));
         }
     }
 }

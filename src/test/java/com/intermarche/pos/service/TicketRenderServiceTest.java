@@ -905,6 +905,142 @@ class TicketRenderServiceTest {
     }
 
     /**
+     * BO-03-03-25: the loyalty section groups its advantage lines by advantage
+     * type, orders the groups by the received advantageTypeOrder (never anything
+     * else), prints the stored type label as the header — falling back to the
+     * type code when the label is null — and appends any untyped line flat after
+     * the groups.
+     */
+    @Test
+    void theLoyaltySectionGroupsByAdvantageTypeAndOrders() {
+        TicketRenderService service = newService();
+        when(service.posSettingsService.fidelityAdvantagesEnabled()).thenReturn(true);
+        Ticket ticket = ticket(null);
+        ticket.fidelityEarnTotal = new BigDecimal("1.03");
+        ticket.fidelityLines.add(new TicketFidelityLine("R2", "Bonus soir", new BigDecimal("0.20"),
+                "B", "Bonus", 2, null, null));
+        ticket.fidelityLines.add(new TicketFidelityLine("R1", "Avantage jour", new BigDecimal("0.30"),
+                "A", "Avantages", 1, null, null));
+        ticket.fidelityLines.add(new TicketFidelityLine("R3", "Sans ordre", new BigDecimal("0.10"),
+                "Z", null, null, null, null));
+        ticket.fidelityLines.add(new TicketFidelityLine("R4", "Ligne libre", new BigDecimal("0.05")));
+        ticket.lines.add(line("U1", "PAIN", "1", "2.00", "2.00"));
+        String out = render(service, ticket);
+        int avantages = out.indexOf("Avantages");
+        int bonus = out.indexOf("Bonus");
+        int untypedKey = out.indexOf("Z");
+        int libre = out.indexOf("Ligne libre");
+        assertTrue(avantages >= 0 && bonus >= 0 && untypedKey >= 0 && libre >= 0);
+        assertTrue(avantages < bonus, "order 1 group before order 2 group");
+        assertTrue(bonus < untypedKey, "ordered groups before the unordered (MAX) group");
+        assertTrue(untypedKey < libre, "typed groups before the untyped flat tail");
+        assertTrue(out.contains("Avantage jour"));
+        assertTrue(out.contains("Sans ordre"));
+    }
+
+    /**
+     * The grouping tolerates a null loyalty-line collection with a frozen earn —
+     * a sale ingested from an older register — printing the header alone and no
+     * advantage line (the null arm of the collection guard).
+     */
+    @Test
+    void theLoyaltySectionToleratesNullLinesWithAnEarn() {
+        TicketRenderService service = newService();
+        when(service.posSettingsService.fidelityAdvantagesEnabled()).thenReturn(true);
+        Ticket ticket = ticket(null);
+        ticket.fidelityEarnTotal = new BigDecimal("1.03");
+        ticket.fidelityLines = null;
+        ticket.lines.add(line("U1", "PAIN", "1", "2.00", "2.00"));
+        String out = render(service, ticket);
+        assertTrue(out.contains("CAGNOTTE DU JOUR"));
+    }
+
+    /**
+     * The projected balance, when the ingested ticket carries one, is printed
+     * under the administered label and marked PREVISIONNEL (imfid response B);
+     * a ticket without one prints neither (both arms of the guard).
+     */
+    @Test
+    void theProjectedBalanceIsPrintedUnderTheAdministeredLabelWhenCarried() {
+        TicketRenderService service = newService();
+        when(service.posSettingsService.fidelityAdvantagesEnabled()).thenReturn(true);
+        when(service.posSettingsService.fidelityProjectedLabel()).thenReturn("CAGNOTTE PREVISIONNELLE");
+        Ticket carried = ticket(null);
+        carried.fidelityEarnTotal = new BigDecimal("1.03");
+        carried.fidelityProjectedAfterEarn = new BigDecimal("42.58");
+        carried.fidelityLines.add(new TicketFidelityLine("SOCLE", "Cagnotte socle", new BigDecimal("0.28")));
+        carried.lines.add(line("U1", "PAIN", "1", "2.00", "2.00"));
+        String out = render(service, carried);
+        assertTrue(out.contains("CAGNOTTE PREVISIONNELLE"));
+        assertTrue(out.contains("42,58 E"));
+        assertTrue(out.contains("(PREVISIONNEL)"));
+        TicketRenderService bare = newService();
+        when(bare.posSettingsService.fidelityAdvantagesEnabled()).thenReturn(true);
+        Ticket noProjection = ticket(null);
+        noProjection.fidelityEarnTotal = new BigDecimal("1.03");
+        noProjection.fidelityProjectedAfterEarn = null;
+        noProjection.lines.add(line("U1", "PAIN", "1", "2.00", "2.00"));
+        assertFalse(render(bare, noProjection).contains("(PREVISIONNEL)"));
+    }
+
+    /**
+     * The administered layout reads the advantage grouping and the projected /
+     * after balances too — present here (non-blank arms), so a store template
+     * groups and forecasts identically to the register.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void thelayoutZoneCarriesTheAdvantageGroupingAndBalances() {
+        TicketRenderService service = newService();
+        when(service.posSettingsService.fidelityProjectedLabel()).thenReturn("CAGNOTTE PREVISIONNELLE");
+        Ticket ticket = ticket(null);
+        ticket.fidelityCard = "2990000000019";
+        ticket.fidelityEarnTotal = new BigDecimal("1.03");
+        ticket.fidelityProjectedAfterEarn = new BigDecimal("42.58");
+        ticket.fidelityBalanceAfter = new BigDecimal("39.58");
+        ticket.fidelityAnonymousProjection = true;
+        ticket.fidelityLines.add(new TicketFidelityLine("R1", "Avantage jour", new BigDecimal("0.30"),
+                "A", "Avantages", 1, "CAT", "Categorie"));
+        java.util.Map<String, Object> zone = (java.util.Map<String, Object>)
+                service.saleDocumentData(ticket, false, 0).get("fidelity");
+        assertEquals("42,58", zone.get("projectedAfterEarn"));
+        assertEquals("CAGNOTTE PREVISIONNELLE", zone.get("projectedLabel"));
+        assertEquals("39,58", zone.get("balanceAfter"));
+        assertEquals(true, zone.get("anonymousProjection"));
+        List<java.util.Map<String, Object>> lines = (List<java.util.Map<String, Object>>) zone.get("lines");
+        assertEquals("A", lines.get(0).get("advantageType"));
+        assertEquals("Avantages", lines.get(0).get("advantageTypeLabel"));
+        assertEquals("1", lines.get(0).get("advantageTypeOrder"));
+        assertEquals("CAT", lines.get(0).get("advantageCategory"));
+        assertEquals("Categorie", lines.get(0).get("advantageCategoryLabel"));
+    }
+
+    /**
+     * The administered layout leaves the balances and the grouping blank when the
+     * ingested ticket carries none — the null arms of every new field, as a sale
+     * from an older register presents them.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void thelayoutZoneLeavesTheNewFieldsBlankWhenAbsent() {
+        TicketRenderService service = newService();
+        when(service.posSettingsService.fidelityProjectedLabel()).thenReturn("CAGNOTTE PREVISIONNELLE");
+        Ticket ticket = ticket(null);
+        ticket.fidelityEarnTotal = new BigDecimal("1.03");
+        ticket.fidelityProjectedAfterEarn = null;
+        ticket.fidelityBalanceAfter = null;
+        ticket.fidelityLines.add(new TicketFidelityLine("R4", "Ligne libre", new BigDecimal("0.05")));
+        java.util.Map<String, Object> zone = (java.util.Map<String, Object>)
+                service.saleDocumentData(ticket, false, 0).get("fidelity");
+        assertEquals("", zone.get("projectedAfterEarn"));
+        assertEquals("", zone.get("balanceAfter"));
+        assertEquals(false, zone.get("anonymousProjection"));
+        List<java.util.Map<String, Object>> lines = (List<java.util.Map<String, Object>>) zone.get("lines");
+        assertEquals("", lines.get(0).get("advantageType"));
+        assertEquals("", lines.get(0).get("advantageTypeOrder"));
+    }
+
+    /**
      * BO-03-03-29 and BO-03-03-30: a sale made while the programme was silent
      * carries the administered message — the holder's one with its {@code
      * {carte}} token replaced, the non-holder's other one — and a shop that
@@ -927,6 +1063,87 @@ class TicketRenderServiceTest {
         Ticket stranger = ticket(null);
         stranger.fidelityUnavailable = true;
         assertEquals("PRESENTEZ VOTRE CARTE", message(service, stranger));
+    }
+
+    /**
+     * A card presented but BLANK is described as not present (the {@code
+     * !fidelityCard.isBlank()} false arm of the loyalty presence flag, reached
+     * with a non-null card): the field carries a value, so the first guard
+     * passes, but a blank value is no card at all.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void ablankCardIsDescribedAsNotPresent() {
+        TicketRenderService service = newService();
+        Ticket ticket = ticket(null);
+        ticket.fidelityCard = "   ";
+        java.util.Map<String, Object> zone = (java.util.Map<String, Object>)
+                service.saleDocumentData(ticket, false, 0).get("fidelity");
+        assertEquals(false, zone.get("present"));
+        assertEquals("   ", zone.get("card"));
+    }
+
+    /**
+     * A loyalty settlement carrying NO amount is skipped by the used-amount tally
+     * rather than failing it (the {@code payment.amount != null} false arm of
+     * {@code loyaltyPaid}, on a payment that is a {@code FidelityPayment}): the
+     * kind matches but the figure is absent, so nothing is added and the used
+     * amount stays zero.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void aloyaltySettlementWithoutAnAmountIsNotTallied() {
+        TicketRenderService service = newService();
+        Ticket ticket = ticket(null);
+        FidelityPayment noAmount = new FidelityPayment(new BigDecimal("3.00"));
+        noAmount.amount = null;
+        ticket.payments.add(noAmount);
+        java.util.Map<String, Object> zone = (java.util.Map<String, Object>)
+                service.saleDocumentData(ticket, false, 0).get("fidelity");
+        assertEquals("0,00", zone.get("usedAmount"));
+    }
+
+    /**
+     * A described line carrying NO total is stated with an empty total rather than
+     * failing (the {@code line.totalPrice == null} true arm of {@code saleLines}):
+     * the per-rate ventilation now tolerates the same null, so the description
+     * survives a line a partial push left without a total.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void adescribedLineWithoutATotalIsStatedEmpty() {
+        TicketRenderService service = newService();
+        when(service.documentTemplateService.render(any(), any())).thenReturn("MISE EN PAGE");
+        Ticket ticket = ticket(null);
+        TicketLine bare = new TicketLine();
+        bare.lineUid = "U1";
+        bare.productLabel = "PAIN";
+        bare.quantity = new BigDecimal("1");
+        bare.unitPrice = new BigDecimal("2.00");
+        bare.totalPrice = null;
+        bare.vatRate = new BigDecimal("0.2000");
+        ticket.lines.add(bare);
+        java.util.Map<String, Object> data = service.saleDocumentData(ticket, false, 0);
+        List<Map<String, Object>> lines = (List<Map<String, Object>>) data.get("lines");
+        assertEquals("", lines.get(0).get("total"));
+    }
+
+    /**
+     * A label and value pair whose combined width EXCEEDS the receipt is separated
+     * by a single forced space rather than a negative one (the {@code space < 1}
+     * true arm of {@code formatLine}): a twenty-six-character advantage label and
+     * a nine-figure delta together overrun the width, and the line still renders.
+     */
+    @Test
+    void anExcessivelyWideLabelAndValuePairForcesASingleSpace() {
+        TicketRenderService service = newService();
+        Ticket ticket = ticket(null);
+        ticket.lines.add(line("U1", "PAIN", "1", "2.00", "2.00"));
+        List<TicketLineValuation> traces = new ArrayList<>();
+        traces.add(valuation("U1", "2.00", "-123456787.90",
+                "ABCDEFGHIJKLMNOPQRSTUVWXYZ", null));
+        String out = render(service, ticket, traces, "", false, 0);
+        assertTrue(out.contains("  ABCDEFGHIJKLMNOPQRSTUVWXYZ -123456789,90 E\n"));
     }
 
     /**

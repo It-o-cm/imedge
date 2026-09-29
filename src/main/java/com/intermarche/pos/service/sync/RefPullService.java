@@ -90,6 +90,14 @@ public class RefPullService {
      */
     private volatile java.time.LocalDateTime lastSuccessfulPull;
 
+    /**
+     * The last integration failure of each domain, keyed by domain name; a
+     * domain that applied is removed from it. Concurrent because the scheduled
+     * cycle writes it while the supervision screen reads it.
+     */
+    private final java.util.concurrent.ConcurrentHashMap<String, String> lastErrors =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
     /** The pull loop executor, or null when the pull is disabled. */
     private ScheduledExecutorService executor;
 
@@ -180,15 +188,65 @@ public class RefPullService {
         Map<String, String> remote = objectMapper.readValue(
                 get("/api/referential/versions"), new TypeReference<Map<String, String>>() {});
 
+        String firstFailure = null;
         for (String domain : pullDomains()) {
             String remoteFingerprint = remote.get(domain);
             if (remoteFingerprint == null || remoteFingerprint.equals(refApplyService.lastApplied(domain))) {
                 continue;
             }
             LOGGER.infof("Référentiel %s modifié: tirage du snapshot", domain);
-            applyDomain(domain, remoteFingerprint);
+            try {
+                applyDomain(domain, remoteFingerprint);
+                lastErrors.remove(domain);
+            } catch (Exception domainFailure) {
+                String message = domainFailure.getMessage() == null
+                        ? domainFailure.getClass().getSimpleName() : domainFailure.getMessage();
+                lastErrors.put(domain, message);
+                LOGGER.errorf("Référentiel %s non appliqué: %s", domain, message);
+                if (firstFailure == null) {
+                    firstFailure = domain + ": " + message;
+                }
+            }
+        }
+        if (firstFailure != null) {
+            throw new IllegalStateException(firstFailure);
         }
         lastSuccessfulPull = java.time.LocalDateTime.now();
+    }
+
+    /**
+     * The last integration failure of each referential domain, keyed by domain.
+     *
+     * <p>Why this exists. A pull domain that fails to apply left NO trace: a
+     * {@code RefState} row is written only on success, so the supervision
+     * screen showed a fingerprint and an apply date for the domains that went
+     * through and nothing at all for the one that did not. The domains that are
+     * also engine feeds carried their error on the feed row; the ten that are
+     * pull-only — among them CUSTOMERS, the clients en compte — carried none.
+     *
+     * <p>Held in memory, like {@link #getLastSuccessfulPull()}: this is the
+     * state of THIS node since it started, not a journal. A restart clears it,
+     * and the next cycle re-reports whatever is still broken.
+     *
+     * @return the failures, empty when every domain applied; never null
+     */
+    public Map<String, String> getLastErrors() {
+        LOGGER.info("Entering method getLastErrors");
+        LOGGER.info("Exiting method getLastErrors");
+        return java.util.Collections.unmodifiableMap(lastErrors);
+    }
+
+    /**
+     * The last integration failure of one referential domain.
+     *
+     * @param domain the domain name, as {@code RefPayloads} spells it
+     * @return the failure message, or null when this domain has not failed
+     *         since this node started
+     */
+    public String getLastError(String domain) {
+        LOGGER.info("Entering method getLastError with domain: " + domain);
+        LOGGER.info("Exiting method getLastError");
+        return lastErrors.get(domain);
     }
 
     /**

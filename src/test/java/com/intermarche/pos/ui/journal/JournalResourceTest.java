@@ -137,7 +137,7 @@ class JournalResourceTest {
         when(resource.journalDetail.data(anyString(), any())).thenReturn(instance);
         JournalTicketDetail detail = new JournalTicketDetail("C04-00000001", "C04", "CLOSED",
                 "31/08/2026", "10:00", "Jean Dupont", "12341234", "IM Lyon", "",
-                "3,00", "2,85", "0,15", List.of(), List.of());
+                "3,00", "2,85", "0,15", List.of(), List.of(), List.of());
         when(resource.journalService.buildDetail(1L)).thenReturn(detail);
         assertSame(instance, resource.detail(1L));
         verify(resource.journalDetail).data("ticket", detail);

@@ -477,4 +477,46 @@ class AdminTenderResourceTest {
         resource.saveTender(soundForm("CRYPTO", "099"));
         verify(tender, never()).delete();
     }
+
+    /**
+     * The two ends of the settlement transfer are written when the form posts
+     * them — the checked arm of each of those two flags (BO-05-02-17).
+     */
+    @Test
+    void theTransferEndsAreWrittenWhenPosted() {
+        AdminTenderResource resource = newResource();
+        MultivaluedMap<String, String> posted = soundForm("TR", "030");
+        posted.putSingle("transferSource", "on");
+        posted.putSingle("transferDestination", "on");
+        PanacheQuery<TenderDefinition> absent = queryOf(null);
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class);
+                MockedConstruction<TenderDefinition> created =
+                        mockConstruction(TenderDefinition.class)) {
+            ms.when(() -> TenderDefinition.find("functionalId", "030")).thenReturn(absent);
+            ms.when(() -> TenderDefinition.find("code", "TR")).thenReturn(absent);
+            resource.saveTender(posted);
+            TenderDefinition inserted = created.constructed().get(0);
+            assertTrue(inserted.transferSource);
+            assertTrue(inserted.transferDestination);
+        }
+    }
+
+    /**
+     * A tender whose string fields are null exports empty cells rather than the
+     * word "null" — the null arm of the cell writer.
+     */
+    @Test
+    void theExportedListLeavesNullStringFieldsEmpty() {
+        AdminTenderResource resource = newResource();
+        TenderDefinition bare = new TenderDefinition();
+        bare.functionalId = null;
+        bare.code = null;
+        bare.label = null;
+        bare.drawerOpening = null;
+        bare.maxAmountControl = null;
+        String csv = resource.buildCsv(List.of(bare));
+        String[] lines = csv.split("\n");
+        assertEquals(2, lines.length);
+        assertTrue(lines[1].startsWith(";;;Oui;100;"));
+    }
 }

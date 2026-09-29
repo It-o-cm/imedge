@@ -54,6 +54,15 @@ public class JournalTicketDetail {
     public final List<Payment> payments;
 
     /**
+     * The loyalty advantage zone, grouped by advantage type and ordered by the
+     * received order (BO-03-03-25). A ticket predating the referential — its
+     * lines carrying no type — yields a single group with an empty header, so it
+     * shows the flat list it always did; a ticket with no advantage line at all
+     * yields an empty list.
+     */
+    public final List<FidelityGroup> fidelityGroups;
+
+    /**
      * Builds a ticket detail.
      *
      * @param number the transaction number
@@ -70,12 +79,14 @@ public class JournalTicketDetail {
      * @param totalVat the formatted VAT total
      * @param lines the article lines
      * @param payments the payments
+     * @param fidelityGroups the grouped loyalty advantage zone
      */
     public JournalTicketDetail(String number, String terminal, String status, String date,
                                String time, String cashier, String cashierBadge, String store,
                                String fidelityCard, String totalIncludingTax,
                                String totalExcludingTax, String totalVat,
-                               List<Line> lines, List<Payment> payments) {
+                               List<Line> lines, List<Payment> payments,
+                               List<FidelityGroup> fidelityGroups) {
         this.number = number;
         this.terminal = terminal;
         this.status = status;
@@ -90,6 +101,7 @@ public class JournalTicketDetail {
         this.totalVat = totalVat;
         this.lines = lines;
         this.payments = payments;
+        this.fidelityGroups = fidelityGroups;
     }
 
     /**
@@ -173,6 +185,53 @@ public class JournalTicketDetail {
          */
         public Payment(String method, String amount) {
             this.method = method;
+            this.amount = amount;
+        }
+    }
+
+    /**
+     * One advantage-type group of the loyalty zone: a header (the stored type
+     * label, empty for the untyped flat group) and its advantage lines.
+     */
+    public static class FidelityGroup {
+
+        /** The advantage-type label printed as the group header, or empty. */
+        public final String header;
+
+        /** The advantage lines under this group. */
+        public final List<FidelityAdvantage> advantages;
+
+        /**
+         * Builds a group.
+         *
+         * @param header the group header, or an empty string when flat
+         * @param advantages the advantage lines
+         */
+        public FidelityGroup(String header, List<FidelityAdvantage> advantages) {
+            this.header = header == null ? "" : header;
+            this.advantages = advantages;
+        }
+    }
+
+    /**
+     * One advantage line of the loyalty zone, pre-formatted.
+     */
+    public static class FidelityAdvantage {
+
+        /** The advantage label, printed verbatim. */
+        public final String label;
+
+        /** The earn amount, formatted with a French comma. */
+        public final String amount;
+
+        /**
+         * Builds an advantage line.
+         *
+         * @param label the advantage label
+         * @param amount the formatted amount
+         */
+        public FidelityAdvantage(String label, String amount) {
+            this.label = label == null ? "" : label;
             this.amount = amount;
         }
     }

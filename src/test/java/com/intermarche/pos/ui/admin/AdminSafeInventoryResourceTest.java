@@ -228,4 +228,23 @@ class AdminSafeInventoryResourceTest {
         anonymous.currentUser = null;
         assertNull(anonymous.signedIn());
     }
+
+    /**
+     * A null theoretical balance is shown as zero: the null arm of the amount
+     * format.
+     */
+    @Test
+    void aNullTheoreticalIsShownAsZero() {
+        AdminSafeInventoryResource resource = newResource();
+        TemplateInstance view = stub(resource.adminSafeInventories);
+        when(resource.safeService.balance()).thenReturn(null);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            PanacheQuery<SafeInventory> query = mock(PanacheQuery.class);
+            when(query.list()).thenReturn(List.of());
+            panache.when(() -> SafeInventory.find("order by countedAt desc, id desc"))
+                    .thenReturn(query);
+            assertSame(view, resource.list(null, true));
+        }
+        verify(view).data("theoretical", "0.00");
+    }
 }

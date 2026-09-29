@@ -29,7 +29,7 @@ class JournalTicketDetailTest {
         JournalTicketDetail.Payment payment = new JournalTicketDetail.Payment("CASH", "3,00");
         JournalTicketDetail detail = new JournalTicketDetail("C04-00000001", "C04", "CLOSED",
                 "31/08/2026", "10:00", "Jean Dupont", "12341234", "IM Lyon", "CARTE1",
-                "3,00", "2,85", "0,15", List.of(line), List.of(payment));
+                "3,00", "2,85", "0,15", List.of(line), List.of(payment), List.of());
         assertEquals("C04-00000001", detail.number);
         assertEquals("C04", detail.terminal);
         assertEquals("CLOSED", detail.status);
@@ -95,5 +95,34 @@ class JournalTicketDetailTest {
         JournalTicketDetail.Payment payment = new JournalTicketDetail.Payment("CARD", "10,00");
         assertEquals("CARD", payment.method);
         assertEquals("10,00", payment.amount);
+    }
+
+    /**
+     * A fidelity group keeps a present header (non-null arm) and its advantages.
+     */
+    @Test
+    void fidelityGroupKeepsAPresentHeader() {
+        JournalTicketDetail.FidelityAdvantage advantage =
+                new JournalTicketDetail.FidelityAdvantage("Cagnotte socle", "0,28");
+        JournalTicketDetail.FidelityGroup group =
+                new JournalTicketDetail.FidelityGroup("Avantages", List.of(advantage));
+        assertEquals("Avantages", group.header);
+        assertEquals(1, group.advantages.size());
+        assertEquals("Cagnotte socle", group.advantages.get(0).label);
+        assertEquals("0,28", group.advantages.get(0).amount);
+    }
+
+    /**
+     * A fidelity group with a null header becomes the empty-header flat group
+     * (null arm), and an advantage with a null label becomes empty.
+     */
+    @Test
+    void fidelityGroupAndAdvantageNullFieldsBecomeEmpty() {
+        JournalTicketDetail.FidelityAdvantage advantage =
+                new JournalTicketDetail.FidelityAdvantage(null, "0,00");
+        JournalTicketDetail.FidelityGroup group =
+                new JournalTicketDetail.FidelityGroup(null, List.of(advantage));
+        assertEquals("", group.header);
+        assertEquals("", group.advantages.get(0).label);
     }
 }

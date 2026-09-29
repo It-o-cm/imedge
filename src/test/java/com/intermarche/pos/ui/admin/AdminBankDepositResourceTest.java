@@ -341,4 +341,46 @@ class AdminBankDepositResourceTest {
         anonymous.currentUser = null;
         assertNull(anonymous.signedIn());
     }
+
+    /**
+     * The bordereau tolerates a NULL wording — the short-circuit arm of the
+     * label guard, distinct from the blank arm — and a pouch carrying no
+     * accounting day leaves that column empty.
+     */
+    @Test
+    void thebordereauToleratesANullLabelAndAdaylessPouch() {
+        AdminBankDepositResource resource = newResource();
+        BankDeposit deposit = new BankDeposit();
+        deposit.id = 7L;
+        deposit.bagNumber = "SAC-7";
+        deposit.depositDay = LocalDate.of(2026, 9, 16);
+        deposit.label = null;
+        deposit.amount = new BigDecimal("10.00");
+        CashPouch dayless = pouch("POCH-9", "10.00");
+        dayless.accountingDay = null;
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            PanacheQuery<CashPouch> query = mock(PanacheQuery.class);
+            when(query.list()).thenReturn(List.of(dayless));
+            panache.when(() -> CashPouch.find("bankDeposit.id = ?1 order by accountingDay, id", 7L))
+                    .thenReturn(query);
+            String piece = resource.renderBordereau(deposit);
+            assertTrue(!piece.contains("Objet :"));
+            assertTrue(piece.contains("POCH-9"));
+        }
+    }
+
+    /**
+     * The amount formatter maps a null amount to zero — the null arm of a guard
+     * no reachable caller reaches, exercised on the helper directly.
+     *
+     * @throws Exception when the helper cannot be reached by reflection
+     */
+    @Test
+    void formatMapsAnullAmountToZero() throws Exception {
+        AdminBankDepositResource resource = newResource();
+        java.lang.reflect.Method format =
+                AdminBankDepositResource.class.getDeclaredMethod("format", BigDecimal.class);
+        format.setAccessible(true);
+        assertEquals("0.00", format.invoke(resource, (BigDecimal) null));
+    }
 }

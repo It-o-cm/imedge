@@ -9,17 +9,23 @@ import com.intermarche.pos.domain.session.*;
 import com.intermarche.pos.domain.setting.*;
 import com.intermarche.pos.domain.store.*;
 import com.intermarche.pos.domain.sync.*;
+import com.intermarche.pos.domain.campaign.Campaign;
 import com.intermarche.pos.domain.catalog.Nomenclature;
 import com.intermarche.pos.domain.catalog.NomenclatureLevel;
+import com.intermarche.pos.service.campaign.CampaignFeedProjector;
 import io.quarkus.arc.profile.IfBuildProfile;
 import io.quarkus.runtime.StartupEvent;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
+import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Development/test data seeder.
@@ -76,6 +82,19 @@ public class DataInitializer {
      */
     private final java.util.Map<String, VatRate> seededVatRates = new java.util.HashMap<>();
 
+    /** Projects the seeded campaigns into the BUDGET_GROUPS engine feed. */
+    @Inject
+    CampaignFeedProjector campaignFeedProjector;
+
+    /**
+     * The role of this node. Only a CENTRAL node holds the echelon registry
+     * (country, enseigne, PDV, echelon settings); a store node receives it by
+     * pull and must never seed it. Defaults to {@code store}, this project's own
+     * default in {@code application.properties}.
+     */
+    @ConfigProperty(name = "pos.role", defaultValue = "store")
+    String role;
+
     /**
      * Wipes and reloads the referential tables at startup (dev/test only).
      *
@@ -91,6 +110,7 @@ public class DataInitializer {
         Nomenclature.deleteAll();
         CouponType.deleteAll();
         VatRate.deleteAll();
+        Campaign.deleteAll();
 
         createStore();
         loadVatRates();
@@ -98,6 +118,74 @@ public class DataInitializer {
         loadProductsAndFamilies();
         loadCouponTypes();
         loadNomenclature();
+        loadCampaigns();
+        campaignFeedProjector.project();
+        loadEchelons();
+    }
+
+    /**
+     * Seeds the echelon registry ON A CENTRAL NODE ONLY: one country, one
+     * enseigne rattached to it, one PDV rattached to the enseigne and one
+     * echelon setting, so a freshly started central serves non-empty echelon
+     * domains ({@code COUNTRIES}, {@code ENSEIGNES}, {@code PDVS},
+     * {@code ECHELON_SETTINGS}) instead of the empty tables a bare seed leaves.
+     *
+     * <p>Guarded by {@link #role}: a store node returns at once and never
+     * touches these tables — they are populated there by the referential pull
+     * from the central, and wiping them here would strand a store on empty
+     * echelons until the central's fingerprint next changed. The registry is
+     * wiped before reseeding so a dev-mode restart is idempotent.
+     */
+    void loadEchelons() {
+        if (!"central".equalsIgnoreCase(role)) {
+            return;
+        }
+        Pdv.deleteAll();
+        Enseigne.deleteAll();
+        Country.deleteAll();
+        EchelonSetting.deleteAll();
+        Country france = new Country();
+        france.code = "FR";
+        france.name = "France";
+        france.defaultLanguage = "fr";
+        france.persist();
+        Enseigne itm = new Enseigne();
+        itm.code = "ITM";
+        itm.name = "Intermarché";
+        itm.countryCode = "FR";
+        itm.defaultLanguage = "fr";
+        itm.persist();
+        Pdv pdv = new Pdv();
+        pdv.pdvNumber = "07039";
+        pdv.name = "Intermarché Démo";
+        pdv.enseigneCode = "ITM";
+        pdv.adherentCode = "ADH07039";
+        pdv.persist();
+        EchelonSetting setting = new EchelonSetting();
+        setting.level = EchelonLevel.COUNTRY;
+        setting.echelonCode = "FR";
+        setting.settingKey = "receipt.footer.legal";
+        setting.settingValue = "Article L.441-6 du Code de commerce";
+        setting.persist();
+    }
+
+    /**
+     * Seeds a demonstration campaign with a budget and two rattached offers, so
+     * the back-office screens and the BUDGET_GROUPS projection have data without
+     * a feed injection: the example campaign is entered and lives at the node
+     * and descends to the engine as its budget group.
+     */
+    private void loadCampaigns() {
+        Campaign campaign = new Campaign();
+        campaign.code = "CAMP_ETE";
+        campaign.label = "Campagne été";
+        campaign.validFrom = LocalDate.of(2026, 6, 1);
+        campaign.validTo = LocalDate.of(2026, 9, 1);
+        campaign.maxAmount = new BigDecimal("1000.00");
+        campaign.maxApplications = 500;
+        campaign.perStore = false;
+        campaign.offerCodes = new ArrayList<>(List.of("PROMO_BANANES_15", "PROMO_YAOURTS_3PLUS1"));
+        campaign.persist();
     }
 
     /**

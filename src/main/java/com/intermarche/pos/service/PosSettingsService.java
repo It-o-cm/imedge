@@ -279,6 +279,10 @@ public class PosSettingsService {
                 "Avantages fidélité sur le ticket",
                 "La section « CAGNOTTE DU JOUR » et les avantages fidélité sont imprimés sur le ticket. Désactivé : aucune section fidélité n'est imprimée (BO-10-03-15).",
                 "true", null),
+        new Def("fidelity.projected-label", Type.TEXT, "FIDÉLITÉ",
+                "Libellé de la cagnotte prévisionnelle",
+                "Libellé imprimé devant le solde de cagnotte projeté après la vente (imfid réponse B). Le montant est prévisionnel : rien n'est crédité avant l'ingestion du ticket (BO-03-03-31).",
+                "CAGNOTTE PREVISIONNELLE", null),
         new Def("fidelity.allow-multiple-scan", Type.BOOL, "FIDÉLITÉ",
                 "Scan multiple de carte de fidélité",
                 "Plusieurs cartes de fidélité peuvent être scannées pendant la transaction, seule la dernière est retenue. Désactivé : une carte déjà scannée bloque les suivantes (BO-10-03-02).",
@@ -470,7 +474,107 @@ public class PosSettingsService {
         new Def("training.theme", Type.TEXT, "MODE ÉCOLE",
                 "Thème de l'écran caisse en formation",
                 "Nom du thème appliqué à l'écran caisse en mode école, pour le distinguer de l'écran de vente standard (sombre, clair). Vide : la formation garde le thème habituel et seul le bandeau la signale (BO-10-07-08).",
-                "", null));
+                "", null),
+        new Def("retention.sales-days", Type.INT, "RÉTENTION DES DONNÉES",
+                "Ventes article : rétention (jours)",
+                "Nombre de jours de conservation des ventes article (tickets clôturés) avant SUPPRESSION par le balayage de fin de période. Une vente rattachée à une facture ou à un remboursement n'est jamais supprimée. 0 = conservation illimitée. Suppression retenue ; l'archivage est une décision client, hors implémentation (BO-10-08-03).",
+                "0", null),
+        new Def("retention.cashier-reports-count", Type.INT, "RÉTENTION DES DONNÉES",
+                "États caissières : nombre de rapports conservés",
+                "NOMBRE de rapports caissières (états X du journal technique) conservés — les plus anciens au-delà de ce nombre sont supprimés. Un nombre de rapports, PAS un nombre de jours. 0 = conservation illimitée (BO-10-08-07).",
+                "0", null),
+        new Def("retention.daily-tables-days", Type.INT, "RÉTENTION DES DONNÉES",
+                "Tables quotidiennes : rétention (jours)",
+                "Nombre de jours de conservation des événements techniques quotidiens non couverts par une ligne dédiée (hors journal d'accès et alertes). 0 = conservation illimitée (BO-10-08-08).",
+                "0", null),
+        new Def("retention.access-journal-days", Type.INT, "RÉTENTION DES DONNÉES",
+                "Journal d'accès utilisateurs : rétention (jours)",
+                "Nombre de jours de conservation du journal d'accès (verrouillages d'authentification, mots de passe, verrouillage / déverrouillage de caisse). 0 = conservation illimitée (BO-10-08-09).",
+                "0", null),
+        new Def("retention.alerts-days", Type.INT, "RÉTENTION DES DONNÉES",
+                "Alertes : rétention (jours)",
+                "Nombre de jours de conservation des alertes (appels superviseur) tracées au journal technique. 0 = conservation illimitée (BO-10-08-11).",
+                "0", null),
+        new Def("retention.parked-tickets-days", Type.INT, "RÉTENTION DES DONNÉES",
+                "Tickets en attente : rétention (jours)",
+                "Nombre de jours de conservation des tickets en attente (mis en parking) avant suppression. Un ticket en attente rattaché à une session encore ouverte n'est pas supprimé. 0 = conservation illimitée (BO-10-08-12).",
+                "0", null),
+        new Def("retention.invoices-days", Type.INT, "RÉTENTION DES DONNÉES",
+                "Factures / bons de livraison : rétention (jours)",
+                "Nombre de jours de conservation des factures et bons de livraison. Une facture liée à un client encore actif (non bloqué) n'est pas supprimée. 0 = conservation illimitée (BO-10-08-16).",
+                "0", null),
+        new Def("retention.expired-promotions-days", Type.INT, "RÉTENTION DES DONNÉES",
+                "Promotions échues : rétention (jours)",
+                "Nombre de jours après la fin de validité au-delà duquel une promotion échue est supprimée. 0 = conservation illimitée (BO-10-08-17).",
+                "0", null),
+        new Def("retention.expired-promotions-cap", Type.INT, "RÉTENTION DES DONNÉES",
+                "Promotions échues : plafond supprimé par passage",
+                "Nombre maximum de promotions échues supprimées à CHAQUE passage du balayage, pour que la purge ne bloque pas la fin de période. Ce n'est pas une rétention, c'est un plafond par exécution. 0 = pas de plafond (BO-10-08-18).",
+                "0", null),
+        new Def("retention.deleted-articles-days", Type.INT, "RÉTENTION DES DONNÉES",
+                "Articles « supprimés » : rétention (jours)",
+                "Nombre de jours de conservation des articles « supprimés » (désactivés) avant suppression définitive. Un article encore référencé par un prix ou une ligne de ticket n'est pas supprimé. 0 = conservation illimitée (BO-10-08-24).",
+                "0", null),
+        new Def("retention.customers-days", Type.INT, "RÉTENTION DES DONNÉES",
+                "Clients : purge après dernière activité (jours)",
+                "Nombre de jours après la dernière activité (dernière mise à jour de la fiche) au-delà duquel un client est purgé. Un client avec un solde de crédit non nul ou encore lié à une facture n'est pas purgé. 0 = conservation illimitée (BO-10-08-26).",
+                "0", null),
+        new Def("drawer.content-ceiling", Type.TEXT, "TIROIR",
+                "Plafond de contenu du tiroir (€)",
+                "Montant au-delà duquel la caisse affiche l'alerte PRÉLÈVEMENT sans bloquer la vente, calé sur le montant garanti par l'assurance en cas de braquage. Administré au point de vente. 0 = aucun plafond (EXP-17).",
+                "0.00", null),
+        new Def("cash.discrepancy-threshold", Type.TEXT, "SESSION CAISSE",
+                "Seuil d'écart de caisse (€)",
+                "Écart en valeur absolue au-delà duquel la clôture exige un recomptage ou un aval superviseur nominatif. Administré au point de vente. Usuellement 1 € (EXP-82).",
+                "1.00", null),
+        new Def("cash.float-mode", Type.TEXT, "SESSION CAISSE",
+                "Mode de fond de caisse",
+                "FIXED : le fond est compté chaque soir. FLOATING : le caissier prélève le soir les billets en laissant l'équivalent du fond initial, et ne compte réellement qu'en fin de semaine et le dernier jour du mois. Administré au point de vente. Une valeur inconnue retombe sur FIXED (EXP-95).",
+                "FIXED", null),
+        new Def("auth.endorse-line-cancel", Type.BOOL, "AUTORISATIONS",
+                "Aval superviseur : annulation de ligne",
+                "L'annulation d'une ligne exige un aval superviseur. Administré à l'enseigne, surchargeable en dessous. Un caissier MANAGER ou ADMIN n'a jamais d'aval à demander (EXP-32).",
+                "true", null),
+        new Def("auth.endorse-last-item-cancel", Type.BOOL, "AUTORISATIONS",
+                "Aval superviseur : annulation du dernier article",
+                "L'annulation du dernier article scanné exige un aval superviseur (EXP-32).",
+                "true", null),
+        new Def("auth.endorse-ticket-abandon", Type.BOOL, "AUTORISATIONS",
+                "Aval superviseur : abandon de ticket",
+                "L'abandon d'un ticket en cours exige un aval superviseur (EXP-32).",
+                "true", null),
+        new Def("auth.endorse-ticket-return", Type.BOOL, "AUTORISATIONS",
+                "Aval superviseur : retour ticket",
+                "Le retour d'articles à partir d'un ticket exige un aval superviseur (EXP-32).",
+                "true", null),
+        new Def("auth.endorse-return-without-ticket", Type.BOOL, "AUTORISATIONS",
+                "Aval superviseur : retour sans ticket",
+                "Le retour d'articles sans ticket d'origine exige un aval superviseur (EXP-32).",
+                "true", null),
+        new Def("auth.endorse-refund", Type.BOOL, "AUTORISATIONS",
+                "Aval superviseur : remboursement",
+                "Le remboursement d'un règlement exige un aval superviseur (EXP-32).",
+                "true", null),
+        new Def("auth.endorse-discount", Type.BOOL, "AUTORISATIONS",
+                "Aval superviseur : remise",
+                "L'application d'une remise exige un aval superviseur (EXP-32).",
+                "true", null),
+        new Def("auth.endorse-price-override", Type.BOOL, "AUTORISATIONS",
+                "Aval superviseur : forçage de prix",
+                "Le forçage manuel d'un prix exige un aval superviseur (EXP-32).",
+                "true", null),
+        new Def("auth.endorsement-scope", Type.TEXT, "AUTORISATIONS",
+                "Portée de l'aval superviseur",
+                "PER_OPERATION : un aval est demandé à chaque opération négative. PER_TICKET : un seul aval ouvre une session superviseur pour tout le ticket, jusqu'à la fin du ticket ou une touche FIN SUPERVISEUR. Une valeur inconnue retombe sur PER_OPERATION (EXP-33).",
+                "PER_OPERATION", null),
+        new Def("ui.login-greeting", Type.TEXT, "SESSION CAISSE",
+                "Message d'accueil de connexion",
+                "Texte affiché sur l'écran caisse invitant l'opérateur à prendre son poste. Vide : aucun message (EXP-01).",
+                "Bonjour : Connectez-vous", null),
+        new Def("customer.next-customer-message", Type.TEXT, "AFFICHEUR CLIENT",
+                "Message client suivant",
+                "Texte affiché entre deux transactions, une fois un ticket clôturé et avant le prochain client. Vide : aucun message (EXP-03).",
+                "CLIENT SUIVANT", null));
 
     /**
      * The echelon inheritance engine, or null on a node where none is wired
@@ -1312,6 +1416,19 @@ public class PosSettingsService {
     }
 
     /**
+     * The administered label printed before the projected loyalty balance
+     * (imfid response B): the forecast cagnotte after this sale, credited only
+     * at ingestion (BO-03-03-31).
+     *
+     * @return the projected-balance label
+     */
+    public String fidelityProjectedLabel() {
+        LOGGER.info("Entering method fidelityProjectedLabel");
+        LOGGER.info("Exiting method fidelityProjectedLabel");
+        return value("fidelity.projected-label");
+    }
+
+    /**
      * Whether several loyalty cards may be scanned during one transaction
      * (BO-10-03-02): enabled, the last card wins; disabled, a card already
      * attached blocks any further scan.
@@ -1976,5 +2093,117 @@ public class PosSettingsService {
         LOGGER.info("Entering method ticketEmailEditable");
         LOGGER.info("Exiting method ticketEmailEditable");
         return boolValue("ticket.email-editable");
+    }
+
+    /**
+     * The administered value of a data-retention parameter — a number of days
+     * for an age-based policy, or a number of items to keep for a count-based
+     * policy (BO-10-08-03 to -26).
+     *
+     * <p>Zero means UNLIMITED retention and is the delivered default of every
+     * retention key: a purge only ever acts on an explicit decision, so shipping
+     * the feature on an existing base destroys nothing nobody asked to destroy. A
+     * corrupt or absent row also resolves to zero through {@link #intValue}, so an
+     * unreadable value can never silently start deleting.
+     *
+     * @param key the retention catalog key
+     * @return the administered integer, or 0 (unlimited) when absent or corrupt
+     */
+    public int retentionSetting(String key) {
+        LOGGER.info("Entering method retentionSetting with key: " + key);
+        LOGGER.info("Exiting method retentionSetting");
+        return intValue(key);
+    }
+
+    /**
+     * The drawer-content ceiling in euros, above which the register shows the
+     * {@code PRÉLÈVEMENT} alert without blocking the sale (EXP-17). Administered
+     * at the point of sale, calibrated on the insured hold-up amount.
+     *
+     * @return the ceiling in euros, zero when none is administered
+     */
+    public BigDecimal drawerContentCeiling() {
+        LOGGER.info("Entering method drawerContentCeiling");
+        LOGGER.info("Exiting method drawerContentCeiling");
+        return bigDecimalValue("drawer.content-ceiling");
+    }
+
+    /**
+     * The cash-discrepancy threshold in euros: beyond this absolute gap the
+     * closing requires a recount or a supervisor validation (EXP-82).
+     * Administered at the point of sale, usually one euro.
+     *
+     * @return the threshold in euros
+     */
+    public BigDecimal cashDiscrepancyThreshold() {
+        LOGGER.info("Entering method cashDiscrepancyThreshold");
+        LOGGER.info("Exiting method cashDiscrepancyThreshold");
+        return bigDecimalValue("cash.discrepancy-threshold");
+    }
+
+    /**
+     * The cash-float mode (EXP-95): the administered value normalized to
+     * {@code FIXED} or {@code FLOATING}, any other value falling back to
+     * {@code FIXED} — the register never counts on an unreadable mode.
+     *
+     * @return the normalized mode, never null
+     */
+    public String cashFloatMode() {
+        LOGGER.info("Entering method cashFloatMode");
+        String raw = value("cash.float-mode").trim().toUpperCase();
+        LOGGER.info("Exiting method cashFloatMode");
+        return raw.equals("FLOATING") ? "FLOATING" : "FIXED";
+    }
+
+    /**
+     * Whether a given negative function requires a supervisor endorsement
+     * (EXP-32), read from the administered authorization matrix.
+     *
+     * @param key the authorization catalog key (e.g. {@code auth.endorse-refund})
+     * @return true when the endorsement is required
+     */
+    public boolean endorsementRequired(String key) {
+        LOGGER.info("Entering method endorsementRequired with key: " + key);
+        LOGGER.info("Exiting method endorsementRequired");
+        return boolValue(key);
+    }
+
+    /**
+     * The scope of the supervisor endorsement (EXP-33): the administered value
+     * normalized to {@code PER_OPERATION} or {@code PER_TICKET}, any other value
+     * falling back to {@code PER_OPERATION} — the safer arm, which never leaves an
+     * authorization open longer than the single gesture that asked for it.
+     *
+     * @return the normalized scope, never null
+     */
+    public String endorsementScope() {
+        LOGGER.info("Entering method endorsementScope");
+        String raw = value("auth.endorsement-scope").trim().toUpperCase();
+        LOGGER.info("Exiting method endorsementScope");
+        return raw.equals("PER_TICKET") ? "PER_TICKET" : "PER_OPERATION";
+    }
+
+    /**
+     * The login greeting shown on the register screen inviting the operator to
+     * take the post (EXP-01); empty when none is administered.
+     *
+     * @return the administered greeting, possibly empty
+     */
+    public String loginGreeting() {
+        LOGGER.info("Entering method loginGreeting");
+        LOGGER.info("Exiting method loginGreeting");
+        return value("ui.login-greeting");
+    }
+
+    /**
+     * The message shown between two transactions, before the next customer
+     * (EXP-03); empty when none is administered.
+     *
+     * @return the administered message, possibly empty
+     */
+    public String nextCustomerMessage() {
+        LOGGER.info("Entering method nextCustomerMessage");
+        LOGGER.info("Exiting method nextCustomerMessage");
+        return value("customer.next-customer-message");
     }
 }

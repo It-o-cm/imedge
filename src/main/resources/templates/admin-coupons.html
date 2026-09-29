@@ -447,60 +447,23 @@
 <div class="page-head">
     <div>
         <h2>Îlots de caisse</h2>
-        <p class="page-sub">Le groupe de caisses qu'un magasin pilote ensemble — ligne avant, comptoir, drive. Une plage de codes-barres peut n'être acceptée que sur certains d'entre eux (BO-03-06-07, BO-03-06-50).</p>
+        <p class="page-sub">Le groupe de caisses qu'un magasin pilote ensemble — ligne avant, comptoir, drive. Une plage de codes-barres peut n'être acceptée que sur certains d'entre eux (BO-03-06-07, BO-03-06-50). L'administration des îlots (rattachement, canal de promotion, rendu monnaie…) se fait désormais sur son écran dédié : <a href="/admin/checkout-islands">Îlots de caisse</a>.</p>
     </div>
 </div>
 
-{#for island in islands}
 <div class="card">
-    <h2 class="card-title">{island.code} — {island.label}</h2>
-    <form method="post" action="/admin/coupons/island">
-        <input type="hidden" name="code" value="{island.code}">
-        <div class="field-grid">
-            <div class="field">
-                <label class="field-label" for="il-{island.code}">Libellé</label>
-                <input class="input-control" id="il-{island.code}" type="text" name="label" maxlength="100" value="{island.label}">
-            </div>
-            <div class="field">
-                <label class="field-label" for="it-{island.code}">Caisses rattachées</label>
-                <input class="input-control" id="it-{island.code}" type="text" name="terminalIds" maxlength="1000" value="{island.terminalIds ?: ''}" placeholder="POS01;POS02">
-            </div>
-            <div class="field">
-                <label class="field-label" for="ia-{island.code}">Actif</label>
-                <input id="ia-{island.code}" type="checkbox" name="active" {#if island.active}checked{/if}>
-            </div>
+    <h2 class="card-title">Îlots</h2>
+    {#if islands.isEmpty()}
+    <p class="page-sub">Aucun îlot n'est administré. Créez-en sur l'écran <a href="/admin/checkout-islands">Îlots de caisse</a>.</p>
+    {#else}
+    <div class="field-grid">
+        {#for island in islands}
+        <div class="field">
+            <span class="field-label">{island.code} — {island.label}</span>
+            <span class="field-hint">{#if island.active}actif{#else}inactif{/if}{#for terminal in island.terminals()} · {terminal}{/for}</span>
         </div>
-        <div class="page-actions"><button class="btn btn-primary" type="submit">Enregistrer l'îlot</button></div>
-    </form>
-    <form method="post" action="/admin/coupons/island/delete">
-        <input type="hidden" name="code" value="{island.code}">
-        <div class="page-actions"><button class="btn btn-muted" type="submit">Supprimer l'îlot</button></div>
-    </form>
-</div>
-{/for}
-
-<div class="card">
-    <h2 class="card-title">Nouvel îlot</h2>
-    <form method="post" action="/admin/coupons/island">
-        <div class="field-grid">
-            <div class="field">
-                <label class="field-label" for="new-icode">Code</label>
-                <input class="input-control" id="new-icode" type="text" name="code" maxlength="50" required>
-            </div>
-            <div class="field">
-                <label class="field-label" for="new-ilabel">Libellé</label>
-                <input class="input-control" id="new-ilabel" type="text" name="label" maxlength="100">
-            </div>
-            <div class="field">
-                <label class="field-label" for="new-iterm">Caisses rattachées</label>
-                <input class="input-control" id="new-iterm" type="text" name="terminalIds" maxlength="1000" placeholder="POS01;POS02">
-            </div>
-            <div class="field">
-                <label class="field-label" for="new-iact">Actif</label>
-                <input id="new-iact" type="checkbox" name="active" checked>
-            </div>
-        </div>
-        <div class="page-actions"><button class="btn btn-primary" type="submit">Créer l'îlot</button></div>
-    </form>
+        {/for}
+    </div>
+    {/if}
 </div>
 {/body}

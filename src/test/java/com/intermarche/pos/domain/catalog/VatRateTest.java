@@ -107,6 +107,51 @@ class VatRateTest {
     }
 
     /**
+     * {@code findByRate} answers null on a null rate without querying (true arm
+     * of the guard).
+     */
+    @Test
+    void findByRateAnswersNullOnNullRate() {
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            assertNull(VatRate.findByRate(null));
+            panache.verifyNoInteractions();
+        }
+    }
+
+    /**
+     * {@code findByRate} queries on a non-null rate and returns the first result
+     * (false arm of the guard).
+     */
+    @Test
+    void findByRateReturnsTheQueriedRegime() {
+        BigDecimal rate = new BigDecimal("0.0550");
+        VatRate expected = regime(2, "0.0550", "Taux réduit");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            @SuppressWarnings("unchecked")
+            PanacheQuery<VatRate> query = mock(PanacheQuery.class);
+            when(query.firstResult()).thenReturn(expected);
+            panache.when(() -> VatRate.find("rate", rate)).thenReturn(query);
+            assertSame(expected, VatRate.findByRate(rate));
+        }
+    }
+
+    /**
+     * {@code findByRate} answers null when the referential carries no row with
+     * that rate.
+     */
+    @Test
+    void findByRateAnswersNullWhenUnknown() {
+        BigDecimal rate = new BigDecimal("0.9999");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            @SuppressWarnings("unchecked")
+            PanacheQuery<VatRate> query = mock(PanacheQuery.class);
+            when(query.firstResult()).thenReturn(null);
+            panache.when(() -> VatRate.find("rate", rate)).thenReturn(query);
+            assertNull(VatRate.findByRate(rate));
+        }
+    }
+
+    /**
      * {@code listAllOrdered} delegates to the ordered Panache list.
      */
     @Test

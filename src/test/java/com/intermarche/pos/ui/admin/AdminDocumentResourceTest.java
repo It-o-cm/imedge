@@ -260,6 +260,62 @@ class AdminDocumentResourceTest {
     }
 
     /**
+     * The list page also echoes the opposite arms of its five null guards: the
+     * text, taxId and type criteria absent (echoed as empty), and both date
+     * bounds present (echoed as they were typed) — the arms the first echo test
+     * does not exercise.
+     */
+    @Test
+    void theListPageEchoesTheOppositeArms() {
+        AdminDocumentResource resource = newResource();
+        TemplateInstance instance = mock(TemplateInstance.class);
+        when(resource.adminDocuments.data(anyString(), any())).thenReturn(instance);
+        when(instance.data(anyString(), any())).thenReturn(instance);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> Invoice.list(BOTH_BOUNDS,
+                            LocalDate.of(2026, 9, 1).atStartOfDay(),
+                            LocalDate.of(2026, 9, 30).plusDays(1).atStartOfDay()))
+                    .thenReturn(List.of(document("F-1", DocumentType.FACTURE, "Acme")));
+            assertSame(instance, resource.list(null, null, null, "2026-09-01", "2026-09-30"));
+        }
+        verify(instance).data(eq("text"), eq(""));
+        verify(instance).data(eq("taxId"), eq(""));
+        verify(instance).data(eq("type"), eq(""));
+        verify(instance).data(eq("from"), eq("2026-09-01"));
+        verify(instance).data(eq("to"), eq("2026-09-30"));
+    }
+
+    /**
+     * A blank text criterion counts as absent rather than as a fragment to match
+     * — the blank arm of the lower-casing guard — so every document is kept.
+     */
+    @Test
+    void aBlankTextCriterionCountsAsAbsent() {
+        AdminDocumentResource resource = newResource();
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            stubAll(panache, List.of(document("F-1", DocumentType.FACTURE, "Acme"),
+                    document("F-2", DocumentType.FACTURE, "Bravo")));
+            assertEquals(2, resource.search("   ", null, null, null, null).size());
+        }
+    }
+
+    /**
+     * A document that carries a due date renders it in its own column — the
+     * non-null arm of the export's due-date guard.
+     */
+    @Test
+    void theExtractionRendersTheDueDate() {
+        AdminDocumentResource resource = newResource();
+        Invoice document = document("F-1", DocumentType.FACTURE, "Acme");
+        document.customerDueDate = LocalDate.of(2026, 10, 15);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            stubAll(panache, List.of(document));
+            String csv = (String) resource.export(null, null, null, null, null).getEntity();
+            assertTrue(csv.contains(";2026-10-15;"));
+        }
+    }
+
+    /**
      * A document with no kind and no date at all still extracts, its cells
      * empty — the null arms of the export's own guards.
      */
