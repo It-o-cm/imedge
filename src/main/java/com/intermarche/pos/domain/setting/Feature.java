@@ -78,6 +78,9 @@ public enum Feature {
     /** The DOCUMENTS issued at the registers (BO-02-04-19). */
     DOCUMENT("document", Menu.SUPERVISION, "Documents de caisse", "/admin/documents"),
 
+    /** The CUSTOMER ORDERS recalled at the till by code: quotes, orders, vouchers, click&collect (EXP-90/91/92). */
+    CUSTOMER_ORDER("customer_order", Menu.SUPERVISION, "Commandes & devis", "/admin/orders"),
+
     /** The PROFILES administration screen. */
     PROFILE("profile", Menu.ADMINISTRATION, "Profils", "/admin/profiles"),
 

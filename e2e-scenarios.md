@@ -1407,6 +1407,25 @@ Notes de lecture (chemins load-bearing) :
 - `AdminSafeJournalResource` et `AdminDocumentResource` sont strictement en lecture (aucun POST) ; leurs seuls effets d'écriture sont des exports CSV 200.
 - Fichiers lus : les 11 resources coffre/monnayeur + `SafeService`, les writers/format/criteria/chart/catalog/period/family/definition de `ui/report`, `AdminDocumentResource`, `AdminTemplateResource`, `DocumentTemplate`.
 
+**L3 Commandes & devis — rappel par code (chantier D expert)** `/admin/orders`, `CustomerOrderService` [E]
+
+Un seul mécanisme de rappel par code (`CustomerOrder` + `CustomerOrderService`) dont dérivent les quatre documents de l'onglet G : devis, commande, bon de vente, click and collect (EXP-90/91/92). Le back-office saisit et remet un code ; la caisse le rappelle et le règle en totalité ou par acompte (EXP-85).
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| Écran | `GET /admin/orders` ADMIN | 200 (commandes récentes d'abord, types proposés) |
+| Create | code vide / déjà pris / type inconnu / total négatif | 303 refus respectif, `noticeOk=false` |
+| Create | succès | commande OPEN persistée, « … code <c> remis au client. » true |
+| Rappel | `recall(code)` OPEN ou PARTIALLY_PAID | commande renvoyée à la caisse |
+| Rappel | code inconnu, ou PAID/COLLECTED/CANCELLED | null (rien de rappelable) |
+| Acompte | kind sans acompte (bon de vente, click&collect) | refusé (`isDepositAllowed`=false, EXP-85) |
+| Acompte | montant null / ≤ 0 / > reste | refusé |
+| Acompte | partiel puis soldant | PARTIALLY_PAID puis PAID (reste = 0) |
+| Solde | `settleRemaining` sur commande rappelable | PAID, dépôt = total |
+| Retrait | `collect` sur commande PAID | COLLECTED ; refusé sinon |
+| Annulation | commande rappelable / déjà close | annulée / « rien à annuler » |
+| Reste à faire | endpoint REST de rappel côté caisse, raccord coffre (EXP-87), reprise inter-caisses connectée (EXP-46), saisie des lignes détaillées | couplés à la production côté caisse — signalés |
+
 ## M. Paramétrage [E] [R]
 
 Toutes les surfaces de M sont `@RolesAllowed("ADMIN")` : anonyme → 302 login (page HTML), non-ADMIN → 403. POST → 303 + notice one-shot (`noticeOk`).
