@@ -65,6 +65,10 @@ public class SyncIngestService {
     @Inject
     com.intermarche.pos.service.CoinMachineService coinMachineService;
 
+    /** The store's safe, fed by the till's withdrawals toward it (EXP-87). */
+    @Inject
+    com.intermarche.pos.service.SafeService safeService;
+
     /** Payment factories indexed by their method key. */
     private final Map<String, TicketPayment.Factory> paymentFactories = new HashMap<>();
 
@@ -627,8 +631,38 @@ public class SyncIngestService {
         movement.movementDate = parse(dto.movementDate);
         movement.endorsedBy = dto.endorsedBy;
         movement.persist();
+        feedSafe(created, movement);
         LOGGER.infof("Mouvement %s %s (%s)", dto.movementUid, created ? "créé" : "mis à jour", dto.type);
         LOGGER.info("Exiting method ingestMovement");
+    }
+
+    /**
+     * Feeds the store safe from a till WITHDRAWAL — the « raccord » that gives a
+     * till prélèvement a destination instead of leaving it a cash movement with
+     * none (EXP-87).
+     *
+     * <p>Held hypothesis (named as such): a {@link CashMovement.MovementType#WITHDRAWAL}
+     * pushed by a register is money leaving the drawer toward the safe, so it is
+     * recorded as a safe {@code POUCH} credit (« Remise au coffre »), PENDING, in
+     * the open accounting period, carrying the movement's cashier as its author
+     * and the movement uid as its reference. It is fed ONCE, on the movement's
+     * creation only, so a re-push never doubles it, and only when a period is open
+     * ({@link com.intermarche.pos.service.SafeService#record} returns null and the
+     * safe is left untouched otherwise). Other movement types (apport, dépense,
+     * acompte, déclaration) do not transfer to the safe and are left as-is.
+     *
+     * @param created whether the cash movement was just created
+     * @param movement the persisted cash movement
+     */
+    private void feedSafe(boolean created, CashMovement movement) {
+        if (!created || movement.type != CashMovement.MovementType.WITHDRAWAL) {
+            return;
+        }
+        String label = movement.reason == null || movement.reason.isBlank()
+                ? "Prélèvement caisse " + movement.terminalId : movement.reason;
+        safeService.record(com.intermarche.pos.domain.safe.SafeMovementType.POUCH, movement.amount, label,
+                movement.movementDate == null ? null : movement.movementDate.toLocalDate(),
+                movement.cashier, null, movement.movementUid, null);
     }
 
     // --------------------------------------------------

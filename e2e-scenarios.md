@@ -1424,7 +1424,10 @@ Un seul mécanisme de rappel par code (`CustomerOrder` + `CustomerOrderService`)
 | Solde | `settleRemaining` sur commande rappelable | PAID, dépôt = total |
 | Retrait | `collect` sur commande PAID | COLLECTED ; refusé sinon |
 | Annulation | commande rappelable / déjà close | annulée / « rien à annuler » |
-| Reste à faire | endpoint REST de rappel côté caisse, raccord coffre (EXP-87), reprise inter-caisses connectée (EXP-46), saisie des lignes détaillées | couplés à la production côté caisse — signalés |
+| Rappel caisse | `GET /api/orders/{code}` rôle store + jeton | 200 JSON (code, kind, total, reste, `depositAllowed`, lignes) si rappelable ; 404 sinon ; 401 mauvais jeton ; 403 hors rôle |
+| Reprise inter-caisses (EXP-46) | `GET /api/parked/{ticketNumber}` | 200 locator (où dort le ticket : `terminalId`, statut) si PARKED ; 404 sinon — mode connecté, le hors-ligne reste sur sa caisse |
+| Raccord coffre (EXP-87) | ingestion d'un mouvement WITHDRAWAL créé | alimente le coffre en `POUCH` (crédit, PENDING, période ouverte), une fois, réf = uid ; DEPOSIT/mise à jour n'alimentent pas |
+| Reste à faire | transfert live du panier garé vers l'autre caisse, saisie des lignes détaillées de commande | couplés à la production côté caisse — signalés |
 
 ## M. Paramétrage [E] [R]
 

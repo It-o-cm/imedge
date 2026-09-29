@@ -106,6 +106,7 @@ class SyncIngestServiceTest {
         // register, so the collaborator belongs to the fixture. What it does with
         // the figure is proved on CoinMachineService itself.
         service.coinMachineService = mock(com.intermarche.pos.service.CoinMachineService.class);
+        service.safeService = mock(com.intermarche.pos.service.SafeService.class);
         service.init();
         return service;
     }
@@ -793,6 +794,7 @@ class SyncIngestServiceTest {
     @Test
     void ingestMovementCreatesWithResolvedSessionAndCashier() {
         SyncIngestService service = new SyncIngestService();
+        service.safeService = mock(com.intermarche.pos.service.SafeService.class);
         SyncPayloads.MovementDto dto = new SyncPayloads.MovementDto();
         dto.movementUid = "M1";
         dto.terminalId = "C04";
@@ -825,6 +827,50 @@ class SyncIngestServiceTest {
             assertEquals(LocalDateTime.of(2026, 9, 1, 15, 42, 0), movement.movementDate);
             assertEquals("11111111", movement.endorsedBy);
             verify(movement, times(1)).persist();
+            // EXP-87 raccord: a created WITHDRAWAL feeds the safe as a POUCH credit.
+            verify(service.safeService, times(1)).record(
+                    org.mockito.ArgumentMatchers.eq(com.intermarche.pos.domain.safe.SafeMovementType.POUCH),
+                    org.mockito.ArgumentMatchers.eq(new BigDecimal("30.00")),
+                    org.mockito.ArgumentMatchers.eq("coffre"),
+                    org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.same(cashier),
+                    org.mockito.ArgumentMatchers.isNull(),
+                    org.mockito.ArgumentMatchers.eq("M1"),
+                    org.mockito.ArgumentMatchers.isNull());
+        }
+    }
+
+    /**
+     * The safe raccord (EXP-87) fires only for a CREATED withdrawal: a non-
+     * withdrawal type does not feed the safe, and neither does the update of an
+     * existing movement — the three arms of {@code feedSafe}.
+     */
+    @Test
+    void ingestMovementFeedsTheSafeOnlyForACreatedWithdrawal() {
+        SyncIngestService service = new SyncIngestService();
+        service.safeService = mock(com.intermarche.pos.service.SafeService.class);
+        SyncPayloads.MovementDto deposit = new SyncPayloads.MovementDto();
+        deposit.movementUid = "M3";
+        deposit.terminalId = "C04";
+        deposit.type = "DEPOSIT";
+        deposit.amount = new BigDecimal("50.00");
+        deposit.movementDate = "2026-09-01T09:00:00";
+        SyncPayloads.MovementDto updated = new SyncPayloads.MovementDto();
+        updated.movementUid = "M4";
+        updated.terminalId = "C04";
+        updated.type = "WITHDRAWAL";
+        updated.amount = new BigDecimal("20.00");
+        updated.movementDate = "2026-09-01T10:00:00";
+        CashMovement existing = mock(CashMovement.class);
+        PanacheQuery<CashMovement> absent = queryReturning(null);
+        PanacheQuery<CashMovement> present = queryReturning(existing);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class);
+                MockedConstruction<CashMovement> created = mockConstruction(CashMovement.class)) {
+            mocked.when(() -> CashMovement.find("movementUid", "M3")).thenReturn(absent);
+            mocked.when(() -> CashMovement.find("movementUid", "M4")).thenReturn(present);
+            service.ingestMovement(deposit);
+            service.ingestMovement(updated);
+            org.mockito.Mockito.verifyNoInteractions(service.safeService);
         }
     }
 
