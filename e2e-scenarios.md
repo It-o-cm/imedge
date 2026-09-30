@@ -1352,6 +1352,17 @@ Canal MONTANT (EXP-19/84) : la caisse POST `/api/supervisor/call` en JSON `{term
 | Montant | hors rôle store / mauvais jeton | 403 / 401, rien enregistré |
 | Reste à faire (descendant, EXP-20) | pousser le message BO sur la caisse | `POST /api/bo-message` (form `text`/`question`/`options`) — nécessite l'adressage des caisses côté nœud (les caisses interrogent le nœud, pas l'inverse) — signalé |
 
+**K10 Relais vers les services tiers (endpoints exposés à la caisse)** `GiftCardResource`, `RestoFlashResource`, `SmsResource`, `ExternalRelayService` [E]
+
+Le nœud expose à la caisse trois endpoints (garde rôle store + jeton `X-Sync-Token`) qui relaient vers le service tiers configuré, tolérants : URL amont absente ou en échec → repli sûr, jamais d'erreur bloquant la vente.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| Carte cadeau (EXP-66) | `GET /api/giftcard/{cardNumber}` | relais vers `pos.giftcard.issuer-url` → `{valid,balance}` ; amont absent → `{valid:false,balance:0}` ; 401/403 sur garde |
+| Resto Flash (EXP-67) | `POST /api/restoflash/confirm` `{token,amount}` | relais vers `pos.restoflash.url` ; amont absent → `{accepted:false}` ; 401/403 sur garde |
+| SMS (EXP-48) | `POST /api/sms/send` `{ticket,phone}` | relais vers `pos.sms.gateway-url` ; amont absent → `{sent:false}` ; 401/403 sur garde |
+| Relais | amont configuré / en échec (exception) | passe le statut+corps amont / repli non-atteint (jamais d'exception) |
+
 ---
 
 ## L. Documents et gabarits [E]
