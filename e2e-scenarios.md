@@ -1329,35 +1329,28 @@ Matrice d'accès (par surface) : `/admin/journal` et ses onglets (`/functional`,
 | Jeton | jeton absent de la config (démo) | aucune authentification exigée |
 | Succès | rôle store + bon jeton | 200 « OK », appel ajouté au registre (bandeau si alertes activées) |
 
-**K8 Événements techniques de tenue de poste (chantier B expert)** `JournalService` / `journal.html` [E]
+**K8 Événements techniques de tenue de poste (chantier B — aligné sur impos)** `JournalService` / `journal.html` [E]
 
-Neuf valeurs ajoutées à `TechnicalEvent.EventType` (en fin d'enum, ordinal stable — à reporter dans impos côté caisse). La recherche, le filtre par case à cocher et l'affichage du journal étant génériques (`EventType.values()` alimente le filtre, `eventType in` la requête), chaque nouveau type est cherchable et filtrable sans autre code.
-
-| Fonction | Cas | Attendu |
-| --- | --- | --- |
-| Filtre | case à cocher par type | les 9 nouveaux types apparaissent dans le filtre (générique `EventType.values()`) |
-| Recherche | `eventType=DISCREPANCY_VALIDATED` | journal filtré sur la validation d'écart nominative (EXP-82) |
-| Recherche | `eventType=REGISTER_UNLOCK_FORCED` / `SESSION_FORCE_CLOSED` | déverrouillage forcé (EXP-14) et fin de journée forcée (EXP-96), deux traces distinctes |
-| Recherche | `TILL_CLOSED` / `TILL_REOPENED` | fermeture / réouverture de caisse sans clôture (§3), distinctes de LOCK et de SESSION_CLOSED |
-| Recherche | `SUPERVISOR_SESSION_OPENED` / `_CLOSED` | ouverture / fermeture de session superviseur (EXP-33) |
-| Recherche | `DRAWER_CEILING_REACHED` / `LAST_ITEM_CANCEL_REFUSED` | plafond tiroir franchi (EXP-17), refus d'annulation d'article unique (EXP-35) |
-| Opérateur | recherche par badge sur ces types | l'identité concernée (superviseur) portée par `operatorBadgeId` |
-| Reste à faire | objets persistés structurés (apport par coupure, comptage moyens papier, bordereau autonome) | nécessitent de nouvelles entités PARTAGÉES + production côté caisse + coordination d'ordinal `SyncOutbox.EntityType` — hors périmètre nœud seul, signalé |
-
-**K9 Deux canaux back-office ↔ caisse (chantier C expert)** `AdminRegisterMessageResource`, `DashboardResource#receiveCall` [E] [R]
-
-Canal DESCENDANT (EXP-20) : message du back-office vers une caisse, porté par le canal de commandes existant (`RegisterCommand.CommandType.DISPLAY_MESSAGE`, append STRING — à reporter dans impos). Canal MONTANT (EXP-19/84) : l'endpoint `/api/supervisor/call` accepte déjà un `reason` libre (message libre, EXP-19) ; la liste des demandes de service devient un référentiel administré (`supervisor.service-requests`, EXP-84).
+Alignement sur impos (source de vérité) : `TechnicalEvent.EventType` reçoit exactement les deux valeurs qu'impos a ajoutées après `GS1_DECODED` — `PAID_TICKET_CANCELLED` (EXP-49) et `SOGEC_COMPENSATION` (EXP-58). Les 9 événements que j'avais inventés (déverrouillage forcé, fin de journée forcée, till closed/reopened, session superviseur, plafond tiroir, validation d'écart, refus dernier article) sont RETIRÉS : impos ne les émet pas — il journalise ces gestes sous des types existants (`REGISTER_UNLOCKED` détaillé, `SESSION_CLOSED`, `ENDORSEMENT_GRANTED/DENIED`) ou pas du tout (plafond tiroir = alerte écran non journalisée). La recherche/filtre/affichage du journal étant génériques, les deux nouveaux types sont cherchables sans autre code.
 
 | Fonction | Cas | Attendu |
 | --- | --- | --- |
-| Descendant écran | `GET /admin/register-messages` ADMIN | 200 (caisses = points de caisse administrés) |
-| Descendant envoi | caisse non choisie | 303 « Choisissez une caisse destinataire. » false |
-| Descendant envoi | caisse inconnue | 303 « Caisse inconnue : <id> » false |
-| Descendant envoi | message vide | 303 « Le message est obligatoire. » false |
-| Descendant envoi | succès | `issue(terminal, DISPLAY_MESSAGE, opérateur, message)` ; 303 « Message déposé pour la caisse <id>. » true |
-| Descendant règle | affichage caisse | écran caissier seul, jamais écran client, sans interrompre la vente (rendu côté caisse, signalé) |
-| Montant libre | `POST /api/supervisor/call` reason libre | ajouté au registre (EXP-19, chemin existant) |
-| Montant liste | `supervisor.service-requests` administré | `supervisorServiceRequests()` fournit les motifs à la caisse ; vide → saisie libre seule (EXP-84) |
+| Filtre | case à cocher par type | `PAID_TICKET_CANCELLED` et `SOGEC_COMPENSATION` apparaissent (générique `EventType.values()`) |
+| Recherche | `eventType=PAID_TICKET_CANCELLED` | journal filtré sur l'annulation d'un ticket payé (EXP-49) |
+| Recherche | `eventType=SOGEC_COMPENSATION` | compensation d'un bon SOGEC (EXP-58) |
+| Gestes réutilisant l'existant | déverrouillage forcé (EXP-14), écart (EXP-82), session superviseur (EXP-33) | cherchés via `REGISTER_UNLOCKED` (détail), `SESSION_CLOSED`, `ENDORSEMENT_GRANTED/DENIED` comme impos — pas de type dédié |
+| Reste à faire | objets persistés structurés (apport par coupure, comptage moyens papier, bordereau autonome) | impos les porte en JSON sur les payloads MOVEMENT/close, pas en entités/`EntityType` dédiés — rien à ingérer de nouveau |
+
+**K9 Canal montant back-office ↔ caisse (chantier C — aligné sur impos)** `DashboardResource#receiveCall` [E] [R]
+
+Canal MONTANT (EXP-19/84) : la caisse POST `/api/supervisor/call` en JSON `{terminalId, operator, reason, message?}` (jeton `X-Sync-Token`). Le `reason` vient de la liste administrée `supervisor.service-reasons` (EXP-84) ; le `message` libre (EXP-19) est désormais porté par la `CallDto` et exposé sur le tableau de bord. Canal DESCENDANT (EXP-20) : impos ne lit PAS un type de commande inconnu dans le poll `/api/commands` ; le message BO se pousse par `POST /api/bo-message` sur la caisse. J'ai donc RETIRÉ `RegisterCommand.DISPLAY_MESSAGE` et l'écran `/admin/register-messages` (orphelins de fil) — voir « reste à faire ».
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| Montant | `POST /api/supervisor/call` avec `message` | `message` porté par `CallDto` → `SupervisorCallRegistry.add(...,message)` → affiché sur le dashboard (EXP-19) |
+| Montant | `reason` de la liste administrée | `supervisor.service-reasons` (clé alignée sur impos) fournit les motifs à la caisse ; vide → saisie libre seule (EXP-84) |
+| Montant | hors rôle store / mauvais jeton | 403 / 401, rien enregistré |
+| Reste à faire (descendant, EXP-20) | pousser le message BO sur la caisse | `POST /api/bo-message` (form `text`/`question`/`options`) — nécessite l'adressage des caisses côté nœud (les caisses interrogent le nœud, pas l'inverse) — signalé |
 
 ---
 
@@ -1424,7 +1417,7 @@ Un seul mécanisme de rappel par code (`CustomerOrder` + `CustomerOrderService`)
 | Solde | `settleRemaining` sur commande rappelable | PAID, dépôt = total |
 | Retrait | `collect` sur commande PAID | COLLECTED ; refusé sinon |
 | Annulation | commande rappelable / déjà close | annulée / « rien à annuler » |
-| Rappel caisse | `GET /api/orders/{code}` rôle store + jeton | 200 JSON (code, kind, total, reste, `depositAllowed`, lignes) si rappelable ; 404 sinon ; 401 mauvais jeton ; 403 hors rôle |
+| Rappel caisse | `GET /api/orders/{code}` rôle store + jeton | 200 JSON au format `RecalledDocument` d'impos : `{kind: DEVIS\|COMMANDE\|BON_VENTE\|CLICK_COLLECT, code, lines:[{ean,label,quantity,unitPrice,vatRate}], acompteAlreadyPaid}` (+ status/remaining ignorés) si rappelable ; 404 sinon ; 401 mauvais jeton ; 403 hors rôle |
 | Reprise inter-caisses (EXP-46) | `GET /api/parked/{ticketNumber}` | 200 locator (où dort le ticket : `terminalId`, statut) si PARKED ; 404 sinon — mode connecté, le hors-ligne reste sur sa caisse |
 | Raccord coffre (EXP-87) | ingestion d'un mouvement WITHDRAWAL créé | alimente le coffre en `POUCH` (crédit, PENDING, période ouverte), une fois, réf = uid ; DEPOSIT/mise à jour n'alimentent pas |
 | Reste à faire | transfert live du panier garé vers l'autre caisse, saisie des lignes détaillées de commande | couplés à la production côté caisse — signalés |
@@ -1585,19 +1578,20 @@ L'îlot promu en objet de paramétrage (BO-03-10). `@RolesAllowed("ADMIN")`, ups
 | Delete | îlot sans caisse | « Îlot supprimé. » true |
 | Niveau échelon | pose d'une clé au niveau `ISLAND` / `CHECKOUT_POINT` | option ajoutée à l'écran des échelons (E9) — « le choix du niveau » |
 
-**M14 Paramètres de tenue de poste (chantier A expert)** `/admin/settings` + `/admin/echelons` [E]
+**M14 Paramètres de tenue de poste (chantier A — clés alignées sur impos)** `/admin/settings` + `/admin/echelons` [E]
 
-Quinze `Def` ajoutés au catalogue `PosSettingsService`, rendus par l'écran de paramétrage générique (M1) et posables à tout échelon par l'écran des échelons (E5) — l'administration, la chaîne d'échelons et la descente `ECHELON_SETTINGS` sont génériques, un `Def` suffit. La caisse ne reçoit que la valeur résolue.
+`Def` ajoutés au catalogue `PosSettingsService` avec les CLÉS EXACTES d'impos (source de vérité — sans quoi la caisse lit une clé que le back-office n'écrit pas). Rendus par l'écran générique (M1) et posables à tout échelon (E5) : administration, chaîne d'échelons et descente `ECHELON_SETTINGS` sont génériques, un `Def` suffit ; la caisse ne reçoit que la valeur résolue. Le nœud n'ajoute AUCUN accesseur (la caisse les porte).
 
 | Fonction | Cas | Attendu |
 | --- | --- | --- |
-| Tiroir | `drawer.content-ceiling` (€, PDV) | rendu section TIROIR ; `drawerContentCeiling()` lit le décimal ; 0 = pas de plafond (EXP-17) |
-| Écart | `cash.discrepancy-threshold` (€, PDV) | rendu SESSION CAISSE ; défaut 1,00 € ; `cashDiscrepancyThreshold()` (EXP-82) |
-| Fond | `cash.float-mode` (PDV) | `cashFloatMode()` normalise FIXED / FLOATING, inconnu → FIXED (EXP-95) |
-| Matrice | 8 `auth.endorse-*` (BOOL, enseigne) | rendus GROUPÉS sous la section AUTORISATIONS ; `endorsementRequired(key)` ; défaut true (EXP-32) |
-| Portée aval | `auth.endorsement-scope` (enseigne) | `endorsementScope()` normalise PER_OPERATION / PER_TICKET, inconnu → PER_OPERATION (EXP-33) |
-| Libellés | `ui.login-greeting`, `customer.next-customer-message` | `loginGreeting()` / `nextCustomerMessage()` administrés (EXP-01, EXP-03) |
-| Échelon | pose d'un `auth.endorse-*` au niveau ENSEIGNE, surchargé au PDV | résolution la plus spécifique gagne (E7) — « réglable par échelon » |
+| Tiroir | `cash.drawer-cap` (€) | rendu section TIROIR ; 0 = pas de plafond (EXP-17) |
+| Écart | `cash.variance-threshold` (€) | rendu CLÔTURE ; défaut 1,00 € (EXP-82) |
+| Fond | `cash.float-mode` | rendu CLÔTURE ; FIXED (défaut) / FLOATING (EXP-95) |
+| Matrice | 7 `gesture.endorsement-{cancel-line,cancel-last,abandon,return,refund,discount,price-force}` (BOOL) | rendus GROUPÉS sous GESTES NÉGATIFS ; défaut true sauf `cancel-last` (false) (EXP-32) |
+| Portée aval | `gesture.endorsement-scope` | GESTES NÉGATIFS ; PER_OP (défaut) / PER_TICKET (EXP-33) |
+| Libellés | `session.welcome-message` (SESSION CAISSE), `sale.waiting-label` (AFFICHAGE) | administrés (EXP-01, EXP-03) |
+| Divers | `payment.trd-card-cap` (RÈGLEMENTS RESTREINTS), `supervisor.service-reasons` (SUPERVISION) | EXP-60, EXP-84 |
+| Échelon | pose d'un `gesture.endorsement-*` au niveau ENSEIGNE, surchargé au PDV | résolution la plus spécifique gagne (E7) — « réglable par échelon » |
 
 **M15 Devises** `/admin/currencies` [E]
 

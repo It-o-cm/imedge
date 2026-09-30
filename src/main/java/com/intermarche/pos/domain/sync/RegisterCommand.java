@@ -58,17 +58,7 @@ public class RegisterCommand extends PanacheEntity {
          * takes it again at its next turn, which is the moment the cashier
          * finishes.
          */
-        CLOSE_SESSION_IF_IDLE,
-
-        /**
-         * Display a back-office message on the register (EXP-20). The text rides
-         * in {@link #reason}. The register shows it on the CASHIER screen only,
-         * never the customer display, and it never interrupts an in-progress
-         * sale — that rendering rule is the register's; the node only issues the
-         * order. Persisted by {@code STRING}, so appending this value is
-         * wire-safe; carry it across to impos on the register side.
-         */
-        DISPLAY_MESSAGE
+        CLOSE_SESSION_IF_IDLE
     }
 
     /** Stable identity of the order, the token the acknowledgement carries. */

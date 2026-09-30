@@ -114,7 +114,7 @@ class DashboardResourceTest {
         DashboardResource resource = newResource();
         Map<String, Object> data = new HashMap<>();
         when(resource.dashboardService.buildData()).thenReturn(data);
-        SupervisorCallRegistry.Call call = new SupervisorCallRegistry.Call(7L, "CAISSE1", "Alice", "no-change");
+        SupervisorCallRegistry.Call call = new SupervisorCallRegistry.Call(7L, "CAISSE1", "Alice", "no-change", null);
         when(resource.supervisorCallRegistry.getPending()).thenReturn(List.of(call));
         Map<String, Object> result = resource.dashboardData();
         @SuppressWarnings("unchecked")
@@ -185,7 +185,7 @@ class DashboardResourceTest {
         Response response = resource.receiveCall("any", dto("CAISSE1", "Alice", "no-change"));
         assertEquals(Response.Status.FORBIDDEN.getStatusCode(), response.getStatus());
         assertEquals("Ce nœud n'a pas le rôle store", response.getEntity());
-        verify(resource.supervisorCallRegistry, never()).add(any(), any(), any());
+        verify(resource.supervisorCallRegistry, never()).add(any(), any(), any(), any());
     }
 
     /**
@@ -200,7 +200,7 @@ class DashboardResourceTest {
         Response response = resource.receiveCall("ignored", dto("CAISSE1", "Alice", "no-change"));
         assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
         assertEquals("OK", response.getEntity());
-        verify(resource.supervisorCallRegistry).add("CAISSE1", "Alice", "no-change");
+        verify(resource.supervisorCallRegistry).add("CAISSE1", "Alice", "no-change", null);
     }
 
     /**
@@ -214,7 +214,7 @@ class DashboardResourceTest {
         Response response = resource.receiveCall("secret", dto("CAISSE2", "Bob", "price"));
         assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
         assertEquals("OK", response.getEntity());
-        verify(resource.supervisorCallRegistry).add("CAISSE2", "Bob", "price");
+        verify(resource.supervisorCallRegistry).add("CAISSE2", "Bob", "price", null);
     }
 
     /**
@@ -229,6 +229,6 @@ class DashboardResourceTest {
         Response response = resource.receiveCall("wrong", dto("CAISSE3", "Carol", "help"));
         assertEquals(Response.Status.UNAUTHORIZED.getStatusCode(), response.getStatus());
         assertEquals("Jeton invalide", response.getEntity());
-        verify(resource.supervisorCallRegistry, never()).add(any(), any(), any());
+        verify(resource.supervisorCallRegistry, never()).add(any(), any(), any(), any());
     }
 }

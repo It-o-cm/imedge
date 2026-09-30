@@ -275,10 +275,10 @@ public class PosSettingsService {
                 "Alertes caisses sur le back-office",
                 "Les appels superviseur des caisses s'affichent sur le tableau de bord du back-office. Désactivé : aucune alerte n'est remontée à l'écran (BO-10-08-01).",
                 "true", null),
-        new Def("supervisor.service-requests", Type.TEXT, "SUPERVISION",
-                "Demandes de service proposées en caisse",
-                "Motifs d'appel superviseur proposés au caissier, séparés par des points-virgules — la liste remplace les quatre boutons figés. Le caissier peut aussi envoyer un message libre. Vide : la caisse propose la saisie libre seule (EXP-84, EXP-19).",
-                "Besoin d'aide;Annulation à valider;Problème de règlement;Contrôle de prix", null),
+        new Def("supervisor.service-reasons", Type.TEXT, "SUPERVISION",
+                "Motifs de demande de service",
+                "Motifs proposés à l'écran d'appel superviseur, séparés par des points-virgules — liste administrée au lieu des quatre boutons figés (EXP-84).",
+                "Annulation;Prix / étiquette;Retour client;Autre", null),
         new Def("fidelity.advantages-enabled", Type.BOOL, "FIDÉLITÉ",
                 "Avantages fidélité sur le ticket",
                 "La section « CAGNOTTE DU JOUR » et les avantages fidélité sont imprimés sur le ticket. Désactivé : aucune section fidélité n'est imprimée (BO-10-03-15).",
@@ -523,62 +523,62 @@ public class PosSettingsService {
                 "Clients : purge après dernière activité (jours)",
                 "Nombre de jours après la dernière activité (dernière mise à jour de la fiche) au-delà duquel un client est purgé. Un client avec un solde de crédit non nul ou encore lié à une facture n'est pas purgé. 0 = conservation illimitée (BO-10-08-26).",
                 "0", null),
-        new Def("drawer.content-ceiling", Type.TEXT, "TIROIR",
-                "Plafond de contenu du tiroir (€)",
-                "Montant au-delà duquel la caisse affiche l'alerte PRÉLÈVEMENT sans bloquer la vente, calé sur le montant garanti par l'assurance en cas de braquage. Administré au point de vente. 0 = aucun plafond (EXP-17).",
-                "0.00", null),
-        new Def("cash.discrepancy-threshold", Type.TEXT, "SESSION CAISSE",
-                "Seuil d'écart de caisse (€)",
-                "Écart en valeur absolue au-delà duquel la clôture exige un recomptage ou un aval superviseur nominatif. Administré au point de vente. Usuellement 1 € (EXP-82).",
-                "1.00", null),
-        new Def("cash.float-mode", Type.TEXT, "SESSION CAISSE",
-                "Mode de fond de caisse",
-                "FIXED : le fond est compté chaque soir. FLOATING : le caissier prélève le soir les billets en laissant l'équivalent du fond initial, et ne compte réellement qu'en fin de semaine et le dernier jour du mois. Administré au point de vente. Une valeur inconnue retombe sur FIXED (EXP-95).",
-                "FIXED", null),
-        new Def("auth.endorse-line-cancel", Type.BOOL, "AUTORISATIONS",
-                "Aval superviseur : annulation de ligne",
-                "L'annulation d'une ligne exige un aval superviseur. Administré à l'enseigne, surchargeable en dessous. Un caissier MANAGER ou ADMIN n'a jamais d'aval à demander (EXP-32).",
-                "true", null),
-        new Def("auth.endorse-last-item-cancel", Type.BOOL, "AUTORISATIONS",
-                "Aval superviseur : annulation du dernier article",
-                "L'annulation du dernier article scanné exige un aval superviseur (EXP-32).",
-                "true", null),
-        new Def("auth.endorse-ticket-abandon", Type.BOOL, "AUTORISATIONS",
-                "Aval superviseur : abandon de ticket",
-                "L'abandon d'un ticket en cours exige un aval superviseur (EXP-32).",
-                "true", null),
-        new Def("auth.endorse-ticket-return", Type.BOOL, "AUTORISATIONS",
-                "Aval superviseur : retour ticket",
-                "Le retour d'articles à partir d'un ticket exige un aval superviseur (EXP-32).",
-                "true", null),
-        new Def("auth.endorse-return-without-ticket", Type.BOOL, "AUTORISATIONS",
-                "Aval superviseur : retour sans ticket",
-                "Le retour d'articles sans ticket d'origine exige un aval superviseur (EXP-32).",
-                "true", null),
-        new Def("auth.endorse-refund", Type.BOOL, "AUTORISATIONS",
-                "Aval superviseur : remboursement",
-                "Le remboursement d'un règlement exige un aval superviseur (EXP-32).",
-                "true", null),
-        new Def("auth.endorse-discount", Type.BOOL, "AUTORISATIONS",
-                "Aval superviseur : remise",
-                "L'application d'une remise exige un aval superviseur (EXP-32).",
-                "true", null),
-        new Def("auth.endorse-price-override", Type.BOOL, "AUTORISATIONS",
-                "Aval superviseur : forçage de prix",
-                "Le forçage manuel d'un prix exige un aval superviseur (EXP-32).",
-                "true", null),
-        new Def("auth.endorsement-scope", Type.TEXT, "AUTORISATIONS",
-                "Portée de l'aval superviseur",
-                "PER_OPERATION : un aval est demandé à chaque opération négative. PER_TICKET : un seul aval ouvre une session superviseur pour tout le ticket, jusqu'à la fin du ticket ou une touche FIN SUPERVISEUR. Une valeur inconnue retombe sur PER_OPERATION (EXP-33).",
-                "PER_OPERATION", null),
-        new Def("ui.login-greeting", Type.TEXT, "SESSION CAISSE",
-                "Message d'accueil de connexion",
-                "Texte affiché sur l'écran caisse invitant l'opérateur à prendre son poste. Vide : aucun message (EXP-01).",
+        new Def("session.welcome-message", Type.TEXT, "SESSION CAISSE",
+                "Message d'accueil caisse fermée",
+                "Texte d'accueil affiché sur l'écran de la caisse fermée, invitant l'opérateur à se connecter (EXP-01, LC-01-01).",
                 "Bonjour : Connectez-vous", null),
-        new Def("customer.next-customer-message", Type.TEXT, "AFFICHEUR CLIENT",
-                "Message client suivant",
-                "Texte affiché entre deux transactions, une fois un ticket clôturé et avant le prochain client. Vide : aucun message (EXP-03).",
-                "CLIENT SUIVANT", null));
+        new Def("sale.waiting-label", Type.TEXT, "AFFICHAGE",
+                "Libellé d'attente d'articles",
+                "Texte affiché sur la visu caisse quand le ticket est vide, entre deux clients (EXP-03).",
+                "CLIENT SUIVANT", null),
+        new Def("cash.drawer-cap", Type.TEXT, "TIROIR",
+                "Plafond de contenu du tiroir (€)",
+                "Montant d'espèces au-delà duquel la caisse affiche une alerte PRÉLÈVEMENT sans bloquer la vente, calé sur le montant garanti par l'assurance. 0 = aucun plafond (EXP-17).",
+                "0.00", null),
+        new Def("gesture.endorsement-cancel-line", Type.BOOL, "GESTES NÉGATIFS",
+                "Aval superviseur : annulation de ligne",
+                "L'annulation d'une ligne déjà enregistrée exige un aval superviseur. Désactivé : le caissier annule seul (EXP-32).",
+                "true", null),
+        new Def("gesture.endorsement-cancel-last", Type.BOOL, "GESTES NÉGATIFS",
+                "Aval superviseur : annulation du dernier article",
+                "L'annulation rapide du dernier article saisi exige un aval superviseur. Désactivé : le caissier annule seul le dernier article (EXP-32).",
+                "false", null),
+        new Def("gesture.endorsement-abandon", Type.BOOL, "GESTES NÉGATIFS",
+                "Aval superviseur : abandon de ticket",
+                "L'abandon du ticket en cours exige un aval superviseur. Désactivé : le caissier abandonne seul (EXP-32).",
+                "true", null),
+        new Def("gesture.endorsement-return", Type.BOOL, "GESTES NÉGATIFS",
+                "Aval superviseur : retour",
+                "Un retour d'article exige un aval superviseur. Désactivé : le caissier enregistre seul le retour (EXP-32).",
+                "true", null),
+        new Def("gesture.endorsement-refund", Type.BOOL, "GESTES NÉGATIFS",
+                "Aval superviseur : remboursement",
+                "Le remboursement d'un retour exige un aval superviseur. Désactivé : le caissier rembourse seul (EXP-32).",
+                "true", null),
+        new Def("gesture.endorsement-discount", Type.BOOL, "GESTES NÉGATIFS",
+                "Aval superviseur : remise / discount",
+                "Une remise ou un discount (ligne ou ticket) exige un aval superviseur. Désactivé : le caissier applique seul (EXP-32).",
+                "true", null),
+        new Def("gesture.endorsement-price-force", Type.BOOL, "GESTES NÉGATIFS",
+                "Aval superviseur : forçage de prix",
+                "Le forçage du prix d'une ligne exige un aval superviseur. Désactivé : le caissier force seul (EXP-32).",
+                "true", null),
+        new Def("cash.variance-threshold", Type.TEXT, "CLÔTURE",
+                "Seuil d'écart de caisse (€)",
+                "Écart de caisse (valeur absolue) au-delà duquel la clôture alerte et exige un recomptage ou une validation superviseur nominative. Usuellement 1 € (EXP-82).",
+                "1.00", null),
+        new Def("cash.float-mode", Type.TEXT, "CLÔTURE",
+                "Mode de fond de caisse",
+                "FIXED : le fond est compté chaque soir (défaut). FLOATING : le caissier prélève les billets le soir en laissant le fond initial et ne compte réellement qu'en fin de semaine et le dernier jour du mois ; les soirs sans comptage ne calculent aucun écart (EXP-95).",
+                "FIXED", null),
+        new Def("gesture.endorsement-scope", Type.TEXT, "GESTES NÉGATIFS",
+                "Portée de l'aval superviseur",
+                "PER_OP : l'aval vaut pour un seul geste (défaut). PER_TICKET : une fois donné, l'aval reste attaché au ticket jusqu'à la touche FIN SUPERVISEUR ou la fin du ticket (EXP-33).",
+                "PER_OP", null),
+        new Def("payment.trd-card-cap", Type.TEXT, "RÈGLEMENTS RESTREINTS",
+                "Plafond carte TRD (€)",
+                "Montant maximum réglable par carte titre-restaurant (TRD) sur une transaction, en plus de l'assiette éligible. 0 = plafond non appliqué, seule l'assiette limite (EXP-60).",
+                "0.00", null));
 
     /**
      * The echelon inheritance engine, or null on a node where none is wired
@@ -1742,32 +1742,6 @@ public class PosSettingsService {
     }
 
     /**
-     * The supervisor-call service requests offered to the cashier (EXP-84),
-     * parsed from the semicolon-separated administered list; blank entries are
-     * dropped, and an empty setting yields an empty list — the cashier then has
-     * the free-message entry alone (EXP-19). Never null.
-     *
-     * @return the administered service requests, in catalog order
-     */
-    public List<String> supervisorServiceRequests() {
-        LOGGER.info("Entering method supervisorServiceRequests");
-        String raw = value("supervisor.service-requests");
-        if (raw.isBlank()) {
-            LOGGER.info("Exiting method supervisorServiceRequests");
-            return List.of();
-        }
-        List<String> requests = new ArrayList<>();
-        for (String part : raw.split(";")) {
-            String trimmed = part.trim();
-            if (!trimmed.isEmpty()) {
-                requests.add(trimmed);
-            }
-        }
-        LOGGER.info("Exiting method supervisorServiceRequests");
-        return requests;
-    }
-
-    /**
      * Whether the register offers the end-of-transaction printing choice
      * (LC-08-03-01): enabled, the cashier picks which documents are printed
      * and the forced rules below apply on top of that choice; disabled, the
@@ -2143,97 +2117,5 @@ public class PosSettingsService {
         LOGGER.info("Entering method retentionSetting with key: " + key);
         LOGGER.info("Exiting method retentionSetting");
         return intValue(key);
-    }
-
-    /**
-     * The drawer-content ceiling in euros, above which the register shows the
-     * {@code PRÉLÈVEMENT} alert without blocking the sale (EXP-17). Administered
-     * at the point of sale, calibrated on the insured hold-up amount.
-     *
-     * @return the ceiling in euros, zero when none is administered
-     */
-    public BigDecimal drawerContentCeiling() {
-        LOGGER.info("Entering method drawerContentCeiling");
-        LOGGER.info("Exiting method drawerContentCeiling");
-        return bigDecimalValue("drawer.content-ceiling");
-    }
-
-    /**
-     * The cash-discrepancy threshold in euros: beyond this absolute gap the
-     * closing requires a recount or a supervisor validation (EXP-82).
-     * Administered at the point of sale, usually one euro.
-     *
-     * @return the threshold in euros
-     */
-    public BigDecimal cashDiscrepancyThreshold() {
-        LOGGER.info("Entering method cashDiscrepancyThreshold");
-        LOGGER.info("Exiting method cashDiscrepancyThreshold");
-        return bigDecimalValue("cash.discrepancy-threshold");
-    }
-
-    /**
-     * The cash-float mode (EXP-95): the administered value normalized to
-     * {@code FIXED} or {@code FLOATING}, any other value falling back to
-     * {@code FIXED} — the register never counts on an unreadable mode.
-     *
-     * @return the normalized mode, never null
-     */
-    public String cashFloatMode() {
-        LOGGER.info("Entering method cashFloatMode");
-        String raw = value("cash.float-mode").trim().toUpperCase();
-        LOGGER.info("Exiting method cashFloatMode");
-        return raw.equals("FLOATING") ? "FLOATING" : "FIXED";
-    }
-
-    /**
-     * Whether a given negative function requires a supervisor endorsement
-     * (EXP-32), read from the administered authorization matrix.
-     *
-     * @param key the authorization catalog key (e.g. {@code auth.endorse-refund})
-     * @return true when the endorsement is required
-     */
-    public boolean endorsementRequired(String key) {
-        LOGGER.info("Entering method endorsementRequired with key: " + key);
-        LOGGER.info("Exiting method endorsementRequired");
-        return boolValue(key);
-    }
-
-    /**
-     * The scope of the supervisor endorsement (EXP-33): the administered value
-     * normalized to {@code PER_OPERATION} or {@code PER_TICKET}, any other value
-     * falling back to {@code PER_OPERATION} — the safer arm, which never leaves an
-     * authorization open longer than the single gesture that asked for it.
-     *
-     * @return the normalized scope, never null
-     */
-    public String endorsementScope() {
-        LOGGER.info("Entering method endorsementScope");
-        String raw = value("auth.endorsement-scope").trim().toUpperCase();
-        LOGGER.info("Exiting method endorsementScope");
-        return raw.equals("PER_TICKET") ? "PER_TICKET" : "PER_OPERATION";
-    }
-
-    /**
-     * The login greeting shown on the register screen inviting the operator to
-     * take the post (EXP-01); empty when none is administered.
-     *
-     * @return the administered greeting, possibly empty
-     */
-    public String loginGreeting() {
-        LOGGER.info("Entering method loginGreeting");
-        LOGGER.info("Exiting method loginGreeting");
-        return value("ui.login-greeting");
-    }
-
-    /**
-     * The message shown between two transactions, before the next customer
-     * (EXP-03); empty when none is administered.
-     *
-     * @return the administered message, possibly empty
-     */
-    public String nextCustomerMessage() {
-        LOGGER.info("Entering method nextCustomerMessage");
-        LOGGER.info("Exiting method nextCustomerMessage");
-        return value("customer.next-customer-message");
     }
 }

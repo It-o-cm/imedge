@@ -80,8 +80,10 @@ public class DashboardResource {
         public String terminalId;
         /** The calling operator display name. */
         public String operator;
-        /** The call reason. */
+        /** The call reason (an administered service reason, EXP-84). */
         public String reason;
+        /** The free message the cashier typed, or null (EXP-19). */
+        public String message;
     }
 
     /**
@@ -122,6 +124,7 @@ public class DashboardResource {
                 entry.put("terminal", call.terminalId);
                 entry.put("operator", call.operator);
                 entry.put("reason", call.reason);
+                entry.put("message", call.message);
                 entry.put("time", call.time);
                 calls.add(entry);
             }
@@ -197,7 +200,7 @@ public class DashboardResource {
             return Response.status(Response.Status.UNAUTHORIZED)
                     .entity("Jeton invalide").build();
         }
-        supervisorCallRegistry.add(dto.terminalId, dto.operator, dto.reason);
+        supervisorCallRegistry.add(dto.terminalId, dto.operator, dto.reason, dto.message);
         LOGGER.info("Exiting method receiveCall");
         return Response.ok("OK").build();
     }

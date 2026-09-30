@@ -85,7 +85,11 @@ public class OrderRecallResource {
     }
 
     /**
-     * Renders a recalled order as the flat map the register loads its cart from.
+     * Renders a recalled order in the shape the register's recalled-document model
+     * deserializes (impos {@code RecalledDocument}: {@code kind}, {@code code},
+     * {@code lines[]} of {@code {ean,label,quantity,unitPrice,vatRate}},
+     * {@code acompteAlreadyPaid}). A few extra fields the back office finds handy
+     * (status, remaining) ride along and are ignored by a lenient reader.
      *
      * @param order the recalled order
      * @return the order fields and lines, JSON-ready
@@ -94,23 +98,21 @@ public class OrderRecallResource {
         Map<String, Object> json = new LinkedHashMap<>();
         json.put("code", order.code);
         json.put("kind", order.kind.name());
-        json.put("status", order.status.name());
-        json.put("label", order.label == null ? "" : order.label);
-        json.put("customerAccountNumber", order.customerAccountNumber == null ? "" : order.customerAccountNumber);
-        json.put("totalAmount", order.totalAmount);
-        json.put("depositPaid", order.depositPaid);
-        json.put("remaining", order.remaining());
-        json.put("depositAllowed", order.kind.isDepositAllowed());
+        json.put("acompteAlreadyPaid", order.depositPaid);
         List<Map<String, Object>> lines = new ArrayList<>();
         for (CustomerOrder.OrderLine line : order.lines) {
             Map<String, Object> l = new LinkedHashMap<>();
             l.put("ean", line.ean == null ? "" : line.ean);
             l.put("label", line.label == null ? "" : line.label);
             l.put("quantity", line.quantity);
-            l.put("totalPrice", line.totalPrice);
+            l.put("unitPrice", line.unitPrice);
+            l.put("vatRate", line.vatRate);
             lines.add(l);
         }
         json.put("lines", lines);
+        // Back-office extras, ignored by the register's lenient deserializer.
+        json.put("status", order.status.name());
+        json.put("remaining", order.remaining());
         return json;
     }
 }

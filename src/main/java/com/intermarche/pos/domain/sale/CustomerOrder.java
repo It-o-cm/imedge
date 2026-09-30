@@ -43,7 +43,7 @@ public class CustomerOrder extends BaseEntity {
     /** The kind of document this order is (EXP-90/91/92). */
     @Enumerated(EnumType.STRING)
     @Column(name = "kind", nullable = false, length = 16)
-    public OrderKind kind = OrderKind.ORDER;
+    public OrderKind kind = OrderKind.COMMANDE;
 
     /** Where the order stands in its lifecycle. */
     @Enumerated(EnumType.STRING)
@@ -144,7 +144,15 @@ public class CustomerOrder extends BaseEntity {
         @Column(name = "quantity", precision = 12, scale = 3)
         public BigDecimal quantity;
 
-        /** The line total, in euros. */
+        /** The unit price, in euros — the shape impos's RecalledDocument.Line expects. */
+        @Column(name = "unit_price", precision = 19, scale = 2)
+        public BigDecimal unitPrice;
+
+        /** The VAT rate of the line. */
+        @Column(name = "vat_rate", precision = 6, scale = 2)
+        public BigDecimal vatRate;
+
+        /** The line total, in euros — kept for the back-office display. */
         @Column(name = "total_price", precision = 19, scale = 2)
         public BigDecimal totalPrice;
 
@@ -155,17 +163,23 @@ public class CustomerOrder extends BaseEntity {
         }
 
         /**
-         * Builds an order line.
+         * Builds an order line, carrying the unit price and VAT rate the register's
+         * recalled-document model expects, plus the line total for display.
          *
          * @param ean the article EAN, or null
          * @param label the line label
          * @param quantity the quantity
+         * @param unitPrice the unit price
+         * @param vatRate the VAT rate
          * @param totalPrice the line total
          */
-        public OrderLine(String ean, String label, BigDecimal quantity, BigDecimal totalPrice) {
+        public OrderLine(String ean, String label, BigDecimal quantity, BigDecimal unitPrice,
+                         BigDecimal vatRate, BigDecimal totalPrice) {
             this.ean = ean;
             this.label = label;
             this.quantity = quantity;
+            this.unitPrice = unitPrice;
+            this.vatRate = vatRate;
             this.totalPrice = totalPrice;
         }
     }

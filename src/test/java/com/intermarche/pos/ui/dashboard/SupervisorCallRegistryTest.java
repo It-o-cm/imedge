@@ -21,13 +21,16 @@ class SupervisorCallRegistryTest {
      */
     @Test
     void callConstructorStoresFieldsAndFormatsTime() {
-        Call call = new Call(7L, "T1", "Alice", "price check");
+        Call call = new Call(7L, "T1", "Alice", "price check", null);
         assertEquals(7L, call.id);
         assertEquals("T1", call.terminalId);
         assertEquals("Alice", call.operator);
         assertEquals("price check", call.reason);
+        assertEquals("", call.message);
         assertEquals(5, call.time.length());
         assertEquals(':', call.time.charAt(2));
+        Call withMessage = new Call(8L, "T1", "Alice", "Autre", "besoin d'un sac");
+        assertEquals("besoin d'un sac", withMessage.message);
     }
 
     /**
@@ -46,7 +49,7 @@ class SupervisorCallRegistryTest {
     @Test
     void addRegistersCallWithSequencedId() {
         SupervisorCallRegistry registry = new SupervisorCallRegistry();
-        registry.add("T2", "Bob", "override");
+        registry.add("T2", "Bob", "override", "");
         List<Call> pending = registry.getPending();
         assertEquals(1, pending.size());
         Call call = pending.get(0);
@@ -63,8 +66,8 @@ class SupervisorCallRegistryTest {
     @Test
     void addKeepsOrderAndDoesNotDeduplicate() {
         SupervisorCallRegistry registry = new SupervisorCallRegistry();
-        registry.add("T3", "Carol", "same");
-        registry.add("T3", "Carol", "same");
+        registry.add("T3", "Carol", "same", "");
+        registry.add("T3", "Carol", "same", "");
         List<Call> pending = registry.getPending();
         assertEquals(2, pending.size());
         assertEquals(1L, pending.get(0).id);
@@ -79,12 +82,12 @@ class SupervisorCallRegistryTest {
     @Test
     void getPendingReturnsImmutableSnapshot() {
         SupervisorCallRegistry registry = new SupervisorCallRegistry();
-        registry.add("T4", "Dan", "help");
+        registry.add("T4", "Dan", "help", "");
         List<Call> snapshot = registry.getPending();
-        registry.add("T5", "Eve", "help2");
+        registry.add("T5", "Eve", "help2", "");
         assertEquals(1, snapshot.size());
         assertThrows(UnsupportedOperationException.class,
-                () -> snapshot.add(new Call(99L, "X", "Y", "Z")));
+                () -> snapshot.add(new Call(99L, "X", "Y", "Z", null)));
     }
 
     /**
@@ -94,8 +97,8 @@ class SupervisorCallRegistryTest {
     @Test
     void acknowledgeRemovesMatchingCall() {
         SupervisorCallRegistry registry = new SupervisorCallRegistry();
-        registry.add("T6", "Frank", "one");
-        registry.add("T7", "Grace", "two");
+        registry.add("T6", "Frank", "one", "");
+        registry.add("T7", "Grace", "two", "");
         registry.acknowledge(1L);
         List<Call> pending = registry.getPending();
         assertEquals(1, pending.size());
@@ -109,7 +112,7 @@ class SupervisorCallRegistryTest {
     @Test
     void acknowledgeWithUnknownIdKeepsAllCalls() {
         SupervisorCallRegistry registry = new SupervisorCallRegistry();
-        registry.add("T8", "Heidi", "one");
+        registry.add("T8", "Heidi", "one", "");
         registry.acknowledge(999L);
         List<Call> pending = registry.getPending();
         assertEquals(1, pending.size());

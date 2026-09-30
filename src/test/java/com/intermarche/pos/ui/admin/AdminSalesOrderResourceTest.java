@@ -121,7 +121,7 @@ class AdminSalesOrderResourceTest {
             panache.when(() -> CustomerOrder.find("code", "CMD2")).thenReturn(absent);
             assertTrue(resource.createOrder(form("code", "CMD2", "kind", "NOPE"))
                     .getLocation().toString().contains("noticeOk=false"));
-            assertTrue(resource.createOrder(form("code", "CMD2", "kind", "ORDER", "totalAmount", "-1"))
+            assertTrue(resource.createOrder(form("code", "CMD2", "kind", "COMMANDE", "totalAmount", "-1"))
                     .getLocation().toString().contains("noticeOk=false"));
         }
     }
@@ -136,7 +136,7 @@ class AdminSalesOrderResourceTest {
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
                 MockedConstruction<CustomerOrder> created = mockConstruction(CustomerOrder.class)) {
             panache.when(() -> CustomerOrder.find("code", "CMD9")).thenReturn(absent);
-            Response response = resource.createOrder(form("code", "CMD9", "kind", "QUOTE",
+            Response response = resource.createOrder(form("code", "CMD9", "kind", "DEVIS",
                     "label", "Cuisine", "customerAccountNumber", "CC1", "totalAmount", "1200,00"));
             assertTrue(response.getLocation().toString().contains("noticeOk=true"));
             CustomerOrder order = created.constructed().get(0);

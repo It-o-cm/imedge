@@ -99,9 +99,6 @@ public enum Feature {
     /** The SYNCHRONIZATION supervision screen: the referential feeds. */
     SYNC("sync", Menu.SUPERVISION, "Flux", "/admin/sync"),
 
-    /** The BACK-OFFICE MESSAGE screen: a message pushed to a register's cashier screen (EXP-20). */
-    REGISTER_MESSAGE("register_message", Menu.SUPERVISION, "Message caisse", "/admin/register-messages"),
-
     /** The SAFE MOVEMENTS screen: expenses, receipts and their pointing (BO-05-02-01/02/06). */
     SAFE_MOVEMENT("safe_movement", Menu.FINANCIER, "Mouvements du coffre",
             "/admin/safe/movements"),

@@ -12,13 +12,13 @@ package com.intermarche.pos.domain.sale;
 public enum OrderKind {
 
     /** A quote (devis): entered at the back office, deposit allowed (EXP-90). */
-    QUOTE("Devis", true),
+    DEVIS("Devis", true),
 
     /** A firm order (commande): deposit allowed, the rest on collection (EXP-90). */
-    ORDER("Commande", true),
+    COMMANDE("Commande", true),
 
     /** A sale voucher (bon de vente): paid in full at the till (EXP-91). */
-    SALE_VOUCHER("Bon de vente", false),
+    BON_VENTE("Bon de vente", false),
 
     /** A click-and-collect basket from a mobility tool, paid in full (EXP-92). */
     CLICK_COLLECT("Click and collect", false);

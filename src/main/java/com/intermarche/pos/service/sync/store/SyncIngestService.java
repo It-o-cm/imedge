@@ -642,8 +642,11 @@ public class SyncIngestService {
      * none (EXP-87).
      *
      * <p>Held hypothesis (named as such): a {@link CashMovement.MovementType#WITHDRAWAL}
-     * pushed by a register is money leaving the drawer toward the safe, so it is
-     * recorded as a safe {@code POUCH} credit (« Remise au coffre »), PENDING, in
+     * pushed by a register is money leaving the drawer toward the safe. impos's
+     * intent is to mark such movements with a dedicated {@code CashMovement.safeDeposit}
+     * flag, but that flag is NOT yet carried by the shared {@code SyncPayloads.MovementDto}
+     * wire — so until impos serializes it, this raccord keys off the WITHDRAWAL
+     * type. It is recorded as a safe {@code POUCH} credit (« Remise au coffre »), PENDING, in
      * the open accounting period, carrying the movement's cashier as its author
      * and the movement uid as its reference. It is fed ONCE, on the movement's
      * creation only, so a re-push never doubles it, and only when a period is open

@@ -119,61 +119,19 @@ public class TechnicalEvent extends PanacheEntity {
          */
         GS1_DECODED,
         /**
-         * A supervisor force-unlocked a register whose operator forgot their
-         * password: the operator keeps the session and the drawer, a password
-         * change is imposed on resume (EXP-14). {@link #operatorBadgeId} names the
-         * supervisor. Appended at the end so the ordinal wire stays stable —
-         * carry this value across to impos on the register side.
+         * A PAID ticket was cancelled (EXP-49): an already-CLOSED sale recalled and
+         * reversed under a supervisor endorsement. The original ticket is left
+         * untouched; the reversal is a second document. The detail carries the
+         * original ticket number and the endorsing supervisor.
          */
-        REGISTER_UNLOCK_FORCED,
+        PAID_TICKET_CANCELLED,
         /**
-         * A supervisor forced the end of day of a register left locked and
-         * abandoned — distinct from a normal close: nobody counted the drawer
-         * (EXP-96). {@link #operatorBadgeId} names the supervisor.
+         * A SOGEC manufacturer coupon was settled through the compensation circuit
+         * (EXP-58): the detail carries the bon code and the amount, for the supplier
+         * reimbursement — distinct from the generic GS1 coupon which grants an
+         * immediate discount and expects no reimbursement.
          */
-        SESSION_FORCE_CLOSED,
-        /**
-         * The cashier CLOSED their till without clôturing it — removed the drawer
-         * for a break or to carry it to another register (the retail « fermer sa
-         * caisse », distinct from the short lock and from the Z close, EXP §3).
-         * The session and its float survive.
-         */
-        TILL_CLOSED,
-        /**
-         * The cashier REOPENED a till closed earlier the same period — the
-         * continuity of the morning: same session, same float, no new count
-         * (EXP §3).
-         */
-        TILL_REOPENED,
-        /**
-         * A supervisor session was opened over a ticket: one endorsement covering
-         * every negative gesture until it closes (EXP-33). {@link #operatorBadgeId}
-         * names the supervisor.
-         */
-        SUPERVISOR_SESSION_OPENED,
-        /**
-         * A supervisor session closed — by the explicit FIN SUPERVISEUR key or by
-         * the end of the ticket, said in {@link #detail} (EXP-33).
-         */
-        SUPERVISOR_SESSION_CLOSED,
-        /**
-         * The drawer content crossed its administered ceiling, and the register
-         * showed the PRÉLÈVEMENT alert without blocking the sale (EXP-17).
-         */
-        DRAWER_CEILING_REACHED,
-        /**
-         * A supervisor validated a cash discrepancy above the administered
-         * threshold so the closing could pass (EXP-82). {@link #operatorBadgeId}
-         * names the supervisor and {@link #detail} carries the validated amount —
-         * this is the nominative trace the requirement demands.
-         */
-        DISCREPANCY_VALIDATED,
-        /**
-         * The register refused to cancel the last article because it was the ONLY
-         * one on the ticket — a refusal is journaled too, since it is often what
-         * explains a complaint (EXP-35).
-         */
-        LAST_ITEM_CANCEL_REFUSED
+        SOGEC_COMPENSATION
     }
 
     /** The type of the event. */

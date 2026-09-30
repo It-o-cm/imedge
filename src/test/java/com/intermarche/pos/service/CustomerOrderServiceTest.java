@@ -66,8 +66,8 @@ class CustomerOrderServiceTest {
     @Test
     void recallReturnsOnlyRecallableOrders() {
         CustomerOrderService service = new CustomerOrderService();
-        CustomerOrder open = order(OrderKind.ORDER, OrderStatus.OPEN, "10.00");
-        CustomerOrder paid = order(OrderKind.ORDER, OrderStatus.PAID, "10.00");
+        CustomerOrder open = order(OrderKind.COMMANDE, OrderStatus.OPEN, "10.00");
+        CustomerOrder paid = order(OrderKind.COMMANDE, OrderStatus.PAID, "10.00");
         PanacheQuery<CustomerOrder> openQ = query(open);
         PanacheQuery<CustomerOrder> paidQ = query(paid);
         PanacheQuery<CustomerOrder> absentQ = query(null);
@@ -89,8 +89,8 @@ class CustomerOrderServiceTest {
     void depositRefusedByStateOrKind() {
         CustomerOrderService service = new CustomerOrderService();
         assertFalse(service.applyDeposit(null, new BigDecimal("5.00")));
-        assertFalse(service.applyDeposit(order(OrderKind.ORDER, OrderStatus.PAID, "10.00"), new BigDecimal("5.00")));
-        assertFalse(service.applyDeposit(order(OrderKind.SALE_VOUCHER, OrderStatus.OPEN, "10.00"), new BigDecimal("5.00")));
+        assertFalse(service.applyDeposit(order(OrderKind.COMMANDE, OrderStatus.PAID, "10.00"), new BigDecimal("5.00")));
+        assertFalse(service.applyDeposit(order(OrderKind.BON_VENTE, OrderStatus.OPEN, "10.00"), new BigDecimal("5.00")));
     }
 
     /**
@@ -100,9 +100,9 @@ class CustomerOrderServiceTest {
     @Test
     void depositRefusedByAmount() {
         CustomerOrderService service = new CustomerOrderService();
-        assertFalse(service.applyDeposit(order(OrderKind.ORDER, OrderStatus.OPEN, "10.00"), null));
-        assertFalse(service.applyDeposit(order(OrderKind.ORDER, OrderStatus.OPEN, "10.00"), BigDecimal.ZERO));
-        assertFalse(service.applyDeposit(order(OrderKind.ORDER, OrderStatus.OPEN, "10.00"), new BigDecimal("11.00")));
+        assertFalse(service.applyDeposit(order(OrderKind.COMMANDE, OrderStatus.OPEN, "10.00"), null));
+        assertFalse(service.applyDeposit(order(OrderKind.COMMANDE, OrderStatus.OPEN, "10.00"), BigDecimal.ZERO));
+        assertFalse(service.applyDeposit(order(OrderKind.COMMANDE, OrderStatus.OPEN, "10.00"), new BigDecimal("11.00")));
     }
 
     /**
@@ -112,7 +112,7 @@ class CustomerOrderServiceTest {
     @Test
     void depositRecordedPartialThenFull() {
         CustomerOrderService service = new CustomerOrderService();
-        CustomerOrder order = order(OrderKind.QUOTE, OrderStatus.OPEN, "10.00");
+        CustomerOrder order = order(OrderKind.DEVIS, OrderStatus.OPEN, "10.00");
         assertTrue(service.applyDeposit(order, new BigDecimal("4.00")));
         assertEquals(OrderStatus.PARTIALLY_PAID, order.status);
         assertEquals(new BigDecimal("6.00"), order.remaining());
@@ -128,12 +128,12 @@ class CustomerOrderServiceTest {
     @Test
     void settleRemainingPaysOrRefuses() {
         CustomerOrderService service = new CustomerOrderService();
-        CustomerOrder open = order(OrderKind.ORDER, OrderStatus.PARTIALLY_PAID, "10.00");
+        CustomerOrder open = order(OrderKind.COMMANDE, OrderStatus.PARTIALLY_PAID, "10.00");
         open.depositPaid = new BigDecimal("3.00");
         assertTrue(service.settleRemaining(open));
         assertEquals(OrderStatus.PAID, open.status);
         assertEquals(new BigDecimal("10.00"), open.depositPaid);
-        assertFalse(service.settleRemaining(order(OrderKind.ORDER, OrderStatus.CANCELLED, "10.00")));
+        assertFalse(service.settleRemaining(order(OrderKind.COMMANDE, OrderStatus.CANCELLED, "10.00")));
         assertFalse(service.settleRemaining(null));
     }
 
@@ -144,7 +144,7 @@ class CustomerOrderServiceTest {
     @Test
     void settleRemainingToleratesANullTotal() {
         CustomerOrderService service = new CustomerOrderService();
-        CustomerOrder order = order(OrderKind.ORDER, OrderStatus.OPEN, "0.00");
+        CustomerOrder order = order(OrderKind.COMMANDE, OrderStatus.OPEN, "0.00");
         order.totalAmount = null;
         assertTrue(service.settleRemaining(order));
         assertEquals(BigDecimal.ZERO, order.depositPaid);
@@ -158,10 +158,10 @@ class CustomerOrderServiceTest {
     @Test
     void collectOnlyWhenPaid() {
         CustomerOrderService service = new CustomerOrderService();
-        CustomerOrder paid = order(OrderKind.ORDER, OrderStatus.PAID, "10.00");
+        CustomerOrder paid = order(OrderKind.COMMANDE, OrderStatus.PAID, "10.00");
         assertTrue(service.collect(paid));
         assertEquals(OrderStatus.COLLECTED, paid.status);
-        assertFalse(service.collect(order(OrderKind.ORDER, OrderStatus.OPEN, "10.00")));
+        assertFalse(service.collect(order(OrderKind.COMMANDE, OrderStatus.OPEN, "10.00")));
         assertFalse(service.collect(null));
     }
 }

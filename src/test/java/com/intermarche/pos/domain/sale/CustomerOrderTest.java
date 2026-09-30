@@ -96,10 +96,13 @@ class CustomerOrderTest {
         CustomerOrder b = new CustomerOrder();
         b.code = "CMD1";
         assertEquals(a.getChecksum(), b.getChecksum());
-        assertEquals(OrderKind.ORDER, a.kind);
+        assertEquals(OrderKind.COMMANDE, a.kind);
         assertEquals(OrderStatus.OPEN, a.status);
-        CustomerOrder.OrderLine line = new CustomerOrder.OrderLine("3001", "Lait", new BigDecimal("2"), new BigDecimal("3.00"));
+        CustomerOrder.OrderLine line = new CustomerOrder.OrderLine("3001", "Lait",
+                new BigDecimal("2"), new BigDecimal("1.50"), new BigDecimal("5.50"), new BigDecimal("3.00"));
         assertEquals("3001", line.ean);
         assertEquals("Lait", line.label);
+        assertEquals(new BigDecimal("1.50"), line.unitPrice);
+        assertEquals(new BigDecimal("5.50"), line.vatRate);
     }
 }

@@ -33,8 +33,10 @@ public class SupervisorCallRegistry {
         public final String terminalId;
         /** The display name of the calling operator. */
         public final String operator;
-        /** The call reason. */
+        /** The call reason (an administered service reason, EXP-84). */
         public final String reason;
+        /** The free message the cashier typed, or an empty string (EXP-19). */
+        public final String message;
         /** The reception time, formatted HH:mm. */
         public final String time;
 
@@ -45,12 +47,14 @@ public class SupervisorCallRegistry {
          * @param terminalId the calling register identifier
          * @param operator the calling operator display name
          * @param reason the call reason
+         * @param message the cashier's free message, or null (EXP-19)
          */
-        public Call(long id, String terminalId, String operator, String reason) {
+        public Call(long id, String terminalId, String operator, String reason, String message) {
             this.id = id;
             this.terminalId = terminalId;
             this.operator = operator;
             this.reason = reason;
+            this.message = message == null ? "" : message;
             this.time = LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm"));
         }
     }
@@ -62,14 +66,16 @@ public class SupervisorCallRegistry {
     private final CopyOnWriteArrayList<Call> pending = new CopyOnWriteArrayList<>();
 
     /**
-     * Registers an incoming call.
+     * Registers an incoming call carrying the cashier's free message (EXP-19)
+     * alongside its administered reason (EXP-84).
      *
      * @param terminalId the calling register identifier
      * @param operator the calling operator display name
      * @param reason the call reason
+     * @param message the cashier's free message, or null
      */
-    public void add(String terminalId, String operator, String reason) {
-        pending.add(new Call(sequence.incrementAndGet(), terminalId, operator, reason));
+    public void add(String terminalId, String operator, String reason, String message) {
+        pending.add(new Call(sequence.incrementAndGet(), terminalId, operator, reason, message));
     }
 
     /**

@@ -46,11 +46,12 @@ class OrderRecallResourceTest {
     private CustomerOrder order() {
         CustomerOrder order = new CustomerOrder();
         order.code = "CMD1";
-        order.kind = OrderKind.ORDER;
+        order.kind = OrderKind.COMMANDE;
         order.status = OrderStatus.OPEN;
         order.totalAmount = new BigDecimal("10.00");
         order.depositPaid = new BigDecimal("3.00");
-        order.lines.add(new CustomerOrder.OrderLine("3001", "Lait", new BigDecimal("2"), new BigDecimal("6.00")));
+        order.lines.add(new CustomerOrder.OrderLine("3001", "Lait", new BigDecimal("2"),
+                new BigDecimal("3.00"), new BigDecimal("5.50"), new BigDecimal("6.00")));
         return order;
     }
 
@@ -97,9 +98,13 @@ class OrderRecallResourceTest {
         assertEquals(200, response.getStatus());
         Map<String, Object> json = (Map<String, Object>) response.getEntity();
         assertEquals("CMD1", json.get("code"));
-        assertEquals("ORDER", json.get("kind"));
+        assertEquals("COMMANDE", json.get("kind"));
+        assertEquals(new BigDecimal("3.00"), json.get("acompteAlreadyPaid"));
         assertEquals(new BigDecimal("7.00"), json.get("remaining"));
-        assertEquals(true, json.get("depositAllowed"));
-        assertEquals(1, ((java.util.List<?>) json.get("lines")).size());
+        java.util.List<Map<String, Object>> lines = (java.util.List<Map<String, Object>>) json.get("lines");
+        assertEquals(1, lines.size());
+        assertEquals("3001", lines.get(0).get("ean"));
+        assertEquals(new BigDecimal("3.00"), lines.get(0).get("unitPrice"));
+        assertEquals(new BigDecimal("5.50"), lines.get(0).get("vatRate"));
     }
 }

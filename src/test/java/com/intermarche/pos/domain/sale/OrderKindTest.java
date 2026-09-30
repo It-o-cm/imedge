@@ -22,7 +22,7 @@ class OrderKindTest {
      */
     @Test
     void aConstantCarriesItsLabel() {
-        assertEquals("Devis", OrderKind.QUOTE.getLabel());
+        assertEquals("Devis", OrderKind.DEVIS.getLabel());
         assertEquals("Click and collect", OrderKind.CLICK_COLLECT.getLabel());
     }
 
@@ -32,9 +32,9 @@ class OrderKindTest {
      */
     @Test
     void depositAllowedFollowsTheKind() {
-        assertTrue(OrderKind.QUOTE.isDepositAllowed());
-        assertTrue(OrderKind.ORDER.isDepositAllowed());
-        assertFalse(OrderKind.SALE_VOUCHER.isDepositAllowed());
+        assertTrue(OrderKind.DEVIS.isDepositAllowed());
+        assertTrue(OrderKind.COMMANDE.isDepositAllowed());
+        assertFalse(OrderKind.BON_VENTE.isDepositAllowed());
         assertFalse(OrderKind.CLICK_COLLECT.isDepositAllowed());
     }
 
@@ -44,7 +44,7 @@ class OrderKindTest {
      */
     @Test
     void fromNameResolvesTrimsOrAnswersNull() {
-        assertSame(OrderKind.SALE_VOUCHER, OrderKind.fromName(" SALE_VOUCHER "));
+        assertSame(OrderKind.BON_VENTE, OrderKind.fromName(" BON_VENTE "));
         assertNull(OrderKind.fromName(null));
         assertNull(OrderKind.fromName("NOPE"));
     }
