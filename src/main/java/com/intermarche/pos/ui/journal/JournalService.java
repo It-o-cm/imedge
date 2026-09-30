@@ -303,16 +303,24 @@ public class JournalService {
         // BO-04-01-26: the "réduction manuelle" search is REMISE and DISCOUNT
         // only — a FORCE_PRICE is a price override, not a reduction, and must
         // not be swept in by a bare "modifierType is not null".
+        //
+        // A REMISE modifierValue is now a UNIT discount on the register wire, so
+        // the reduction that stood on the LINE is modifierValue * quantity; a
+        // DISCOUNT modifierValue is a percentage and is compared as-is. The CASE
+        // yields the comparable magnitude per type so one range fits both.
+        String magnitude = "(case when l.modifierType = :remiseType"
+                + " then l.modifierValue * l.quantity else l.modifierValue end)";
         StringBuilder inner = new StringBuilder(
                 "exists (select l from t.lines l where l.cancelled = false and l.modifierType in :reductionTypes");
         query.bind("reductionTypes",
                 List.of(com.intermarche.pos.ui.PriceModType.REMISE, com.intermarche.pos.ui.PriceModType.DISCOUNT));
+        query.bind("remiseType", com.intermarche.pos.ui.PriceModType.REMISE);
         if (criteria.reductionMin != null) {
-            inner.append(" and l.modifierValue >= :reductionMin");
+            inner.append(" and ").append(magnitude).append(" >= :reductionMin");
             query.bind("reductionMin", criteria.reductionMin);
         }
         if (criteria.reductionMax != null) {
-            inner.append(" and l.modifierValue <= :reductionMax");
+            inner.append(" and ").append(magnitude).append(" <= :reductionMax");
             query.bind("reductionMax", criteria.reductionMax);
         }
         inner.append(")");

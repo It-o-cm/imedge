@@ -211,7 +211,11 @@ public final class SyncPayloads {
         public String modifierLabel;
         /** Structured gesture type (REMISE, DISCOUNT, FORCE_PRICE), or null. */
         public String modifierType;
-        /** Structured gesture value as typed, or null. */
+        /**
+         * Structured gesture value, or null. REMISE = UNIT discount in euros (line
+         * effect = modifierValue * quantity); DISCOUNT = percent; FORCE_PRICE = new
+         * unit price. The reliable line total stays unitPrice * quantity.
+         */
         public BigDecimal modifierValue;
         /** The catalog unit price before modification, or null. */
         public BigDecimal originalUnitPrice;

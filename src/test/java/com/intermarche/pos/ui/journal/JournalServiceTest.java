@@ -193,7 +193,9 @@ class JournalServiceTest {
         assertEquals("FRUITS", params.get("familyMin"));
         assertEquals("LEGUMES", params.get("familyMax"));
         assertTrue(where.contains("l.vatRate = :vatRate"));
-        assertTrue(where.contains("l.modifierValue >= :reductionMin and l.modifierValue <= :reductionMax"));
+        // REMISE compared on the LINE effect (modifierValue * quantity), DISCOUNT on the raw %.
+        assertTrue(where.contains("(case when l.modifierType = :remiseType then l.modifierValue * l.quantity else l.modifierValue end) >= :reductionMin"));
+        assertTrue(where.contains("(case when l.modifierType = :remiseType then l.modifierValue * l.quantity else l.modifierValue end) <= :reductionMax"));
         assertTrue(where.contains("t.status = :cancelled"));
         assertTrue(where.contains("t.globalDiscountApplied is not null"));
         assertTrue(where.contains("from Refund r where r.originalTicketId = t.id"));
@@ -567,7 +569,7 @@ class JournalServiceTest {
         JournalCriteria criteria = new JournalCriteria();
         criteria.reductionMin = new BigDecimal("1.00");
         String where = service.buildTicketQuery(criteria).whereClause();
-        assertTrue(where.contains("l.modifierType in :reductionTypes and l.modifierValue >= :reductionMin)"));
+        assertTrue(where.contains("(case when l.modifierType = :remiseType then l.modifierValue * l.quantity else l.modifierValue end) >= :reductionMin)"));
         assertFalse(where.contains("reductionMax"));
     }
 
@@ -580,7 +582,7 @@ class JournalServiceTest {
         JournalCriteria criteria = new JournalCriteria();
         criteria.reductionMax = new BigDecimal("5.00");
         String where = service.buildTicketQuery(criteria).whereClause();
-        assertTrue(where.contains("l.modifierType in :reductionTypes and l.modifierValue <= :reductionMax)"));
+        assertTrue(where.contains("(case when l.modifierType = :remiseType then l.modifierValue * l.quantity else l.modifierValue end) <= :reductionMax)"));
         assertFalse(where.contains("reductionMin"));
     }
 
