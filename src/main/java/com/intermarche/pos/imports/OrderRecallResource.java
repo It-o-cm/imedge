@@ -1,6 +1,7 @@
 package com.intermarche.pos.imports;
 
 import com.intermarche.pos.domain.sale.CustomerOrder;
+import com.intermarche.pos.domain.session.CashMovement;
 import com.intermarche.pos.service.CustomerOrderService;
 import jakarta.annotation.security.PermitAll;
 import jakarta.inject.Inject;
@@ -98,7 +99,9 @@ public class OrderRecallResource {
         Map<String, Object> json = new LinkedHashMap<>();
         json.put("code", order.code);
         json.put("kind", order.kind.name());
-        json.put("acompteAlreadyPaid", order.depositPaid);
+        java.math.BigDecimal deposit = order.depositPaid == null ? java.math.BigDecimal.ZERO : order.depositPaid;
+        java.math.BigDecimal acompteAlreadyPaid = deposit.add(CashMovement.acompteTotalForOrder(order.code));
+        json.put("acompteAlreadyPaid", acompteAlreadyPaid);
         List<Map<String, Object>> lines = new ArrayList<>();
         for (CustomerOrder.OrderLine line : order.lines) {
             Map<String, Object> l = new LinkedHashMap<>();
@@ -110,9 +113,14 @@ public class OrderRecallResource {
             lines.add(l);
         }
         json.put("lines", lines);
-        // Back-office extras, ignored by the register's lenient deserializer.
+        // Back-office extras, ignored by the register's lenient deserializer. The
+        // remaining is recomputed against the full acompte (deposit + till acomptes
+        // imputed by order reference), never negative, so it stays consistent with
+        // the acompteAlreadyPaid the register actually reads.
         json.put("status", order.status.name());
-        json.put("remaining", order.remaining());
+        java.math.BigDecimal total = order.totalAmount == null ? java.math.BigDecimal.ZERO : order.totalAmount;
+        java.math.BigDecimal remaining = total.subtract(acompteAlreadyPaid);
+        json.put("remaining", remaining.signum() < 0 ? java.math.BigDecimal.ZERO : remaining);
         return json;
     }
 }

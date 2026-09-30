@@ -406,6 +406,8 @@ class SyncPayloadsTest {
         assertNull(fresh.reason);
         assertNull(fresh.movementDate);
         assertNull(fresh.endorsedBy);
+        assertFalse(fresh.safeDeposit);
+        assertNull(fresh.orderReference);
         SyncPayloads.MovementDto dto = new SyncPayloads.MovementDto();
         dto.movementUid = "M1";
         dto.terminalId = "C04";
@@ -416,6 +418,8 @@ class SyncPayloadsTest {
         dto.reason = "coffre";
         dto.movementDate = "2026-09-01T15:42:00";
         dto.endorsedBy = "11111111";
+        dto.safeDeposit = true;
+        dto.orderReference = "CMD-9";
         assertEquals("M1", dto.movementUid);
         assertEquals("C04", dto.terminalId);
         assertEquals("C04-S00001", dto.sessionNumber);
@@ -425,6 +429,8 @@ class SyncPayloadsTest {
         assertEquals("coffre", dto.reason);
         assertEquals("2026-09-01T15:42:00", dto.movementDate);
         assertEquals("11111111", dto.endorsedBy);
+        assertTrue(dto.safeDeposit);
+        assertEquals("CMD-9", dto.orderReference);
     }
 
     /**

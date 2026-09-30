@@ -346,6 +346,19 @@ public final class SyncPayloads {
         public String movementDate;
         /** The badge of the endorsing manager, or null. */
         public String endorsedBy;
+        /**
+         * True when the movement is a cash withdrawal destined for the SAFE
+         * (EXP-87): the store node accounts it into the coffre balance. False for
+         * every other movement.
+         */
+        public boolean safeDeposit;
+        /**
+         * The order this movement is attached to, or null (EXP-85): a customer
+         * down-payment (acompte) carries the order reference so the node imputes
+         * it to that order and returns it as the already-paid down-payment when
+         * the order is recalled by code.
+         */
+        public String orderReference;
     }
 
     /**

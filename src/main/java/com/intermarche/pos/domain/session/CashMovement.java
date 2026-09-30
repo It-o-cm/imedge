@@ -142,6 +142,46 @@ public class CashMovement extends BaseEntity {
     public String endorsedBy;
 
     /**
+     * The code of the ORDER a down-payment is attached to (EXP-85), or null for a
+     * movement that is not an acompte-on-order. It is what lets a later recall of
+     * the order deduct the acompte already collected — the "rattachement" the
+     * bare {@code CUSTOMER_DEPOSIT} movement lacked.
+     */
+    @Column(name = "order_reference", length = 40)
+    public String orderReference;
+
+    /**
+     * True when this cash withdrawal is destined to the SAFE (EXP-87): the
+     * "prélèvement coffre". The safe itself is an entity of the store node
+     * (imedge), not of the register — the caisse only records and pushes up the
+     * movements that FEED it, and this flag is what lets the node account the
+     * withdrawal against the safe rather than as a plain drawer prélèvement.
+     */
+    @Column(name = "safe_deposit", nullable = false)
+    public boolean safeDeposit = false;
+
+    /**
+     * Sums the down-payments already recorded for an order (EXP-85).
+     *
+     * @param orderReference the order code
+     * @return the total acompte collected for that order (ZERO when none)
+     */
+    public static BigDecimal acompteTotalForOrder(String orderReference) {
+        if (orderReference == null || orderReference.isBlank()) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal total = BigDecimal.ZERO;
+        for (CashMovement movement : CashMovement.<CashMovement>list(
+                "type = ?1 and orderReference = ?2",
+                MovementType.CUSTOMER_DEPOSIT, orderReference)) {
+            if (movement.amount != null) {
+                total = total.add(movement.amount);
+            }
+        }
+        return total;
+    }
+
+    /**
      * Returns the audit checksum of the movement.
      *
      * @return a hash of the identifying and financial fields
@@ -149,6 +189,6 @@ public class CashMovement extends BaseEntity {
     @Override
     public int getChecksum() {
         return Objects.hash(movementUid, terminalId, type, amount, movementDate,
-                paymentMethod, transferTo);
+                paymentMethod, transferTo, orderReference, safeDeposit);
     }
 }

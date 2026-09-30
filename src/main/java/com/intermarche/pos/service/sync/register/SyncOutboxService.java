@@ -329,6 +329,8 @@ public class SyncOutboxService {
         dto.reason = movement.reason;
         dto.movementDate = iso(movement.movementDate);
         dto.endorsedBy = movement.endorsedBy;
+        dto.safeDeposit = movement.safeDeposit;
+        dto.orderReference = movement.orderReference;
         return dto;
     }
 

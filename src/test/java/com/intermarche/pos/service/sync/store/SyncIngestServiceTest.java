@@ -789,7 +789,8 @@ class SyncIngestServiceTest {
      * Covers the insert arm of {@code ingestMovement}: no movement exists for
      * the uid so one is constructed, its session resolves (session ternary true
      * arm), its cashier resolves through {@code requireEmployee} (cashier
-     * ternary true arm), and the row is stamped and persisted.
+     * ternary true arm), the row is stamped and persisted, and — being a created
+     * SAFE-flagged withdrawal (EXP-87) — it feeds the safe.
      */
     @Test
     void ingestMovementCreatesWithResolvedSessionAndCashier() {
@@ -805,6 +806,8 @@ class SyncIngestServiceTest {
         dto.reason = "coffre";
         dto.movementDate = "2026-09-01T15:42:00";
         dto.endorsedBy = "11111111";
+        dto.safeDeposit = true;
+        dto.orderReference = "CMD-9";
         CashSession session = mock(CashSession.class);
         Employee cashier = mock(Employee.class);
         PanacheQuery<CashMovement> movementQuery = queryReturning(null);
@@ -826,8 +829,10 @@ class SyncIngestServiceTest {
             assertEquals("coffre", movement.reason);
             assertEquals(LocalDateTime.of(2026, 9, 1, 15, 42, 0), movement.movementDate);
             assertEquals("11111111", movement.endorsedBy);
+            assertTrue(movement.safeDeposit);
+            assertEquals("CMD-9", movement.orderReference);
             verify(movement, times(1)).persist();
-            // EXP-87 raccord: a created WITHDRAWAL feeds the safe as a POUCH credit.
+            // EXP-87 raccord: a created SAFE-flagged movement feeds the safe as a POUCH credit.
             verify(service.safeService, times(1)).record(
                     org.mockito.ArgumentMatchers.eq(com.intermarche.pos.domain.safe.SafeMovementType.POUCH),
                     org.mockito.ArgumentMatchers.eq(new BigDecimal("30.00")),
@@ -841,26 +846,30 @@ class SyncIngestServiceTest {
     }
 
     /**
-     * The safe raccord (EXP-87) fires only for a CREATED withdrawal: a non-
-     * withdrawal type does not feed the safe, and neither does the update of an
-     * existing movement — the three arms of {@code feedSafe}.
+     * The safe raccord (EXP-87) fires only for a CREATED, SAFE-flagged movement:
+     * a created movement whose {@code safeDeposit} flag is false does not feed the
+     * safe (flag false arm), and neither does the update of an existing movement
+     * even when its flag is true (not-created arm) — the two skip arms of
+     * {@code feedSafe}.
      */
     @Test
-    void ingestMovementFeedsTheSafeOnlyForACreatedWithdrawal() {
+    void ingestMovementFeedsTheSafeOnlyForACreatedSafeDeposit() {
         SyncIngestService service = new SyncIngestService();
         service.safeService = mock(com.intermarche.pos.service.SafeService.class);
         SyncPayloads.MovementDto deposit = new SyncPayloads.MovementDto();
         deposit.movementUid = "M3";
         deposit.terminalId = "C04";
-        deposit.type = "DEPOSIT";
+        deposit.type = "WITHDRAWAL";
         deposit.amount = new BigDecimal("50.00");
         deposit.movementDate = "2026-09-01T09:00:00";
+        deposit.safeDeposit = false;
         SyncPayloads.MovementDto updated = new SyncPayloads.MovementDto();
         updated.movementUid = "M4";
         updated.terminalId = "C04";
         updated.type = "WITHDRAWAL";
         updated.amount = new BigDecimal("20.00");
         updated.movementDate = "2026-09-01T10:00:00";
+        updated.safeDeposit = true;
         CashMovement existing = mock(CashMovement.class);
         PanacheQuery<CashMovement> absent = queryReturning(null);
         PanacheQuery<CashMovement> present = queryReturning(existing);

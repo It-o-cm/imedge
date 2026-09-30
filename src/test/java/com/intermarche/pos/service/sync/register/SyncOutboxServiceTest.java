@@ -919,6 +919,8 @@ class SyncOutboxServiceTest {
         movement.reason = "coffre";
         movement.movementDate = LocalDateTime.of(2026, 9, 1, 15, 42, 0);
         movement.endorsedBy = "11111111";
+        movement.safeDeposit = true;
+        movement.orderReference = "CMD-9";
         CashSession session = new CashSession();
         session.sessionNumber = "C04-S00001";
         movement.session = session;
@@ -941,6 +943,8 @@ class SyncOutboxServiceTest {
             assertEquals("coffre", out.reason);
             assertEquals("2026-09-01T15:42:00", out.movementDate);
             assertEquals("11111111", out.endorsedBy);
+            assertTrue(out.safeDeposit);
+            assertEquals("CMD-9", out.orderReference);
         }
     }
 
@@ -978,6 +982,8 @@ class SyncOutboxServiceTest {
             assertNull(out.reason);
             assertNull(out.movementDate);
             assertNull(out.endorsedBy);
+            assertFalse(out.safeDeposit);
+            assertNull(out.orderReference);
         }
     }
 

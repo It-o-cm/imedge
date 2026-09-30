@@ -630,6 +630,8 @@ public class SyncIngestService {
         movement.reason = dto.reason;
         movement.movementDate = parse(dto.movementDate);
         movement.endorsedBy = dto.endorsedBy;
+        movement.safeDeposit = dto.safeDeposit;
+        movement.orderReference = dto.orderReference;
         movement.persist();
         feedSafe(created, movement);
         LOGGER.infof("Mouvement %s %s (%s)", dto.movementUid, created ? "créé" : "mis à jour", dto.type);
@@ -641,24 +643,24 @@ public class SyncIngestService {
      * till prélèvement a destination instead of leaving it a cash movement with
      * none (EXP-87).
      *
-     * <p>Held hypothesis (named as such): a {@link CashMovement.MovementType#WITHDRAWAL}
-     * pushed by a register is money leaving the drawer toward the safe. impos's
-     * intent is to mark such movements with a dedicated {@code CashMovement.safeDeposit}
-     * flag, but that flag is NOT yet carried by the shared {@code SyncPayloads.MovementDto}
-     * wire — so until impos serializes it, this raccord keys off the WITHDRAWAL
-     * type. It is recorded as a safe {@code POUCH} credit (« Remise au coffre »), PENDING, in
+     * <p>The raccord keys off the {@code CashMovement.safeDeposit} flag the register
+     * now sets and pushes on the shared {@code SyncPayloads.MovementDto} wire (EXP-87):
+     * a withdrawal so flagged is money leaving the drawer toward the safe, whereas a
+     * plain prélèvement carries the flag false and stays a bare drawer movement. It is
+     * recorded as a safe {@code POUCH} credit (« Remise au coffre »), PENDING, in
      * the open accounting period, carrying the movement's cashier as its author
      * and the movement uid as its reference. It is fed ONCE, on the movement's
      * creation only, so a re-push never doubles it, and only when a period is open
      * ({@link com.intermarche.pos.service.SafeService#record} returns null and the
-     * safe is left untouched otherwise). Other movement types (apport, dépense,
-     * acompte, déclaration) do not transfer to the safe and are left as-is.
+     * safe is left untouched otherwise). Every unflagged movement (an ordinary
+     * prélèvement, apport, dépense, acompte, déclaration) does not transfer to the
+     * safe and is left as-is.
      *
      * @param created whether the cash movement was just created
      * @param movement the persisted cash movement
      */
     private void feedSafe(boolean created, CashMovement movement) {
-        if (!created || movement.type != CashMovement.MovementType.WITHDRAWAL) {
+        if (!created || !movement.safeDeposit) {
             return;
         }
         String label = movement.reason == null || movement.reason.isBlank()
