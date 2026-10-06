@@ -7,6 +7,7 @@ import com.intermarche.edge.domain.session.FinancialState;
 import com.intermarche.edge.domain.session.FinancialState.PeriodKind;
 import com.intermarche.edge.domain.session.FinancialState.StateScope;
 import com.intermarche.edge.domain.session.FinancialState.StateType;
+import com.intermarche.edge.domain.session.TechnicalEvent;
 import com.intermarche.edge.domain.util.DateTimeProvider;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -44,6 +45,9 @@ public class FinancialStateEmissionService {
 
     /** The administered parameters. */
     @Inject PosSettingsService settings;
+
+    /** The electronic journal (§6): a trace per Z emission and per X reading. */
+    @Inject TechnicalEventService technicalEventService;
 
     /**
      * Emits — or reprints — the Z of a chain at a period bound (§4).
@@ -92,6 +96,9 @@ public class FinancialStateEmissionService {
         applyControl(state);
         state.signature = state.computeSignature();
         state.persist();
+        technicalEventService.log(TechnicalEvent.EventType.FINANCIAL_STATE_EMITTED,
+                scope + "/" + periodKind + " #" + state.sequence
+                        + (cashier != null ? " " + cashier.loginName : ""));
         LOGGER.info("Exiting method emitZ: emitted sequence " + state.sequence);
         return state;
     }
@@ -129,6 +136,8 @@ public class FinancialStateEmissionService {
         LocalDateTime lastEmittedAt = last != null ? last.emittedAt : null;
         populate(state, cashier, from, now, lastEmittedAt);
         state.signature = state.computeSignature();
+        technicalEventService.log(TechnicalEvent.EventType.FINANCIAL_STATE_READ,
+                scope + "/" + periodKind + (cashier != null ? " " + cashier.loginName : ""));
         LOGGER.info("Exiting method readX");
         return state;
     }

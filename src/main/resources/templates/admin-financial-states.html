@@ -1,0 +1,69 @@
+{!
+ ! The FINANCIAL STATES list (X/Z campaign, §6): every Z the node has emitted,
+ ! newest first, each flagged when its control variance is non-zero or it swept
+ ! in a late ticket. Above it, the controls that EDIT an X (a reading) and EMIT
+ ! a Z (a creation) — the two gestures the permission layer tells apart.
+!}
+{#include admin-layout}
+
+{#title}États financiers X/Z{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>États financiers X/Z</h1>
+        <p class="page-sub">Les compteurs Z chaînés du point de vente et des caissiers, et la lecture X de l'intervalle en cours.</p>
+    </div>
+</div>
+
+{#if notice}
+<div class="notice {#if noticeOk}notice-ok{#else}notice-ko{/if}">{notice}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">Éditer un état</h2>
+    <form method="get" action="/admin/financial-states/x" class="inline-form">
+        <select name="scope">{#for scope in scopes}<option value="{scope}">{scope}</option>{/for}</select>
+        <select name="period">{#for period in periods}<option value="{period}">{period}</option>{/for}</select>
+        <button type="submit">Lire un X</button>
+    </form>
+    <form method="post" action="/admin/financial-states/emit" class="inline-form">
+        <select name="scope">{#for scope in scopes}<option value="{scope}">{scope}</option>{/for}</select>
+        <select name="period">{#for period in periods}<option value="{period}">{period}</option>{/for}</select>
+        <button type="submit">Émettre un Z</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2 class="card-title">Z émis</h2>
+    <table class="data-table">
+        <thead>
+        <tr>
+            <th>Émis le</th>
+            <th>Porteur</th>
+            <th>Période</th>
+            <th>N°</th>
+            <th>CA net</th>
+            <th>Anomalie</th>
+            <th class="col-actions"></th>
+        </tr>
+        </thead>
+        <tbody>
+        {#for state in states}
+        <tr>
+            <td>{state.emittedAt}</td>
+            <td>{state.scope}{#if state.cashier} · {state.cashier.loginName}{/if}</td>
+            <td>{state.periodKind}</td>
+            <td>{state.sequence}</td>
+            <td>{state.netTurnover}</td>
+            <td>{#if flagged.contains(state.id)}<span class="badge badge-warn">écart / retard</span>{#else}—{/if}</td>
+            <td class="col-actions"><a href="/admin/financial-states/{state.id}">Ouvrir</a></td>
+        </tr>
+        {/for}
+        {#if states.isEmpty()}
+        <tr><td colspan="7" class="empty">Aucun Z émis.</td></tr>
+        {/if}
+        </tbody>
+    </table>
+</div>
+{/body}

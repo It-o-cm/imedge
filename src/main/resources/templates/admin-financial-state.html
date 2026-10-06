@@ -1,0 +1,75 @@
+{!
+ ! ONE financial state (X/Z campaign, §6): the header figures the fisc asks for,
+ ! the control of R2 and the late-ticket warning, then the sections one after the
+ ! other, each exportable through the existing report writers. Printed from the
+ ! browser; an X carries sequence 0 and is never persisted.
+!}
+{#include admin-layout}
+
+{#title}État financier{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{state.stateType} · {state.scope} · {state.periodKind}{#if state.cashier} · {state.cashier.loginName}{/if}</h1>
+        <p class="page-sub">Du {state.fromInstant} au {state.toInstant}{#if state.sequence} · Z n°{state.sequence}{/if}</p>
+    </div>
+    <div><a href="/admin/financial-states">Retour</a></div>
+</div>
+
+{#if state.lateTicketCount > 0}
+<div class="notice notice-ko">{state.lateTicketCount} ticket(s) arrivé(s) en retard, comptés dans cet état.</div>
+{/if}
+{#if state.controlVariance && state.controlVariance.signum() != 0}
+<div class="notice notice-ko">Écart de contrôle : {state.controlVariance} (CA net {state.netTurnover} vs total des Z {state.controlTotal}).</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">CA financier</h2>
+    <table class="data-table">
+        <tbody>
+        <tr><th>CA brut</th><td>{state.grossTurnover}</td><th>Remises</th><td>{state.discountTotal}</td></tr>
+        <tr><th>Retours avec ticket</th><td>{state.refundWithTicketTotal}</td><th>Retours sans ticket</th><td>{state.refundWithoutTicketTotal}</td></tr>
+        <tr><th>CA net</th><td>{state.netTurnover}</td><th>TVA</th><td>{state.vatTotal}</td></tr>
+        <tr><th>Nb clients</th><td>{state.customerCount}</td><th>Panier moyen</th><td>{state.averageBasket}</td></tr>
+        <tr><th>Nb articles</th><td>{state.itemCount}</td><th>% alimentaire</th><td>{state.foodShare}</td></tr>
+        <tr><th>Annul. dernière ligne</th><td>{state.cancelledLineCount} / {state.cancelledLineTotal}</td><th>Annul. avalisées (fraude)</th><td>{state.endorsedCancelCount} / {state.endorsedCancelTotal}</td></tr>
+        <tr><th>Tickets abandonnés</th><td>{state.abandonedTicketCount} / {state.abandonedTicketTotal}</td><th>Cartes cadeaux émises</th><td>{state.giftCardCount} / {state.giftCardTotal}</td></tr>
+        </tbody>
+    </table>
+</div>
+
+{#for section in sections}
+<div class="card">
+    <h2 class="card-title">{section}</h2>
+    {#if state.sequence}
+    <p class="page-sub">
+        Export :
+        <a href="/admin/financial-states/{state.id}/export?section={section}&format=csv">CSV</a> ·
+        <a href="/admin/financial-states/{state.id}/export?section={section}&format=xlsx">Tableur</a> ·
+        <a href="/admin/financial-states/{state.id}/export?section={section}&format=pdf">PDF</a>
+    </p>
+    {/if}
+    <table class="data-table">
+        <thead>
+        <tr><th>Code</th><th>Libellé</th><th>Quantité</th><th>HT</th><th>TVA</th><th>TTC</th><th>Part</th></tr>
+        </thead>
+        <tbody>
+        {#for line in state.lines}
+        {#if line.section == section}
+        <tr>
+            <td>{line.code ?: '—'}</td>
+            <td>{line.label ?: ''}</td>
+            <td>{line.quantity ?: ''}</td>
+            <td>{line.amountExcludingTax ?: ''}</td>
+            <td>{line.vatAmount ?: ''}</td>
+            <td>{line.amount}</td>
+            <td>{line.share ?: ''}</td>
+        </tr>
+        {/if}
+        {/for}
+        </tbody>
+    </table>
+</div>
+{/for}
+{/body}

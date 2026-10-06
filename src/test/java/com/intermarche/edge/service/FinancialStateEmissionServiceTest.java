@@ -62,6 +62,7 @@ class FinancialStateEmissionServiceTest {
         FinancialStateEmissionService service = spy(new FinancialStateEmissionService());
         service.calculator = mock(FinancialStateCalculator.class);
         service.settings = mock(PosSettingsService.class);
+        service.technicalEventService = mock(TechnicalEventService.class);
         when(service.settings.floatMode()).thenReturn("FIXED");
         when(service.settings.financialHourlySlotMinutes()).thenReturn(60);
         when(service.settings.financialNomenclatureLevel()).thenReturn(1);
@@ -119,6 +120,9 @@ class FinancialStateEmissionServiceTest {
             assertTrue(z.automatic);
             assertEquals(0, z.lateTicketCount);
             verify(z, times(1)).persist();
+            verify(service.technicalEventService).log(
+                    eq(com.intermarche.edge.domain.session.TechnicalEvent.EventType.FINANCIAL_STATE_EMITTED),
+                    any(String.class));
             verify(service, never()).lateTicketsBefore(any(), any(), any());
         }
     }
@@ -164,6 +168,7 @@ class FinancialStateEmissionServiceTest {
         assertSame(last, z);
         assertEquals(2, z.printCount);
         verify(service, never()).closedTicketsBetween(any(), any(), any());
+        verify(service.technicalEventService, never()).log(any(), any(String.class));
     }
 
     /**
@@ -267,6 +272,34 @@ class FinancialStateEmissionServiceTest {
             assertEquals(prevTo, x.fromInstant);
             assertEquals("sig3", x.previousSignature);
             verify(x, never()).persist();
+            verify(service.technicalEventService).log(
+                    eq(com.intermarche.edge.domain.session.TechnicalEvent.EventType.FINANCIAL_STATE_READ),
+                    any(String.class));
+        }
+    }
+
+    /**
+     * A cashier-scope X journals a read carrying the cashier login (the log's
+     * cashier arm).
+     */
+    @Test
+    void readXForACashierLogsWithLogin() {
+        FinancialStateEmissionService service = newService();
+        Employee cashier = new Employee();
+        cashier.loginName = "alice";
+        doReturn(null).when(service).lastZ(StateScope.CASHIER, PeriodKind.WEEK, cashier);
+        doReturn(LocalDateTime.of(2026, 1, 1, 0, 0)).when(service).firstTicketInstant();
+        doReturn(List.of()).when(service).closedTicketsBetween(any(), any(), any());
+        doReturn(List.of()).when(service).abandonedTicketsBetween(any(), any(), any());
+        doReturn(List.of()).when(service).lateTicketsBefore(any(), any(), any());
+        doReturn(List.of()).when(service).refundsBetween(any(), any());
+        try (MockedConstruction<FinancialState> built = mockConstruction(FinancialState.class,
+                (mockState, ctx) -> when(mockState.computeSignature()).thenReturn("x"))) {
+            FinancialState x = service.readX(StateScope.CASHIER, PeriodKind.WEEK, cashier);
+            assertEquals(StateType.X, x.stateType);
+            verify(service.technicalEventService).log(
+                    eq(com.intermarche.edge.domain.session.TechnicalEvent.EventType.FINANCIAL_STATE_READ),
+                    any(String.class));
         }
     }
 
