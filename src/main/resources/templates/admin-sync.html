@@ -22,7 +22,7 @@
 {/if}
 
 <div class="sync-health {#if view.healthy}sync-health-ok{#else}sync-health-warn{/if}" role="status">
-    {#if view.healthy}Nœud synchronisé — aucune erreur de flux, outbox vide.{#else}Anomalie de synchronisation — {#if view.engineError}au moins un flux moteur en erreur. {/if}{#if view.outboxCount > 0}{view.outboxCount} élément(s) en attente dans l'outbox.{/if}{/if}
+    {#if view.healthy}Nœud synchronisé — aucune erreur de flux, outbox vide, rien en attente au fil de l'eau.{#else}Anomalie de synchronisation — {#if view.engineError}au moins un flux moteur en erreur. {/if}{#if view.outboxCount > 0}{view.outboxCount} élément(s) en attente dans l'outbox. {/if}{#if view.streamPending > 0}{view.streamPending} événement(s) non diffusé(s) au fil de l'eau.{/if}{/if}
 </div>
 
 <div class="card">
@@ -117,6 +117,53 @@
             {/fragment}
         </tbody>
     </table>
+</div>
+
+{! BO-11-02-05 : l'alerte et la reprise du fil de l'eau. Un abonné à jour ne
+ ! produit aucune ligne — un tableau de zéros est un tableau que personne ne
+ ! regarde. Rien n'est jamais abandonné : un événement non livré garde sa place
+ ! et son rang, et compte ses tentatives jusqu'à ce qu'il passe. !}
+<div class="card">
+    <h2 class="card-title">Fil de l'eau</h2>
+    {#if view.streamEnabled}
+    <p class="card-sub">Diffusion des ventes, retours et tickets monétiques aux fournisseurs de service abonnés, toutes les {view.streamSeconds} s. {view.streamPending} événement(s) en attente. Les destinataires se déclarent dans <a href="/admin/providers">Fournisseurs de service</a>.</p>
+    {#else}
+    <p class="card-sub">Diffusion au fil de l'eau désactivée sur cet échelon : rien n'est mis en file. L'activation est un paramètre, les destinataires se déclarent dans <a href="/admin/providers">Fournisseurs de service</a>.</p>
+    {/if}
+    <table class="sync-table">
+        <thead>
+            <tr><th>Abonné</th><th>En attente</th><th>Tentatives max</th><th>Dernière erreur</th><th>État</th></tr>
+        </thead>
+        <tbody>
+            {#for row in view.stream}
+            <tr class="{#if row.lastError}row-error{/if}">
+                <td>{row.label}</td>
+                <td>{row.pending}</td>
+                <td>{row.maxAttempts}</td>
+                <td class="cell-error">{#if row.lastError}{row.lastError}{#else}—{/if}</td>
+                <td>{#if row.reachable}<span class="badge badge-ok">Joignable</span>{#else}<span class="badge badge-off">Injoignable</span>{/if}</td>
+            </tr>
+            {/for}
+            {#if view.stream.isEmpty()}
+            <tr><td colspan="5" class="cell-empty">Rien en attente — tous les abonnés sont à jour.</td></tr>
+            {/if}
+        </tbody>
+    </table>
+    <form method="post" action="/admin/sync/stream">
+        <button class="btn btn-ghost" type="submit">Relancer la diffusion</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2 class="card-title">Flux sortants</h2>
+    <p class="card-sub">Onze flux : chiffre d'affaires, livre de caisse, CA par famille et par îlot, détail des transactions, synthèse de clôture, productivité des caisses, factures clients en compte (fichier plat), factures du jour vers l'ERP, ventilation TVA des commandes, panels marketing (archive) — et la conso fidélité par TVA, seul flux mensuel. Activation flux par flux, répertoire de dépôt et heure de bascule comptable s'administrent dans le paramétrage, par échelon. La régénération réécrit les mêmes fichiers : un flux est une fonction de sa période, pas un envoi qu'on rejoue.</p>
+    <form method="post" action="/admin/sync/export" class="sync-schedule-form">
+        <label class="sync-schedule-field">
+            <span>Journée comptable</span>
+            <input type="date" name="day">
+        </label>
+        <button class="btn btn-primary" type="submit">Régénérer les flux</button>
+    </form>
 </div>
 
 <div class="card">

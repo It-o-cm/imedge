@@ -18,6 +18,9 @@
         <!-- Skip only the unit suite (surefire) while ITs still run under
              failsafe: -DskipUTs=true for the E2E campaign / rafale. -->
         <skipUTs>false</skipUTs>
+        <!-- Skip the JavaScript test bench (vitest) with -DskipJsTests=true. -->
+        <skipJsTests>false</skipJsTests>
+        <exec-plugin.version>3.5.0</exec-plugin.version>
         <surefire-plugin.version>3.5.4</surefire-plugin.version>
         <jacoco-plugin.version>0.8.13</jacoco-plugin.version>
         <!-- Filled by jacoco:prepare-agent and injected into surefire's argLine.
@@ -114,7 +117,7 @@
         </dependency>
         <!-- Securite HTTP : active les interceptions @RolesAllowed et fournit
              le socle d'identite du back-office. Les fournisseurs d'identite
-             sont ecrits a la main (com.intermarche.pos.security) et lisent la
+             sont ecrits a la main (com.intermarche.edge.security) et lisent la
              table employees : quarkus-security-jpa n'est PAS utilise, son
              @Roles exigeant une colonne texte que le role enum n'offre pas. -->
         <dependency>
@@ -251,6 +254,35 @@
                         <maven.home>${maven.home}</maven.home>
                     </systemPropertyVariables>
                 </configuration>
+            </plugin>
+            <!-- The JavaScript test bench (vitest): the static browser sources under
+                 META-INF/resources/admin are covered by a plain jsdom bench, the same
+                 pattern as imvaluation's valuation-refresh tests. Bound to the test
+                 phase so `mvn test`/`verify` runs it alongside the Java suite; skip it
+                 with -DskipJsTests=true (needs `npm install` once for node_modules). -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>${exec-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>js-tests</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <skip>${skipJsTests}</skip>
+                            <executable>npx</executable>
+                            <workingDirectory>${project.basedir}</workingDirectory>
+                            <arguments>
+                                <argument>vitest</argument>
+                                <argument>run</argument>
+                                <argument>--coverage</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
             <!-- Coverage of the UNIT tests, which is where this project's tests live:
                  the quarkus-jacoco extension only instruments @QuarkusTest runs, and

@@ -1,11 +1,11 @@
 package com.intermarche.e2e;
 
-import com.intermarche.pos.domain.sale.DocumentType;
-import com.intermarche.pos.domain.session.DocumentCounter;
-import com.intermarche.pos.domain.session.TicketCounter;
-import com.intermarche.pos.domain.sync.RegisterCommand;
-import com.intermarche.pos.service.PeriodCloseService;
-import com.intermarche.pos.service.TicketNumberService;
+import com.intermarche.edge.domain.sale.DocumentType;
+import com.intermarche.edge.domain.session.DocumentCounter;
+import com.intermarche.edge.domain.session.TicketCounter;
+import com.intermarche.edge.domain.sync.RegisterCommand;
+import com.intermarche.edge.service.PeriodCloseService;
+import com.intermarche.edge.service.TicketNumberService;
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.QuarkusTestProfile;

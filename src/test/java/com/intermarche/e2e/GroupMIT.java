@@ -1,8 +1,8 @@
 package com.intermarche.e2e;
 
-import com.intermarche.pos.domain.catalog.ProductFamily;
-import com.intermarche.pos.domain.people.Employee;
-import com.intermarche.pos.domain.setting.PosSetting;
+import com.intermarche.edge.domain.catalog.ProductFamily;
+import com.intermarche.edge.domain.people.Employee;
+import com.intermarche.edge.domain.setting.PosSetting;
 import com.intermarche.e2e.support.FormLogin;
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;

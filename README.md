@@ -37,11 +37,14 @@ Les deux projets sont **autonomes** : imedge se compile, se teste et se déploie
 sans impos, et réciproquement.
 
 Le prix de cette autonomie est une **copie** : le modèle de domaine, les
-payloads de synchronisation et le back-office existent des deux côtés, dans le
-**même package** `com.intermarche.pos` et sous les mêmes noms de classes. C'est
-délibéré — les deux nœuds partagent un schéma de base et un format de fil, donc
-une modification de l'un se reporte sur l'autre par une simple copie de
-fichier. Ne jamais « améliorer » une classe copiée d'un seul côté.
+payloads de synchronisation et le back-office existent des deux côtés, sous les
+**mêmes noms de classes**. C'est délibéré — les deux nœuds partagent un schéma
+de base et un format de fil, donc une modification de l'un se reporte sur
+l'autre. Les **packages diffèrent** depuis le renommage : `com.intermarche.edge`
+ici, `com.intermarche.pos` dans impos. Reporter une modification n'est donc plus
+une copie de fichier brute mais une copie dont on réécrit la ligne `package` et
+les imports — et rien d'autre : le corps doit rester identique au caractère
+près. Ne jamais « améliorer » une classe copiée d'un seul côté.
 
 Ce qui n'existe QUE dans imedge : `imports/**`, `graphql/**`,
 `service/sync/store/**`, `service/sync/EngineFeed*`,

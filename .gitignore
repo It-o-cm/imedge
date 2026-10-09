@@ -1,3 +1,6 @@
+# Node / JavaScript test bench (vitest)
+node_modules/
+
 #Maven
 target/
 pom.xml.tag
@@ -44,3 +47,6 @@ nb-configuration.xml
 # TLS Certificates
 .certs/
 /.demo-stack/
+
+# Local H2 store of the node (throwaway dev data, never versioned)
+/data/

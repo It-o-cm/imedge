@@ -338,7 +338,7 @@ Notes de vérification (lecture du code, pour le relais) :
 ## D. Service du référentiel aux caisses [E] [R]
 
 `imports/RefExportResource` + `service/sync/store/RefExportService`. Garde commune (`gate`) : rôle ni store ni central → **403** « Ce nœud n'a pas le rôle store ou central » ; jeton configuré non vide et discordant → **401** « Jeton invalide » ; jeton absent → ouvert.
-**Domaines réels** : `RefPayloads.DOMAINS` = **16** (ENGINE_FEEDS, PRODUCTS, FAMILIES, TOUCH_GROUPS, VAT_RATES, PRICES, EMPLOYEES, COUPON_TYPES, ARTICLE_RANGES, ISLANDS, TENDERS, DOCUMENT_TEMPLATES, SETTINGS, CUSTOMERS, CURRENCIES, POSTAL_CODES) ; `RefPayloads.ECHELON_DOMAINS` = **4** (COUNTRIES, ENSEIGNES, PDVS, ECHELON_SETTINGS). Le `switch` de `getPage` couvre l'union exacte = **20** cas.
+**Domaines réels** : `RefPayloads.DOMAINS` = **17** (ENGINE_FEEDS, PRODUCTS, FAMILIES, TOUCH_GROUPS, VAT_RATES, PRICES, EMPLOYEES, COUPON_TYPES, ARTICLE_RANGES, ISLANDS, CHECKOUT_POINTS, TENDERS, DOCUMENT_TEMPLATES, SETTINGS, CUSTOMERS, CURRENCIES, POSTAL_CODES) ; `RefPayloads.ECHELON_DOMAINS` = **4** (COUNTRIES, ENSEIGNES, PDVS, ECHELON_SETTINGS). Le `switch` de `getPage` couvre l'union exacte = **21** cas.
 
 **D1 Empreintes par domaine** `GET /api/referential/versions` [E] [R]
 
@@ -346,7 +346,7 @@ Notes de vérification (lecture du code, pour le relais) :
 | --- | --- | --- |
 | Garde rôle | rôle register | 403 « Ce nœud n'a pas le rôle store ou central » |
 | Garde jeton | jeton discordant | 401 « Jeton invalide » |
-| Liste store | rôle store | 200 map SHA-256, **16** domaines (`DOMAINS`) |
+| Liste store | rôle store | 200 map SHA-256, **17** domaines (`DOMAINS`) |
 | Liste central | rôle central | 200 map, **4** domaines (`ECHELON_DOMAINS`), disjointe de la précédente |
 | Stabilité | deux appels sans changement | empreintes identiques (cache TTL 60 s) |
 | Recalcul | empreinte expirée (>60 s) | recalculée par domaine, insérée dans la map ordonnée |
@@ -367,6 +367,28 @@ Notes de vérification (lecture du code, pour le relais) :
 | Borne size > 5000 | `size=6000` | ramené à 1000 |
 | Borne page négative | `page=-1` | `Math.max(0, page)` → 0 |
 | Ordre d'application | domaine servi par ordre fixe (PRODUCTS avant FAMILIES, VAT_RATES avant PRICES via l'ordre de `DOMAINS`) | ordre annoncé respecté |
+
+**D3 Descente du point de contact au poste** (BO-03-09, BO-03-10) [E] [R]
+
+La caisse se nomme sur chaque tirage par l'en-tête `X-Pos-Terminal` ; le nœud s'en sert pour résoudre, et pour rien d'autre — il nomme, il ne prouve pas, la garde de rôle et le jeton restent seuls juges.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| Domaine CHECKOUT_POINTS | `GET /api/referential/CHECKOUT_POINTS` | 200, un DTO par point du magasin, ordre `terminalId`, douze champs, énumérations par NOM |
+| Instantané global | deux caisses différentes demandent le domaine | mêmes lignes : la caisse reçoit TOUS les points, pas le sien seul |
+| Type non décrit | point sans `tpvType` / sans type d'afficheur | champs à `null` sur le fil, jamais une valeur par défaut inventée |
+| Place dans l'ordre | position de CHECKOUT_POINTS dans `DOMAINS` | juste après ISLANDS : un point nomme son île, l'île existe d'abord |
+| SETTINGS sans en-tête | en-tête absent | résolution PDV seule — exactement l'ancien comportement |
+| SETTINGS en-tête vide | en-tête `"   "` | idem en-tête absent |
+| SETTINGS avec en-tête | en-tête `POS07` | chaîne complète PAYS → ENSEIGNE → PDV → ÎLOT → POINT DE CONTACT |
+| Terminal inconnu | en-tête d'un terminal sans point | **pas une erreur** : résolution PDV plus ce qui serait posé sur cet identifiant |
+| Spécificité | même clé posée à l'ÎLOT et au POINT | le point gagne ; posée à PDV et ÎLOT, l'île gagne |
+| Date d'effet | clé posée à l'ÎLOT puis au POINT avec une date future | ignorée jusqu'au jour dit |
+| Surcharge locale | clé posée sur le nœud ET résolue par terminal | la surcharge locale gagne, comme sur la résolution PDV |
+| **Empreinte par terminal** | deux caisses interrogent `/versions` dans la même fenêtre de 60 s | **chacune reçoit l'empreinte de SA résolution** ; indexée par domaine seul, la seconde s'entendrait répondre « rien n'a changé » et garderait les paramètres de la première |
+| Empreinte terminal nul | en-tête absent ou vide | clé de cache nue, partagée |
+| Empreinte domaine global | VAT_RATES demandé par deux caisses | une seule empreinte : un domaine global ne devient pas dépendant du terminal |
+| Cohérence empreinte/contenu | `/versions` puis `/{domain}` avec le même en-tête | le hash et les lignes viennent du même identifiant |
 
 ---
 
@@ -802,6 +824,150 @@ Surface `ui/supervision/SyncSupervisionResource` (+ `SyncSupervisionService`, `R
 | `pullSeconds` | Valeur de `pos.referential.pull-seconds` (déf. 300) | affichée telle quelle |
 | `deliverySeconds` | Valeur de `pos.valuation.feed-delivery-seconds` (déf. 30) | affichée telle quelle |
 | `pushSeconds` | Valeur de `pos.sync.interval-seconds` (déf. 10) | affichée telle quelle |
+
+**G13 Fil de l'eau** `service/sync/TicketStreamService` + `StreamEvent` + `StreamPayloads` (BO-11-02-02/03/04/05) [E] [R]
+
+Trois exigences, UN mécanisme : elles ne diffèrent que par qui lit. BO-11-02-02 expose les tickets aux applications tierces, BO-11-02-03 les tickets monétiques, BO-11-02-04 les données de transaction que la vidéosurveillance et la file unique consomment. Les destinataires ne sont pas écrits dans le code : ce sont les fournisseurs de service déclarés (M11), donc brancher un nouveau tiers est une ligne de back-office. Un abonné reçoit les types que son TYPE justifie — un collecteur monétique reçoit les tickets monétiques et aucun panier, un système d'exploitation magasin reçoit tickets et retours et aucune autorisation de carte.
+
+La mise en file se fait DANS la transaction d'ingestion, la livraison en dehors : un ticket consolidé mais non mis en file ne serait jamais diffusé, alors qu'un événement en file dont la livraison échoue est simplement réessayé. La charge est figée à la mise en file — c'est tout l'intérêt du fil de l'eau : le tiers est informé de ce qui s'est passé alors, pas de ce que la base contient quand le lien revient.
+
+**Rien n'est jamais abandonné** : pas de plafond de tentatives, pas de chemin d'abandon. L'exigence demande une reprise « sans perte de données » ; renoncer serait le seul mode de défaillance qu'elle interdit.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| Activation | diffusion désactivée sur l'échelon | rien mis en file, la base n'est pas même touchée |
+| Mise en file | ticket null, ticket sans numéro | pas un événement |
+| Mise en file | retour null, retour sans numéro | pas un événement |
+| Abonnés | aucun fournisseur déclaré | rien mis en file, la charge n'est même pas construite |
+| Abonnés | fournisseur hors service, sans adresse, sans clé | pas abonné : mettre en file pour lui serait mettre en file un échec certain |
+| Abonnés | type du destinataire | monétique → tickets monétiques ; exploitation et décisionnel → tickets et retours ; les deux ensembles ne se croisent jamais |
+| Monétique | vente en espèces | aucun ticket monétique : un collecteur monétique rapproche des autorisations, une vente en espèces n'en a aucune |
+| Monétique | vente par carte | ticket ET ticket monétique, chacun à son abonné ; le monétique porte le n° d'autorisation et le mode dégradé, **jamais le panier** |
+| Charge ticket | contenu | identité, statut, caissière, prise de poste, totaux, lignes (annulées marquées), règlements, PDV du nœud |
+| Image du ticket | aucun contenu imprimé poussé | ni image ni encodage : le lecteur doit distinguer « pas d'image » de « image que je n'ai pas su décoder » |
+| Image du ticket | compression non administrée | image en clair, encodage `plain` |
+| Image du ticket | compression administrée | gzip puis Base64, encodage `gzip+base64`, et le contenu se rouvre sur ce que la caisse a imprimé |
+| Re-poussée | ticket repoussé, événement encore EN ATTENTE | la ligne est **réécrite**, pas doublée ; tentatives et erreur remises à zéro — c'est un nouvel état, lui imputer les échecs du précédent se lirait comme un point d'accès qui refuse |
+| Re-poussée | ticket repoussé APRÈS livraison | nouvel événement, l'ancienne ligne remplacée : le ticket a changé après avoir été diffusé |
+| Charge illisible | charge non sérialisable | journalisée, rien mis en file, la vente n'est pas refusée pour autant |
+| Livraison | réponse 2xx | ligne supprimée — c'est ce que « livré » veut dire ; la clé présentée est celle de l'abonné, jamais une clé partagée |
+| Livraison | réponse non 2xx | une tentative de plus, `HTTP <code>` en dernière erreur, ligne conservée |
+| Livraison | hôte injoignable | une tentative de plus, « injoignable », ligne conservée |
+| Livraison | abonné passé hors service au back-office | **aucune tentative comptée** et aucun appel : le compteur doit se lire « l'autre bord échoue », pas « un administrateur a coupé » |
+| Livraison | abonné supprimé | événement conservé, intact et visible |
+| Livraison | un abonné en échec parmi deux | la passe continue : l'autre est livré |
+| Ordre | plusieurs événements en attente | les plus anciens d'abord : un tiers qui lit un flux de transactions l'attend dans l'ordre vécu par le magasin |
+| Healthcheck | tous les abonnés à jour | **aucune ligne** — un tableau de zéros est un tableau que personne ne regarde |
+| Healthcheck | deux abonnés en attente | une ligne chacun : en-cours, **pire** nombre de tentatives, dernière erreur, joignabilité |
+| Healthcheck | abonné sans libellé, abonné supprimé | nommé par son code |
+| Verdict du nœud | engine et outbox propres, un événement non diffusé | nœud **non** synchronisé : le fil de l'eau rejoint le verdict au lieu de se cacher dessous |
+| Verdict du nœud | en-cours sans erreur | en attente mais pas en erreur : un flux qui rattrape n'est pas un flux en panne |
+| Reprise manuelle | `POST /admin/sync/stream`, diffusion activée | une passe immédiate, journalisée au type `STREAM_DELIVERY_FORCED` avec le nombre d'événements livrés |
+| Reprise manuelle | diffusion désactivée | refusée, rien livré, rien journalisé : un bouton pressé sur un mécanisme éteint doit le dire |
+| Reprise manuelle | rôle non ADMIN | refusée par `@RolesAllowed` |
+| Boucle | diffusion désactivée | la passe ne part pas |
+| Boucle | échec quelconque | avalé, la boucle n'est jamais annulée pour le reste de la journée |
+| Mode école | ticket d'apprentissage | la caisse ne pousse pas le marquage « mode école » aujourd'hui : un ticket d'apprentissage voyage par son **statut**, pas par un mode. Écart nommé, pas silencieux |
+
+**G9 Flux sortants comptables** `service/export/OutboundFlowService` + `AccountingDay` + `FlatRecord` (BO-11-01-02 à 23 sauf -01/-07/-18/-20, BO-11-03-01, BO-10-04-14) [E]
+
+Onze flux produits depuis ce que le nœud détient déjà. Chaque entrée du catalogue déclare sa PÉRIODE (journée comptable, ou mois) et sa FORME (fichier séparé, fichier plat à champs positionnés, archive multi-membres) ; c'est ce qui fait tenir sous un seul `produce` un pli mensuel sur les tickets, un pli quotidien sur les factures et une archive de trois membres. Ajouter un flux, c'est une entrée de catalogue, un pli et une clé d'activation — jamais une branche dans le moteur.
+
+| Flux | Fichier | Période | Source |
+| --- | --- | --- | --- |
+| Chiffre d'affaires (BO-11-01-03) | `tranca3` | journée | tickets |
+| Livre de caisse (BO-11-01-04) | `tranfc` | journée | tickets |
+| CA par famille et par îlot (BO-11-01-08) | `cafamil` | journée | tickets |
+| Détail des transactions (BO-11-01-14) | `trandet` | journée | tickets |
+| Synthèse de clôture (BO-11-01-17) | `transyn` | journée | tickets |
+| Productivité des caisses (BO-11-01-21) | `prodcai` | journée | tickets |
+| Factures clients en compte (BO-11-01-06/12) | `clifact.dat` | journée | factures |
+| Factures du jour vers l'ERP (BO-11-01-22) | `facterp` | journée | factures |
+| Conso fidélité par TVA (BO-11-01-13) | `fidtva` | **mois** | tickets |
+| Ventilation TVA des commandes (BO-11-01-23) | `tvacmde` | journée | commandes |
+| Panels marketing (BO-11-01-19) | `MS.<PDV>.<jour>.zip` | journée | tickets |
+
+Activation **flux par flux**, répertoire de dépôt et heure de bascule sont des paramètres administrés, donc résolus par échelon Pays / Enseigne / PDV — c'est ce que le cahier des charges demande, et ce que la résolution du catalogue donne déjà.
+
+`tranca3`, `tranfc`, `clifact` et les trois membres de l'archive sont les noms du cahier des charges et ne se maquillent pas. Les autres sont des noms maison, à confirmer contre l'annexe du système receveur : le cahier des charges demande le flux sans nommer son fichier. Même réserve sur la DISPOSITION de `clifact.dat` : l'écrivain à champs positionnés est le mécanisme, l'ordre et la largeur des champs sont la lecture maison de l'exigence.
+
+Ce qui n'est PAS dans ce moteur, et pour quelle raison — un flux absent l'est pour un motif nommé, jamais faute de rédacteur : les vignettes (BO-11-01-20) et les bons GS1 (BO-11-01-18) demandent une capture caisse qui n'existe pas ; Catalina (BO-11-01-07), SAFT, NEXO et les étiquettes électroniques sont des protocoles tiers, chacun son chantier, et chacun déclare désormais son point d'accès dans M11 plutôt que dans un flux.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| Journée comptable | bascule à 0 | journée comptable = journée civile, minuit compris |
+| Journée comptable | vente à 1 h 30, bascule à 2 h | rattachée à la journée PRÉCÉDENTE |
+| Journée comptable | vente à 2 h 00 pile, bascule à 2 h | rattachée à la journée NOUVELLE (la borne appartient au jour qui s'ouvre) |
+| Journée comptable | bascule hors 0..23 (ligne corrompue) | lue comme 0, les exports ne s'arrêtent pas |
+| Bornes | début et fin de deux journées consécutives | elles se rejoignent sans se chevaucher : un ticket compté une fois |
+| Activation | flux non activé sur l'échelon | aucun fichier, aucune erreur |
+| Destination | flux activé, répertoire non administré | aucun fichier, avertissement au journal — un fichier déposé où personne ne le relève est pire qu'absent |
+| Journée vide | aucun ticket clôturé | **aucun fichier**, pas un fichier vide : les deux ne disent pas la même chose au système receveur |
+| CA par TVA | deux taux sur la journée | une ligne par taux (TTC, HT, TVA) plus une ligne TOTAL |
+| CA, ligne annulée | ligne `cancelled` sur un ticket clôturé | exclue du chiffre d'affaires, conservée sur le ticket pour la piste d'audit |
+| CA, montant nul | ligne sans total | repliée à zéro, la ventilation ne tombe pas |
+| Livre de caisse | deux moyens de paiement, trois règlements | une ligne par moyen avec son nombre de règlements, plus une ligne TOTAL |
+| Format des montants | tous les flux | deux décimales, point décimal, aucune locale — le fichier est lu par un système, pas par une personne |
+| Statut des tickets | tickets OPEN, PARKED, CANCELLED présents en base | jamais exportés : seuls les CLOSED sont des ventes |
+| Boucle quotidienne | journée déjà produite | rien, sans réécrire le fichier |
+| Boucle quotidienne | journée comptable terminée | produite une fois, puis mémorisée |
+| Boucle quotidienne | écriture en échec | journée **non** mémorisée, la minute suivante réessaie ; l'échec n'annule jamais la boucle |
+| Régénération à la demande | `POST /admin/sync/export` sans date | la veille |
+| Régénération à la demande | date `aaaa-mm-jj` valide | cette journée, même chemin que la production planifiée |
+| Régénération à la demande | date illisible | refusée avec un message nommant le format attendu, rien n'est produit |
+| Régénération à la demande | rôle non ADMIN | refusée par `@RolesAllowed` |
+| Taux de TVA sur le fichier | taux à 5,5 % | écrit `0.0550` : la fraction du référentiel sur quatre décimales, jamais `0.06` — un taux qui n'existe pas sur un fichier avec lequel le receveur calcule la taxe |
+| CA par famille/îlot | deux îlots, deux familles | une ligne par couple (îlot, famille) : la même famille sur deux îlots fait deux lignes, plus une ligne TOTAL |
+| CA par famille/îlot | caisse absente du parc, point sans n° de caisse, point sans îlot | code îlot vide, jamais d'échec ; un point sans n° de caisse n'est pas indexé |
+| CA par famille/îlot | ligne sans famille, sans quantité | code famille vide, quantité 0,000 |
+| CA par famille/îlot | libellé famille porté par la 2e ligne seulement | libellé pris sur la PREMIÈRE ligne qui en porte un, jamais écrasé ensuite — sinon la cellule est libellée par hasard |
+| CA par famille/îlot | remise de ligne : prix d'origine 7,00 → 6,00 × 2 | colonne REMISES à 2,00 |
+| CA par famille/îlot | prix FORCÉ À LA HAUSSE | remise à 0,00, jamais négative — un forçage n'est pas une remise |
+| CA par famille/îlot | ligne sans prix d'origine, sans prix, sans quantité | remise à 0,00 sur chacune des trois jambes |
+| CA par famille/îlot | avantages fidélité du ticket | **absents de la colonne REMISES** : un avantage est porté par le ticket, pas par une ligne ; l'attribuer à une famille serait l'inventer |
+| Détail des transactions | ligne annulée | **présente**, marquée `O` en dernière colonne : une ligne retirée du détail ne peut plus jamais être recomptée |
+| Détail des transactions | ticket sans date de clôture, sans numéro, sans caisse | colonnes vides, la ligne sort quand même |
+| Détail des transactions | ticket sans caissière, caissière sans login | `INCONNU` sur les deux jambes |
+| Séparateur dans un libellé | libellé portant `;` | remplacé par une espace : le nombre de colonnes de la ligne ne bouge pas |
+| Synthèse de clôture | ticket avec articles, ticket sans article | comptés séparément : ventes et non-ventes (ouvertures de tiroir) |
+| Synthèse de clôture | trois tickets sur une caisse, un sur une autre | une ligne par caisse avec premier et dernier numéro, plus une ligne TOTAL (sans plage) |
+| Synthèse de clôture | ticket sans total, sans numéro | repliés à 0,00 et à vide |
+| Productivité | deux tickets d'une même prise de poste | une ligne : tickets, articles, CA, durée, articles/heure, panier moyen |
+| Productivité | même caissière sur deux prises de poste | **deux lignes** : une productivité moyennée sur les deux ne dit rien d'aucune |
+| Productivité | ticket rattaché à aucune session | prise de poste vide, durée 0, cadence 0 |
+| Productivité | session encore ouverte | mesurée jusqu'à sa dernière vente, pas écartée : la journée est terminée même si la session est restée ouverte |
+| Productivité | session sans ouverture, sans fin du tout, bornes inversées | durée 0 sur les trois jambes — jamais négative, le receveur divise par elle |
+| Fidélité/TVA | cadence | fichier stampé `aaaamm`, lecture des tickets du MOIS, bornes du mois prises aux journées comptables de son premier et de son dernier matin |
+| Fidélité/TVA | règlement fidélité sur un panier à deux taux | ventilé au prorata du TTC de chaque taux |
+| Fidélité/TVA | ventilation non divisible (10,00 sur trois tiers égaux) | 3,33 + 3,33 + **3,34** : le dernier taux absorbe le résidu, le flux se reboucle exactement sur ce qui a été réglé |
+| Fidélité/TVA | ticket réglé sans fidélité, règlement fidélité sans montant | ignorés |
+| Fidélité/TVA | règlement fidélité sur un ticket sans base taxable | porté au taux zéro, pas jeté |
+| Fidélité/TVA | mois sans aucun ticket clôturé | aucun fichier |
+| Factures (plat) | facture avec son ticket | un enregistrement `H` par document, un `L` par ligne facturée, chaque champ à son offset |
+| Factures (plat) | ligne annulée | absente : une ligne annulée n'a jamais été facturée |
+| Factures (plat) | document dont le ticket n'est plus rattaché | **en-tête seul** : un en-tête manquant est une créance manquante |
+| Factures (plat) | type, instant, adresse, totaux absents | blancs et zéros, chaque champ suivant toujours à son offset |
+| Factures (plat) | civilité | prise sur la fiche client, blanche en son absence |
+| Factures (plat) | taux de TVA | en points de base : `0.2000` devient `002000` |
+| Factures (plat) | écotaxe | dernier champ de l'en-tête, en centimes (BO-10-04-14) |
+| Format plat | texte plus long que son champ | **tronqué**, jamais laissé décaler la suite |
+| Format plat | texte plus court, texte absent | complété d'espaces à la largeur exacte |
+| Format plat | saut de ligne ou `;` dans une valeur | remplacé par une espace : un saut de ligne couperait un enregistrement en deux |
+| Format plat | montant négatif | signe en première position du champ |
+| Format plat | montant trop large pour son champ | écrit en **neuf** : un montant tronqué est un faux plausible, un champ de neuf est visiblement impossible |
+| Format plat | montant négatif trop large | déborde une position plus tôt, le signe prenant un caractère |
+| Factures ERP | document imprimé au moins une fois | colonne DUPLICATA à `O` — une réimpression n'est pas une seconde créance |
+| Factures ERP | document sans totaux | 0,00 par colonne, ligne quand même émise |
+| Factures ERP | journée sans aucun document | aucun des deux fichiers factures |
+| TVA commandes | commande à deux taux | une ligne par taux avec son nombre de lignes, plus une ligne TOTAL comptant les commandes |
+| TVA commandes | commande **sans lignes** | comptée entière au taux zéro : son total est un engagement que la déclaration doit voir |
+| TVA commandes | ligne sans taux, ligne sans total | taux zéro, montant zéro |
+| TVA commandes | journée sans commande | aucun fichier |
+| TVA commandes | date de la commande | `orderDate`, date MÉTIER posée à la création — pas le `createdAt` d'audit, qui déménagerait la commande le jour où on la corrige |
+| Panels | archive | un seul zip portant les trois membres `Scannels`, `Scvenmag`, `Tlogextr`, suffixés du jour de l'année sur trois chiffres |
+| Panels | nom de l'archive | `MS.<PDV>.<jour>.zip` quand le nœud connaît son PDV |
+| Panels | nœud sans PDV | retombe sur le nom du catalogue, jamais le mot « null » dans un nom sur lequel l'autre bord fait sa reconnaissance |
+| Panels | ligne annulée | hors du panel de scan et hors de la synthèse magasin |
 
 ---
 
@@ -1619,6 +1785,36 @@ Nouveau référentiel de devises administré au nœud magasin et descendu aux ca
 | Delete | succès | « Devise supprimée. » true |
 | Descente | devise active | exportée par `CURRENCIES` et appliquée en caisse par `applyCurrencies` (chemin existant) |
 
+**M11 Fournisseurs de service** `/admin/providers` [E] — `AdminProviderResource` + `ServiceProvider` (BO-03-11-01 à 06)
+
+La page est la DÉCLARATION, jamais la conversation : elle enregistre que les cartes cadeaux sont émises par un fournisseur parlé en NEXO Retailer à telle adresse, appelé au scan. Porter un protocole reste une livraison, et un fournisseur déclaré dans un protocole que cette version ne porte pas n'est simplement jamais appelé. C'est le préalable des flux à protocole — Catalina, SAFT, NEXO, étiquettes électroniques, borne de prix — qui déclarent tous leur point d'accès ici au lieu de le recâbler chacun en dur.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| Écran | ADMIN | 200, déclaration en ordre de code, catalogues type / protocole / phase d'appel |
+| Écran | clé d'authentification posée | la page reçoit `hasCredential`, **jamais la clé** : pas d'affichage, pas d'export, pas de log |
+| Journal technique | POST `/save` | le formulaire posté n'est **pas** journalisé, contrairement aux autres écrans d'administration : il porte la clé |
+| Save | code absent ou blanc | « Le code du fournisseur est obligatoire. » false |
+| Save | type inconnu | « Type de fournisseur inconnu. » false |
+| Save | protocole inconnu | « Protocole inconnu. » false |
+| Save | phase d'appel inconnue | « Phase d'appel inconnue. » false |
+| Save | création | ligne créée avec type, protocole, phase, adresse, sélection d'articles, gabarit ; « Fournisseur déclaré. » true |
+| Save | code réutilisé | mise à jour sur place, rien de persisté deux fois ; « Fournisseur enregistré. » true |
+| Save | clé postée | enregistrée |
+| Save | champ clé **vide** | la clé enregistrée est **conservée** : le formulaire ne peut pas la réafficher, donc corriger un libellé la posterait vide et débrancherait le fournisseur |
+| Save | case « en service » décochée | fournisseur hors service |
+| Clear credential | code inconnu | « Fournisseur inconnu. » false |
+| Clear credential | succès | clé vidée — il faut un chemin pour RETIRER une clé, puisqu'un champ vide la conserve |
+| Delete | code inconnu | « Fournisseur inconnu. » false |
+| Delete | succès | ligne supprimée ; « Fournisseur supprimé. » true |
+| `hasCredential` | clé nulle / faite d'espaces / posée | false, false, true — une clé faite d'espaces n'authentifie rien |
+| `isCalledDuringSale` | phase nulle / hors vente / chacune des trois phases de vente | false, false, true ×3 |
+| `isReachable` | hors service / sans adresse / adresse blanche / sans clé / nominal | les quatre refus séparément, puis true — ils ne disent pas la même chose et l'écran le dit |
+| `findByCode` | null / blanc | null **sans toucher la base** |
+| `findByCode` | code entouré d'espaces | trimé avant la recherche |
+| Défauts | déclaration neuve | type dématérialisé, protocole HTTP/JSON, phase **hors vente**, en service, sans clé — un fournisseur n'arrive pas sur le chemin d'encaissement en oubliant de dire le contraire |
+| Menu | — | `Feature.SERVICE_PROVIDER` dans PARAMETRAGE, chemin `/admin/providers` : l'écran existe dans le menu parce qu'une feature le nomme, et il se cache par profil |
+
 ---
 
 ## N. Campagnes et offres [E] [V]
@@ -1737,7 +1933,7 @@ Nouveau référentiel de devises administré au nœud magasin et descendu aux ca
 
 ---
 
-Fichiers lus (chemins absolus) : `/Users/henridarmet/Documents/Workspaces/imedge/src/main/java/com/intermarche/pos/ui/journal/JournalResource.java`, `.../ui/journal/JournalService.java`, `.../ui/dashboard/DashboardResource.java`, `.../ui/dashboard/DashboardService.java`, `.../ui/admin/AdminSettingsResource.java`, `.../ui/admin/AdminStoreResource.java`, `.../ui/admin/AdminTenderResource.java`, `.../ui/admin/AdminTouchResource.java`, `.../ui/admin/AdminCouponResource.java`, `.../ui/admin/AdminCampaignResource.java`, `.../ui/admin/AdminCustomerResource.java`, `.../service/campaign/CampaignService.java`, `.../service/campaign/CampaignFeedProjector.java`, `.../service/PosSettingsService.java`, `.../imports/SyncIngestResource.java`, `.../service/sync/store/SyncIngestService.java`, `.../imports/AccountCustomerCsvResource.java`, `.../domain/payment/AccountCustomer.java`.
+Fichiers lus (chemins absolus) : `/Users/henridarmet/Documents/Workspaces/imedge/src/main/java/com/intermarche/edge/ui/journal/JournalResource.java`, `.../ui/journal/JournalService.java`, `.../ui/dashboard/DashboardResource.java`, `.../ui/dashboard/DashboardService.java`, `.../ui/admin/AdminSettingsResource.java`, `.../ui/admin/AdminStoreResource.java`, `.../ui/admin/AdminTenderResource.java`, `.../ui/admin/AdminTouchResource.java`, `.../ui/admin/AdminCouponResource.java`, `.../ui/admin/AdminCampaignResource.java`, `.../ui/admin/AdminCustomerResource.java`, `.../service/campaign/CampaignService.java`, `.../service/campaign/CampaignFeedProjector.java`, `.../service/PosSettingsService.java`, `.../imports/SyncIngestResource.java`, `.../service/sync/store/SyncIngestService.java`, `.../imports/AccountCustomerCsvResource.java`, `.../domain/payment/AccountCustomer.java`.
 
 Points de code notables (au-delà de S-C) : la fiche magasin ne lit jamais le code PDV du form ; `save` client ne lit ni `accountNumber` ni `origin` ; l'ingestion caisse ne pose jamais `origin` (défaut REGISTER en création, conservation en update) ; `CampaignFeedProjector` livre `BUDGET_GROUPS` avant `OFFERS` ; les appels superviseur du dashboard ne sont exposés que si `dashboardAlertsEnabled()`.
 
@@ -2043,7 +2239,7 @@ Ce catalogue énumère, par fonctionnalité, chaque fonction et chacun de ses ca
 nominal et d'erreur (colonne *Attendu* = code HTTP + message exact / effet). La vue
 condensée antérieure (151 scénarios) est remplacée par ces tables exhaustives.
 
-État des tests écrits aujourd'hui : `src/test/java/com/intermarche/pos/**IT.java`
+État des tests écrits aujourd'hui : `src/test/java/com/intermarche/edge/**IT.java`
 ne contient qu'une classe, `SecurityExtensionLivenessIT` (3 tests) — elle couvre trois
 gardes de sécurité : import CSV anonyme refusé (B1/F), adresse par domaine retirée,
 requête GraphQL anonyme refusée (P). La consolidation deux-nœuds (une caisse pousse,
@@ -2052,7 +2248,7 @@ le reste est à écrire.
 
 ## Convention d'implémentation
 
-Une classe par groupe, `Group<X>IT` dans `com.intermarche.pos.e2e`, un `@Test` par
+Une classe par groupe, `Group<X>IT` dans `com.intermarche.e2e`, un `@Test` par
 fonction/cas, l'identifiant de la fonctionnalité dans le nom de la méthode et sa
 javadoc. `@QuarkusTest` est ici légitime — c'est la couche qui boote l'application,
 contrairement aux tests unitaires que `CLAUDE.md` interdit de booter. Failsafe est déjà

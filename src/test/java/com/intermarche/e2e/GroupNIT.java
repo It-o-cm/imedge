@@ -1,7 +1,7 @@
 package com.intermarche.e2e;
 
-import com.intermarche.pos.domain.campaign.Campaign;
-import com.intermarche.pos.domain.people.Employee;
+import com.intermarche.edge.domain.campaign.Campaign;
+import com.intermarche.edge.domain.people.Employee;
 import com.intermarche.e2e.support.FormLogin;
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;

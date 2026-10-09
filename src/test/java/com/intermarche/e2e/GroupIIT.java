@@ -1,8 +1,8 @@
 package com.intermarche.e2e;
 
-import com.intermarche.pos.domain.safe.AccountingPeriod;
-import com.intermarche.pos.domain.safe.CoinMachine;
-import com.intermarche.pos.domain.safe.SafeMovement;
+import com.intermarche.edge.domain.safe.AccountingPeriod;
+import com.intermarche.edge.domain.safe.CoinMachine;
+import com.intermarche.edge.domain.safe.SafeMovement;
 import com.intermarche.e2e.support.FormLogin;
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;

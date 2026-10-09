@@ -1,9 +1,9 @@
 package com.intermarche.e2e;
 
-import com.intermarche.pos.domain.payment.AccountCustomer;
-import com.intermarche.pos.domain.people.Employee;
+import com.intermarche.edge.domain.payment.AccountCustomer;
+import com.intermarche.edge.domain.people.Employee;
 import com.intermarche.e2e.support.FormLogin;
-import com.intermarche.pos.service.PosSettingsService;
+import com.intermarche.edge.service.PosSettingsService;
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.QuarkusTestProfile;

@@ -1,13 +1,13 @@
 package com.intermarche.e2e;
 
-import com.intermarche.pos.domain.barcode.BalanceTicket;
-import com.intermarche.pos.domain.payment.AccountCustomer;
-import com.intermarche.pos.domain.sale.Invoice;
-import com.intermarche.pos.domain.sale.Refund;
-import com.intermarche.pos.domain.sale.Ticket;
-import com.intermarche.pos.domain.session.CashMovement;
-import com.intermarche.pos.domain.session.CashSession;
-import com.intermarche.pos.domain.session.TechnicalEvent;
+import com.intermarche.edge.domain.barcode.BalanceTicket;
+import com.intermarche.edge.domain.payment.AccountCustomer;
+import com.intermarche.edge.domain.sale.Invoice;
+import com.intermarche.edge.domain.sale.Refund;
+import com.intermarche.edge.domain.sale.Ticket;
+import com.intermarche.edge.domain.session.CashMovement;
+import com.intermarche.edge.domain.session.CashSession;
+import com.intermarche.edge.domain.session.TechnicalEvent;
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.QuarkusTestProfile;

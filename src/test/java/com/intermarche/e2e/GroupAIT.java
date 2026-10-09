@@ -1,9 +1,9 @@
 package com.intermarche.e2e;
 
-import com.intermarche.pos.domain.people.Employee;
-import com.intermarche.pos.domain.people.EmployeeProfile;
-import com.intermarche.pos.domain.people.Profile;
-import com.intermarche.pos.domain.people.UserFavorite;
+import com.intermarche.edge.domain.people.Employee;
+import com.intermarche.edge.domain.people.EmployeeProfile;
+import com.intermarche.edge.domain.people.Profile;
+import com.intermarche.edge.domain.people.UserFavorite;
 import com.intermarche.e2e.support.FormLogin;
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;

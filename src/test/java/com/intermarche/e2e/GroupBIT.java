@@ -1,6 +1,6 @@
 package com.intermarche.e2e;
 
-import com.intermarche.pos.domain.sync.RegisterCommand;
+import com.intermarche.edge.domain.sync.RegisterCommand;
 import io.quarkus.narayana.jta.QuarkusTransaction;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.QuarkusTestProfile;

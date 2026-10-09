@@ -6,10 +6,13 @@ back office and supervises the line. It sells nothing — no drawer, no
 scanner, no payment terminal, no sale screen.
 
 The domain model, the sync payloads and the back office are a COPY of
-impos', kept file-identical on purpose (same package
-com.intermarche.pos, same class names): the two nodes share a database
-schema and a wire format, so a change to either must be carried across
-by a plain file copy. Never "improve" a copied class on one side only.
+impos', kept identical on purpose (same class names): the two nodes
+share a database schema and a wire format, so a change to either must
+be carried across. The packages differ — com.intermarche.edge here,
+com.intermarche.pos in impos — so carrying a change across means
+rewriting the package line and the imports, and nothing else: the body
+must stay identical to the character. Never "improve" a copied class on
+one side only.
 
 ## Test architecture — NON-NEGOTIABLE
 - Plain unit tests only: JUnit 5 + Mockito. NEVER @QuarkusTest,
