@@ -95,6 +95,34 @@
 </div>
 
 <div class="card">
+    <h2 class="card-title">Audit des mises à jour du référentiel</h2>
+    {#if view.auditEnabled}
+    <p class="card-sub">Les {view.audits.size} dernières intégrations, la plus récente en tête.</p>
+    <table class="sync-table">
+        <thead>
+            <tr><th>Domaine</th><th>Empreinte</th><th>Horodatage</th><th>Résultat</th><th>Détail</th></tr>
+        </thead>
+        <tbody>
+            {#for audit in view.audits}
+            <tr class="{#if audit.failed}row-error{/if}">
+                <td>{audit.domain}</td>
+                <td class="mono">{audit.fingerprint}</td>
+                <td>{audit.appliedAt}</td>
+                <td>{audit.outcome}</td>
+                <td class="cell-error">{#if audit.detail}{audit.detail}{#else}—{/if}</td>
+            </tr>
+            {/for}
+            {#if view.audits.isEmpty()}
+            <tr><td colspan="5" class="cell-empty">Aucune intégration tracée depuis l'activation.</td></tr>
+            {/if}
+        </tbody>
+    </table>
+    {#else}
+    <p class="card-sub">Traçage désactivé. Activez « Tracer les intégrations de référentiel » dans les paramètres pour conserver l'historique daté de chaque intégration.</p>
+    {/if}
+</div>
+
+<div class="card">
     <h2 class="card-title">Outbox magasin</h2>
     <p class="card-sub">Purge automatique toutes les {view.pushSeconds} s. {view.outboxCount} élément(s) en attente.</p>
     <table class="sync-table">
@@ -225,8 +253,8 @@
     <p class="card-sub">Aucune session ouverte sur ce nœud.</p>
     {/if}
 </div>
-<script src="/admin/confirm.js"></script>
-<script src="/admin/sync-refresh.js"></script>
+<script src="/admin-assets/confirm.js"></script>
+<script src="/admin-assets/sync-refresh.js"></script>
 {/body}
 
 {#footer}La supervision est locale à ce nœud : elle n'affiche jamais l'état d'une autre caisse (une caisse coupée du réseau continue de vendre).{/footer}

@@ -54,6 +54,8 @@
         <span class="vat-head vat-rate">Taux</span>
         <span class="vat-head"></span>
         <span class="vat-head">Libellé</span>
+        <span class="vat-head">Pays</span>
+        <span class="vat-head">Mention légale</span>
         <span class="vat-head"></span>
         <span class="vat-head"></span>
         {#for row in rows}
@@ -63,6 +65,12 @@
             <input class="input-control vat-rate" type="text" name="ratePercent" value="{row.rate.getRateFormatted()}" required aria-label="Taux en pourcentage">
             <span class="vat-unit">%</span>
             <input class="input-control vat-label" type="text" name="label" maxlength="60" value="{row.rate.label ?: ''}" placeholder="Sans libellé" aria-label="Libellé du régime">
+            {! BO-02-02-02 : le pays auquel le régime répond et la mention légale
+             ! qu'il impose aux documents. Les deux facultatifs : un magasin d'un
+             ! seul pays qui ne doit aucune mention n'administre ni l'un ni l'autre
+             ! et le ticket imprime ce qu'il imprimait. !}
+            <input class="input-control vat-country" type="text" name="country" maxlength="3" value="{row.rate.country ?: ''}" placeholder="FR" aria-label="Pays du régime">
+            <input class="input-control vat-mention" type="text" name="legalMention" maxlength="160" value="{row.rate.legalMention ?: ''}" placeholder="Sans mention" aria-label="Mention légale du régime">
             <button class="btn btn-primary" type="submit">Enregistrer</button>
             <span class="vat-remove">
                 {#if row.removable}
@@ -74,7 +82,7 @@
         </form>
         {/for}
     </div>
-    <p class="page-sub">Un régime référencé par au moins un prix ne peut pas être retiré : repointez ces prix par un import avant de le supprimer. Corriger un numéro ne détache aucun prix, mais le prochain fichier qui nomme l'ancien numéro ne trouvera plus rien.</p>
+    <p class="page-sub">Le pays et la mention légale sont facultatifs : la mention est imprimée sous la ventilation de TVA des documents qui énoncent une taxe — ticket de vente, facture, avoir et ticket de retour — une fois par mention distincte, même si deux régimes la partagent. Un régime référencé par au moins un prix ne peut pas être retiré : repointez ces prix par un import avant de le supprimer. Corriger un numéro ne détache aucun prix, mais le prochain fichier qui nomme l'ancien numéro ne trouvera plus rien.</p>
     {/if}
 </div>
 
@@ -85,6 +93,8 @@
         <input class="input-control vat-rate" type="text" name="ratePercent" required aria-label="Taux en pourcentage" placeholder="5,5">
         <span class="vat-unit">%</span>
         <input class="input-control vat-label" type="text" name="label" maxlength="60" placeholder="Taux réduit" aria-label="Libellé du régime">
+        <input class="input-control vat-country" type="text" name="country" maxlength="3" placeholder="FR" aria-label="Pays du régime">
+        <input class="input-control vat-mention" type="text" name="legalMention" maxlength="160" placeholder="Mention légale" aria-label="Mention légale du régime">
         <button class="btn btn-primary" type="submit">Créer</button>
         <span class="vat-remove"></span>
     </form>

@@ -145,7 +145,12 @@
             </div>
             <div class="field">
                 <label class="field-label" for="s-value">Valeur</label>
+                {! Deux champs pour une seule valeur : le champ libre, et la liste
+                 ! des valeurs permises quand le parametre choisi en a. Celui qui
+                 ! ne sert pas est DESACTIVE, donc non soumis — le formulaire ne
+                 ! porte jamais deux "value". !}
                 <input class="input-control" id="s-value" type="text" name="value" maxlength="255">
+                <select class="input-control" id="s-value-choice" name="value" style="display:none;" disabled></select>
             </div>
             <div class="field">
                 <label class="field-label" for="s-effective">Date d'effet (optionnel)</label>
@@ -156,6 +161,42 @@
         <div class="page-actions"><button class="btn btn-primary" type="submit">Poser le paramètre</button></div>
     </form>
 </div>
+
+<script>
+  /* Les valeurs permises par parametre, telles que le catalogue les declare. */
+  var CLOSED_VALUES = {closedValues.raw};
+
+  (function () {
+    var key = document.getElementById('s-key');
+    var free = document.getElementById('s-value');
+    var list = document.getElementById('s-value-choice');
+    /* Rebranche le champ sur la nature du parametre choisi : une liste fermee
+       se CHOISIT, le reste se tape. */
+    function bindValueField() {
+      var values = CLOSED_VALUES[key.value];
+      if (!values) {
+        list.style.display = 'none';
+        list.disabled = true;
+        free.style.display = '';
+        free.disabled = false;
+        return;
+      }
+      list.innerHTML = '';
+      values.forEach(function (value) {
+        var option = document.createElement('option');
+        option.value = value;
+        option.textContent = value === '' ? '— aucune —' : value;
+        list.appendChild(option);
+      });
+      free.style.display = 'none';
+      free.disabled = true;
+      list.style.display = '';
+      list.disabled = false;
+    }
+    key.addEventListener('change', bindValueField);
+    bindValueField();
+  })();
+</script>
 
 <div class="card">
     <h2 class="card-title">Personnalisations (BO-03-12-07)</h2>

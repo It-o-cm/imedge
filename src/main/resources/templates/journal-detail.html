@@ -104,7 +104,7 @@
         <tbody>
             {#for payment in ticket.payments}
             <tr>
-                <td>{payment.method}</td>
+                <td>{payment.method}{#if payment.entryMode} — {payment.entryMode}{/if}</td>
                 <td>{payment.amount}</td>
             </tr>
             {/for}

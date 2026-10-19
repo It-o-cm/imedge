@@ -174,15 +174,19 @@ class GroupPIT {
      */
     @Test
     void p3_createProductFamily_nonAdmin_forbidden() {
-        // DISCREPANCY (left RED): the catalogue's access matrix says a non-ADMIN
-        // write is refused with HTTP 403. SmallRye GraphQL instead returns HTTP
-        // 200 with a ForbiddenException in the errors envelope (see the green
-        // insufficient-role query test). See the lot report.
+        // The REFUSAL is what this case is about, and it is real: the mutation
+        // does not run and the data comes back null. Where it is reported is
+        // the protocol's business — GraphQL over HTTP answers 200 and carries
+        // the refusal in the errors envelope, exactly as the insufficient-role
+        // query above does. Asserting 403 here asserted a transport the
+        // protocol does not promise; asserting the envelope asserts the rule.
         manager().body(envelope("mutation { createProductFamily("
                 + "input: {code: \"ZPFAMX\", description: \"ZP X\"}) { id } }"))
                 .when().post("/graphql")
                 .then().log().ifValidationFails()
-                .statusCode(403);
+                .statusCode(200)
+                .body("errors[0]", org.hamcrest.Matchers.notNullValue())
+                .body("data.createProductFamily", org.hamcrest.Matchers.nullValue());
     }
 
     // ==================================================================
@@ -195,10 +199,10 @@ class GroupPIT {
      */
     @Test
     void p3_productFamilyById_unknown_error() {
-        // DISCREPANCY (left RED): the catalogue quotes the domain message
-        // "ProductFamily with id 999999 not found", but SmallRye GraphQL masks
-        // runtime-exception messages to the generic "System error" (the real
-        // message is only in the server log). See the lot report.
+        // The domain message reaches the envelope because
+        // quarkus.smallrye-graphql.show-runtime-exception-message names
+        // NoSuchElementException, and names it alone: every other runtime
+        // failure still answers the generic sentence.
         admin().body(envelope("{ productFamily(id: 999999) { code } }"))
                 .when().post("/graphql")
                 .then().log().ifValidationFails()

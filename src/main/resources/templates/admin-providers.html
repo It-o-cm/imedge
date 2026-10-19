@@ -1,0 +1,192 @@
+{!
+ ! Back-office SERVICE PROVIDERS (BO-03-11-01 à 06): les tiers auxquels le
+ ! magasin est raccordé, leur adresse, leur protocole et le moment de l'appel.
+ ! La clé d'authentification ne ressort JAMAIS : la page dit si elle est posée,
+ ! pas ce qu'elle vaut. Un champ clé laissé vide à l'enregistrement conserve la
+ ! clé existante — sinon corriger un libellé débrancherait le fournisseur.
+!}
+{#include admin-layout}
+
+{#title}Fournisseurs de service{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Fournisseurs de service</h1>
+        <p class="page-sub">Déclaration des tiers : produits dématérialisés, fidélité, monétique, étiquettes, borne de prix, décisionnel, fiscal. Déclarer un fournisseur ne crée pas le protocole : un protocole non porté par cette version n'est jamais appelé.</p>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">Déclarer ou modifier un fournisseur</h2>
+    <p class="card-sub">Le code identifie le fournisseur : le réutiliser met la déclaration à jour.</p>
+    <form method="post" action="/admin/providers/save">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="p-code">Code</label>
+                <input class="input-control" id="p-code" type="text" name="code" maxlength="30" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="p-label">Libellé</label>
+                <input class="input-control" id="p-label" type="text" name="label" maxlength="120">
+            </div>
+            <div class="field">
+                <label class="field-label" for="p-type">Type de service</label>
+                <select class="input-control" id="p-type" name="providerType">
+                    {#for type in types}
+                    <option value="{type.name}">{type.label}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="p-protocol">Protocole</label>
+                <select class="input-control" id="p-protocol" name="protocol">
+                    {#for protocol in protocols}
+                    <option value="{protocol.name}">{protocol.label}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="p-endpoint">Adresse (URL ou IP:port)</label>
+                <input class="input-control" id="p-endpoint" type="text" name="endpoint" maxlength="300">
+            </div>
+            <div class="field">
+                <label class="field-label" for="p-auth">Clé d'authentification</label>
+                <input class="input-control" id="p-auth" type="password" name="authKey" maxlength="300" autocomplete="new-password">
+                <p class="field-hint">Laisser vide conserve la clé déjà enregistrée. Elle n'est jamais réaffichée.</p>
+            </div>
+            <div class="field">
+                <label class="field-label" for="p-phase">Phase d'appel en vente</label>
+                <select class="input-control" id="p-phase" name="callPhase">
+                    {#for phase in phases}
+                    <option value="{phase.name}">{phase.label}</option>
+                    {/for}
+                </select>
+                <p class="field-hint">Au scan, la ligne attend la réponse du fournisseur. À la fin du paiement, le refus n'arrête plus la vente.</p>
+            </div>
+            <div class="field">
+                <label class="field-label" for="p-selection">Sélection d'articles servie</label>
+                <input class="input-control" id="p-selection" type="text" name="articleSelection" maxlength="120">
+            </div>
+            <div class="field">
+                <label class="field-label" for="p-template">Gabarit d'impression</label>
+                <input class="input-control" id="p-template" type="text" name="documentTemplateCode" maxlength="30">
+            </div>
+            <div class="field">
+                <label class="field-label" for="p-active">En service</label>
+                <input id="p-active" type="checkbox" name="active" checked>
+            </div>
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">Enregistrer</button>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <h2 class="card-title">Fournisseurs déclarés</h2>
+    {#if providers.isEmpty()}
+    <div class="empty-state">
+        <p>Aucun fournisseur déclaré.</p>
+    </div>
+    {#else}
+    <table class="data-table">
+        <thead>
+        <tr><th>Code</th><th>Libellé</th><th>Type</th><th>Protocole</th><th>Adresse</th><th>Appel</th><th>Articles</th><th>Gabarit</th><th>État</th><th></th></tr>
+        </thead>
+        <tbody>
+        {#for provider in providers}
+        <tr>
+            <td>{provider.code}</td>
+            <td>{provider.label ?: '—'}</td>
+            <td>{provider.providerType.label}</td>
+            <td>{provider.protocol.label}</td>
+            <td>{provider.endpoint ?: '—'}</td>
+            <td>{provider.callPhase.label}</td>
+            <td>{provider.articleSelection ?: '—'}</td>
+            <td>{provider.documentTemplateCode ?: '—'}</td>
+            <td>
+                {#if !provider.active}<span class="badge badge-off">Hors service</span>
+                {#else if provider.reachable}<span class="badge badge-ok">Joignable</span>
+                {#else if !provider.hasCredential()}<span class="badge badge-off">Sans clé</span>
+                {#else}<span class="badge badge-off">Sans adresse</span>{/if}
+            </td>
+            <td>
+                {#if provider.hasCredential()}
+                <form method="post" action="/admin/providers/clear-credential">
+                    <input type="hidden" name="code" value="{provider.code}">
+                    <button class="btn btn-small btn-ghost" type="submit">Effacer la clé</button>
+                </form>
+                {/if}
+                <form method="post" action="/admin/providers/delete">
+                    <input type="hidden" name="code" value="{provider.code}">
+                    <button class="btn btn-small btn-ghost" type="submit">Supprimer</button>
+                </form>
+            </td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+
+{! BO-03-08-06 et -07 : ce qu'un fournisseur repond, dit dans les mots du
+ ! magasin. Sur CETTE page et pas sur une a elle : le code 4 d'un emetteur
+ ! n'est pas le code 4 d'un autre, la paire est la cle. !}
+<div class="card">
+    <h2 class="card-title">Messages des fournisseurs</h2>
+    <p class="card-sub">Ce qu'un fournisseur répond en langage technique, traduit pour l'écran du caissier et pour le ticket du client. Écran vide : le texte du fournisseur reste. Ticket vide : rien n'est imprimé.</p>
+    <form method="post" action="/admin/providers/message/save">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="pm-provider">Fournisseur</label>
+                <input class="input-control" id="pm-provider" type="text" name="providerCode" maxlength="30" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="pm-code">Code message</label>
+                <input class="input-control" id="pm-code" type="text" name="messageCode" maxlength="50" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="pm-screen">Texte écran caisse</label>
+                <input class="input-control" id="pm-screen" type="text" name="screenText" maxlength="200">
+            </div>
+            <div class="field">
+                <label class="field-label" for="pm-ticket">Texte ticket</label>
+                <input class="input-control" id="pm-ticket" type="text" name="ticketText" maxlength="200">
+            </div>
+            <div class="field">
+                <label class="field-label" for="pm-active">Actif</label>
+                <input id="pm-active" type="checkbox" name="messageActive" checked>
+            </div>
+        </div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">Enregistrer le message</button></div>
+    </form>
+    {#if messages.size() > 0}
+    <table class="data-table">
+        <tr><th>Fournisseur</th><th>Code</th><th>Écran caisse</th><th>Ticket</th><th>Actif</th><th></th></tr>
+        {#for message in messages}
+        <tr>
+            <td>{message.providerCode}</td>
+            <td>{message.messageCode}</td>
+            <td>{message.screenText ?: '(texte du fournisseur)'}</td>
+            <td>{message.ticketText ?: '(rien)'}</td>
+            <td>{#if message.active}oui{#else}non{/if}</td>
+            <td>
+                <form method="post" action="/admin/providers/message/delete">
+                    <input type="hidden" name="providerCode" value="{message.providerCode}">
+                    <input type="hidden" name="messageCode" value="{message.messageCode}">
+                    <button class="btn btn-danger" type="submit">Supprimer</button>
+                </form>
+            </td>
+        </tr>
+        {/for}
+    </table>
+    {#else}
+    <p class="card-sub">Aucune traduction déclarée : les fournisseurs parlent leur propre langage en caisse.</p>
+    {/if}
+</div>
+{/body}

@@ -87,6 +87,38 @@
             <input class="input-control" id="pkr-{point.terminalId}" type="text" name="customerDisplayResolution" maxlength="32" value="{point.customerDisplayResolution ?: ''}">
         </div>
         <div class="field">
+            <label class="field-label" for="psp-{point.terminalId}">Balance : protocole</label>
+            <select class="input-control" id="psp-{point.terminalId}" name="scaleProtocol">
+                {#for protocol in scaleProtocols}
+                <option value="{protocol}" {#if point.scaleProtocol == protocol}selected{/if}>{protocol.label}</option>
+                {/for}
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-label" for="psa-{point.terminalId}">Balance : adresse</label>
+            <input class="input-control" id="psa-{point.terminalId}" type="text" name="scaleAddress" maxlength="100" value="{point.scaleAddress ?: ''}">
+        </div>
+        <div class="field">
+            <label class="field-label" for="pso-{point.terminalId}">Balance : port</label>
+            <input class="input-control" id="pso-{point.terminalId}" type="number" name="scalePort" min="1" max="65535" value="{point.scalePort ?: ''}">
+        </div>
+        <div class="field">
+            <label class="field-label" for="pmp-{point.terminalId}">Monnayeur : protocole</label>
+            <select class="input-control" id="pmp-{point.terminalId}" name="coinMachineProtocol">
+                {#for protocol in coinProtocols}
+                <option value="{protocol}" {#if point.coinMachineProtocol == protocol}selected{/if}>{protocol.label}</option>
+                {/for}
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-label" for="pma-{point.terminalId}">Monnayeur : adresse</label>
+            <input class="input-control" id="pma-{point.terminalId}" type="text" name="coinMachineAddress" maxlength="100" value="{point.coinMachineAddress ?: ''}">
+        </div>
+        <div class="field">
+            <label class="field-label" for="pmo-{point.terminalId}">Monnayeur : port</label>
+            <input class="input-control" id="pmo-{point.terminalId}" type="number" name="coinMachinePort" min="1" max="65535" value="{point.coinMachinePort ?: ''}">
+        </div>
+        <div class="field">
             <label class="field-label" for="pm-{point.terminalId}">Modèle de menu</label>
             <input class="input-control" id="pm-{point.terminalId}" type="text" name="menuTemplateCode" maxlength="50" value="{point.menuTemplateCode ?: ''}">
         </div>

@@ -1,0 +1,91 @@
+{!
+ ! Back-office COMPTES (BO-01-01-01, -02, -03 et -06). Le back-office avait
+ ! deux ecrans autour d'un compte et aucun ne le creait : /admin/employees
+ ! regle le volet financier d'une fiche qui existe, /admin/users rattache des
+ ! profils a un titulaire qui existe. Les comptes venaient du seed. Celui-ci
+ ! est l'ecran qui manquait : il cree, modifie, desactive et supprime.
+ ! La suppression demande une confirmation et le serveur refuse un titulaire
+ ! que l'historique nomme : un compte qui a avalise, compte ou vendu se
+ ! desactive, il ne s'efface pas.
+!}
+{#include admin-layout}
+
+{#title}Comptes{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Comptes</h1>
+        <p class="page-sub">Qui peut entrer, avec quel role et a quel niveau hierarchique. Un compte n'administre que des comptes d'un niveau strictement inferieur au sien. Les profils et leur echelon se reglent sur <a class="link-strong" href="/admin/users">Utilisateurs</a>, le volet financier sur <a class="link-strong" href="/admin/employees">Salaries</a>.</p>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">Creer un compte</h2>
+    <p class="card-sub">Le code initial ouvre la caisse et le back-office, et son titulaire devra le changer a sa premiere entree. Telephone et date de debut sont facultatifs.</p>
+    <form method="post" action="/admin/accounts/save">
+        <div class="form-grid">
+            <label>Identifiant<input type="text" name="loginName" maxlength="60" required></label>
+            <label>Nom<input type="text" name="lastName" maxlength="60" required></label>
+            <label>Prenom<input type="text" name="firstName" maxlength="60"></label>
+            <label>Adresse electronique<input type="email" name="email" maxlength="120" required></label>
+            <label>Telephone<input type="text" name="phone" maxlength="30"></label>
+            <label>Date de debut<input type="date" name="startDate"></label>
+            <label>Departement<input type="text" name="department" maxlength="60"></label>
+            <label>Niveau hierarchique<input type="number" name="hierarchyLevel" min="0" value="0"></label>
+            <label>Badge<input type="text" name="badgeId" maxlength="20"></label>
+            <label>Langue<input type="text" name="language" maxlength="10" placeholder="fr, nl, pt"></label>
+            <label>Role
+                <select name="role">
+                    {#for role in roles}<option value="{role}">{role}</option>{/for}
+                </select>
+            </label>
+            <label>Code initial<input type="password" name="secret" minlength="4" required></label>
+            <label class="check"><input type="checkbox" name="active" checked> Actif</label>
+        </div>
+        <button class="btn btn-primary" type="submit">Creer</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2 class="card-title">Les comptes</h2>
+    <form method="get" action="/admin/accounts" class="filter-row">
+        <label>Rechercher<input type="text" name="text" value="{text}" placeholder="nom, identifiant, departement"></label>
+        <button class="btn" type="submit">Filtrer</button>
+        <a class="btn btn-ghost" href="/admin/accounts">Reinitialiser</a>
+    </form>
+    <table class="admin-table">
+        <thead>
+            <tr><th>Nom</th><th>Identifiant</th><th>Role</th><th>Departement</th><th>Niveau</th><th>Telephone</th><th>Debut</th><th>Langue</th><th>Actif</th><th></th></tr>
+        </thead>
+        <tbody>
+            {#for account in page.items}
+            <tr class="{#if !account.active}row-muted{/if}">
+                <td>{account.fullName}</td>
+                <td class="mono">{account.loginName}</td>
+                <td>{account.role}</td>
+                <td>{account.department}</td>
+                <td>{account.hierarchyLevel}</td>
+                <td>{account.phone}</td>
+                <td>{account.startDate}</td>
+                <td>{account.language}</td>
+                <td>{#if account.active}oui{#else}non{/if}</td>
+                <td class="cell-actions">
+                    <form method="post" action="/admin/accounts/delete" onsubmit="return confirm('Supprimer definitivement le compte {account.loginName} ?');">
+                        <input type="hidden" name="id" value="{account.id}">
+                        <button class="btn btn-danger" type="submit" {#if account.referenced}disabled title="Nomme par l'historique : desactivez-le"{/if}>Supprimer</button>
+                    </form>
+                </td>
+            </tr>
+            {/for}
+            {#if page.items.isEmpty()}
+            <tr><td colspan="10" class="cell-empty">Aucun compte ne correspond.</td></tr>
+            {/if}
+        </tbody>
+    </table>
+</div>
+{/body}

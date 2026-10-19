@@ -137,10 +137,9 @@ class GroupMIT {
      */
     @Test
     void m1_adminRoot_admin_redirectsToSettings() {
-        // Observed: GET /admin → 302 /admin/ (static-dir shadow, see GroupAIT a2_*).
         asAdmin().redirects().follow(false).when().get("/admin")
-                .then().log().ifValidationFails().statusCode(302)
-                .header("Location", containsString("/admin/"));
+                .then().log().ifValidationFails().statusCode(303)
+                .header("Location", containsString("/admin/settings"));
     }
 
     /**
@@ -148,10 +147,9 @@ class GroupMIT {
      */
     @Test
     void m1_adminRoot_nonAdmin_redirectsToDashboard() {
-        // Observed: GET /admin → 302 /admin/ (static-dir shadow, see GroupAIT a2_*).
         asManager().redirects().follow(false).when().get("/admin")
-                .then().log().ifValidationFails().statusCode(302)
-                .header("Location", containsString("/admin/"));
+                .then().log().ifValidationFails().statusCode(303)
+                .header("Location", containsString("/dashboard"));
     }
 
     /**
@@ -465,12 +463,20 @@ class GroupMIT {
 
     /**
      * M10 (island save, empty code): an island with no code is refused.
+     *
+     * <p>Posted to {@code /admin/checkout-islands/save} and no longer to
+     * {@code /admin/coupons/island}: the island CRUD left the coupon screen
+     * when the island became a settings-bearing object with a PDV link, a
+     * promotion channel and a register relation (BO-03-10). The coupon screen
+     * still READS the islands — a coupon range is accepted or refused by
+     * island code — so the rule under test has not moved, only the form that
+     * carries it.
      */
     @Test
-    void m10_coupons_islandSave_emptyCode_refused() {
+    void m10_islandSave_emptyCode_refused() {
         String loc = asAdmin().contentType("application/x-www-form-urlencoded")
                 .formParam("label", "x")
-                .when().post("/admin/coupons/island")
+                .when().post("/admin/checkout-islands/save")
                 .then().log().ifValidationFails().statusCode(303)
                 .extract().header("Location");
         assertNotice(loc, "Le code de l'îlot est obligatoire.");
@@ -478,12 +484,14 @@ class GroupMIT {
 
     /**
      * M10 (island delete, unknown code): deleting an unknown island is refused.
+     *
+     * <p>Same move as the save above.
      */
     @Test
-    void m10_coupons_islandDelete_unknown_refused() {
+    void m10_islandDelete_unknown_refused() {
         String loc = asAdmin().contentType("application/x-www-form-urlencoded")
                 .formParam("code", "ZMISLAND")
-                .when().post("/admin/coupons/island/delete")
+                .when().post("/admin/checkout-islands/delete")
                 .then().log().ifValidationFails().statusCode(303)
                 .extract().header("Location");
         assertNotice(loc, "Îlot inconnu.");

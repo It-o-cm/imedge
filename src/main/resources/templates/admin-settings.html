@@ -1,6 +1,7 @@
 {!
  ! Back-office parameters page: the PosSettingsService catalog rendered by
- ! section, one widget per type (BOOL select, INT number, TEXT text), one
+ ! section, one widget per type (BOOL select, INT number, closed-set select,
+ ! TEXT text), one
  ! POST saving everything, POST -> 303 -> notice — the imvaluation admin
  ! cycle. `entries` = list of {def, value, section headings precomputed}.
 !}
@@ -42,6 +43,14 @@
                 </select>
                 {#else if entry.integer}
                 <input type="number" id="f-{entry.key}" name="{entry.key}" value="{entry.value}" min="0">
+                {#else if entry.choices.size() > 0}
+                {! Valeurs fermees : on CHOISIT, on ne tape pas — une faute de
+                 ! frappe retomberait en silence sur le defaut du parametre. !}
+                <select class="input-control" id="f-{entry.key}" name="{entry.key}">
+                    {#for choice in entry.choices}
+                    <option value="{choice}" {#if entry.value == choice}selected{/if}>{#if choice.isEmpty()}— aucune —{#else}{choice}{/if}</option>
+                    {/for}
+                </select>
                 {#else}
                 <input type="text" id="f-{entry.key}" name="{entry.key}" value="{entry.value}" maxlength="120">
                 {/if}

@@ -11,6 +11,7 @@ import org.mockito.MockedStatic;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.EnumSet;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -32,8 +33,9 @@ import static org.mockito.Mockito.when;
  * Unit tests for {@link PeriodCloseService}.
  * <p>
  * The service reads the administered parameters, watches the clock and leaves
- * orders in the book; all three collaborators ({@link PosSettingsService},
- * {@link RegisterCommandService}, {@link TechnicalEventService}) are Mockito
+ * orders in the book; all collaborators ({@link PosSettingsService},
+ * {@link RegisterCommandService}, {@link TechnicalEventService}, and the
+ * sweep-time ones) are Mockito
  * mocks on package-private fields, and the only database access — the list of
  * open sessions — goes through {@link CashSession}'s static finder, which
  * resolves to {@link PanacheEntityBase} and is intercepted with
@@ -73,6 +75,10 @@ class PeriodCloseServiceTest {
         service.technicalEventService = mock(TechnicalEventService.class);
         service.retentionPurgeService = mock(RetentionPurgeService.class);
         service.financialStateEmissionService = mock(FinancialStateEmissionService.class);
+        service.scheduledReportService = mock(ScheduledReportService.class);
+        service.periodScheduleService = mock(PeriodScheduleService.class);
+        when(service.periodScheduleService.endingOn(any(LocalDate.class)))
+                .thenReturn(EnumSet.of(PeriodScheduleService.PeriodEnd.DAY));
         return service;
     }
 
@@ -137,14 +143,20 @@ class PeriodCloseServiceTest {
 
     /**
      * The automatic close disarmed: nothing is read, nothing is ordered, and
-     * the shop's registers stay as they are.
+     * the shop's registers stay as they are. The retention sweep is NOT the
+     * close and journals the end of period on its own once the clock has
+     * reached it (BO-09-01-07) — so the journal asserted silent here is the
+     * CLOSE's, the one naming a register, which the disarmed shop never
+     * writes whatever the hour the test runs at.
      */
     @Test
     void aDisarmedCloseOrdersNothing() {
         PeriodCloseService service = newService(false, "23:30", 5);
         service.tick();
         verifyNoInteractions(service.registerCommandService);
-        verifyNoInteractions(service.technicalEventService);
+        verify(service.technicalEventService, never()).log(
+                eq(TechnicalEvent.EventType.SESSION_CLOSED),
+                org.mockito.ArgumentMatchers.contains("demandée à la caisse"));
     }
 
     /**
@@ -362,10 +374,13 @@ class PeriodCloseServiceTest {
         LocalDate today = LocalDate.of(2026, 1, 15);
         service.maybeSweep(LocalTime.of(23, 45), today);
         // §4: the financial states are emitted BEFORE the purge, which may carry
-        // away tickets a Z still needs.
+        // away tickets a Z still needs; the programmed editions sit in between
+        // (BO-09-01-10) for the same reason.
         org.mockito.InOrder order = org.mockito.Mockito.inOrder(
-                service.financialStateEmissionService, service.retentionPurgeService);
+                service.financialStateEmissionService, service.scheduledReportService,
+                service.retentionPurgeService);
         order.verify(service.financialStateEmissionService).emitEndOfPeriod(today);
+        order.verify(service.scheduledReportService).runEndOfPeriod(today);
         order.verify(service.retentionPurgeService).sweep();
         assertEquals(today, service.lastPurgeDay);
     }

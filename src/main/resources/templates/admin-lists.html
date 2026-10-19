@@ -1,0 +1,116 @@
+{!
+ ! Back-office LISTES ADMINISTREES (BO-04-02-07, BO-04-03-12). Quatre choses
+ ! que la caissiere touche etaient administrees sous la forme d'une chaine a
+ ! points-virgules : les motifs de demande de service, les motifs de depense,
+ ! les types de retour et les contenants de tare. Une chaine dessine quatre
+ ! touches et ne fait rien d'autre : pas de code, pas de severite, pas de
+ ! regroupement. Cet ecran en fait des listes, et les distribue aux caisses.
+ ! Tant qu'aucune liste d'un genre n'existe, les caisses continuent de lire le
+ ! parametre : reprendre les valeurs actuelles fait la bascule en un geste.
+!}
+{#include admin-layout}
+
+{#title}Listes{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Listes administrees</h1>
+        <p class="page-sub">Les listes que la caisse propose : demandes de service, justifications, types de retour, contenants de tare. Elles descendent aux caisses avec le referentiel. Tant qu'aucune liste d'un genre n'existe, la caisse lit le parametre correspondant des <a class="link-strong" href="/admin/settings">Parametres</a>.</p>
+    </div>
+    <form method="post" action="/admin/lists/bootstrap">
+        <button class="btn" type="submit">Reprendre les valeurs actuelles</button>
+    </form>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">Creer une liste</h2>
+    <p class="card-sub">Le code identifie la liste pour la distribution. Les fonctions ne concernent que les listes de justification : les codes des gestes servis, separes par des points-virgules (EXPENSE, WITHDRAWAL, DEPOSIT, LINE_CANCEL, TICKET_CANCEL, PRICE_OVERRIDE, DISCOUNT, RETURN). Vide : tous les gestes.</p>
+    <form method="post" action="/admin/lists/save">
+        <div class="form-grid">
+            <label>Code<input type="text" name="code" maxlength="40" required></label>
+            <label>Libelle<input type="text" name="label" maxlength="80" required></label>
+            <label>Genre
+                <select name="kind">
+                    {#for kind in kinds}<option value="{kind}">{kind.label}</option>{/for}
+                </select>
+            </label>
+            <label>Fonctions servies<input type="text" name="functions" maxlength="200" placeholder="EXPENSE;WITHDRAWAL"></label>
+            <label class="check"><input type="checkbox" name="active" checked> Active</label>
+        </div>
+        <button class="btn btn-primary" type="submit">Creer</button>
+    </form>
+</div>
+
+{#for posList in lists}
+<div class="card">
+    <h2 class="card-title">{posList.label} <span class="mono">({posList.code})</span></h2>
+    <p class="card-sub">{posList.kindLabel}{#if posList.functions} &middot; fonctions : {posList.functions}{/if}{#if !posList.active} &middot; inactive{/if}</p>
+    <form method="post" action="/admin/lists/save" class="filter-row">
+        <input type="hidden" name="id" value="{posList.id}">
+        <input type="hidden" name="code" value="{posList.code}">
+        <label>Libelle<input type="text" name="label" value="{posList.label}" maxlength="80" required></label>
+        <label>Genre
+            <select name="kind">
+                {#for kind in kinds}<option value="{kind}" {#if kind.name() == posList.kind}selected{/if}>{kind.label}</option>{/for}
+            </select>
+        </label>
+        <label>Fonctions<input type="text" name="functions" value="{posList.functions}" maxlength="200"></label>
+        <label class="check"><input type="checkbox" name="active" {#if posList.active}checked{/if}> Active</label>
+        <button class="btn" type="submit">Enregistrer</button>
+    </form>
+    <table class="admin-table">
+        <thead>
+            <tr><th>Code</th><th>Libelle</th><th>Rang</th>{#if posList.usesSeverity}<th>Severite</th>{/if}{#if posList.usesWeight}<th>Poids (kg)</th>{/if}{#if posList.usesOptions}<th>Options</th>{/if}<th>Active</th><th></th></tr>
+        </thead>
+        <tbody>
+            {#for item in posList.items}
+            <tr class="{#if !item.active}row-muted{/if}">
+                <td class="mono">{item.code}</td>
+                <td>{item.label}</td>
+                <td>{item.displayOrder}</td>
+                {#if posList.usesSeverity}<td>{item.severity}</td>{/if}
+                {#if posList.usesWeight}<td>{item.numericValue}</td>{/if}
+                {#if posList.usesOptions}<td class="mono">{item.options}</td>{/if}
+                <td>{#if item.active}oui{#else}non{/if}</td>
+                <td class="cell-actions">
+                    <form method="post" action="/admin/lists/item/delete" onsubmit="return confirm('Supprimer l entree {item.code} ?');">
+                        <input type="hidden" name="id" value="{item.id}">
+                        <button class="btn btn-danger" type="submit">Supprimer</button>
+                    </form>
+                </td>
+            </tr>
+            {/for}
+            {#if posList.items.isEmpty()}
+            <tr><td colspan="8" class="cell-empty">Cette liste est vide : la caisse ne proposera rien.</td></tr>
+            {/if}
+        </tbody>
+    </table>
+    <form method="post" action="/admin/lists/item/save" class="filter-row">
+        <input type="hidden" name="listId" value="{posList.id}">
+        <label>Code<input type="text" name="code" maxlength="40" required></label>
+        <label>Libelle<input type="text" name="label" maxlength="80" required></label>
+        <label>Rang<input type="number" name="displayOrder" value="0"></label>
+        {#if posList.usesSeverity}<label>Severite<input type="number" name="severity" min="0" value="1"></label>{/if}
+        {#if posList.usesWeight}<label>Poids (kg)<input type="text" name="numericValue" placeholder="0.035"></label>{/if}
+        {#if posList.usesOptions}<label>Options<input type="text" name="options" maxlength="120" placeholder="TICKET,NOORIGIN"></label>{/if}
+        <label class="check"><input type="checkbox" name="active" checked> Active</label>
+        <button class="btn btn-primary" type="submit">Ajouter</button>
+    </form>
+    <form method="post" action="/admin/lists/delete" onsubmit="return confirm('Supprimer definitivement la liste {posList.code} et ses entrees ?');">
+        <input type="hidden" name="id" value="{posList.id}">
+        <button class="btn btn-danger" type="submit">Supprimer la liste</button>
+    </form>
+</div>
+{/for}
+
+{#if lists.isEmpty()}
+<div class="card">
+    <p class="card-sub">Aucune liste n'est administree : les caisses lisent les parametres a points-virgules. Reprendre les valeurs actuelles cree les quatre listes standard a partir de ces parametres.</p>
+</div>
+{/if}
+{/body}

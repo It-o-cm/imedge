@@ -25,6 +25,7 @@
     <span class="page-sub sup-clock" id="clock"></span>
 </div>
 
+<div class="call-list" id="offlineZone"></div>
 <div class="call-list" id="callsZone"></div>
 
 {! Compte à rebours de la fin de période (BO-09-01-06) : masqué tant que le
@@ -57,6 +58,15 @@
             <span class="kpi-value is-warn" id="kpiRefunds">—</span>
         </div>
     </div>
+</div>
+
+{! BO-04-03-01/-03/-15 : la deuxieme rangee de tuiles, celle que le magasin
+ ! choisit. Masquee tant que le parametre dashboard.indicators ne nomme rien :
+ ! une carte vide ne dit rien a personne. !}
+<div class="card" id="indicatorCard" hidden>
+    <h2 class="card-title">Indicateurs choisis</h2>
+    <p class="card-sub">Indicateurs du paramètre « Indicateurs du tableau de bord », sur la journée.</p>
+    <div class="kpi-grid" id="indicatorZone"></div>
 </div>
 
 <div class="sup-columns">
@@ -116,6 +126,30 @@
             : '<button class="btn btn-small btn-danger" onclick="forceClose(\'' + s.terminal + '\')">Forcer la fermeture</button>')
       ), 'Aucune session ouverte');
 
+      /* BO-04-03-01/-03/-15 : les tuiles administrees. Le serveur a deja
+         formate les valeurs et donne le suffixe a mettre derriere : cette
+         page ne sait pas ce qu'elle affiche, et c'est voulu. */
+      const indicators = data.indicators || [];
+      const indicatorCard = document.getElementById('indicatorCard');
+      const indicatorZone = document.getElementById('indicatorZone');
+      if (indicatorCard && indicatorZone) {
+        indicatorCard.hidden = indicators.length === 0;
+        indicatorZone.innerHTML = '';
+        indicators.forEach(i => {
+          const tile = document.createElement('div');
+          tile.className = 'kpi';
+          const label = document.createElement('span');
+          label.className = 'kpi-label';
+          label.textContent = i.label;
+          const value = document.createElement('span');
+          value.className = 'kpi-value';
+          value.textContent = i.unit ? i.value + ' ' + i.unit : i.value;
+          tile.appendChild(label);
+          tile.appendChild(value);
+          indicatorZone.appendChild(tile);
+        });
+      }
+
       renderRows('topSalesZone', data.topSales.map(t =>
         '<span>' + t.label + '</span><span class="sup-amount">×' + t.quantity + '</span>'), "Aucune vente aujourd'hui");
 
@@ -137,14 +171,75 @@
               + data.periodCountdown + ' min.';
       }
 
+      /* BO-04-03-05 : les caisses qui ne repondent plus, au meme endroit que
+         les appels. Une caisse muette ne se deduit pas de ce qu'on recoit :
+         elle se definit par ce qu'on ne recoit plus. */
+      const offline = document.getElementById('offlineZone');
+      if (offline) {
+        offline.innerHTML = '';
+        (data.offlineRegisters || []).forEach(r => {
+          const banner = document.createElement('div');
+          banner.className = 'alert alert-error';
+          banner.setAttribute('role', 'alert');
+          banner.textContent = 'Caisse ' + r.terminal + ' deconnectee depuis ' + r.silent + ' min.';
+          offline.appendChild(banner);
+        });
+      }
       const calls = document.getElementById('callsZone');
       calls.innerHTML = '';
       data.calls.forEach(c => {
         const banner = document.createElement('div');
         banner.className = 'alert alert-error call-banner';
         banner.setAttribute('role', 'alert');
-        banner.innerHTML = '<span class="call-subject">' + c.terminal + ' demande un superviseur — '
-            + c.reason + ' <span class="call-context">(' + c.operator + ', ' + c.time + ')</span></span>';
+        /* BO-04-02-07 : la severite du type administre, quand le referentiel
+           en donne une, est annoncee avant le motif. Zero : rien n'est
+           affiche, la caisse lisant encore le parametre a points-virgules. */
+        const priority = c.severity > 0 ? 'P' + c.severity + ' — ' : '';
+        /* BO-04-02-03/-04/-05 : une demande tranchee reste affichee, clairement
+           marquee par ce qu'elle est devenue, tant que le parametre le veut.
+           Le bandeau passe alors du rouge au neutre : elle n'attend plus rien. */
+        const settled = c.status && c.status !== 'PENDING';
+        if (settled) {
+            banner.className = 'alert call-banner';
+        }
+        const outcome = settled
+            ? ' <span class="call-context">[' + c.statusLabel
+                + (c.refusalReason ? ' : ' + c.refusalReason : '') + ']</span>'
+            : '';
+        banner.innerHTML = '<span class="call-subject">' + priority + c.terminal + ' demande un superviseur — '
+            + c.reason + ' <span class="call-context">(' + c.operator + ', ' + c.time + ')</span>'
+            + outcome + '</span>';
+        if (!settled) {
+            /* BO-04-02-02 : autoriser le geste que la caisse retient. L'ordre
+               dit que le geste PEUT etre fait ; la caissiere appuie toujours
+               sur la touche. */
+            const grant = document.createElement('button');
+            grant.className = 'btn btn-small btn-primary';
+            grant.type = 'button';
+            grant.textContent = 'Autoriser';
+            grant.onclick = () => fetch('/dashboard/call/' + c.id + '/authorise').then(poll);
+            banner.appendChild(grant);
+            const toTill = document.createElement('button');
+            toTill.className = 'btn btn-small';
+            toTill.type = 'button';
+            toTill.textContent = 'A traiter en caisse';
+            toTill.onclick = () => fetch('/dashboard/call/' + c.id + '/to-till').then(poll);
+            banner.appendChild(toTill);
+            const refuse = document.createElement('button');
+            refuse.className = 'btn btn-small btn-danger';
+            refuse.type = 'button';
+            refuse.textContent = 'Refuser';
+            refuse.onclick = () => {
+                /* Le motif part a la caisse tel quel : c'est la phrase que la
+                   caissiere va lire. Annuler ne refuse rien. */
+                const reason = window.prompt('Motif du refus envoye a la caisse ?',
+                    'Demande refusee par le back-office');
+                if (reason === null) { return; }
+                fetch('/dashboard/call/' + c.id + '/refuse?reason='
+                    + encodeURIComponent(reason)).then(poll);
+            };
+            banner.appendChild(refuse);
+        }
         const ack = document.createElement('button');
         ack.className = 'btn btn-small btn-danger';
         ack.type = 'button';

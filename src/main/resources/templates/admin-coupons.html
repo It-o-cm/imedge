@@ -275,6 +275,7 @@
     <div>
         <h2>Plages de codes-barres ARTICLE</h2>
         <p class="page-sub">Les codes que la balance et le comptoir impriment : le préfixe et la longueur disent ce qui appartient à la plage, les deux zones disent où lire l'article et la valeur, et le motif en est déduit (BO-03-06-02/03/04/05/10).</p>
+        <p class="page-sub"><strong>Destination</strong> : ce que la caisse FAIT du code (BO-03-06-56/-60/-61). ARTICLE, la ligne de vente habituelle ; REFUND, un retour de l'article au prix porté par le code, sans ticket d'origine ; TARE, le poids du contenant, déduit de la prochaine ligne pesée ; BALANCE_TICKET, la référence d'un sachet comptoir, reprise telle quelle.</p>
     </div>
 </div>
 
@@ -312,6 +313,22 @@
             <div class="field">
                 <label class="field-label" for="aal-{range.code}">Article : longueur</label>
                 <input class="input-control" id="aal-{range.code}" type="number" name="articleLength" min="1" value="{range.articleLength}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="apu-{range.code}">Destination</label>
+                <select class="input-control" id="apu-{range.code}" name="purpose">
+                    {#for purpose in purposes}
+                    <option value="{purpose}" {#if purpose == range.purpose}selected{/if}>{purpose}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="apc-{range.code}">Promotion déclenchée</label>
+                <input class="input-control" id="apc-{range.code}" type="text" name="promotionCode" maxlength="60" value="{range.promotionCode ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="alu-{range.code}">Service externe (URL)</label>
+                <input class="input-control" id="alu-{range.code}" type="text" name="lookupUrl" maxlength="255" value="{range.lookupUrl ?: ''}">
             </div>
             <div class="field">
                 <label class="field-label" for="avs-{range.code}">Valeur lue</label>
@@ -398,6 +415,22 @@
             <div class="field">
                 <label class="field-label" for="new-aalen">Article : longueur</label>
                 <input class="input-control" id="new-aalen" type="number" name="articleLength" min="1" value="5">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-apurp">Destination</label>
+                <select class="input-control" id="new-apurp" name="purpose">
+                    {#for purpose in purposes}
+                    <option value="{purpose}">{purpose}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-apromo">Promotion déclenchée</label>
+                <input class="input-control" id="new-apromo" type="text" name="promotionCode" maxlength="60" value="">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-alookup">Service externe (URL)</label>
+                <input class="input-control" id="new-alookup" type="text" name="lookupUrl" maxlength="255" value="">
             </div>
             <div class="field">
                 <label class="field-label" for="new-avsrc">Valeur lue</label>

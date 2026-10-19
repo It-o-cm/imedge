@@ -473,6 +473,63 @@ class SyncIngestServiceTest {
     }
 
     /**
+     * Covers the {@code instanceof DepositPayment} true arm of
+     * {@code ingestTicket} (LC-06-03-08): the recovery of a deposit arrives
+     * with its per-rate VAT detail and its order code, and the store node
+     * holds both on the row — the witness the back office accounts the
+     * recovery by rate against its order.
+     */
+    @Test
+    void ingestTicketSetsDepositRecoveryDetails() {
+        TicketPayment.Factory acompteFactory = mock(TicketPayment.Factory.class);
+        when(acompteFactory.getKey()).thenReturn("ACOMPTE");
+        com.intermarche.edge.domain.payment.DepositPayment acomptePayment =
+                mock(com.intermarche.edge.domain.payment.DepositPayment.class);
+        when(acompteFactory.create(any(), any())).thenReturn(acomptePayment);
+        SyncIngestService service = serviceWith(acompteFactory);
+        SyncPayloads.TicketDto dto = new SyncPayloads.TicketDto();
+        dto.ticketNumber = "K6";
+        dto.terminalId = "T6";
+        dto.status = "CLOSED";
+        dto.creationDate = "2026-05-06T10:00:00";
+        dto.storeCode = "ST1";
+        dto.cashierLogin = "alice";
+        dto.sessionNumber = null;
+        dto.itemCount = 1;
+        dto.totalExcludingTax = new BigDecimal("10.00");
+        dto.totalIncludingTax = new BigDecimal("12.00");
+        dto.totalVat = new BigDecimal("2.00");
+        dto.valuationStatus = "NOT_VALUATED";
+        SyncPayloads.PaymentDto acompteDto = new SyncPayloads.PaymentDto();
+        acompteDto.paymentIndex = 1;
+        acompteDto.methodKey = "ACOMPTE";
+        acompteDto.amount = new BigDecimal("10.00");
+        acompteDto.voucherLabel = null;
+        acompteDto.depositVatDetail = "0.2:1;0.055:0.21";
+        acompteDto.depositOrderCode = "C04-CMD000001";
+        dto.payments.add(acompteDto);
+        Store store = mock(Store.class);
+        Employee cashier = mock(Employee.class);
+        PanacheQuery<Ticket> ticketQuery = queryReturning(null);
+        PanacheQuery<Store> storeQuery = queryReturning(store);
+        PanacheQuery<Employee> cashierQuery = queryReturning(cashier);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class);
+                MockedConstruction<Ticket> createdTicket = mockConstruction(Ticket.class,
+                        (m, c) -> { m.lines = new ArrayList<>(); m.payments = new ArrayList<>(); })) {
+            mocked.when(() -> Ticket.find("ticketNumber", "K6")).thenReturn(ticketQuery);
+            mocked.when(() -> Store.find("code", "ST1")).thenReturn(storeQuery);
+            mocked.when(() -> Employee.find("loginName", "alice")).thenReturn(cashierQuery);
+            service.ingestTicket(dto);
+            assertEquals("0.2:1;0.055:0.21", acomptePayment.vatDetail);
+            assertEquals("C04-CMD000001", acomptePayment.orderCode);
+            assertEquals(1, acomptePayment.paymentIndex);
+            Ticket ticket = createdTicket.constructed().get(0);
+            verify(ticket).addPayment(acomptePayment);
+            verify(ticket, times(1)).persist();
+        }
+    }
+
+    /**
      * Covers the update arm of {@code ingestTicket} with a null session
      * (session ternary false arm) and a null store code exercising the
      * fallback to the single local store (code ternary false arm, first store

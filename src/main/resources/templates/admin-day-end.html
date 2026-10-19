@@ -1,0 +1,153 @@
+{!
+ ! Back-office FIN DE JOURNEE (BO-09-01-04 a -08, BO-09-02-01 a -03,
+ ! BO-04-03-06). Trois alertes et un bouton. Les alertes sont les trois choses
+ ! qui font rater une fin de journee — une caisse encore ouverte, une caisse
+ ! qui ne repond plus, un ticket laisse en attente — et le bouton lance la
+ ! fermeture pour celui qui les regarde. Le compte a rebours vient de la meme
+ ! horloge que la fermeture automatique : deux ecrans, une seule verite.
+!}
+{#include admin-layout}
+
+{#title}Fin de journee{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>Fin de journee</h1>
+        <p class="page-sub">Ce que la fin de periode va trouver, et de quoi la lancer sans l'attendre. La fermeture demandee ici est la meme que l'automatique : une caisse en pleine vente n'est pas fermee sous le client, elle prend l'ordre des qu'elle est au repos.</p>
+    </div>
+    <form method="post" action="/admin/day-end/launch" onsubmit="return confirm('Lancer la fin de journee maintenant ?');">
+        <button class="btn btn-primary" type="submit">Lancer la fin de journee</button>
+    </form>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">Le compte a rebours</h2>
+    {#if state.autoEnabled}
+    <p class="page-sub">Fin de periode a <strong>{state.endOfPeriod}</strong>.
+        {#if state.countdownMinutes >= 0}Il reste <strong>{state.countdownMinutes} min</strong>.{#else}Elle n'est pas encore dans l'horizon d'alerte.{/if}</p>
+    {#else}
+    <p class="page-sub">La fermeture automatique des caisses est <strong>desactivee</strong> : rien ne se fermera tout seul ce soir. Le bouton ci-dessus reste le seul chemin.</p>
+    {/if}
+    {#if state.alerting && state.hasAlert()}
+    <div class="alert alert-error" role="alert">La fin de periode approche et {state.openRegisters.size()} caisse(s) sont ouvertes, {state.offlineRegisters.size()} deconnectee(s), {state.parkedCarts.size()} ticket(s) en attente.</div>
+    {/if}
+</div>
+
+<div class="card">
+    <h2 class="card-title">Caisses ouvertes</h2>
+    {#if state.openRegisters.isEmpty()}
+    <p class="page-sub">Aucune caisse n'est ouverte.</p>
+    {#else}
+    <table class="admin-table">
+        <thead><tr><th>Caisse</th><th>Session</th><th>Ouverte par</th></tr></thead>
+        <tbody>
+            {#for register in state.openRegisters}
+            <tr><td class="mono">{register.terminalId}</td><td class="mono">{register.sessionNumber}</td><td>{register.cashier}</td></tr>
+            {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+
+<div class="card">
+    <h2 class="card-title">Connectivite des caisses</h2>
+    <p class="card-sub">Chaque caisse vient chercher ses ordres sur ce noeud ; la date ci-dessous est celle de son dernier passage. Au-dela de {offlineMinutes} minutes de silence, elle est declaree deconnectee.</p>
+    {#if registers.isEmpty()}
+    <p class="page-sub">Aucune caisse ne s'est encore adressee a ce noeud.</p>
+    {#else}
+    <table class="admin-table">
+        <thead><tr><th>Caisse</th><th>Dernier signe de vie</th><th>Silence</th><th>Etat</th></tr></thead>
+        <tbody>
+            {#for register in registers}
+            <tr class="{#if !register.online}row-muted{/if}">
+                <td class="mono">{register.terminalId}</td>
+                <td>{register.lastSeenAt}</td>
+                <td>{register.silentMinutes} min</td>
+                <td>{#if register.online}en ligne{#else}<strong>deconnectee</strong>{/if}</td>
+            </tr>
+            {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+
+<div class="card">
+    <h2 class="card-title">Tickets en attente</h2>
+    <p class="card-sub">Un ticket laisse en attente est annule par la cloture de sa caisse. Ce que la caisse en fait au moment de la cloture se regle par le point de controle « cloture avec des tickets en attente » dans les <a class="link-strong" href="/admin/settings">Parametres</a>.</p>
+    {#if state.parkedCarts.isEmpty()}
+    <p class="page-sub">Aucun ticket n'est en attente.</p>
+    {#else}
+    <table class="admin-table">
+        <thead><tr><th>Caisse</th><th>Ticket</th><th>Caissiere</th><th>Montant</th></tr></thead>
+        <tbody>
+            {#for cart in state.parkedCarts}
+            <tr><td class="mono">{cart.terminalId}</td><td class="mono">{cart.ticketNumber}</td><td>{cart.cashier}</td><td>{cart.amount}</td></tr>
+            {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+{! BO-09-01-07 : ce que la nuit qui vient ferme vraiment. !}
+<div class="card">
+    <h2 class="card-title">Fin de periode</h2>
+    <p class="card-sub">Periodes fermees par la journee d'aujourd'hui : <strong>{periodEnds}</strong>. Le jour de fin de semaine, le quantieme de fin de mois et la date de fin d'annee se reglent dans les <a class="link-strong" href="/admin/settings">Parametres</a>.</p>
+</div>
+
+{! BO-09-01-10 / BO-09-01-11 : la programmation des etats edites
+ ! automatiquement en fin de periode, et ce que les dernieres fins de
+ ! periode ont produit. L'ordre des editions est celui du catalogue : une
+ ! liste de cases a cocher ne sait pas exprimer un ordre. !}
+<div class="card">
+    <h2 class="card-title">Etats edites en fin de periode</h2>
+    <p class="card-sub">Les etats coches sont edites automatiquement a la fin de chaque periode, sur la journee qui se ferme, et conserves ici. Aucun etat coche : aucune edition automatique.</p>
+    <form method="post" action="/admin/day-end/reports">
+        <div class="field-grid">
+            {#for report in reports}
+            <div class="field">
+                <label class="field-label" for="rep-{report.code}">{report.label}</label>
+                <input id="rep-{report.code}" type="checkbox" name="report" value="{report.code}"{#if programmed.contains(report)} checked{/if}>
+            </div>
+            {/for}
+        </div>
+        <div class="field">
+            <label class="field-label" for="repfmt">Format</label>
+            <select class="input-control" id="repfmt" name="format">
+                <option value="pdf"{#if reportFormat == 'pdf'} selected{/if}>PDF</option>
+                <option value="xlsx"{#if reportFormat == 'xlsx'} selected{/if}>XLSX</option>
+                <option value="csv"{#if reportFormat == 'csv'} selected{/if}>CSV</option>
+            </select>
+        </div>
+        <button class="btn btn-primary" type="submit">Enregistrer la programmation</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2 class="card-title">Dernieres editions automatiques</h2>
+    {#if runs.isEmpty()}
+    <p class="page-sub">Aucune edition automatique n'a encore ete produite.</p>
+    {#else}
+    <table class="admin-table">
+        <thead><tr><th>Periode</th><th>Etat</th><th>Format</th><th>Lignes</th><th>Issue</th><th>Document</th></tr></thead>
+        <tbody>
+            {#for run in runs}
+            <tr>
+                <td class="mono">{run.periodEnd}</td>
+                <td>{run.reportLabel}</td>
+                <td class="mono">{run.format}</td>
+                <td>{run.rowCount}</td>
+                <td>{#if run.succeeded}editee{#else}<strong>echec : {run.failure}</strong>{/if}</td>
+                <td>{#if run.succeeded}<a class="link-strong" href="/admin/day-end/report/{run.id}">telecharger</a>{#else}&mdash;{/if}</td>
+            </tr>
+            {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+{/body}
+
+{#footer}Chaque lancement, chaque caisse fermee, chaque caisse deconnectee, chaque ticket en attente et chaque etat edite automatiquement est ecrit au journal electronique.{/footer}

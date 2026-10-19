@@ -49,11 +49,39 @@
             <label class="field-label" for="ca-{currency.code}">Active</label>
             <input id="ca-{currency.code}" type="checkbox" name="active" {#if currency.active}checked{/if}>
         </div>
+        {! BO-03-02-39 : la monnaie dans laquelle le rendu de cette devise est
+         ! donne. Un code de MOYEN DE PAIEMENT et non de devise : le rendu sort
+         ! du tiroir comme un reglement y entre. !}
+        <div class="field">
+            <label class="field-label" for="cx-{currency.code}">Monnaie de rendu</label>
+            <input class="input-control" id="cx-{currency.code}" type="text" name="changeTenderCode" maxlength="20" value="{currency.changeTenderCode ?: ''}">
+            <span class="field-hint">Code du moyen de paiement rendu en monnaie. Vide : rendu en euros.</span>
+        </div>
         <div class="page-actions">
             <button class="btn btn-primary" type="submit">Enregistrer</button>
             <button class="btn btn-muted" type="submit" formaction="/admin/currencies/delete">Supprimer</button>
         </div>
     </form>
+    {! BO-03-02-40 : l'historique date des taux. Ecrit par l'enregistrement,
+     ! jamais modifiable — un historique qu'on corrige n'en est pas un. !}
+    <details class="panel">
+        <summary class="panel-title">Historique du taux<span class="panel-count">{history.get(currency.code).size()}</span></summary>
+        {#if history.get(currency.code).size() > 0}
+        <table class="data-table">
+            <tr><th>Le</th><th>Taux précédent</th><th>Nouveau taux</th><th>Par</th></tr>
+            {#for entry in history.get(currency.code)}
+            <tr>
+                <td>{entry.changedAt.format('dd/MM/yyyy HH:mm')}</td>
+                <td>{entry.previousEuroPerUnit ?: '—'}</td>
+                <td>{entry.euroPerUnit}</td>
+                <td>{entry.changedBy ?: '—'}</td>
+            </tr>
+            {/for}
+        </table>
+        {#else}
+        <p class="card-sub">Le taux n'a pas été modifié depuis la création de la devise.</p>
+        {/if}
+    </details>
     {/for}
     {/if}
 </div>

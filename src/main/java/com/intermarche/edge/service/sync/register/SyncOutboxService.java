@@ -347,6 +347,9 @@ public class SyncOutboxService {
         dto.terminalId = ticket.terminalId;
         dto.status = ticket.status.name();
         dto.creationDate = iso(ticket.creationDate);
+        dto.parkedAt = iso(ticket.parkedAt);
+        dto.resumedAt = iso(ticket.resumedAt);
+        dto.resumedTerminalId = ticket.resumedTerminalId;
         dto.closingDate = iso(ticket.closingDate);
         dto.storeCode = ticket.store != null ? ticket.store.code : null;
         dto.cashierLogin = ticket.cashier != null ? ticket.cashier.loginName : null;
@@ -410,6 +413,8 @@ public class SyncOutboxService {
             lineDto.cancelled = line.cancelled;
             lineDto.cancellationDate = iso(line.cancellationDate);
             lineDto.cancelledBy = line.cancelledBy;
+            lineDto.cancellationReasonCode = line.cancellationReasonCode;
+            lineDto.cancellationReasonLabel = line.cancellationReasonLabel;
             // Money-instrument flag (R12) and last-line-cancellation flag (R10):
             // both are needed by the store node's financial states — the first to
             // keep gift cards out of the turnover, the second to tell a corrected
@@ -477,6 +482,12 @@ public class SyncOutboxService {
         dto.totalAmount = refund.totalAmount;
         dto.totalExcludingTax = refund.totalExcludingTax;
         dto.totalVat = refund.totalVat;
+        dto.returnReason = refund.returnReason;
+        dto.returnReasonCode = refund.returnReasonCode;
+        dto.returnTypeCode = refund.returnTypeCode;
+        dto.returnTypeLabel = refund.returnTypeLabel;
+        dto.cashierBadgeId = refund.cashierBadgeId;
+        dto.supervisorBadgeId = refund.supervisorBadgeId;
         for (RefundLine line : refund.lines) {
             SyncPayloads.RefundLineDto lineDto = new SyncPayloads.RefundLineDto();
             TicketLine originalLine = TicketLine.findById(line.originalLineId);

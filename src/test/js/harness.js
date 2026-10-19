@@ -20,7 +20,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
  * run does not throw.
  *
  * @param {string} relativePath Project-relative path of the source, e.g.
- *   "src/main/resources/META-INF/resources/admin/sync-refresh.js".
+ *   "src/main/resources/META-INF/resources/admin-assets/sync-refresh.js".
  * @param {object} [options] Loading options.
  * @param {string|number} [options.bust] A cache-busting token appended to the import URL so
  *   the module is evaluated afresh (a second boot), used to cover a boot arm that a single

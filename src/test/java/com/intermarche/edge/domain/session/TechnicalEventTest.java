@@ -52,16 +52,21 @@ class TechnicalEventTest {
     }
 
     /**
-     * The nested EventType enum exposes exactly its thirty-two declared constants:
-     * the original twenty-seven, the two expert-caisse events impos appended
-     * (aligned to impos, source of truth) — PAID_TICKET_CANCELLED (EXP-49) and
-     * SOGEC_COMPENSATION (EXP-58) — the node's own forced at-the-flow delivery
-     * pass, STREAM_DELIVERY_FORCED (BO-11-02-05), and the node's own X/Z financial
-     * states — FINANCIAL_STATE_EMITTED and FINANCIAL_STATE_READ.
+     * The nested EventType enum exposes exactly its thirty-six declared
+     * constants: the register vocabulary, the two expert-caisse events impos
+     * appended (aligned to impos, source of truth) — PAID_TICKET_CANCELLED
+     * (EXP-49) and SOGEC_COMPENSATION (EXP-58) — and, among it, the register's
+     * own TICKET_REASSIGNED of the reprint lane (impos reassigns a ticket to
+     * another register), the node's own forced at-the-flow delivery pass,
+     * STREAM_DELIVERY_FORCED (BO-11-02-05), the node's own X/Z financial
+     * states — FINANCIAL_STATE_EMITTED and FINANCIAL_STATE_READ — and the
+     * node's own accepted back-office sign-in, BACK_OFFICE_SIGNED_IN
+     * (BO-04-03-04), and its own automatic end-of-period editions,
+     * SCHEDULED_REPORTS_EDITED (BO-09-01-10).
      */
     @Test
-    void eventTypeEnumHasThirtyTwoConstants() {
-        Assertions.assertEquals(32, TechnicalEvent.EventType.values().length);
+    void eventTypeEnumHasThirtySixConstants() {
+        Assertions.assertEquals(36, TechnicalEvent.EventType.values().length);
     }
 
     /**
@@ -96,10 +101,12 @@ class TechnicalEventTest {
                 TechnicalEvent.EventType.TICKET_PARKED,
                 TechnicalEvent.EventType.TICKET_RESUMED,
                 TechnicalEvent.EventType.REFUND_CREATED,
+                TechnicalEvent.EventType.TICKET_REASSIGNED,
                 TechnicalEvent.EventType.DIGITAL_TICKET_SENT,
                 TechnicalEvent.EventType.SUPERVISOR_CALLED,
                 TechnicalEvent.EventType.TRAINING_STARTED,
                 TechnicalEvent.EventType.TRAINING_ENDED,
+                TechnicalEvent.EventType.PRICE_CHECKED,
                 TechnicalEvent.EventType.REGISTER_LOCKED,
                 TechnicalEvent.EventType.REGISTER_UNLOCKED,
                 TechnicalEvent.EventType.PASSWORD_CHANGED,
@@ -111,7 +118,9 @@ class TechnicalEventTest {
                 TechnicalEvent.EventType.PAID_TICKET_CANCELLED,
                 TechnicalEvent.EventType.SOGEC_COMPENSATION,
                 TechnicalEvent.EventType.FINANCIAL_STATE_EMITTED,
-                TechnicalEvent.EventType.FINANCIAL_STATE_READ
+                TechnicalEvent.EventType.FINANCIAL_STATE_READ,
+                TechnicalEvent.EventType.BACK_OFFICE_SIGNED_IN,
+                TechnicalEvent.EventType.SCHEDULED_REPORTS_EDITED
         };
         Assertions.assertArrayEquals(expected, TechnicalEvent.EventType.values());
     }

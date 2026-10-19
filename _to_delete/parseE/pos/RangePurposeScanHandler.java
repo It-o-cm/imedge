@@ -1,0 +1,201 @@
+package com.intermarche.pos.ui.scanner;
+
+import com.intermarche.pos.domain.barcode.ArticleBarcodeRange;
+import com.intermarche.pos.domain.catalog.Price;
+import com.intermarche.pos.domain.catalog.Product;
+import jakarta.annotation.Priority;
+import jakarta.enterprise.context.ApplicationScoped;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+
+/**
+ * Scan handler for the administered ranges that mean something OTHER than an
+ * article line: a RETURN and a container TARE (BO-03-06-60 and -61).
+ *
+ * <p>Nothing here decodes a code. The positional vocabulary of
+ * {@link ArticleBarcodeRange} already did that work for the scale labels, and a
+ * store that prints its returns on the same plan states the same four numbers.
+ * What this handler adds is the MEANING the range carries, and only the two
+ * meanings that need no new table and no new engine:
+ *
+ * <ul>
+ *   <li>{@link ArticleBarcodeRange.Purpose#REFUND} — the code names the article
+ *       and carries its price; the line is rung as a return on the sale in
+ *       progress. The paper IS the authorisation, so the original ticket is
+ *       never asked for; which is exactly why the two administered permissions
+ *       on returns are honoured here, word for word as the return key honours
+ *       them (LC-05-01-01, LC-05-02-09/14).</li>
+ *   <li>{@link ArticleBarcodeRange.Purpose#TARE} — the code carries the weight
+ *       of the container, remembered on the ticket and deducted from the next
+ *       weighed line by {@link WeightedEanScanHandler}. The deduction belongs
+ *       there because that is where a weight becomes a quantity.</li>
+ * </ul>
+ *
+ * <p>Priority 1, beside the other recognizers, and DISJOINT from them the way
+ * the chain contract demands: this handler claims a code only when an
+ * administered range recognizes it AND that range's purpose is one of the two
+ * above, and {@link WeightedEanScanHandler} refuses the very same codes for the
+ * same reason. One decision, taken on the range, in two places that agree.
+ */
+@ApplicationScoped
+@Priority(1)
+public class RangePurposeScanHandler implements ScanContext.ScanHandler {
+
+    /**
+     * The localised operator messages: every sentence this class stamps on the
+     * register's message band is a bundle key, never a French literal (LC-13-06).
+     */
+    @jakarta.inject.Inject
+    com.intermarche.pos.ui.Messages i18n;
+
+    /** The administered permissions on returns. */
+    @jakarta.inject.Inject
+    com.intermarche.pos.service.PosSettingsService posSettingsService;
+
+    /** Default VAT rate applied when no catalog price is found (e.g. 0.20). */
+    @org.eclipse.microprofile.config.inject.ConfigProperty(
+            name = "pos.vat.default-rate", defaultValue = "0.20")
+    BigDecimal defaultVatRate;
+
+    /**
+     * Claims a code belonging to a range administered as a return or a tare.
+     *
+     * @param ctx the scan context carrying the scanned code and POS state
+     */
+    @Override
+    public void handle(ScanContext ctx) {
+        if (ctx.handled) return;
+        String code = ctx.code;
+        if (code == null || code.isBlank()) return;
+        ArticleBarcodeRange range = ArticleBarcodeRange.findMatching(code);
+        if (range == null || range.isArticlePurpose()) return;
+        if (range.purpose == ArticleBarcodeRange.Purpose.BALANCE_TICKET) {
+            // Claimed by BalanceTicketScanHandler, which owns the pick-up.
+            return;
+        }
+        if (range.checkDigit && !hasValidChecksum(code)) return;
+        if (range.purpose == ArticleBarcodeRange.Purpose.TARE) {
+            announceTare(ctx, range, code);
+            return;
+        }
+        ringReturn(ctx, range, code);
+    }
+
+    /**
+     * Remembers the container weight the code carries (BO-03-06-60).
+     *
+     * <p>The tare is NOT a line: it changes the next weighed line and nothing
+     * else. An unreadable or non-positive weight is refused rather than taken
+     * as zero — a tare of zero and a tare nobody could read are not the same
+     * thing to a customer paying for a bowl.
+     *
+     * @param ctx the scan context
+     * @param range the administered range the code belongs to
+     * @param code the scanned code
+     */
+    private void announceTare(ScanContext ctx, ArticleBarcodeRange range, String code) {
+        BigDecimal value = range.rawValue(code);
+        if (value == null || value.signum() <= 0) {
+            ctx.state.ticket.setError(i18n.get("op.tareIllisible"));
+            ctx.handled = true;
+            return;
+        }
+        BigDecimal tare = value.setScale(3, RoundingMode.HALF_UP);
+        ctx.state.ticket.pendingTareKg = tare;
+        ctx.state.ticket.setNotice(i18n.format("op.tarePriseEnCompte", tare.toPlainString()));
+        ctx.handled = true;
+    }
+
+    /**
+     * Rings the article the code names as a RETURN (BO-03-06-61).
+     *
+     * <p>The price comes from the code when the range carries one, and from the
+     * catalog when it carries a weight instead — a return of a weighed article
+     * is given back at the price the shop charges for it.
+     *
+     * @param ctx the scan context
+     * @param range the administered range the code belongs to
+     * @param code the scanned code
+     */
+    private void ringReturn(ScanContext ctx, ArticleBarcodeRange range, String code) {
+        String articleCode = range.articleCode(code);
+        BigDecimal value = range.rawValue(code);
+        if (articleCode == null || value == null) return;
+        // LC-05-02-09/14: taking an article back without its origin ticket can be
+        // forbidden store-wide — and this code IS a return without one.
+        if (!posSettingsService.returnWithoutOriginAllowed()) {
+            ctx.state.ticket.setError(i18n.get("op.retourSansTicketOrigine"));
+            ctx.handled = true;
+            return;
+        }
+        // LC-05-01-01: a return inside a ticket that already carries lines is a
+        // permission of its own.
+        if (!posSettingsService.returnInSaleAllowed() && !ctx.state.ticket.items.isEmpty()) {
+            ctx.state.ticket.setError(i18n.get("op.retourTicketVenteInterdit"));
+            ctx.handled = true;
+            return;
+        }
+        Product product = Product.findActiveByPlu(articleCode);
+        if (product == null) {
+            ctx.state.ticket.setError(i18n.format("op.articleBalanceIntrouvable", articleCode));
+            ctx.handled = true;
+            return;
+        }
+        Price price = Price.findCurrentPrice(product.id);
+        BigDecimal vatRate = (price != null && price.vatRate() != null)
+                ? price.vatRate() : defaultVatRate;
+        BigDecimal unitPrice = range.isPriceEmbedded()
+                ? value
+                : (price != null && price.priceIncludingTax != null
+                        ? price.priceIncludingTax : BigDecimal.ZERO);
+        BigDecimal quantity = range.isPriceEmbedded()
+                ? BigDecimal.ONE
+                : value.setScale(3, RoundingMode.HALF_UP);
+        if (quantity.signum() <= 0) {
+            ctx.state.ticket.setError(i18n.get("op.poidsInvalide"));
+            ctx.handled = true;
+            return;
+        }
+        // The ONE funnel every entry goes through (TicketState.addItem) is what
+        // negates the quantity and marks the line as a return, so a return rung
+        // by a barcode and a return rung by the return key are the same line.
+        // The mode is armed for this entry only: a code is one gesture, not a
+        // change of what the register is doing.
+        boolean wasReturnMode = ctx.state.returnMode;
+        ctx.state.returnMode = true;
+        try {
+            ctx.state.ticket.addItem(product.ean, articleCode,
+                    product.saleLabel().toUpperCase(), unitPrice, quantity, vatRate);
+        } finally {
+            ctx.state.returnMode = wasReturnMode;
+        }
+        ctx.handled = true;
+    }
+
+    /**
+     * Verifies the EAN13 modulo-10 check digit of a 13-character code.
+     *
+     * <p>A code of another length carries no EAN13 check digit, so it passes:
+     * the administered range said the last character is checked, not that the
+     * code is an EAN13.
+     *
+     * @param code the scanned code
+     * @return true when the check digit is right, or not applicable
+     */
+    private boolean hasValidChecksum(String code) {
+        if (code.length() != 13) {
+            return true;
+        }
+        int sum = 0;
+        for (int i = 0; i < 12; i++) {
+            int digit = code.charAt(i) - '0';
+            if (digit < 0 || digit > 9) {
+                return false;
+            }
+            sum += (i % 2 == 0) ? digit : digit * 3;
+        }
+        int expected = (10 - (sum % 10)) % 10;
+        return expected == code.charAt(12) - '0';
+    }
+}

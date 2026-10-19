@@ -72,6 +72,32 @@
                         </select>
                         <input class="input-control" type="number" min="0" name="displayOrder" value="{g.displayOrder}" aria-label="Ordre">
                         <input class="input-control" type="number" min="0" name="salesVolume" value="{g.salesVolume}" aria-label="Volume">
+                        <details class="panel">
+                            <summary class="panel-title">Où ce groupe est affiché</summary>
+                            <p class="page-sub">Rien de coché = <strong>partout</strong> (BO-03-01-21/-22/-23). Les trois portées se cumulent : un groupe coché sur un îlot ET sur un type n'apparaît que sur les caisses de cet îlot qui sont de ce type.</p>
+                            <fieldset class="field">
+                                <legend class="field-label">Îlots</legend>
+                                {#for island in islands}
+                                <label><input type="checkbox" name="islandCodes" value="{island.code}"{#if g.hasIsland(island.code)} checked{/if}> {island.code}</label>
+                                {/for}
+                            </fieldset>
+                            <fieldset class="field">
+                                <legend class="field-label">Caisses</legend>
+                                {#for point in points}
+                                <label><input type="checkbox" name="terminalIds" value="{point.terminalId}"{#if g.hasTerminal(point.terminalId)} checked{/if}> {point.terminalId}</label>
+                                {/for}
+                            </fieldset>
+                            <fieldset class="field">
+                                <legend class="field-label">Types de point de contact</legend>
+                                {#for type in tpvTypes}
+                                <label><input type="checkbox" name="tpvTypes" value="{type}"{#if g.hasTpvType(type.name)} checked{/if}> {type.label}</label>
+                                {/for}
+                            </fieldset>
+                            <div class="field">
+                                <label class="field-label" for="lbl-{g.code}">Libellés traduits (langue=libellé)</label>
+                                <input class="input-control" id="lbl-{g.code}" type="text" name="labels" maxlength="500" value="{g.labels ?: ''}">
+                            </div>
+                        </details>
                         <button class="btn btn-small" type="submit">Enregistrer</button>
                     </form>
                 </td>

@@ -77,6 +77,11 @@ class GroupOIT {
      */
     @BeforeEach
     void seed() {
+        // The catalogue BLOCKS account creation by default (BO-10-04-05), so
+        // the baseline every case starts from is stated here and not inherited
+        // from whichever case ran before: resetting it afterwards left the
+        // FIRST case of the class running against the catalogue default.
+        settings.store(CREATION_BLOCKED_KEY, "false");
         QuarkusTransaction.requiringNew().run(() -> {
             AccountCustomer a = new AccountCustomer();
             a.accountNumber = "ZOACC1";

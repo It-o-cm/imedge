@@ -47,6 +47,11 @@
                 <span class="field-hint">Affiché sur la ligne et le ticket. Vide : le libellé commercial s'applique.</span>
             </div>
             <div class="field">
+                <label class="field-label" for="f-infomsg">Message à la saisie</label>
+                <input class="input-control" id="f-infomsg" type="text" name="infoMessage" value="{product.infoMessage ?: ''}" maxlength="200">
+                <span class="field-hint">Phrase affichée au caissier quand l'article est saisi. Jamais bloquante : la vente continue.</span>
+            </div>
+            <div class="field">
                 <label class="field-label" for="f-internal">Code interne</label>
                 <input class="input-control" id="f-internal" type="text" name="internalCode" value="{product.internalCode ?: ''}" maxlength="50">
                 <span class="field-hint">Encaissement par scan ou saisie, en plus de l'EAN.</span>

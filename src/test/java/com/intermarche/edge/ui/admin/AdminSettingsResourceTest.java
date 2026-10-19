@@ -40,6 +40,11 @@ import static org.mockito.Mockito.when;
  * (parse-ok / non-negative arm) stored normalized, a non-numeric integer and a
  * negative integer (both the invalid arm, early red redirect), a boolean
  * normalized, a text stored verbatim, and the success green redirect.
+ * <p>
+ * The closed-set parameters add their own arms, on both paths: the projection
+ * with its values, the projection WITHOUT any (a free field), the widening of
+ * the list by a stored value it does not carry, and on the save a word outside
+ * the set (refused) against the stored value itself (let through).
  */
 class AdminSettingsResourceTest {
 
@@ -106,6 +111,9 @@ class AdminSettingsResourceTest {
             {"gesture.endorsement-required",        "GESTES DE PRIX",             "b", ""},
             {"discount.line-max-percent",           "GESTES DE PRIX",             "",  "i"},
             {"discount.global-max-percent",         "GESTES DE PRIX",             "",  "i"},
+            {"discount.presets",                    "GESTES DE PRIX",             "",  ""},
+            {"discount.cumulative-on-discounted",   "GESTES DE PRIX",             "b", ""},
+            {"discount.global-on-discounted",       "GESTES DE PRIX",             "b", ""},
             {"discount.enabled",                    "GESTES DE PRIX",             "b", ""},
             {"price.show-original-on-force",        "GESTES DE PRIX",             "b", ""},
             {"customer.message-open",               "AFFICHEUR CLIENT",           "",  ""},
@@ -114,7 +122,29 @@ class AdminSettingsResourceTest {
             {"parking.print-receipt",               "TICKETS",                    "b", ""},
             {"ticket.email-format",                 "TICKETS",                    "",  ""},
             {"ticket.email-editable",               "TICKETS",                    "b", ""},
+            {"currency.symbol",                     "DEVISE",                     "",  ""},
+            {"currency.symbol-print",               "DEVISE",                     "b", ""},
+            {"currency.symbol-position",            "DEVISE",                     "",  ""},
             {"ticket.line-order",                   "TICKETS",                    "",  ""},
+            {"retention.barcodes-expired-unused-days", "RÉTENTION DES CODES-BARRES", "", "i"},
+            {"retention.barcodes-expired-used-days", "RÉTENTION DES CODES-BARRES", "",  "i"},
+            {"retention.barcodes-undated-days",      "RÉTENTION DES CODES-BARRES", "",  "i"},
+            {"ticket.search-days",                  "TICKETS",                    "",  "i"},
+            {"ticket.item-count-print",             "TICKETS",                    "",  ""},
+            {"ticket.unknown-article-barcode",      "TICKETS",                    "b", ""},
+            {"ticket.second-code-print",            "TICKETS",                    "b", ""},
+            {"ticket.family-alphabetical",          "TICKETS",                    "b", ""},
+            {"ticket.line-attribute",               "TICKETS",                    "",  ""},
+            {"ticket.line-attribute-isolate",       "TICKETS",                    "",  ""},
+            {"ticket.barcode-prefix",               "TICKETS",                    "",  ""},
+            {"ticket.vat-code",                     "TICKETS",                    "b", ""},
+            {"ticket.exit-ticket",                  "TICKETS",                    "b", ""},
+            {"ticket.exit-ticket-articles",         "TICKETS",                    "",  "i"},
+            {"parking.print-resume",                "TICKETS",                    "b", ""},
+            {"ticket.line-discount-print",          "TICKETS",                    "b", ""},
+            {"ticket.immediate-discount-total",     "TICKETS",                    "b", ""},
+            {"print.logo-width-dots",               "TICKETS",                    "",  "i"},
+            {"credit-note.print-expiry",            "TICKETS",                    "b", ""},
             {"print.conditional-enabled",           "IMPRESSION CONDITIONNELLE",  "b", ""},
             {"print.forced-documents",              "IMPRESSION CONDITIONNELLE",  "",  ""},
             {"print.force-ticket-glc",              "IMPRESSION CONDITIONNELLE",  "b", ""},
@@ -124,8 +154,12 @@ class AdminSettingsResourceTest {
             {"payment.degraded-mode",               "MONÉTIQUE",                  "b", ""},
             {"payment.degraded-forced-endorsement", "MONÉTIQUE",                  "b", ""},
             {"payment.degraded-forced-minutes",     "MONÉTIQUE",                  "",  "i"},
+            {"terminal.pdv-label-enabled",          "MONÉTIQUE",                  "b", ""},
+            {"terminal.pdv-label",                  "MONÉTIQUE",                  "",  ""},
             {"ticket.header-message",               "MESSAGES TICKET",            "",  ""},
             {"ticket.footer-message",               "MESSAGES TICKET",            "",  ""},
+            {"ticket.footer-url",                   "MESSAGES TICKET",            "",  ""},
+            {"ticket.footer-url-format",            "MESSAGES TICKET",            "",  ""},
             {"drawer.open-on-payment",              "TIROIR",                     "b", ""},
             {"drawer.open-on-login",                "TIROIR",                     "b", ""},
             {"backup.manual-endorsement",           "SECOURS MONETIQUE",          "b", ""},
@@ -135,23 +169,30 @@ class AdminSettingsResourceTest {
             {"credit.allowed-in-degraded",          "CREDIT CLIENT",              "b", ""},
             {"customer.account-pattern",            "CREDIT CLIENT",              "",  ""},
             {"credit.degraded-after-minutes",       "CREDIT CLIENT",              "",  "i"},
-            {"customer.volatile-creation-enabled",    "CLIENT EN CAISSE",           "b", ""},
-            {"customer.account-creation-blocked",     "CLIENT EN CAISSE",           "b", ""},
-            {"customer.show-details",                 "CLIENT EN CAISSE",           "b", ""},
-            {"customer.update-enabled",               "CLIENT EN CAISSE",           "b", ""},
-            {"customer.show-discount",                "CLIENT EN CAISSE",           "b", ""},
-            {"customer.discount-segment",             "CLIENT EN CAISSE",           "", ""},
-            {"customer.credit-tender",                "CLIENT EN CAISSE",           "", ""},
-            {"customer.partial-credit-allowed",       "CLIENT EN CAISSE",           "b", ""},
-            {"customer.offline-message",              "CLIENT EN CAISSE",           "", ""},
-            {"customer.over-limit-message",           "CLIENT EN CAISSE",           "", ""},
-            {"customer.default-tax-id",               "CLIENT EN CAISSE",           "", ""},
-            {"customer.default-tax-id-label",         "CLIENT EN CAISSE",           "", ""},
-            {"customer.foreign-tax-id-countries",     "CLIENT EN CAISSE",           "", ""},
-            {"customer.invoice-export-due-date",      "CLIENT EN CAISSE",           "b", ""},
-            {"customer.invoice-export-ecotax",        "CLIENT EN CAISSE",           "b", ""},
+            {"customer.volatile-creation-enabled",  "CLIENT EN CAISSE",           "b", ""},
+            {"customer.account-creation-blocked",   "CLIENT EN CAISSE",           "b", ""},
+            {"customer.show-details",               "CLIENT EN CAISSE",           "b", ""},
+            {"customer.update-enabled",             "CLIENT EN CAISSE",           "b", ""},
+            {"customer.show-discount",              "CLIENT EN CAISSE",           "b", ""},
+            {"customer.discount-segment",           "CLIENT EN CAISSE",           "",  ""},
+            {"customer.credit-tender",              "CLIENT EN CAISSE",           "",  ""},
+            {"customer.partial-credit-allowed",     "CLIENT EN CAISSE",           "b", ""},
+            {"customer.offline-message",            "CLIENT EN CAISSE",           "",  ""},
+            {"customer.over-limit-message",         "CLIENT EN CAISSE",           "",  ""},
+            {"customer.default-tax-id",             "CLIENT EN CAISSE",           "",  ""},
+            {"customer.default-tax-id-label",       "CLIENT EN CAISSE",           "",  ""},
+            {"customer.foreign-tax-id-countries",   "CLIENT EN CAISSE",           "",  ""},
+            {"customer.invoice-export-due-date",    "CLIENT EN CAISSE",           "b", ""},
+            {"customer.invoice-export-ecotax",      "CLIENT EN CAISSE",           "b", ""},
             {"scan.ean13-check-digit",              "SCAN",                       "b", ""},
+            {"scan.supervisor-prefix",              "SCAN",                       "",  ""},
+            {"sale.allow-during-payment",           "SCAN",                       "b", ""},
             {"dashboard.alerts-enabled",            "SUPERVISION",                "b", ""},
+            {"dashboard.indicators",                "SUPERVISION",                "",  ""},
+            {"supervision.register-offline-minutes", "SUPERVISION",               "",  "i"},
+            {"supervision.settled-calls-kept",      "SUPERVISION",                "b", ""},
+            {"auth.endorsement-roles",              "GESTES NÉGATIFS",            "",  ""},
+            {"supervision.unknown-item-alert",      "SUPERVISION",                "b", ""},
             {"supervisor.service-reasons",          "SUPERVISION",                "",  ""},
             {"fidelity.advantages-enabled",         "FIDÉLITÉ",                   "b", ""},
             {"fidelity.projected-label",            "FIDÉLITÉ",                   "",  ""},
@@ -161,6 +202,11 @@ class AdminSettingsResourceTest {
             {"invoice.customer-fields",             "FACTURE",                    "",  ""},
             {"invoice.document-types",              "FACTURE",                    "",  ""},
             {"invoice.document-output",             "FACTURE",                    "",  ""},
+            {"invoice.decimals-unit-ht",            "FACTURE",                    "",  "i"},
+            {"invoice.decimals-vat-base",           "FACTURE",                    "",  "i"},
+            {"invoice.decimals-vat-amount",         "FACTURE",                    "",  "i"},
+            {"invoice.decimals-total-ht",           "FACTURE",                    "",  "i"},
+            {"invoice.decimals-total-ttc",          "FACTURE",                    "",  "i"},
             {"invoice.slip-lines",                  "FACTURE",                    "",  "i"},
             {"invoice.auto-print",                  "FACTURE",                    "",  ""},
             {"drawer.withdrawal-methods",           "PRÉLÈVEMENT ET TRANSFERT",   "",  ""},
@@ -172,36 +218,66 @@ class AdminSettingsResourceTest {
             {"abandon.print",                       "ABANDON DE TICKET",          "",  ""},
             {"abandon.print-detail",                "ABANDON DE TICKET",          "b", ""},
             {"tender.restricted",                   "RÈGLEMENTS RESTREINTS",      "",  ""},
+            {"customer.local-code-range",           "CLIENT EN CAISSE",           "",  ""},
+            {"keyboard.enter-as-total",             "TOUCHES CAISSE",             "b", ""},
+            {"touch.external-apps",                 "TOUCHES CAISSE",             "",  ""},
+            {"tender.local-range",                  "RÈGLEMENTS RESTREINTS",      "",  ""},
+            {"cheque.endorsement-lines",            "RÈGLEMENTS RESTREINTS",      "",  ""},
             {"gs1.expiry-alert",                    "CODES GS1",                  "",  ""},
             {"gs1.expiry-warn-days",                "CODES GS1",                  "",  "i"},
             {"gs1.coupon-expiry-alert",             "CODES GS1",                  "",  ""},
             {"gs1.gdti-coupon-types",               "CODES GS1",                  "",  ""},
             {"gs1.gcn-coupon-type",                 "CODES GS1",                  "",  ""},
+            {"sogec.bon-prefixes",                  "CODES GS1",                  "",  ""},
             {"touch.groups-per-page",               "TOUCHES CAISSE",             "",  "i"},
             {"touch.display-order",                 "TOUCHES CAISSE",             "",  ""},
+            {"auth.bo-max-failures",                "SESSION CAISSE",             "",  "i"},
+            {"auth.bo-lockout-minutes",             "SESSION CAISSE",             "",  "i"},
+            {"auth.password-expiry-days",           "SESSION CAISSE",             "",  "i"},
+            {"auth.idle-action",                    "SESSION CAISSE",             "",  ""},
             {"auth.badge-scan-enabled",             "SESSION CAISSE",             "b", ""},
             {"auth.password-required-on-open",      "SESSION CAISSE",             "b", ""},
             {"auth.password-required-on-close",     "SESSION CAISSE",             "b", ""},
-            {"session.close-endorsement-on-pending", "SESSION CAISSE",            "b", ""},
+            {"session.close-endorsement-on-pending","SESSION CAISSE",             "b", ""},
             {"session.print-open-receipt",          "TICKETS",                    "b", ""},
             {"session.print-close-receipt",         "TICKETS",                    "b", ""},
+            {"period.alert-countdown-minutes",      "FIN DE PÉRIODE",             "",  "i"},
+            {"period.week-end-day",                 "FIN DE PÉRIODE",             "",  ""},
+            {"period.month-end-day",                "FIN DE PÉRIODE",             "",  "i"},
+            {"period.year-end-date",                "FIN DE PÉRIODE",             "",  ""},
+            {"period.reports",                      "FIN DE PÉRIODE",             "",  ""},
+            {"period.reports-format",               "FIN DE PÉRIODE",             "",  ""},
             {"period.auto-close-enabled",           "FIN DE PÉRIODE",             "b", ""},
             {"period.end-time",                     "FIN DE PÉRIODE",             "",  ""},
             {"period.close-lead-minutes",           "FIN DE PÉRIODE",             "",  "i"},
+            {"period.reset-ticket-counter",         "FIN DE PÉRIODE",             "b", ""},
+            {"period.pdv-actions",                  "FIN DE PÉRIODE",             "",  ""},
             {"cash.default-opening-float",          "SESSION CAISSE",             "",  ""},
             {"drawer.open-on-session-close",        "TIROIR",                     "b", ""},
             {"ticket.vat-breakdown-enabled",        "TICKETS",                    "b", ""},
+            {"fidelity.print-card-number",          "FIDÉLITÉ",                   "b", ""},
+            {"fidelity.print-balances",             "FIDÉLITÉ",                   "b", ""},
+            {"fidelity.advantage-grouping",         "FIDÉLITÉ",                   "",  ""},
+            {"fidelity.non-holder-message",         "FIDÉLITÉ",                   "",  ""},
             {"fidelity.external-enabled",           "FIDÉLITÉ",                   "b", ""},
             {"cash.movement-tenders",               "MOUVEMENTS DE CAISSE",       "",  ""},
+            {"cash.withdrawal-destinations",        "MOUVEMENTS DE CAISSE",       "",  ""},
             {"discount.line-max-amount",            "GESTES DE PRIX",             "",  ""},
             {"discount.global-max-amount",          "GESTES DE PRIX",             "",  ""},
+            {"fidelity.show-holder-name-customer",  "FIDÉLITÉ",                   "b", ""},
             {"fidelity.show-holder-name",           "FIDÉLITÉ",                   "b", ""},
             {"fidelity.card-pattern",               "FIDÉLITÉ",                   "",  ""},
             {"fidelity.jv-promotion-enabled",       "FIDÉLITÉ",                   "b", ""},
+            {"fidelity.template-online",            "FIDÉLITÉ",                   "",  ""},
+            {"fidelity.template-offline",           "FIDÉLITÉ",                   "",  ""},
+            {"fidelity.template-non-holder-online", "FIDÉLITÉ",                   "",  ""},
+            {"fidelity.template-non-holder-offline", "FIDÉLITÉ",                  "",  ""},
+            {"fidelity.template-grouped",           "FIDÉLITÉ",                   "",  ""},
             {"fidelity.url",                        "FIDÉLITÉ",                   "",  ""},
             {"fidelity.user",                       "FIDÉLITÉ",                   "",  ""},
             {"fidelity.offline-message",            "FIDÉLITÉ",                   "",  ""},
             {"fidelity.offline-message-no-card",    "FIDÉLITÉ",                   "",  ""},
+            {"fidelity.anonymous-projection",       "FIDÉLITÉ",                   "b", ""},
             {"training.theme",                      "MODE ÉCOLE",                 "",  ""},
             {"retention.sales-days",                "RÉTENTION DES DONNÉES",      "",  "i"},
             {"retention.cashier-reports-count",     "RÉTENTION DES DONNÉES",      "",  "i"},
@@ -213,9 +289,14 @@ class AdminSettingsResourceTest {
             {"retention.expired-promotions-days",   "RÉTENTION DES DONNÉES",      "",  "i"},
             {"retention.expired-promotions-cap",    "RÉTENTION DES DONNÉES",      "",  "i"},
             {"retention.deleted-articles-days",     "RÉTENTION DES DONNÉES",      "",  "i"},
+            {"customer.integration-require-address", "CLIENT EN COMPTE",          "b", ""},
+            {"referential.update-audit-enabled",    "SUPERVISION",                "b", ""},
+            {"retention.integration-results-days",  "RÉTENTION DES DONNÉES",      "",  "i"},
             {"retention.customers-days",            "RÉTENTION DES DONNÉES",      "",  "i"},
+            {"retention.scheduled-reports-days",    "RÉTENTION DES DONNÉES",      "",  "i"},
             {"session.welcome-message",             "SESSION CAISSE",             "",  ""},
             {"sale.waiting-label",                  "AFFICHAGE",                  "",  ""},
+            {"sale.line-warning-threshold",         "AFFICHAGE",                  "",  ""},
             {"cash.drawer-cap",                     "TIROIR",                     "",  ""},
             {"gesture.endorsement-cancel-line",     "GESTES NÉGATIFS",            "b", ""},
             {"gesture.endorsement-cancel-last",     "GESTES NÉGATIFS",            "b", ""},
@@ -226,6 +307,52 @@ class AdminSettingsResourceTest {
             {"gesture.endorsement-price-force",     "GESTES NÉGATIFS",            "b", ""},
             {"cash.variance-threshold",             "CLÔTURE",                    "",  ""},
             {"cash.float-mode",                     "CLÔTURE",                    "",  ""},
+            {"cash.variance-amount-visible",        "CLÔTURE",                    "b", ""},
+            {"collect.point-label",                 "ARTICLES A ENLEVER",         "",  ""},
+            {"collect.voucher-copies",              "ARTICLES A ENLEVER",         "",  "i"},
+            {"movement.financial-sources",          "MOUVEMENT FINANCIER",        "",  ""},
+            {"movement.financial-destinations",     "MOUVEMENT FINANCIER",        "",  ""},
+            {"movement.financial-print",            "MOUVEMENT FINANCIER",        "b", ""},
+            {"change-order.print",                  "COMMANDE DE MONNAIE",        "b", ""},
+            {"change-order.roll-values",            "COMMANDE DE MONNAIE",        "",  ""},
+            {"return.reasons",                      "RETOUR CLIENT",              "",  ""},
+            {"return.print-reason",                 "RETOUR CLIENT",              "b", ""},
+            {"return.in-sale-allowed",              "RETOUR CLIENT",              "b", ""},
+            {"return.dedicated-register",           "RETOUR CLIENT",              "b", ""},
+            {"return.types",                        "RETOUR CLIENT",              "",  ""},
+            {"return.foreign-store-accepted",       "RETOUR CLIENT",              "b", ""},
+            {"return.without-origin-allowed",       "RETOUR CLIENT",              "b", ""},
+            {"language.system",                     "LANGUE",                     "",  ""},
+            {"language.available",                  "LANGUE",                     "",  ""},
+            {"language.operator-change",            "LANGUE",                     "b", ""},
+            {"language.customer-second",            "LANGUE",                     "",  ""},
+            {"island.change-allowed",               "ILOT / TPV",                 "b", ""},
+            {"island.auto-declaration",             "ILOT / TPV",                 "b", ""},
+            {"island.unknown-article-ticket",       "ILOT / TPV",                 "b", ""},
+            {"island.block-article-popups",         "ILOT / TPV",                 "b", ""},
+            {"island.block-payment-popups",         "ILOT / TPV",                 "b", ""},
+            {"island.promotion-channel",            "ILOT / TPV",                 "",  ""},
+            {"balance.default-tare",                "BALANCE",                    "",  ""},
+            {"fidelity.send-subfamily",             "FIDÉLITÉ",                   "b", ""},
+            {"ticket.ecotax-print",                 "TICKETS",                    "",  ""},
+            {"ticket.due-amount-large",             "TICKETS",                    "b", ""},
+            {"fiscal.certificate-number",           "FISCAL",                     "",  ""},
+            {"balance.print-tare",                  "BALANCE",                    "b", ""},
+            {"balance.tare-containers",             "BALANCE",                    "",  ""},
+            {"control.cancel-line",                 "POINTS DE CONTRÔLE",         "",  ""},
+            {"control.cancel-payment",              "POINTS DE CONTRÔLE",         "",  ""},
+            {"control.refund",                      "POINTS DE CONTRÔLE",         "",  ""},
+            {"control.drawer-out-of-sale",          "POINTS DE CONTRÔLE",         "",  ""},
+            {"control.quantity",                    "POINTS DE CONTRÔLE",         "",  ""},
+            {"control.quantity-max",                "POINTS DE CONTRÔLE",         "",  "i"},
+            {"control.ticket-total",                "POINTS DE CONTRÔLE",         "",  ""},
+            {"control.ticket-total-max",            "POINTS DE CONTRÔLE",         "",  ""},
+            {"control.parked-at-close",             "POINTS DE CONTRÔLE",         "",  ""},
+            {"control.card-payment",                "POINTS DE CONTRÔLE",         "",  ""},
+            {"control.item-amount",                 "POINTS DE CONTRÔLE",         "",  ""},
+            {"control.item-amount-max",             "POINTS DE CONTRÔLE",         "",  ""},
+            {"control.payment-amount",              "POINTS DE CONTRÔLE",         "",  ""},
+            {"control.payment-amount-max",          "POINTS DE CONTRÔLE",         "",  ""},
             {"financial.closed-weekdays",           "ÉTATS FINANCIERS",           "",  ""},
             {"financial.closed-dates",              "ÉTATS FINANCIERS",           "",  ""},
             {"financial.hourly-slot-minutes",       "ÉTATS FINANCIERS",           "",  "i"},
@@ -302,6 +429,71 @@ class AdminSettingsResourceTest {
         assertEquals(303, response.getStatus());
         assertTrue(response.getLocation().toString().contains("noticeOk=true"));
         assertTrue(response.getLocation().toString().contains("3+param"));
+    }
+
+    /**
+     * A CLOSED-SET PARAMETER IS PROJECTED WITH ITS VALUES, a free one with an
+     * empty list, and a value stored OUTSIDE the set joins the list rather than
+     * disappearing from it (the widening arm): a node left on the {@code
+     * FLOATING} synonym must read {@code FLOATING} on its page, not {@code
+     * FIXED}.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void settingsPageOffersClosedValuesAndKeepsAStoredSynonym() {
+        AdminSettingsResource resource = newResource();
+        TemplateInstance instance = wireTemplate(resource);
+        when(resource.posSettingsService.value(anyString())).thenReturn("V");
+        when(resource.posSettingsService.value("control.cancel-line")).thenReturn("ENDORSE");
+        when(resource.posSettingsService.value("cash.float-mode")).thenReturn("FLOATING");
+        assertEquals(instance, resource.settingsPage(null, true));
+        ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
+        verify(resource.adminSettings).data(eq("sections"), captor.capture());
+        List<AdminSettingsResource.Section> sections =
+                (List<AdminSettingsResource.Section>) captor.getValue();
+        java.util.Map<String, AdminSettingsResource.Entry> byKey = new java.util.HashMap<>();
+        for (AdminSettingsResource.Section section : sections) {
+            for (AdminSettingsResource.Entry entry : section.getEntries()) {
+                byKey.put(entry.key, entry);
+            }
+        }
+        assertEquals(List.of("NONE", "WARN", "BLOCK", "ENDORSE"),
+                byKey.get("control.cancel-line").choices);
+        assertTrue(byKey.get("customer.message-open").choices.isEmpty());
+        assertEquals(List.of("FIXED", "FLOATING_WEEK_MONTH", "FLOATING_MONTH", "FLOATING"),
+                byKey.get("cash.float-mode").choices);
+    }
+
+    /**
+     * {@code save} refuses a word outside the closed set — naming what was
+     * expected — and stores nothing: the register would not recognise it and
+     * would fall back on the default, leaving the shop with a control it
+     * believes it has set.
+     */
+    @Test
+    void saveRejectsAValueOutsideTheClosedSet() {
+        AdminSettingsResource resource = newResource();
+        MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
+        form.putSingle("control.cancel-line", "BLOK");
+        Response response = resource.save(form);
+        verify(resource.posSettingsService, never()).store(eq("control.cancel-line"), anyString());
+        assertTrue(response.getLocation().toString().contains("noticeOk=false"));
+    }
+
+    /**
+     * {@code save} lets the value ALREADY STORED through even when the set no
+     * longer offers it (the unchanged arm), so a node carrying a synonym keeps
+     * a saveable page.
+     */
+    @Test
+    void saveAcceptsTheStoredValueOutsideTheClosedSet() {
+        AdminSettingsResource resource = newResource();
+        when(resource.posSettingsService.value("cash.float-mode")).thenReturn("FLOATING");
+        MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
+        form.putSingle("cash.float-mode", "FLOATING");
+        Response response = resource.save(form);
+        verify(resource.posSettingsService).store("cash.float-mode", "FLOATING");
+        assertTrue(response.getLocation().toString().contains("noticeOk=true"));
     }
 
     /**

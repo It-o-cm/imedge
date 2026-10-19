@@ -82,6 +82,25 @@
                 <label class="field-label" for="gc-{preview.template.code}">Exemplaires</label>
                 <input class="input-control" id="gc-{preview.template.code}" type="number" name="copies" min="1" value="{preview.template.copies}">
             </div>
+            {! BO-03-04-12 et -13 : le nom du document et celui de sa reimpression.
+             ! Vides, la caisse garde ses propres libelles. !}
+            <div class="field">
+                <label class="field-label" for="gn-{preview.template.code}">Nom du document</label>
+                <input class="input-control" id="gn-{preview.template.code}" type="text" name="title" maxlength="60" value="{preview.template.title ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="gd-{preview.template.code}">Nom en réimpression</label>
+                <input class="input-control" id="gd-{preview.template.code}" type="text" name="duplicateTitle" maxlength="60" value="{preview.template.duplicateTitle ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="gx-{preview.template.code}">Préfixe de numéro</label>
+                <input class="input-control" id="gx-{preview.template.code}" type="text" name="numberPrefix" maxlength="20" value="{preview.template.numberPrefix ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="gy-{preview.template.code}">Nom des exemplaires</label>
+                <input class="input-control" id="gy-{preview.template.code}" type="text" name="copyTitles" maxlength="200" value="{preview.template.copyTitles ?: ''}">
+                <span class="field-hint">Un nom par exemplaire, séparés par des points-virgules : ORIGINAL;DUPLICADO;TRIPLICADO</span>
+            </div>
             <div class="field">
                 <label class="field-label" for="gp-{preview.template.code}">Priorité</label>
                 <input class="input-control" id="gp-{preview.template.code}" type="number" name="priority" value="{preview.template.priority}">
@@ -91,6 +110,34 @@
                 <input id="ga-{preview.template.code}" type="checkbox" name="active" {#if preview.template.active}checked{/if}>
             </div>
         </div>
+        {! BO-03-05-05 et -06 : une banniere s'edite LIGNE A LIGNE. Une seule
+         ! verite stockee, la source ci-dessous ; cette table en est l'autre
+         ! porte, et c'est elle qui est postee quand elle est presente. Trois
+         ! lignes vides sont toujours offertes pour en ajouter sans script ;
+         ! une ligne vide et non cochee est jetee au save. !}
+        {#if preview.lines.size() > 0}
+        <div class="field">
+            <label class="field-label">Lignes de la bannière</label>
+            <table class="data-table">
+                <tr><th>Texte</th><th>Alignement</th><th>Gras</th><th>Active</th></tr>
+                {#for line in preview.lines}
+                <tr>
+                    <td><input class="input-control" type="text" name="lineText.{line_index}" maxlength="120" value="{line.text}"></td>
+                    <td>
+                        <select class="input-control" name="lineAlign.{line_index}">
+                            <option value="LEFT" {#if line.align.name() == 'LEFT'}selected{/if}>Gauche</option>
+                            <option value="CENTRE" {#if line.align.name() == 'CENTRE'}selected{/if}>Centre</option>
+                            <option value="RIGHT" {#if line.align.name() == 'RIGHT'}selected{/if}>Droite</option>
+                        </select>
+                    </td>
+                    <td><input type="checkbox" name="lineBold.{line_index}" {#if line.bold}checked{/if}></td>
+                    <td><input type="checkbox" name="lineActive.{line_index}" {#if line.active}checked{/if}></td>
+                </tr>
+                {/for}
+            </table>
+            <span class="field-hint">Une ligne désactivée garde son texte et ne s'imprime pas. Les lignes vides sont ignorées.</span>
+        </div>
+        {/if}
         <div class="field">
             <label class="field-label" for="gs-{preview.template.code}">Mise en page</label>
             <textarea class="input-control gab-source" id="gs-{preview.template.code}" name="source" rows="14" spellcheck="false"
@@ -177,6 +224,22 @@
             <div class="field">
                 <label class="field-label" for="new-gcopies">Exemplaires</label>
                 <input class="input-control" id="new-gcopies" type="number" name="copies" min="1" value="1">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-gtitle">Nom du document</label>
+                <input class="input-control" id="new-gtitle" type="text" name="title" maxlength="60" value="">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-gduplicate">Nom en réimpression</label>
+                <input class="input-control" id="new-gduplicate" type="text" name="duplicateTitle" maxlength="60" value="">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-gprefix">Préfixe de numéro</label>
+                <input class="input-control" id="new-gprefix" type="text" name="numberPrefix" maxlength="20" value="">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-gcopytitles">Nom des exemplaires</label>
+                <input class="input-control" id="new-gcopytitles" type="text" name="copyTitles" maxlength="200" value="">
             </div>
             <div class="field">
                 <label class="field-label" for="new-gpriority">Priorité</label>

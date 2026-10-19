@@ -1253,4 +1253,519 @@ class PosSettingsServiceTest {
             assertEquals(20, service.financialBestSellersCount());
         }
     }
+
+    /**
+     * THE PORTED REGISTER KEYS ARE ALL THERE.
+     *
+     * <p>The node administers the register's parameters since the administration
+     * left the lane: a key a register READS and this catalogue does not carry is
+     * a key nobody can set in the shop — the back office never writes it, and the
+     * register is left with its own default for good. The keys of chantier A are
+     * therefore named here one by one, so that dropping one from {@code CATALOG}
+     * fails here instead of quietly taking a parameter out of the back office.
+     */
+    @Test
+    void catalogueCarriesEveryPortedRegisterKey() {
+        Set<String> keys = PosSettingsService.CATALOG.stream()
+                .map(PosSettingsService.Def::key)
+                .collect(java.util.stream.Collectors.toSet());
+        for (String ported : List.of(
+                "control.cancel-line", "control.cancel-payment", "control.refund",
+                "control.drawer-out-of-sale", "control.quantity", "control.quantity-max",
+                "control.ticket-total", "control.ticket-total-max", "control.parked-at-close",
+                "control.card-payment",
+                "return.types", "return.reasons", "return.print-reason",
+                "return.in-sale-allowed", "return.without-origin-allowed",
+                "return.foreign-store-accepted", "return.dedicated-register",
+                "language.system", "language.available", "language.operator-change",
+                "language.customer-second",
+                "movement.financial-sources", "movement.financial-destinations",
+                "movement.financial-print",
+                "change-order.print", "change-order.roll-values",
+                "island.auto-declaration", "island.change-allowed", "island.promotion-channel",
+                "balance.default-tare", "balance.tare-containers",
+                "collect.point-label", "collect.voucher-copies",
+                "cash.withdrawal-destinations", "cash.variance-amount-visible",
+                "sale.line-warning-threshold", "fidelity.anonymous-projection",
+                "sogec.bon-prefixes")) {
+            assertTrue(keys.contains(ported), "key missing from the catalogue: " + ported);
+        }
+    }
+
+    /**
+     * EVERY CLOSED SET NAMES A PARAMETER OF THE CATALOGUE, and names one it can
+     * actually serve: the key exists, it is a TEXT parameter (a closed set means
+     * nothing on a boolean or an integer, which already have their widget), its
+     * list is not empty, and the parameter's own DEFAULT is one of the values
+     * offered — otherwise the admin page would open on a value its own list
+     * cannot show, and saving would rewrite it.
+     */
+    @Test
+    void closedValueSetsMatchTheirCatalogueEntry() {
+        for (Map.Entry<String, List<String>> closed : PosSettingsService.CLOSED_VALUES.entrySet()) {
+            PosSettingsService.Def entry = PosSettingsService.CATALOG.stream()
+                    .filter(candidate -> candidate.key().equals(closed.getKey()))
+                    .findFirst()
+                    .orElse(null);
+            assertTrue(entry != null, "key unknown to the catalogue: " + closed.getKey());
+            assertEquals(PosSettingsService.Type.TEXT, entry.type(),
+                    "a closed set on a non-TEXT parameter: " + entry.key());
+            assertFalse(closed.getValue().isEmpty(), "empty value set: " + entry.key());
+            assertTrue(closed.getValue().contains(entry.defaultValue()),
+                    "the default is not among the offered values: " + entry.key());
+        }
+    }
+
+    /**
+     * BO-10-02-16 and -17: the two amount control points of the register are at
+     * the node's catalogue, level and ceiling, under the control-points
+     * section; and the two levels are offered as a closed set, like the eight
+     * before them. Without these four entries no back-office screen can write
+     * them and the register keeps its silent default.
+     */
+    @Test
+    void catalogueCarriesTheTwoAmountControlPoints() {
+        for (String key : List.of("control.item-amount", "control.item-amount-max",
+                "control.payment-amount", "control.payment-amount-max")) {
+            PosSettingsService.Def entry = PosSettingsService.CATALOG.stream()
+                    .filter(candidate -> candidate.key().equals(key))
+                    .findFirst()
+                    .orElse(null);
+            assertTrue(entry != null, "key missing from the catalogue: " + key);
+            assertEquals("POINTS DE CONTRÔLE", entry.section(), key);
+            assertEquals(PosSettingsService.Type.TEXT, entry.type(), key);
+        }
+        assertEquals(List.of("NONE", "WARN", "BLOCK", "ENDORSE"),
+                PosSettingsService.closedValues("control.item-amount"));
+        assertEquals(List.of("NONE", "WARN", "BLOCK", "ENDORSE"),
+                PosSettingsService.closedValues("control.payment-amount"));
+        assertTrue(PosSettingsService.closedValues("control.item-amount-max").isEmpty());
+        assertTrue(PosSettingsService.closedValues("control.payment-amount-max").isEmpty());
+    }
+
+    /**
+     * {@code closedValues} answers the set of a closed parameter and an EMPTY
+     * list for a free one — the two arms the admin page branches on.
+     */
+    @Test
+    void closedValuesAnswersTheSetOrNothing() {
+        assertEquals(List.of("NONE", "WARN", "BLOCK", "ENDORSE"),
+                PosSettingsService.closedValues("control.cancel-line"));
+        assertTrue(PosSettingsService.closedValues("customer.message-open").isEmpty());
+    }
+
+    /**
+     * THE CATALOGUE IS WELL FORMED.
+     *
+     * <p>Every entry names a key, a section, a label and a hint, because the
+     * admin page renders the four of them; and no key is carried twice, which
+     * would show the parameter under two headings and let the save of one
+     * overwrite the other.
+     */
+    @Test
+    void catalogueEntriesAreUniqueAndFullyDescribed() {
+        Set<String> keys = PosSettingsService.CATALOG.stream()
+                .map(PosSettingsService.Def::key)
+                .collect(java.util.stream.Collectors.toSet());
+        assertEquals(PosSettingsService.CATALOG.size(), keys.size(), "a key is carried twice");
+        for (PosSettingsService.Def def : PosSettingsService.CATALOG) {
+            assertFalse(def.key().isBlank(), "a catalogue entry carries no key");
+            assertFalse(def.section().isBlank(), "no section for " + def.key());
+            assertFalse(def.label().isBlank(), "no label for " + def.key());
+            assertFalse(def.hint().isBlank(), "no hint for " + def.key());
+        }
+    }
+
+    /**
+     * BO-10-03-05 / BO-10-03-11 / BO-10-03-12 / BO-10-03-21: the gabarit of the
+     * loyalty zone is chosen by the SALE'S CASE — a card was presented or not,
+     * the programme answered or not — and the grouped gabarit takes precedence
+     * over the holder-online one when the advantages are grouped by category.
+     */
+    @Test
+    void theLoyaltyZoneGabaritFollowsTheCase() {
+        PosSettingsService service = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of(
+                    row("fidelity.template-online", "FID-ON"),
+                    row("fidelity.template-offline", "FID-OFF"),
+                    row("fidelity.template-non-holder-online", "FID-NH-ON"),
+                    row("fidelity.template-non-holder-offline", "FID-NH-OFF"),
+                    row("fidelity.template-grouped", "  FID-CAT  ")));
+            // All three legs of the grouped guard true, and the code trimmed.
+            assertEquals("FID-CAT", service.fidelityTemplateCode(true, false, true));
+            // Grouping off: the holder-online gabarit answers.
+            assertEquals("FID-ON", service.fidelityTemplateCode(true, false, false));
+            // Grouping asked for, but the programme did not answer: the
+            // grouped guard falls on its middle leg.
+            assertEquals("FID-OFF", service.fidelityTemplateCode(true, true, true));
+            // Grouping asked for, but no card: it falls on its first leg.
+            assertEquals("FID-NH-ON", service.fidelityTemplateCode(false, false, true));
+            assertEquals("FID-NH-OFF", service.fidelityTemplateCode(false, true, true));
+        }
+    }
+
+    /**
+     * A blank gabarit code is the ABSENCE of a gabarit and not a gabarit named
+     * by the empty string: the register prints its built-in loyalty zone, which
+     * is what every shop does until a paramétreur has been there (BO-10-03-05).
+     */
+    @Test
+    void anUnadministeredLoyaltyGabaritIsNoGabarit() {
+        PosSettingsService grouped = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            // Grouping asked for and no grouped gabarit administered: the
+            // holder-online gabarit answers instead of nothing.
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of(
+                    row("fidelity.template-grouped", "   "),
+                    row("fidelity.template-online", "FID-ON")));
+            assertEquals("FID-ON", grouped.fidelityTemplateCode(true, false, true));
+        }
+        PosSettingsService bare = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of());
+            assertNull(bare.fidelityTemplateCode(true, false, true));
+            assertNull(bare.fidelityTemplateCode(true, false, false));
+            assertNull(bare.fidelityTemplateCode(true, true, false));
+            assertNull(bare.fidelityTemplateCode(false, false, false));
+            assertNull(bare.fidelityTemplateCode(false, true, false));
+        }
+    }
+
+    /**
+     * BO-10-07-04 / BO-10-07-05 / BO-10-07-06: the three currency parameters
+     * project their rows, and fall back to the catalogue defaults — the symbol
+     * E, printed, after the amount — which is what the register printed before
+     * they existed.
+     */
+    @Test
+    void theCurrencyParametersProjectTheirRows() {
+        PosSettingsService administered = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of(
+                    row("currency.symbol", "€"),
+                    row("currency.symbol-print", "false"),
+                    row("currency.symbol-position", "LEFT")));
+            assertEquals("€", administered.currencySymbol());
+            assertFalse(administered.currencySymbolPrinted());
+            assertEquals("LEFT", administered.currencySymbolPosition());
+        }
+        PosSettingsService bare = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of());
+            assertEquals("E", bare.currencySymbol());
+            assertTrue(bare.currencySymbolPrinted());
+            assertEquals("RIGHT", bare.currencySymbolPosition());
+        }
+    }
+
+    /**
+     * BO-10-02-13 / -15 / -20 / -28 / -32: the five register rules of this lot
+     * project their rows, and fall back to the catalogue defaults — which are
+     * in every case the behaviour the register had before the key existed.
+     */
+    @Test
+    void theFiveRegisterRulesProjectTheirRows() {
+        PosSettingsService administered = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of(
+                    row("keyboard.enter-as-total", "true"),
+                    row("sale.allow-during-payment", "true"),
+                    row("ticket.second-code-print", "true"),
+                    row("auth.idle-action", "CLOSE"),
+                    row("scan.supervisor-prefix", "SUP")));
+            assertTrue(administered.enterAsTotal());
+            assertTrue(administered.saleAllowedDuringPayment());
+            assertTrue(administered.secondCodePrinted());
+            assertEquals("CLOSE", administered.idleAction());
+            assertEquals("SUP", administered.supervisorBadgePrefix());
+        }
+        PosSettingsService bare = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of());
+            assertFalse(bare.enterAsTotal());
+            assertFalse(bare.saleAllowedDuringPayment());
+            assertFalse(bare.secondCodePrinted());
+            assertEquals("LOCK", bare.idleAction());
+            assertEquals("", bare.supervisorBadgePrefix());
+        }
+    }
+
+    /**
+     * BO-10-02-19: each figure of a commercial document carries its own
+     * administered number of decimals, and anything but three answers two —
+     * which is what every document printed before the keys existed.
+     */
+    @Test
+    void theDocumentDecimalsAreTwoOrThreeAndNothingElse() {
+        PosSettingsService administered = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of(
+                    row("invoice.decimals-unit-ht", "3"),
+                    row("invoice.decimals-vat-base", "3"),
+                    row("invoice.decimals-vat-amount", "7"),
+                    row("invoice.decimals-total-ht", "0"),
+                    row("invoice.decimals-total-ttc", "3")));
+            assertEquals(3, administered.invoiceUnitExcludingTaxDecimals());
+            assertEquals(3, administered.invoiceVatBaseDecimals());
+            assertEquals(2, administered.invoiceVatAmountDecimals());
+            assertEquals(2, administered.invoiceTotalExcludingTaxDecimals());
+            assertEquals(3, administered.invoiceTotalIncludingTaxDecimals());
+        }
+        PosSettingsService bare = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of());
+            assertEquals(2, bare.invoiceUnitExcludingTaxDecimals());
+            assertEquals(2, bare.invoiceVatBaseDecimals());
+            assertEquals(2, bare.invoiceVatAmountDecimals());
+            assertEquals(2, bare.invoiceTotalExcludingTaxDecimals());
+            assertEquals(2, bare.invoiceTotalIncludingTaxDecimals());
+        }
+    }
+
+    /**
+     * BO-10-07-10 / BO-10-07-11: the article-count placement and the
+     * unknown-article barcode project their rows, and fall back to the
+     * catalogue defaults — nowhere, and no barcode.
+     */
+    @Test
+    void theTicketCountAndUnknownBarcodeProjectTheirRows() {
+        PosSettingsService administered = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of(
+                    row("ticket.item-count-print", "OWN_LINE"),
+                    row("ticket.unknown-article-barcode", "true")));
+            assertEquals("OWN_LINE", administered.ticketItemCountPrint());
+            assertTrue(administered.unknownArticleBarcodePrinted());
+        }
+        PosSettingsService bare = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of());
+            assertEquals("NONE", bare.ticketItemCountPrint());
+            assertFalse(bare.unknownArticleBarcodePrinted());
+        }
+    }
+
+    /**
+     * BO-10-07-16 and BO-10-08-13/-14/-15: the search depth and the three
+     * barcode retention delays project their rows, and fall back to the
+     * catalogue defaults — thirty days of search, and no purge at all.
+     */
+    @Test
+    void theSearchDepthAndBarcodeDelaysProjectTheirRows() {
+        PosSettingsService administered = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of(
+                    row("ticket.search-days", "90"),
+                    row("retention.barcodes-expired-unused-days", "365"),
+                    row("retention.barcodes-expired-used-days", "180"),
+                    row("retention.barcodes-undated-days", "730")));
+            assertEquals(90, administered.ticketSearchDays());
+            assertEquals(365, administered.barcodeExpiredUnusedDays());
+            assertEquals(180, administered.barcodeExpiredUsedDays());
+            assertEquals(730, administered.barcodeUndatedDays());
+        }
+        PosSettingsService bare = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of());
+            assertEquals(30, bare.ticketSearchDays());
+            assertEquals(0, bare.barcodeExpiredUnusedDays());
+            assertEquals(0, bare.barcodeExpiredUsedDays());
+            assertEquals(0, bare.barcodeUndatedDays());
+        }
+    }
+
+    /**
+     * BO-10-08-27: the address control projects its row and defaults to off —
+     * a feed integrates what it carries until the shop asks otherwise.
+     */
+    @Test
+    void theAddressControlProjectsItsRow() {
+        PosSettingsService administered = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(
+                    List.of(row("customer.integration-require-address", "true")));
+            assertTrue(administered.customerIntegrationRequiresAddress());
+        }
+        PosSettingsService bare = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of());
+            assertFalse(bare.customerIntegrationRequiresAddress());
+        }
+    }
+
+    /**
+     * BO-10-03-03 / BO-10-05-04: the customer-display holder rule and the
+     * printed tare project their rows, and both default to off — the viseur
+     * client names nobody and the ticket states only the net weight, which is
+     * what they did before the keys existed.
+     */
+    @Test
+    void theCustomerHolderAndTareRulesProjectTheirRows() {
+        PosSettingsService administered = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of(
+                    row("fidelity.show-holder-name-customer", "true"),
+                    row("balance.print-tare", "true")));
+            assertTrue(administered.fidelityShowHolderNameOnCustomerDisplay());
+            assertTrue(administered.tarePrinted());
+        }
+        PosSettingsService bare = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of());
+            assertFalse(bare.fidelityShowHolderNameOnCustomerDisplay());
+            assertFalse(bare.tarePrinted());
+        }
+    }
+
+    /**
+     * BO-10-06-03: the fiscal certification number projects its row, and is
+     * blank by default — no country but the one that asks for it pays for it.
+     */
+    @Test
+    void theFiscalCertificateNumberProjectsItsRow() {
+        PosSettingsService administered = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(
+                    List.of(row("fiscal.certificate-number", "0000/AT")));
+            assertEquals("0000/AT", administered.fiscalCertificateNumber());
+        }
+        PosSettingsService bare = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of());
+            assertEquals("", bare.fiscalCertificateNumber());
+        }
+    }
+
+    /**
+     * BO-10-03-19 / BO-10-07-14: the nomenclature sending and the enlarged
+     * amount due project their rows, and both default to off.
+     */
+    @Test
+    void theNomenclatureAndLargeAmountRulesProjectTheirRows() {
+        PosSettingsService administered = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of(
+                    row("fidelity.send-subfamily", "true"),
+                    row("ticket.due-amount-large", "true")));
+            assertTrue(administered.fidelitySendSubFamily());
+            assertTrue(administered.dueAmountLarge());
+        }
+        PosSettingsService bare = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of());
+            assertFalse(bare.fidelitySendSubFamily());
+            assertFalse(bare.dueAmountLarge());
+        }
+    }
+
+    /**
+     * BO-10-06-06: the eco-participation placement projects its row and falls
+     * back to nowhere, which is what every ticket printed before the key.
+     */
+    @Test
+    void theEcoTaxPlacementProjectsItsRow() {
+        PosSettingsService administered = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(
+                    List.of(row("ticket.ecotax-print", "TOTAL")));
+            assertEquals("TOTAL", administered.ecoTaxPrint());
+        }
+        PosSettingsService bare = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of());
+            assertEquals("NONE", bare.ecoTaxPrint());
+        }
+    }
+
+    /**
+     * BO-10-08-10 / BO-10-08-23: the audit activation and the retention of its
+     * rows project their values, and both default to off — no trace, and no
+     * purge of a trace that does not exist.
+     */
+    @Test
+    void theIntegrationAuditRulesProjectTheirRows() {
+        PosSettingsService administered = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of(
+                    row("referential.update-audit-enabled", "true"),
+                    row("retention.integration-results-days", "90")));
+            assertTrue(administered.referentialUpdateAuditEnabled());
+            assertEquals(90, administered.retentionSetting("retention.integration-results-days"));
+        }
+        PosSettingsService bare = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of());
+            assertFalse(bare.referentialUpdateAuditEnabled());
+            assertEquals(0, bare.retentionSetting("retention.integration-results-days"));
+        }
+    }
+
+    /**
+     * BO-09-03-04: the counter reset projects its row and is off by default —
+     * a numbering that restarts without anyone asking would be a numbering
+     * nobody could follow.
+     */
+    @Test
+    void theTicketCounterResetProjectsItsRow() {
+        PosSettingsService administered = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(
+                    List.of(row("period.reset-ticket-counter", "true")));
+            assertTrue(administered.resetTicketCounterAtPeriodEnd());
+        }
+        PosSettingsService bare = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of());
+            assertFalse(bare.resetTicketCounterAtPeriodEnd());
+        }
+    }
+
+    /**
+     * BO-01-02-12: the expiry delay projects its row and is zero by default —
+     * no policy, and no account caught by one nobody posed.
+     */
+    @Test
+    void thePasswordExpiryDelayProjectsItsRow() {
+        PosSettingsService administered = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(
+                    List.of(row("auth.password-expiry-days", "90")));
+            assertEquals(90, administered.passwordExpiryDays());
+        }
+        PosSettingsService bare = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of());
+            assertEquals(0, bare.passwordExpiryDays());
+        }
+    }
+
+    /**
+     * BO-01-01-01: the back-office lockout projects its two values, and a
+     * duration of zero answers fifteen minutes — a lockout with no duration is
+     * an account lost until somebody edits the database.
+     */
+    @Test
+    void theBackOfficeLockoutProjectsItsRows() {
+        PosSettingsService administered = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of(
+                    row("auth.bo-max-failures", "5"),
+                    row("auth.bo-lockout-minutes", "60")));
+            assertEquals(5, administered.backOfficeMaxFailures());
+            assertEquals(60, administered.backOfficeLockoutMinutes());
+        }
+        PosSettingsService impossible = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(
+                    List.of(row("auth.bo-lockout-minutes", "0")));
+            assertEquals(15, impossible.backOfficeLockoutMinutes());
+        }
+        PosSettingsService bare = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of());
+            assertEquals(3, bare.backOfficeMaxFailures());
+            assertEquals(15, bare.backOfficeLockoutMinutes());
+        }
+    }
 }

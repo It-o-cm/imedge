@@ -1,0 +1,234 @@
+/*
+ * Article back-office area sheet (BO-02-03-*). Base chrome, tokens and the
+ * shared list/form classes live in base.css and stay untouched; this sheet
+ * carries only what is specific to the article fiche — the checkbox field
+ * layout of the "Comportement en caisse" and "Attributs déclarés" cards.
+ * Colours use the --im-* tokens only, never hard-coded values.
+ */
+.field-check {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    justify-content: flex-start;
+}
+
+.field-check .field-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.field-check input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--im-accent);
+    cursor: pointer;
+}
+
+/* Bulk on-screen-code bar above the filtered article list (BO-02-03-45). */
+.bulk-code-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--im-line);
+}
+
+.bulk-code-label {
+    font-size: 13px;
+    color: var(--im-ink-soft);
+}
+
+.bulk-code-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+/* Inline attribute-definition edit row (BO-02-03-32). */
+.attr-edit {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.attr-edit .input-control {
+    max-width: 240px;
+}
+
+/* Current sale price line on the fiche (BO-02-03-35). */
+.price-current {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--im-ink);
+}
+
+/* Level table of a nomenclature (BO-02-01-01). The name of a level and the
+   number of characters its codes carry are ONE statement — "Rayon, 4" — so
+   they sit on one line, and neither field is wider than what it holds: a
+   level name is a word, a code length is two digits. */
+.level-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.level-line .level-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 220px;
+}
+
+.level-line .level-digits {
+    flex: 0 0 72px;
+    width: 72px;
+    text-align: right;
+}
+
+.level-unit {
+    font-size: 12px;
+    color: var(--im-ink-soft);
+}
+
+/* VAT referential (BO-02-03-14). A regime is four short values — a number, a
+   rate, a label and what uses it — so it is one line, not a form: a field
+   sized for a paragraph in front of two digits tells the operator the two
+   digits are a paragraph.
+
+   ONE GRID for the whole list, and each row a `display: contents` form, rather
+   than one flex line per row: five independent lines only LOOK aligned as long
+   as every one of them holds the same widths, and the last cell does not — it
+   carries either a button or a usage count. Grid columns are declared once, so
+   the alignment is structural and holds whatever the cells contain. */
+.vat-grid {
+    display: grid;
+    grid-template-columns: 72px 72px auto minmax(0, 1fr) 56px minmax(0, 1.4fr) 100px 92px;
+    align-items: center;
+    column-gap: 8px;
+    row-gap: 8px;
+}
+
+/* No box of its own: the form's cells ARE the grid's cells, which is what puts
+   every row on the same columns. */
+.vat-grid > form {
+    display: contents;
+}
+
+.vat-grid .vat-number,
+.vat-grid .vat-rate {
+    text-align: right;
+}
+
+.vat-unit {
+    font-size: 12px;
+    color: var(--im-ink-soft);
+}
+
+.vat-usage {
+    font-size: 13px;
+    color: var(--im-ink-soft);
+    white-space: nowrap;
+    text-align: right;
+}
+
+/* The action column is a fixed width and not max-content, so the creation
+   line of the card below puts its button under the save buttons above even
+   though "Créer" is the shorter word. The last column holds either the delete
+   button or the usage count, and they are not the same width — the column
+   gives them one. */
+.vat-remove {
+    display: flex;
+    justify-content: flex-end;
+}
+
+/* The column captions, which are grid cells like the rest. */
+.vat-head {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .4px;
+    color: var(--im-ink-soft);
+    padding-bottom: 4px;
+}
+
+.vat-head.vat-number,
+.vat-head.vat-rate {
+    text-align: right;
+}
+
+/* The creation line reuses the same tracks so its fields sit under the ones
+   above, and its button under the save buttons. */
+.vat-new {
+    display: grid;
+    grid-template-columns: 72px 72px auto minmax(0, 1fr) 56px minmax(0, 1.4fr) 100px 92px;
+    align-items: center;
+    column-gap: 8px;
+}
+
+/* The EGAlim screen: same one-line-per-row grid as the VAT screen, with a
+   wider first column -- a regime is named by a word, not by a number. */
+.egalim-grid {
+    display: grid;
+    grid-template-columns: 150px 80px auto minmax(0, 1fr) 100px 92px;
+    align-items: center;
+    column-gap: 8px;
+    row-gap: 8px;
+}
+
+.egalim-grid > form {
+    display: contents;
+}
+
+.egalim-grid .egalim-cap {
+    text-align: right;
+}
+
+.egalim-unit {
+    font-size: 12px;
+    color: var(--im-ink-soft);
+    white-space: nowrap;
+}
+
+.egalim-remove {
+    display: flex;
+    justify-content: flex-end;
+}
+
+/* The column captions, which are grid cells like the rest. */
+.egalim-head {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .4px;
+    color: var(--im-ink-soft);
+    padding-bottom: 4px;
+}
+
+.egalim-head.egalim-cap {
+    text-align: right;
+}
+
+/* The creation line reuses the same tracks so its fields sit under the ones
+   above, and its button under the save buttons. */
+.egalim-new {
+    display: grid;
+    grid-template-columns: 150px 80px auto minmax(0, 1fr) 100px 92px;
+    align-items: center;
+    column-gap: 8px;
+}
+
+/* The EGAlim cell of the article list: the regime code read as a mark, the
+   ceiling read as a comment beside it. Nowrap, because "non plafonné" broken
+   over two lines in a dense table reads as two different answers. */
+.egalim-mark {
+    font-weight: 600;
+    white-space: nowrap;
+}

@@ -89,6 +89,23 @@ public final class SyncPayloads {
         public BigDecimal withdrawnAmount;
         /** The denominations detail, or null. */
         public String countDetail;
+        /**
+         * The supervisor who validated an over-threshold discrepancy, or null
+         * (EXP-82): the nominative trace of an opposable close, carried so the
+         * store node's Z shows who arbitrated the écart.
+         */
+        public String varianceEndorsedBy;
+        /**
+         * The paper-tender declaration counted at closing, JSON, or null
+         * (EXP-83): the per-tender declared quantities the node compares to the
+         * theoretical.
+         */
+        public String paperDeclaration;
+        /**
+         * True when this was a floating-float evening WITHOUT a full count
+         * (EXP-95): the node knows no variance was arbitrated that night.
+         */
+        public boolean floatingNoCount;
     }
 
     /**
@@ -134,6 +151,8 @@ public final class SyncPayloads {
         public boolean fidelityUnavailable;
         /** The advantage lines the sale displayed, empty when it displayed none. */
         public List<FidelityLineDto> fidelityLines = new ArrayList<>();
+        /** The engine offer messages the sale displayed, empty when it displayed none (GB-01-07-05/06). */
+        public List<MessageDto> messages = new ArrayList<>();
         /** The digital receipt key, or null. */
         public String digitalKey;
         /** The customer email, or null. */
@@ -155,6 +174,12 @@ public final class SyncPayloads {
         /** The valuation status name. */
         public String valuationStatus;
         /** The ticket lines. */
+        /** When the cart was parked (BO-06-06-01) as an ISO local datetime, or null. */
+        public String parkedAt;
+        /** When the parked cart was recalled (BO-06-06-01), or null while it waits. */
+        public String resumedAt;
+        /** The register that recalled it (BO-06-06-01), or null while it waits. */
+        public String resumedTerminalId;
         public List<LineDto> lines = new ArrayList<>();
         /** The registered payments. */
         public List<PaymentDto> payments = new ArrayList<>();
@@ -185,6 +210,23 @@ public final class SyncPayloads {
         public String advantageCategory;
         /** The advantage category label, printed verbatim, or null. */
         public String advantageCategoryLabel;
+    }
+
+    /**
+     * One engine offer message as the selling register froze it on the ticket
+     * (GB-01-07-05/06).
+     *
+     * <p>It travels so a duplicata issued by the store node restates the very
+     * text the customer was shown; the node never recomputes them, and neither
+     * does the register.
+     */
+    public static class MessageDto {
+        /** The stable message code, as the engine named it, or null. */
+        public String code;
+        /** The message text shown and printed. */
+        public String text;
+        /** Where the message prints: {@code "FOOTER"} — the default — or null read the same way. */
+        public String printMode;
     }
 
     /**
@@ -233,6 +275,10 @@ public final class SyncPayloads {
         public String cancellationDate;
         /** The badge of the operator who cancelled the line (BO-04-01-16), or null. */
         public String cancelledBy;
+        /** Code of the justification given for the cancellation (BO-06-06-04), or null. */
+        public String cancellationReasonCode;
+        /** Label of the justification given for the cancellation (BO-06-06-04), or null. */
+        public String cancellationReasonLabel;
         /**
          * True when the line sold a money instrument (gift card) rather than goods
          * (R12): the store node keeps such a line out of the turnover and shows it
@@ -270,6 +316,8 @@ public final class SyncPayloads {
         public String authorizationNumber;
         /** True when the card payment was accepted in degraded mode (BO-04-01-47/49). */
         public boolean degradedMode;
+        /** The real CB entry mode read off the terminal (SANS_CONTACT / CODE), or null (EXP-54). */
+        public String cardEntryMode;
         /** The CMC7 magnetic line read off the cheque, or null. */
         public String magneticLine;
         /** The account charged by a customer-credit settlement (LC-07-09), or null. */
@@ -290,6 +338,15 @@ public final class SyncPayloads {
         public BigDecimal currencyAmount;
         /** The euros-for-one-unit rate applied, or null. */
         public BigDecimal currencyRate;
+        /**
+         * The per-rate VAT detail of the recovered deposit, in the compact
+         * {@code DepositVat} form, or null on every other payment
+         * (LC-06-03-08): the store node accounts the recovery by rate, so
+         * the witness travels with the settlement.
+         */
+        public String depositVatDetail;
+        /** The code of the order whose deposit was recovered, or null. */
+        public String depositOrderCode;
     }
 
     /**
@@ -317,6 +374,18 @@ public final class SyncPayloads {
         /** The refunded VAT total, or null. */
         public BigDecimal totalVat;
         /** The refunded lines. */
+        /** The return reason chosen by the cashier (BO-06-06-05), or null. */
+        public String returnReason;
+        /** Code of that administered reason (BO-06-06-05), or null. */
+        public String returnReasonCode;
+        /** Code of the administered return type the gesture was made under (BO-06-06-05), or null. */
+        public String returnTypeCode;
+        /** Label of that return type (BO-06-06-05), or null. */
+        public String returnTypeLabel;
+        /** Badge of the operator who made the refund (BO-06-06-05), or null. */
+        public String cashierBadgeId;
+        /** Badge of the supervisor who endorsed it (BO-06-06-05), or null. */
+        public String supervisorBadgeId;
         public List<RefundLineDto> lines = new ArrayList<>();
     }
 

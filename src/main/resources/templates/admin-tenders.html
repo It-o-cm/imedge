@@ -39,6 +39,16 @@
                 <label class="field-label" for="tlb-{tender.code}">Libellé</label>
                 <input class="input-control" id="tlb-{tender.code}" type="text" name="label" maxlength="60" value="{tender.label}">
             </div>
+            {! BO-06-06-09 : le groupe comptable sous lequel l'etat des reglements
+             ! totalise ce mode. Vide : aucun groupe, et le mode compte seul. !}
+            <div class="field">
+                <label class="field-label" for="tgc-{tender.code}">Code groupe</label>
+                <input class="input-control" id="tgc-{tender.code}" type="text" name="groupCode" maxlength="20" value="{tender.groupCode}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="tgl-{tender.code}">Libellé du groupe</label>
+                <input class="input-control" id="tgl-{tender.code}" type="text" name="groupLabel" maxlength="60" value="{tender.groupLabel}">
+            </div>
             <div class="field">
                 <label class="field-label" for="tac-{tender.code}">Actif</label>
                 <input id="tac-{tender.code}" type="checkbox" name="active" {#if tender.active}checked{/if}>
@@ -125,6 +135,18 @@
                 </select>
             </div>
             <div class="field">
+                <label class="field-label" for="tvic-{tender.code}">Code produit VIC, tel que l'acquéreur l'écrit</label>
+                <input class="input-control" id="tvic-{tender.code}" type="text" name="vicProductCode" maxlength="20" value="{tender.vicProductCode ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="tls-{tender.code}">Disponible en libre-service</label>
+                <input id="tls-{tender.code}" type="checkbox" name="selfServiceAllowed" {#if tender.selfServiceAllowed}checked{/if}>
+            </div>
+            <div class="field">
+                <label class="field-label" for="tss-{tender.code}">Appel hôtesse en libre-service</label>
+                <input id="tss-{tender.code}" type="checkbox" name="selfServiceSupervision" {#if tender.selfServiceSupervision}checked{/if}>
+            </div>
+            <div class="field">
                 <label class="field-label" for="tdc-{tender.code}">Déclaration automatique</label>
                 <input id="tdc-{tender.code}" type="checkbox" name="cashierDeclaration" {#if tender.cashierDeclaration}checked{/if}>
             </div>
@@ -163,6 +185,29 @@
             <div class="field">
                 <label class="field-label" for="tfr-{tender.code}">Remontée fidélité</label>
                 <input id="tfr-{tender.code}" type="checkbox" name="fidelityReported" {#if tender.fidelityReported}checked{/if}>
+            </div>
+            {! BO-03-02-31, -32, -33 et -26 : le justificatif propre au moyen de
+             ! paiement. Le gabarit est nomme par son code : il voyage sur son
+             ! propre domaine, et un moyen qui nomme un gabarit pas encore
+             ! arrive ne doit pas etre bloque pour autant. !}
+            <div class="field">
+                <label class="field-label" for="tdt-{tender.code}">Gabarit du justificatif</label>
+                <input class="input-control" id="tdt-{tender.code}" type="text" name="documentTemplateCode" maxlength="50" value="{tender.documentTemplateCode ?: ''}">
+                <span class="field-hint">Code du gabarit imprimé quand ce moyen est utilisé. Vide : ce moyen n'imprime rien de propre.</span>
+            </div>
+            <div class="field">
+                <label class="field-label" for="tpc-{tender.code}">Nombre d'impressions</label>
+                <input class="input-control" id="tpc-{tender.code}" type="number" name="printCount" min="1" value="{tender.printCount}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="tpd-{tender.code}">Duplicata en plus</label>
+                <input id="tpd-{tender.code}" type="checkbox" name="printDuplicate" {#if tender.printDuplicate}checked{/if}>
+                <span class="field-hint">Un exemplaire portant le nom de réimpression du gabarit, en plus des originaux.</span>
+            </div>
+            <div class="field">
+                <label class="field-label" for="tpf-{tender.code}">Impression forcée</label>
+                <input id="tpf-{tender.code}" type="checkbox" name="printForced" {#if tender.printForced}checked{/if}>
+                <span class="field-hint">Imprimé même quand le ticket de caisse ne l'est pas (ticket dématérialisé).</span>
             </div>
             {! BO-05-02-17 : deux cases et non une — ce qu'on autorise à sortir
              ! d'un moyen n'est pas ce qu'on autorise à y entrer. !}
@@ -204,6 +249,14 @@
             <div class="field">
                 <label class="field-label" for="new-tlabel">Libellé</label>
                 <input class="input-control" id="new-tlabel" type="text" name="label" maxlength="60">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-tgc">Code groupe</label>
+                <input class="input-control" id="new-tgc" type="text" name="groupCode" maxlength="20">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-tgl">Libellé du groupe</label>
+                <input class="input-control" id="new-tgl" type="text" name="groupLabel" maxlength="60">
             </div>
             <div class="field">
                 <label class="field-label" for="new-torder">Ordre</label>

@@ -145,6 +145,14 @@ public class PeriodCloseService {
         LOGGER.info("Exiting method tick");
     }
 
+    /** The programmed end-of-period editions (BO-09-01-10). */
+    @jakarta.inject.Inject
+    ScheduledReportService scheduledReportService;
+
+    /** Which periods a day closes (BO-09-01-07). */
+    @jakarta.inject.Inject
+    PeriodScheduleService periodScheduleService;
+
     /**
      * Runs the data-retention sweep once, when the period has ended.
      *
@@ -171,7 +179,18 @@ public class PeriodCloseService {
         // Financial states are emitted BEFORE the retention sweep (§4): the purge
         // may carry away tickets a Z still needs, so the Z must be frozen first.
         financialStateEmissionService.emitEndOfPeriod(today);
+        // BO-09-01-10: the programmed states are edited BEFORE the retention
+        // sweep, for the reason the financial states are: the purge carries
+        // away the tickets the states are made of, and a state edited after it
+        // would state a day that has already been emptied.
+        scheduledReportService.runEndOfPeriod(today);
         retentionPurgeService.sweep();
+        // BO-09-01-07: which periods this day closes — the day always, the
+        // week, the month and the year on the administered days. Journalised
+        // and nothing more for now: what a week-end or a year-end adds to a
+        // day-end is the consolidation nobody has specified yet.
+        technicalEventService.log(TechnicalEvent.EventType.SESSION_CLOSED,
+                "Fin de p\u00e9riode du " + today + " : " + periodScheduleService.endingOn(today));
         lastPurgeDay = today;
         LOGGER.info("Exiting method maybeSweep: sweep run");
     }

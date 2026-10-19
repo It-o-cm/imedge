@@ -24,7 +24,7 @@
     {#else}
     <table class="data-table">
         <thead>
-            <tr><th>Code</th><th>Type</th><th>Libellé</th><th>Client</th><th>Total</th><th>Acompte</th><th>Reste</th><th>Statut</th><th></th></tr>
+            <tr><th>Code</th><th>Type</th><th>Libellé</th><th>Client</th><th>Total</th><th>Acompte</th><th>TVA acompte</th><th>Reste</th><th>Statut</th><th></th></tr>
         </thead>
         <tbody>
             {#for order in orders}
@@ -35,6 +35,7 @@
                 <td>{order.customerAccountNumber ?: ''}</td>
                 <td>{order.totalAmount}</td>
                 <td>{order.depositPaid}</td>
+                <td>{order.depositVatDisplay ?: '—'}</td>
                 <td>{order.remaining()}</td>
                 <td>{order.status.label}</td>
                 <td>

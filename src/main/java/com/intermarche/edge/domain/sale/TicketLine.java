@@ -274,6 +274,26 @@ public class TicketLine extends BaseEntity {
     public boolean cancelledLast;
 
     /**
+     * Code of the administered justification the cashier gave for the
+     * cancellation ({@code BO-06-06-04}), or null when the shop administers no
+     * justification for that gesture.
+     *
+     * <p>The CODE and the label are stored side by side, and both are frozen:
+     * a state edited months later must show the wording the cashier was
+     * offered, not the one the referential carries today — the rule the
+     * family label and the second code already follow on this line.
+     */
+    @Column(name = "cancellation_reason_code", length = 20)
+    public String cancellationReasonCode;
+
+    /**
+     * Label of the administered justification the cashier gave for the
+     * cancellation ({@code BO-06-06-04}), or null when none was given.
+     */
+    @Column(name = "cancellation_reason_label", length = 80)
+    public String cancellationReasonLabel;
+
+    /**
      * Returns the line total formatted for display (2 decimals, French comma).
      *
      * @return the formatted line total

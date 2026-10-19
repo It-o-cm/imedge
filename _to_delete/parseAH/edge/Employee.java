@@ -1,0 +1,522 @@
+package com.intermarche.edge.domain.people;
+
+import jakarta.persistence.*;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+import org.mindrot.jbcrypt.BCrypt;
+
+import java.time.LocalDateTime;
+import java.util.Objects;
+import java.util.Set;
+import com.intermarche.edge.domain.BaseEntity;
+
+/**
+ * Entity representing an employee working in a store.
+ * <p>
+ * This class handles authentication (badge ID/PIN) and authorization (role).
+ * <p>
+ * Semantic contract:
+ * <ul>
+ *   <li>TWO CREDENTIALS, two doors, one staff file. The 4-digit PIN
+ *       ({@code password}) opens the REGISTER and nothing else; the
+ *       back-office password ({@code backOfficePassword}) opens the
+ *       BACK OFFICE and the machine surfaces, and nothing else. Neither
+ *       is accepted at the other's door. An employee with no back-office
+ *       password simply has no back office — which is the normal state of
+ *       a cashier.</li>
+ *   <li>Authentication at the register: badge scan resolves the account,
+ *       the 4-digit PIN is verified against the bcrypt hash stored in
+ *       {@code password}. The same PIN check guards login and manager
+ *       endorsements, and shares one lockout: {@code failedAttempts} /
+ *       {@code lockedUntil} (pos.auth.max-attempts,
+ *       pos.auth.lockout-minutes).</li>
+ *   <li>The lockout pair is LOCAL operational state: the centralized
+ *       referential pull upserts every business field (PIN hash included —
+ *       any cashier can badge on any register) but never touches these two,
+ *       so a lock on one register neither spreads nor resets. The
+ *       back-office password and its forced-change flag are local for the
+ *       SAME reason: the back office is administered on the node where it
+ *       runs, and a password someone changed there has no business being
+ *       pushed onto every register.</li>
+ *   <li>Roles: MANAGER and ADMIN validate endorsements; deactivation, not
+ *       deletion, removes an employee (historical documents reference
+ *       them).</li>
+ * </ul>
+ */
+@Entity
+@Table(name = "employees",
+        indexes = {
+                @Index(name = "idx_employee_badge", columnList = "badge_id", unique = true)
+        }
+)
+@Cacheable
+public class Employee extends BaseEntity {
+
+    /**
+     * Enumeration representing the role of an employee within the supermarket.
+     */
+    public enum EmployeeRole {
+        /**
+         * Administrator with full access to the system.
+         */
+        ADMIN,
+        /**
+         * Store manager with read-only access to reports and basic management capabilities.
+         */
+        MANAGER,
+        /**
+         * Employee responsible for picking orders for the Drive/E-commerce.
+         */
+        PICKER,
+        /**
+         * Cashier operating the Point of Sale (POS) system.
+         */
+        CASHIER
+    }
+
+    // --------------------------------------------------
+    // Identification
+    // --------------------------------------------------
+
+    /**
+     * The employee's first name.
+     */
+    @Column(name = "first_name", nullable = false)
+    @NotBlank(message = "First name is mandatory")
+    public String firstName;
+
+    /**
+     * The employee's last name.
+     */
+    @Column(name = "last_name", nullable = false)
+    @NotBlank(message = "Last name is mandatory")
+    public String lastName;
+
+    /**
+     * The employee's login name.
+     */
+    @Column(name = "login_name", nullable = false)
+    @NotBlank(message = "Login name is mandatory")
+    public String loginName;
+
+    /**
+     * The hashed 4-digit PIN of the employee — the REGISTER credential.
+     * <p>
+     * Kept under its historical name because it is what the whole register
+     * chain reads; the back-office credential is
+     * {@link #backOfficePassword}, a different secret behind a different
+     * door.
+     * <p>
+     * Note: This should store the hash (e.g., BCrypt), never the plain text PIN.
+     */
+    @Column(nullable = false)
+    @NotBlank(message = "Password is mandatory")
+    @Size(min = 60) // Typical size for BCrypt hash
+    public String password;
+
+    /**
+     * The email address of the employee.
+     */
+    @Column(name = "email", unique = true, nullable = false)
+    @Email(message = "Email should be valid")
+    @NotBlank(message = "Email is mandatory")
+    public String email;
+
+    // --------------------------------------------------
+    // Role Attachment
+    // --------------------------------------------------
+
+    /**
+     * The role assigned to the employee.
+     * Determines permissions for accessing Backoffice, Mobile Apps, etc.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    @NotNull(message = "Role is mandatory")
+    public EmployeeRole role;
+
+    // --------------------------------------------------
+    // Operational Data
+    // --------------------------------------------------
+
+    /**
+     * The unique identifier of the physical RFID badge.
+     * <p>
+     * This is the primary login credential.
+     */
+    @Column(name = "badge_id", unique = true, length = 20)
+    @NotBlank(message = "Badge ID is mandatory")
+    public String badgeId;
+
+    /**
+     * Personal display theme of this employee (data-theme value), or null to
+     * follow the store's theme. Referential data: travels in the phase 6
+     * pull like the other employee fields.
+     */
+    @jakarta.persistence.Column(name = "theme", length = 20)
+    public String theme;
+
+    // --------------------------------------------------
+    // Status
+    // --------------------------------------------------
+
+    /**
+     * Flag indicating if the employee is currently active.
+     * <p>
+     * If false, the employee cannot log in to any system.
+     */
+    @Column(name = "is_active", nullable = false)
+    public boolean active = true;
+
+    // --------------------------------------------------
+    // PIN lockout (phase 2)
+    // --------------------------------------------------
+
+    /**
+     * The number of consecutive failed PIN attempts since the last success.
+     */
+    @Column(name = "failed_attempts", nullable = false)
+    public int failedAttempts = 0;
+
+    /**
+     * The timestamp until which the account is locked after repeated PIN
+     * failures, or null when not locked.
+     */
+    @Column(name = "locked_until")
+    public LocalDateTime lockedUntil;
+
+    // --------------------------------------------------
+    // Payroll file (BO-05-02-15)
+    // --------------------------------------------------
+
+    /**
+     * Whether this file names a LEGAL entity rather than a person
+     * ({@code BO-05-02-15}).
+     *
+     * <p>The list of people who may receive an advance, a reimbursement or a
+     * down-payment at the safe is not the list of cashiers: a cleaning company
+     * paid in cash out of the safe belongs to it and will never sign in. Such a
+     * file carries a business name in {@link #lastName} and no first name.
+     */
+    @Column(name = "legal_entity", nullable = false)
+    public boolean legalEntity = false;
+
+    /**
+     * The FORCING level of this employee ({@code BO-05-02-15}), zero when they
+     * force nothing.
+     *
+     * <p>A rank and not a right: the shops use it to order their staff among
+     * themselves — a movement entered by a level 2 may be validated by a level 3
+     * and not the reverse. What a profile may OPEN stays in the profile grants;
+     * this says who outranks whom once both are allowed in.
+     */
+    @Column(name = "forcing_level", nullable = false)
+    public int forcingLevel = 0;
+
+    /**
+     * The largest down-payment this employee may receive from the safe
+     * ({@code BO-05-02-15}), null when the shop caps nothing.
+     */
+    @Column(name = "advance_limit", precision = 19, scale = 4)
+    public java.math.BigDecimal advanceLimit;
+
+    // --------------------------------------------------
+    // Back-office credential (local state, like the lockout)
+    // --------------------------------------------------
+
+    /**
+     * The hashed back-office password, or null when the employee has no
+     * back-office access at all.
+     * <p>
+     * A conventional password, not a PIN: it travels over HTTP, it is typed
+     * on a keyboard, and it is the credential the login form and the HTTP
+     * Basic clients present. Null is the normal state of a cashier — the
+     * absence of a value IS the absence of the right, so no extra flag is
+     * needed to keep the back office shut.
+     * <p>
+     * Never carried by the referential pull: see the class contract.
+     */
+    @Column(name = "bo_password", length = 100)
+    public String backOfficePassword;
+
+    /**
+     * Whether the back-office password must be replaced before anything
+     * else can be reached.
+     * <p>
+     * Set whenever the password comes from somewhere other than its owner —
+     * the seed today, an administrator's reset tomorrow — so a password
+     * that is known outside the account cannot survive the first sign-in.
+     * <p>
+     * Never carried by the referential pull: see the class contract.
+     */
+    @Column(name = "must_change_password", nullable = false)
+    public boolean mustChangePassword = false;
+
+    /**
+     * Telephone of the account holder, or null (BO-01-01-06).
+     *
+     * <p>Optional by the requirement's own words — "sans être obligatoires" —
+     * and back-office data: a register has no use for it and the diffusion does
+     * not carry it.
+     */
+    @jakarta.persistence.Column(name = "phone", length = 30)
+    public String phone;
+
+    /**
+     * The day this account takes effect, or null (BO-01-01-06).
+     *
+     * <p>Declarative and not enforced: an account dated tomorrow still opens
+     * today, because refusing a sign-in on a date nobody checked at creation
+     * would lock a shop out of its own back office on a typo.
+     */
+    @jakarta.persistence.Column(name = "start_date")
+    public java.time.LocalDate startDate;
+
+    /**
+     * The department the account belongs to — promotion, marketing, finance,
+     * training — or null (BO-01-01-02).
+     *
+     * <p>A free text and not an enumeration: the requirement lists examples and
+     * says "etc.", and a shop that invents a department must not need a
+     * release to declare it.
+     */
+    @jakarta.persistence.Column(name = "department", length = 60)
+    public String department;
+
+    /**
+     * The hierarchical level of the account, zero being the lowest
+     * (BO-01-01-02).
+     *
+     * <p>What makes delegated administration possible: an account administers
+     * only accounts of a level STRICTLY BELOW its own, so a department head
+     * manages their team and nobody manages their own rights.
+     */
+    @jakarta.persistence.Column(name = "hierarchy_level", nullable = false)
+    public int hierarchyLevel = 0;
+
+    /**
+     * Interface language administered for this account (fr, nl or pt), or null
+     * to follow the echelon's language (BO-01-01-04, LC-13-06-02).
+     *
+     * <p>Referential data: it travels to the registers, where the operator's
+     * own language overrides the store's system language.
+     */
+    @jakarta.persistence.Column(name = "language", length = 10)
+    public String language;
+
+    /**
+     * When the account's secret was last changed, or null when it never was
+     * (BO-01-02-12).
+     *
+     * <p>Null is not "never expires" but "never changed": an account still
+     * carrying the password it was created with is exactly the one an expiry
+     * policy is written for, so the creation stamps this column too.
+     */
+    @jakarta.persistence.Column(name = "password_changed_at")
+    public LocalDateTime passwordChangedAt;
+
+    /**
+     * Indicates whether the account is currently locked out after repeated
+     * PIN failures.
+     *
+     * @return true if a lockout is active at this moment
+     */
+    public boolean isCurrentlyLocked() {
+        return lockedUntil != null && lockedUntil.isAfter(LocalDateTime.now());
+    }
+
+    // --------------------------------------------------
+    // Implementation of Account Interface
+    // --------------------------------------------------
+
+    /**
+     * Returns the badge ID as the username for authentication.
+     *
+     * @return the badge ID.
+     */
+    public String getLoginName() {
+        return loginName;
+    }
+
+    /**
+     * Returns the hashed password for authentication verification.
+     *
+     * @return the password hash.
+     */
+    public String getPassword() {
+        return password;
+    }
+
+    /**
+     * Returns a set containing the single role assigned to the employee.
+     *
+     * @return a set with the role name.
+     */
+    public Set<String> getRoles() {
+        if (role == null) {
+            return Set.of();
+        }
+        return Set.of(role.name());
+    }
+
+    /**
+     * Indicates whether the employee may reach the back office at all.
+     *
+     * @return true when a back-office password has been set
+     */
+    public boolean hasBackOfficeAccess() {
+        return backOfficePassword != null && !backOfficePassword.isBlank();
+    }
+
+    /**
+     * Sets the back-office password, hashing it.
+     *
+     * @param rawPassword the clear-text password, or null to withdraw
+     *                    back-office access entirely
+     */
+    public void setBackOfficePassword(String rawPassword) {
+        this.backOfficePassword = rawPassword == null ? null : hashPassword(rawPassword);
+    }
+
+    /**
+     * Verifies a presented back-office password against the stored hash.
+     * <p>
+     * Returns false when no back-office password is set: an account without
+     * one is not a back-office account, and no input can make it one.
+     *
+     * @param rawPassword the clear-text password presented
+     * @return true when it matches
+     */
+    public boolean verifyBackOfficePassword(String rawPassword) {
+        if (!hasBackOfficeAccess() || rawPassword == null) {
+            return false;
+        }
+        return BCrypt.checkpw(rawPassword, this.backOfficePassword);
+    }
+
+    /**
+     * Checks if the employee account is active.
+     *
+     * @return true if active, false otherwise.
+     */
+    public boolean isEnabled() {
+        return active;
+    }
+
+
+    /**
+     * Returns the full name of the employee.
+     *
+     * @return "FirstName LastName".
+     */
+    public String getFullName() {
+        return firstName + " " + lastName;
+    }
+
+    // --------------------------------------------------
+    // Implementation of new Account methods
+    // --------------------------------------------------
+
+    /**
+     * Returns the email address of the employee.
+     *
+     * @return the email address.
+     */
+    public String getEmail() {
+        return this.email;
+    }
+
+
+
+    /**
+     * Méthode utilitaire statique pour hacher un mot de passe avant de l'assigner.
+     * À utiliser lors de la création d'un employé.
+     */
+    public static String hashPassword(String rawPassword) {
+        return BCrypt.hashpw(rawPassword, BCrypt.gensalt());
+    }
+
+    /**
+     *
+     * @param rawPassword
+     * @return
+     */
+    public boolean verifyPassword(String rawPassword) {
+        if (this.password == null || rawPassword == null) return false;
+        return BCrypt.checkpw(rawPassword, this.password);
+    }
+
+    // --------------------------------------------------
+    // Panache Active Record Queries
+    // --------------------------------------------------
+
+    /**
+     * Finds an employee by their physical badge ID.
+     *
+     * @param loginInfo The badge ID or loginName to search for.
+     * @return The Employee or null if not found.
+     */
+    public static Employee findLogin(String loginInfo) {
+        return find("badgeId = ?1 or loginName = ?1", loginInfo)
+                .firstResult();
+    }
+
+    /**
+     * Finds an active employee by their physical badge ID.
+     * Combines badge lookup with active status check.
+     *
+     * @param loginInfo The badge ID or loginName to search for.
+     * @return The active Employee or null.
+     */
+    public static Employee findActiveLogin(String loginInfo) {
+        return find("(badgeId = ?1 or loginName = ?1) and active = true", loginInfo).firstResult();
+    }
+
+    // --------------------------------------------------
+    // Checksum
+    // --------------------------------------------------
+
+    /**
+     * Calculates a checksum based on the entity's current state.
+     * <p>
+     * Includes the password reset fields in the calculation to detect changes.
+     * <p>
+     * Deliberately EXCLUDES the back-office credential: that field is local
+     * state, outside the referential exchange, and hashing it here would
+     * make a local password change look like a referential divergence.
+     *
+     * @return the calculated checksum.
+     */
+    @Override
+    public int getChecksum() {
+        return Objects.hash(firstName, lastName, password, role, badgeId, active, email,
+                legalEntity, forcingLevel, advanceLimit);
+    }
+
+    /**
+     * Whether this account's secret has passed the administered expiry delay
+     * (BO-01-02-12).
+     *
+     * <p>A delay of zero or less is the ABSENCE of a policy and never an
+     * instant expiry: a shop that administers nothing must not find every
+     * account demanding a new secret at the next sign-in.
+     *
+     * <p>A secret that was NEVER changed is expired as soon as a policy
+     * exists, because an account still carrying the code it was created with
+     * is exactly the one the policy is written for.
+     *
+     * @param days the administered delay in days, zero or less meaning none
+     * @return true when a new secret must be demanded
+     */
+    public boolean secretExpired(int days) {
+        if (days <= 0) {
+            return false;
+        }
+        if (passwordChangedAt == null) {
+            return true;
+        }
+        return passwordChangedAt.plusDays(days).isBefore(LocalDateTime.now());
+    }
+}

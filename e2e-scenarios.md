@@ -168,7 +168,7 @@ Rappel de gate (identique aux quatre surfaces) : la **garde de rôle est évalu�
 | `GET /versions` et `GET /{domain}` | `pos.role` = `register` (ni store ni central) | 403 « Ce nœud n'a pas le rôle store ou central » |
 | Idem | Jeton configuré, `X-Sync-Token` absent/faux | 401 « Jeton invalide » |
 | Idem | Jeton configuré correct, ou jeton absent de la config | Passe la garde |
-| `GET /versions` | Rôle `store` | 200 : empreintes des **16 domaines MAGASIN** (`ENGINE_FEEDS, PRODUCTS, FAMILIES, TOUCH_GROUPS, VAT_RATES, PRICES, EMPLOYEES, COUPON_TYPES, ARTICLE_RANGES, ISLANDS, TENDERS, DOCUMENT_TEMPLATES, SETTINGS, CUSTOMERS, CURRENCIES, POSTAL_CODES`) |
+| `GET /versions` | Rôle `store` | 200 : empreintes des **17 domaines MAGASIN** (`ENGINE_FEEDS, PRODUCTS, FAMILIES, TOUCH_GROUPS, VAT_RATES, PRICES, EMPLOYEES, COUPON_TYPES, ARTICLE_RANGES, ISLANDS, CHECKOUT_POINTS, TENDERS, DOCUMENT_TEMPLATES, SETTINGS, CUSTOMERS, CURRENCIES, POSTAL_CODES`) |
 | `GET /versions` | Rôle `central` | 200 : empreintes des **4 domaines d'ÉCHELON** (`COUNTRIES, ENSEIGNES, PDVS, ECHELON_SETTINGS`) — listes disjointes des domaines magasin |
 | `GET /{domain}?page&size` | Domaine inconnu (`getPage` lève `IllegalArgumentException`) | 400, corps = message |
 | `GET /{domain}?page&size` | Domaine valide (`size≤0` ou `>5000` → 1000 ; `page` < 0 → 0) | 200 page de snapshot |
@@ -214,7 +214,8 @@ Notes de vérification (lecture du code, pour le relais) :
 | Caissier ouverture inconnu | `openingCashierLogin` absent du nœud | 409 « Employé inconnu sur le nœud magasin: <login> » |
 | Caissier clôture inconnu | `closingCashierLogin` non nul et inconnu | 409 « Employé inconnu sur le nœud magasin: <login> » |
 | Tolérance null | `closingCashierLogin` null | accepté, `closingCashier=null` |
-| Tolérance null | `openingDate`/`closingDate` null | accepté (`parse` tolère null) |
+| Tolérance null | `closingDate` null | accepté (`parse` tolère null) |
+| Date d'ouverture exigée | `openingDate` null | 500 (`@NotNull` sur `CashSession.openingDate` ; le nœud n'invente pas l'heure d'ouverture) |
 | Enum invalide | `status` hors `SessionStatus` | 500 (`valueOf`) |
 | Corps illisible | JSON malformé | 400, rien en base |
 
@@ -295,7 +296,8 @@ Notes de vérification (lecture du code, pour le relais) :
 | Upsert | document inédit (clé `documentNumber`), bloc client stocké tel que poussé | 200 `OK` |
 | Type par défaut | `documentType` null | `DocumentType.FACTURE` |
 | Enum invalide | `documentType` non nul invalide | 500 (`valueOf`) |
-| Ticket non exigé | `ticketNumber` null ou introuvable | `ticket=null`, `ticketNumber` conservé |
+| Ticket non exigé | `ticketNumber` inconnu du nœud | `ticket=null`, `ticketNumber` conservé |
+| Numéro de ticket exigé | `ticketNumber` null/blanc | 500 (`@NotBlank` sur `Invoice.ticketNumber` ; une facture nomme sa vente) |
 | Client non exigé | `customerAccountNumber` null/introuvable | `customer=null` |
 | Totaux null → 0 | `totalExcludingTax`/`IncludingTax`/`Vat`/`EcoTax` null | valent `ZERO` (colonnes obligatoires) |
 | Date d'échéance illisible | `customerDueDate` non ISO | null (`parseDay` tolère) |
@@ -334,6 +336,22 @@ Notes de vérification (lecture du code, pour le relais) :
 | Numéro vide | `ticketNumber` null/blanc | `renderTicketDuplicate` → null → 404 « Ticket inconnu du magasin » |
 
 ---
+
+**C11 L'état d'intégration des imports centraux (15/10)** `ImporterCsvResource`, `RefApplyService` [E] [C] (BO-08-01-04)
+
+Un import central qui échoue le disait à celui qui avait lancé l'import, et à personne d'autre. L'exigence demande un **état consultable** : qu'est-ce qui est entré, quand, et avec quelle issue. Le mécanisme d'intégration existait déjà pour les référentiels diffusés ; il suffisait de l'appeler aussi depuis les imports CSV.
+
+- **Le domaine est dérivé du nom de la classe d'import**, coupé à vingt caractères : aucune liste à tenir à jour, et un nouvel import s'enregistre sans qu'on y pense.
+- **L'enregistrement avale ses propres pannes.** Un import réussi dont la trace ne s'écrit pas reste un import réussi ; l'inverse — un import annulé parce que son journal est indisponible — serait absurde.
+- **Les deux issues sont écrites**, le succès comme l'échec, et l'échec porte son motif : un état qui ne montre que les succès ne sert à rien.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `auditDomain()` | nom court / nom long | dérivé / coupé à vingt |
+| Import | succès | issue favorable enregistrée |
+| Import | `IOException` | issue défavorable, motif porté |
+| Import | `Throwable` inattendu | issue défavorable, motif porté |
+| Enregistrement | journal indisponible | import inchangé, aucune exception remontée |
 
 ## D. Service du référentiel aux caisses [E] [R]
 
@@ -404,6 +422,7 @@ La caisse se nomme sur chaque tirage par l'en-tête `X-Pos-Terminal` ; le nœud 
 | echelonsPage | viewEnseigne et viewKey renseignés (non blancs) | `personalised` = `echelonSettings.personalizedPdvs(viewEnseigne, viewKey)` |
 | echelonsPage | viewEnseigne renseigné, viewKey blanc (ou l'inverse) | `personalised` = liste vide (garde `!= null && !isBlank()` sur les deux) |
 | echelonsPage | noticeOk absent | défaut `true` (`@DefaultValue("true")`) |
+| echelonsPage | data `closedValues` | carte JSON `{"clé": ["A","B"]}` des seules clés à valeurs fermées, construite depuis `PosSettingsService.CLOSED_VALUES` ; les clés libres en sont ABSENTES (le script rend alors le champ libre) |
 
 **E2 Enregistrement pays** `POST /admin/echelons/country` [C]
 
@@ -450,6 +469,10 @@ La caisse se nomme sur chaque tirage par l'en-tête `X-Pos-Terminal` ; le nœud 
 | saveSetting | level inconnu/blanc (parseLevel→null) | 303 « Niveau, échelon et paramètre sont obligatoires. » ok=false |
 | saveSetting | echelonCode vide | idem 303 obligatoires ok=false |
 | saveSetting | key vide | idem 303 obligatoires ok=false |
+| saveSetting | clé à valeurs fermées, valeur hors liste (ex. `control.cancel-line` = `BLOK`) | 303 « Valeur invalide pour « <clé> » — attendu : NONE, WARN, BLOCK, ENDORSE. » ok=false ; rien posé, date non lue |
+| saveSetting | clé à valeurs fermées, valeur de la liste (ex. `BLOCK`) | acceptée → `set(level, code, key, value, date)` |
+| saveSetting | clé à valeurs fermées, valeur vide alors que `""` est dans la liste (`island.promotion-channel`) | acceptée (le « — aucune — » de la liste) |
+| saveSetting | clé libre (hors `CLOSED_VALUES`) | aucun contrôle de valeur — texte accepté tel quel |
 | saveSetting | valides, effectiveDate vide | date=null (effet immédiat) ; `echelonSettings.set(...,null)` ; 303 « Paramètre d'échelon enregistré. » ok=true |
 | saveSetting | valides, effectiveDate ISO valide (AAAA-MM-JJ) | date parsée ; set(...,date) ; 303 « Paramètre d'échelon enregistré. » ok=true |
 | saveSetting | effectiveDate non-ISO (ex. « 26/09/2026 ») | 303 « Date d'effet invalide (attendu AAAA-MM-JJ). » ok=false ; rien posé |
@@ -1168,6 +1191,23 @@ Convention commune à tout `/admin/**` de ce groupe : `@RolesAllowed("ADMIN")`, 
 
 ---
 
+**H11 Pays et mention légale d'un taux de TVA (15/10)** `/admin/vat-rates`, `VatRate`, `RefExportService` [E] [R] [C] (BO-02-02-02, -03)
+
+Un taux de TVA portait son numéro, sa valeur et son libellé. Il lui manquait les deux informations que la facture et le ticket réclament : **le pays** qui l'institue, et **la mention légale** qu'il oblige à imprimer (autoliquidation, exonération, régime particulier). Deux colonnes, administrables, diffusées — et lues par les documents (L35).
+
+- **Le pays est normalisé à la saisie** : coupé à trois caractères, mis en majuscules, vide ramené à l'absence. Un référentiel qui accepte à la fois `fr`, `FR ` et `France` est un référentiel qu'aucun état ne peut regrouper.
+- **Les deux colonnes entrent dans l'empreinte de diffusion** : un taux dont seule la mention change doit redescendre aux caisses, sinon le ticket imprime l'ancienne.
+- **Rien n'est obligatoire** : la France n'exige aucune mention sur les taux ordinaires, et un champ obligatoire aurait forcé à inventer un texte.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `country(raw)` | `" fra nce"` / `"fr"` / `""` / null | tronqué majuscule / `FR` / null / null |
+| Écran | enregistrement nominal | pays et mention persistés |
+| `equals`/`hashCode` | mention modifiée | taux considéré différent |
+| `toDto` | pays et mention absents | champs nuls, DTO valide |
+| `canonical` | mention modifiée | empreinte modifiée |
+| `applyVatRates` | DTO portant les deux champs | taux local aligné |
+
 ## I. Coffre et monnayeur [E]
 
 Toutes les surfaces `@RolesAllowed("ADMIN")` : anonyme → 401, non-ADMIN → 403. Cycle back-office : POST → 303 + notice one-shot (`noticeOk`) ; identifiant illisible d'un POST absorbé en `null` (d'où « inconnu »). GET liste → 200 HTML.
@@ -1384,6 +1424,74 @@ Pour chaque rapport : données semées → colonnes, totaux (ligne `totals`) et 
 
 ---
 
+**J5 Régimes de TVA — le référentiel des taux devient un état (15/10)** `/admin/reports`, `VatRegimeReport` [E] (BO-02-02-03)
+
+Le paramétrage des taux existait, l'état qui les montre n'existait pas : un comptable qui demande « quels régimes utilisons-nous, et sur combien d'articles » devait ouvrir l'écran d'administration et compter à l'œil. Le cadre d'états réduit la réponse à une classe : code, taux, libellé, pays, mention légale, articles tarifés, exonéré.
+
+- **Le comptage se fait côté base**, un `count(p)` par taux sur les prix qui le portent. Un état qui chargerait les prix pour les compter serait un état qui tombe le jour où le référentiel grossit.
+- **« Exonéré » est une lecture, pas une colonne stockée** : un taux à zéro est un régime d'exonération, et c'est ce que la colonne dit.
+- Famille `TAX` : l'état se range avec la ventilation de TVA, pas avec les ventes.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `code` / `family` | — | `vat-regimes`, `TAX` |
+| `columns` | — | sept colonnes, dans l'ordre |
+| `rows` | aucun taux | aucune ligne |
+| `rows` | taux sans pays ni mention | cellules vides, jamais absentes |
+| `rows` | taux à 0 / taux positif | exonéré oui / non |
+| `rows` | prix portant le taux | compte exact |
+
+**J6 Taux de porteurs de carte — par caissière ou pour le magasin (15/10)** `/admin/reports`, `FidelityCardRateReport` [E] (BO-06-06-11)
+
+Combien de tickets portent une carte de fidélité ? La question se pose à deux échelles, et les deux intéressent : le magasin veut son taux, le responsable de caisses veut savoir **qui** demande la carte. Une option, pas deux états : `BY_CASHIER` par défaut, `BY_STORE` pour le cumul.
+
+- **Le dénominateur est le ticket clos**, jamais le brouillon : un panier abandonné n'a pas refusé de carte, il n'a rien dit.
+- **Le taux est calculé une fois, côté état**, et sort en pourcentage formaté : les écrits ne refont pas la division.
+- Famille `CASHIERS`, période et caisses héritées du cadre : l'état ne redéfinit aucun filtre.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `optionChoices` | — | `BY_CASHIER` (défaut) et `BY_STORE` |
+| `rows` | aucun ticket | aucune ligne |
+| `rows` | zéro ticket pour une caissière retenue | taux 0,0 %, pas de division par zéro |
+| `rows` | `BY_CASHIER` | une ligne par caissière, badge et nom |
+| `rows` | `BY_STORE` | une seule ligne cumulée |
+| `rows` | option inconnue | repli sur le défaut |
+
+**J7 TVA des avantages fidélité — une répartition au prorata (15/10)** `/admin/reports`, `FidelityVatReport` [E] (BO-06-07-02)
+
+Un avantage fidélité payé sur un panier à trois taux n'appartient à aucun des trois : il faut le **répartir**. L'état le fait au prorata du TTC de chaque seau de ventilation du ticket, le seul partage que les données du ticket permettent de justifier ligne par ligne.
+
+- **Le prorata se calcule par ticket**, jamais sur le cumul de la période : deux tickets de compositions différentes n'ont pas la même clé de répartition.
+- **Un ticket à TTC nul ne répartit rien** plutôt que de diviser par zéro, et son avantage reste visible dans le total.
+- **L'état se ferme sur une ligne Total** : un état de TVA dont les lignes ne se somment pas à l'œil n'est pas un état de TVA.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `columns` | — | huit colonnes, dont la part répartie |
+| `rows` | aucun avantage | aucune ligne, pas même le total |
+| `rows` | un taux | tout l'avantage sur ce taux |
+| `rows` | trois taux | parts au prorata du TTC de chaque seau |
+| `rows` | ticket à TTC nul | aucune part, total inchangé |
+| `rows` | plusieurs tickets | somme des parts = somme des avantages |
+
+**J8 Promotions par caissier — ce que chaque poste a accordé (15/10)** `/admin/reports`, `PromotionCashierReport` [E] (BO-06-08-01)
+
+Les lignes d'avantage fidélité portent déjà le code de la règle qui les a produites ; personne ne les avait jamais regroupées par règle **et** par caissière. C'est exactement ce que l'exigence demande, et cela ne coûte qu'un regroupement.
+
+- **Deux clés, pas une** : la règle sans le poste ne dit pas où regarder, le poste sans la règle ne dit pas quoi regarder.
+- **Une règle sans code reste comptée** sous un libellé explicite : une promotion anonyme est une promotion qui a tout de même été accordée.
+- Famille `SALES` : c'est de la vente, pas de la fiscalité.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `columns` | — | huit colonnes, dont le nombre et le montant |
+| `rows` | aucune ligne d'avantage | aucune ligne |
+| `rows` | une règle, deux caissières | deux lignes |
+| `rows` | deux règles, une caissière | deux lignes |
+| `rows` | code de règle absent | ligne conservée, libellé de repli |
+| `rows` | caissière absente du ticket | ligne conservée, poste vide |
+
 ## K. Journal et tableau de bord [E] [R]
 
 Matrice d'accès (par surface) : `/admin/journal` et ses onglets (`/functional`, `/movements`, `/ticket/{id}`, `/export`) sont **ADMIN ET MANAGER** ; `/dashboard` et `/dashboard-data`, `/dashboard/ack/{id}`, `/dashboard/force-close/{id}` sont **MANAGER/ADMIN** ; `POST /api/supervisor/call` est **PermitAll** mais gardé par rôle `store` + jeton.
@@ -1531,6 +1639,59 @@ Le nœud expose à la caisse trois endpoints (garde rôle store + jeton `X-Sync-
 
 ---
 
+**K11 L'aval donné depuis le back-office, et l'article inconnu qui appelle (15/10)** `/dashboard`, `EndorsementService`, `RemoteCommandService` [E] [R] (BO-04-02-01, -02, -06)
+
+La demande de service savait être refusée depuis le back-office (L34) mais pas **accordée** : le responsable devait marcher jusqu'à la caisse et y taper son code. Le canal descendant existait déjà ; il manquait l'ordre, et la caisse qui le consomme.
+
+- **Un aval accordé à distance est un aval**, pas un contournement : il est journalisé comme tel, nommé par le responsable qui l'a donné depuis l'écran, et il est **à un coup** — consommé, il disparaît, et le geste suivant redemande une autorisation.
+- **Les rôles habilités deviennent un paramètre** (`auth.endorsement-roles`) au lieu des deux rôles câblés dans le code. Vide, illisible ou absurde : `MANAGER;ADMIN`, c'est-à-dire la conduite d'avant.
+- **Un article inconnu peut appeler le back-office** (`supervision.unknown-item-alert`, inactif par défaut) : scanné et introuvable, il remonte une demande de service au même titre qu'un appel superviseur, au lieu de n'être lisible qu'après coup au journal.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `/dashboard/call/{id}/authorise` | demande en attente | marquée autorisée, ordre émis au nom du responsable |
+| `/dashboard/call/{id}/authorise` | demande inconnue | 404, aucun ordre |
+| `remotelyGranted` | aval armé / absent | motif rendu puis effacé / null |
+| `endorses` | liste nominale / vide / illisible | rôles lus / repli / repli |
+| `validateEndorsement` | aval distant présent | action exécutée sans saisie de code |
+| `addUnknownItem` | paramètre actif / inactif | demande remontée / rien |
+
+**K12 Les indicateurs du tableau de bord deviennent un paramètre (15/10)** `/dashboard`, `DashboardIndicator`, `DashboardIndicatorService` [E] [R] (BO-04-03-01, -03, -15)
+
+Les cinq cumuls du tableau de bord — CA, tickets, panier moyen, taux d'annulation, remboursements — sont écrits en JPQL et identiques partout. Les trois exigences demandent le contraire : **que le magasin choisisse ce qu'il regarde.** Les cumuls fixes restent ; une seconde rangée de tuiles, administrée, s'ajoute en dessous.
+
+- **Un catalogue de onze indicateurs**, dont neuf sont un comptage du journal du jour : ajouter un indicateur sur le journal, c'est une constante. Les deux autres — le solde des mouvements de caisse et le nombre de caisses muettes — se calculent autrement, et le `switch` du service est **exhaustif sans arm par défaut** : une constante que personne n'a appris à calculer ne compile pas, ce qui vaut mieux qu'une tuile à zéro pour l'éternité.
+- **Le paramètre porte l'ordre d'affichage**, pas seulement la sélection : `dashboard.indicators` est une liste à points-virgules lue de gauche à droite.
+- **Un code inconnu est ignoré, pas refusé.** Un paramètre tapé à la main ne doit pas pouvoir faire tomber l'écran qu'un responsable regarde toute la journée ; une tuile manquante le dit plus clairement qu'une page d'erreur. Vide : aucune tuile complémentaire, et la carte disparaît.
+- **La page reste un afficheur bête** : le serveur envoie la valeur déjà formatée et le suffixe à mettre derrière.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `selected` | vide / null / illisible | aucune sélection, aucune exception |
+| `selected` | codes inconnus seulement | aucune sélection |
+| `selected` | ordre administré, doublon, espaces | ordre respecté, doublon une fois, espaces tolérés |
+| `indicators` | indicateur de journal | comptage, suffixe vide |
+| `indicators` | comptage nul | « 0 », jamais null |
+| `indicators` | mouvements de caisse | montant signé, virgule française, suffixe € |
+| `indicators` | caisses muettes | compte de la liste de présence |
+| `dashboard-data` | aucune sélection | liste vide portée, carte masquée |
+
+**K13 Les connexions back-office au journal (15/10)** `EmployeeIdentityProvider`, `TechnicalEvent` [E] (BO-04-03-04)
+
+Les échecs d'authentification étaient comptés et pouvaient verrouiller un compte ; les **réussites** ne laissaient aucune trace. Une arrivée au back-office est un événement du magasin, pas une ligne de log technique.
+
+- **Seule la branche qui a VÉRIFIÉ un mot de passe écrit.** Le fournisseur de confiance repasse par le même code à chaque requête d'une session ouverte, sans secret : journaliser là aurait écrit une ligne par page vue au lieu d'une ligne par arrivée.
+- **L'identifiant voyage dans le détail, le badge dans sa colonne, le secret nulle part** — pas même tronqué.
+- **Un journal indisponible ne refuse pas la connexion** : l'opérateur a prouvé qui il est, et l'écrit est gardé comme le comptage des échecs l'est déjà.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `identityOf` | mot de passe correct | événement `BACK_OFFICE_SIGNED_IN`, badge et identifiant |
+| `identityOf` | mot de passe absent (cookie restauré) | aucun écrit |
+| `identityOf` | mot de passe faux | aucun écrit, échec compté |
+| `identityOf` | journal en panne | connexion accordée tout de même |
+| `EventType` | — | trente-quatre constantes, la nouvelle en queue |
+
 ## L. Documents et gabarits [E]
 
 Surfaces `@RolesAllowed("ADMIN")` : anonyme → 401, non-ADMIN → 403.
@@ -1553,7 +1714,7 @@ Surfaces `@RolesAllowed("ADMIN")` : anonyme → 401, non-ADMIN → 403.
 
 | Fonction | Cas | Attendu |
 | --- | --- | --- |
-| `GET /` | Page | 200 HTML ; aperçu de chaque gabarit administré vs sa vente de démo ; 11 types (`SALE_RECEIPT`…`LOYALTY_RECEIPT`) ; picker « Partir de » même type d'abord |
+| `GET /` | Page | 200 HTML ; aperçu de chaque gabarit administré vs sa vente de démo ; **15 types** (`SALE_RECEIPT`…`LOYALTY_RECEIPT`, plus les quatre bannières `TICKET_HEADER`, `TICKET_FOOTER`, `INVOICE_HEADER`, `INVOICE_FOOTER`) ; picker « Partir de » même type d'abord |
 | `POST /preview` | Aperçu | 200 HTML ; rend la source posée SANS persister ; draft porte source + rendu (ou erreur) ; ligne en base intacte |
 | `POST /preview` | Source cassée | 200 ; draft `error` = complainte du parseur, `rendered=null`, aucune persistance |
 | `POST /copy` | Picker `template:<code>` | 200 ; charge la source du gabarit administré ; CODE jamais copié |
@@ -1577,6 +1738,847 @@ Notes de lecture (chemins load-bearing) :
 - `AdminSafeJournalResource` et `AdminDocumentResource` sont strictement en lecture (aucun POST) ; leurs seuls effets d'écriture sont des exports CSV 200.
 - Fichiers lus : les 11 resources coffre/monnayeur + `SafeService`, les writers/format/criteria/chart/catalog/period/family/definition de `ui/report`, `AdminDocumentResource`, `AdminTemplateResource`, `DocumentTemplate`.
 
+**L2bis Bannières d'entête et de pied (lot 1 du chantier documents, 12/10)** [E/S] (BO-03-05-01 à -04, BO-03-04-02 et -08)
+
+L'entête et le pied administrés étaient **une ligne de 120 caractères toujours centrée** (`ticket.header-message`, `ticket.footer-message`), insérée en dur par le rendu Java de la caisse. Ils deviennent quatre **gabarits** comme les autres — `TICKET_HEADER`, `TICKET_FOOTER`, `INVOICE_HEADER`, `INVOICE_FOOTER` — et héritent de tout ce que l'écran des gabarits porte déjà : autant de lignes que le magasin en écrit (le minimum de dix demandé est sans objet), des modèles **nommés et codés** donc plus de dix cohabitant sous des codes différents et choisis par priorité, l'aperçu contre la vente de démonstration, le contrôle de compilation au save, et la descente en caisse par le domaine `DOCUMENT_TEMPLATES`. L'alignement se dit dans la source : texte brut à gauche, `{fmt.centre(...)}` au centre, `{fmt.right(...)}` à droite — cette dernière primitive est ajoutée à `DocumentLayout` par ce lot.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| Ticket | bannière d'entête administrée | ses lignes s'impriment sous l'adresse du magasin, telles que la source les a mises en page ; le message centré unique n'est PAS imprimé |
+| Ticket | bannière de pied administrée | idem après la formule de politesse, avant le code-barres d'identification |
+| Ticket | entête administrée, pied absent | l'entête est la bannière, le pied reste le message centré unique — les deux bannières sont indépendantes |
+| Ticket | aucune bannière | comportement d'avant au caractère près : message centré s'il est non blanc, rien sinon |
+| Ticket | bannière finissant par des lignes vides | les vides de FIN sont écartés (un bloc de texte finit toujours par un saut), ceux du MILIEU sont gardés — c'est un espacement voulu |
+| Ticket | gabarit `SALE_RECEIPT` administré | aucune bannière n'est ajoutée : l'entête est dans la source de l'auteur, l'imprimer en plus la dirait deux fois |
+| Facture | entête et pied administrés | encadrent le rendu intégré — avant le bloc vendeur, après les règlements — sans toucher une ligne de ce qui est entre les deux |
+| Facture | gabarit `INVOICE` administré | même règle que le ticket : pas de bannière autour d'un document entièrement réécrit |
+| `fmt.right` | texte plus court / exactement à la largeur / plus long / null | calé à droite / inchangé / **jamais coupé** / une ligne de blancs |
+
+**L2ter Nom du document et nom de réimpression (lot 3, 12/10)** [E/S] (BO-03-04-12 et -13)
+
+Deux colonnes sur le gabarit — `title` et `duplicateTitle` — éditées sur `/admin/templates`, portées par le DTO `DOCUMENT_TEMPLATES` et dans son empreinte, appliquées au nœud comme à la caisse. Elles sont **à côté de la mise en page et non dedans** : un magasin qui garde le document intégré peut vouloir le renommer, et réécrire tout un gabarit pour changer deux mots n'est pas un prix raisonnable.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `titleFor` | aucune ligne / ligne sans nom / nom blanc / nom posé | null, null, null, le nom **rogné** ; la première ligne non blanche dans l'ordre administré gagne |
+| `titleFor` | ligne nommée **sans source** | le nom est lu quand même — renommer un document qu'on n'a pas réécrit est le cas normal, et cette ligne n'est pas rendable (`findFor` répond null sur la même ligne) |
+| `titleFor` | type null | null |
+| `duplicateTitleFor` | ligne qui nomme le document mais pas sa réimpression | null — les deux mots sont séparés : le Portugal imprime DUPLICADO là où la France imprime DUPLICATA |
+| Caisse | réimpression avec nom administré | `*** DUPLICADO N2 ***` à la place de `*** DUPLICATA N°2 ***` ; **le rang reste calculé par la caisse** |
+| Caisse | ticket de retour, avoir, carte cadeau | leur titre vient du gabarit quand il est posé, du libellé intégré sinon |
+| Écran | champ vidé | stocké null, pas chaîne vide : une chaîne vide s'imprimerait comme un titre de zéro caractère |
+
+**L2quater Les zones (lot 4, 12/10)** [E/S] (BO-03-04-03, -04 et -07)
+
+Une zone est **un gabarit de type `FRAGMENT`** et rien d'autre : pas d'entité nouvelle, pas d'écran nouveau, pas de domaine de tirage nouveau. Elle hérite donc de l'écran, du contrôle de compilation, de l'aperçu et de la descente `DOCUMENT_TEMPLATES`. Un document la nomme par `[[ZONE <code>]]`, et le rendu met la source de la zone à cet endroit **avant de compiler** : les zones d'un document sont les marqueurs que sa source porte, dans l'ordre où elle les porte — ce qui est à la fois le « les unes derrière les autres » et le « positionnement saisi » que l'exigence demande. Plusieurs zones sous des codes différents sont plusieurs MODÈLES de la même zone, et le document choisit celui qu'il nomme.
+
+L'expansion est faite au moment de la compilation, pour deux raisons : le contrôle que le back-office passe au save voit le document que l'imprimante verra, et la forme composée est mise en cache comme les autres — un document fait de six zones coûte une compilation, pas sept.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `expandZones` | source sans marqueur / source null | rendue telle quelle / null |
+| `expandZones` | zone connue | la source de la zone prend la place du marqueur |
+| `expandZones` | zone nommant une autre zone | composée en profondeur, jusqu'à cinq niveaux |
+| `expandZones` | zone se nommant **elle-même** | s'arrête à la borne et laisse le marqueur — la caisse ne bloque pas |
+| `expandZones` | code inconnu (zone supprimée) | s'efface — le document s'imprime sans elle, plutôt que d'imprimer le marqueur sur le papier du client |
+| Aperçu | le nœud rend comme la caisse | `DocumentLayout` est **la même classe des deux côtés**, liée à la même largeur administrée : `{fmt.centre(...)}` montre ici les caractères que le rouleau imprimera. Sans ça l'aperçu du nœud affichait une erreur sur une mise en page que la caisse rendait parfaitement |
+
+**L2quinquies Lignes de bannière et gras (lot 2, 12/10)** [E/S] (BO-03-05-05 et -06)
+
+L'exigence veut une bannière éditée **ligne à ligne** : activer ou désactiver la ligne, la centrer, la justifier, la mettre en gras, et une ligne désactivée ne s'imprime pas. Une zone de texte libre n'offre rien de tout cela, et une seconde table à côté de la mise en page donnerait à une bannière **deux vérités**. Il y a donc une seule vérité — la source de la bannière — et `BannerLines` en est la porte à double sens : `parse` la lit en lignes pour la table, `format` réécrit les lignes en source. **L'aller-retour est exact** sur toutes les formes que la table produit, ce qui est ce qui autorise à passer de la table à la source brute sans perdre une ligne.
+
+Le gras est une **directive** — `[[BOLD]]…[[/BOLD]]` — émise comme `[[BARCODE …]]` et `[[IMAGE …]]` le sont déjà : la caisse reste du texte et le pont matériel la traduit en commandes d'imprimante. **Le module matériel n'est pas dans ce dépôt** : tant qu'il n'interprète pas la paire, une ligne grasse sort avec ses marqueurs visibles — une panne qu'un paramétreur sait lire, et non des octets de contrôle illégaux.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `parse` | source null / vide | aucune ligne |
+| `parse` | texte brut / `{fmt.centre("x")}` / `{fmt.right("x")}` | GAUCHE / CENTRE / DROITE |
+| `parse` | `{fmt.bold(…)}` autour d'une ligne alignée ou brute | gras, l'enveloppe n'est pas prise pour le texte |
+| `parse` | `{! OFF !}` devant la ligne | inactive **en gardant son texte** — une ligne saisonnière s'éteint en octobre et se rallume en décembre sans être retapée |
+| `parse` | ligne que la classe n'a pas écrite (`Caisse {terminal}`) | rendue verbatim en ligne GAUCHE — la table ne jette jamais ce qu'elle ne comprend pas |
+| `parse` | lignes vides de FIN / du MILIEU / vide mais centrée | rognées / gardées / gardée (c'est un blanc voulu) |
+| `format` | null / aucune ligne / chaque forme / texte null | vide, vide, la forme que `parse` relit, une ligne vide |
+| Aller-retour | bannière portant **toutes** les formes à la fois | source identique au caractère près |
+| Écran | bannière | la table s'affiche, plus **trois lignes vides** toujours offertes — on ajoute des lignes sans script |
+| Save | la table est postée | elle fait la source ; sinon la zone de texte reste la porte |
+| Save | ligne vide et rien de coché | jetée — les lignes d'appoint ne deviennent pas des lignes de papier |
+| Save | ligne vide mais cochée | gardée — cocher une case sur une ligne vide est une décision, pas un oubli |
+| `fmt.bold` | texte null ou vide | chaîne vide, **pas** une paire de marqueurs autour de rien |
+
+**L2sexies Documents fiscaux du Portugal (lot 5, 12/10)** [E/S] (BO-03-04-19, -21 à -26 et -28)
+
+Quatre types de document — `FS`, `FT`, `NC`, `RC` — **et pas une ligne de Java pour les imprimer** : leur mise en page est un gabarit, le nombre d'exemplaires est le `copies` du gabarit, le nom de chaque exemplaire est dans `copyTitles`, le préfixe de leur numéro est dans `numberPrefix`. C'est ce qui permet d'ouvrir un pays sans livrer une version.
+
+La NUMÉROTATION est une entité à part, `DocumentSequence`, et le choix mérite d'être dit : le Portugal veut un numéro unique **par type, par caisse, par point de vente et par année**, là où le compteur de tickets a une seule clé et ne repart jamais à zéro. Ajouter l'année au `TicketCounter` aurait remis à zéro la séquence des tickets avec elle — or c'est l'ancre de la chaîne fiscale, perpétuelle par la loi. Le verrou pessimiste et la transaction de l'appelant sont ceux du compteur de tickets : deux caisses tiennent deux lignes, une caisse sérialise ses propres documents.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `prefixFor` | rien / préfixe blanc / préfixe posé / type null | null, null, le préfixe rogné, null |
+| `nextDocumentNumber` | aucun préfixe administré | le type se nomme lui-même — deux séries restent distinctes avant tout paramétrage |
+| `nextDocumentNumber` | forme | `PRÉFIXE CAISSE/ANNÉE/NNNNNNNN` |
+| `DocumentSequence.next` | type, caisse, PDV ou année inédits | nouvelle ligne à 1 ; **la ligne de l'année précédente est intacte**, c'est ce qu'une administration vient rechercher |
+| `copyTitleFor` | rang 1 / 2 / 3 sur `ORIGINAL;DUPLICADO;TRIPLICADO` | les trois noms |
+| `copyTitleFor` | rang AU-DELÀ des noms administrés | null — un quatrième exemplaire nommé TRIPLICADO dirait quelque chose de faux sur un document fiscal |
+| `copyTitleFor` | rang < 1 / ligne sans noms / nom vide à ce rang / rien d'administré | null à chaque fois |
+| Écran | préfixe et noms d'exemplaires | deux champs sur chaque carte de gabarit, vidés → null |
+| Tirage | les quatre colonnes | voyagent dans le DTO `DOCUMENT_TEMPLATES`, comptent dans l'empreinte, appliquées au nœud comme à la caisse |
+
+Reste hors de ce lot et **bloqué sur un document externe** : l'ATCUD et le QR code (BO-03-04-27, BO-03-05-08), dont le contenu et le format sont fixés par la spécification fiscale portugaise.
+
+**L4 Messages aux caisses (chantier 03-08, 12/10)** `/admin/messages`, `GET /api/messages/pending` [E/S] (BO-03-08-01, -02, -04 et -08)
+
+**Le bout caisse de ce canal existait depuis EXP-20 ; le bout nœud n'existait pas.** Une ligne sonde `pos.message.node-url?terminal=X` toutes les vingt secondes, attend un objet `{text, question, options}`, affiche la bannière sur l'écran de vente et renvoie la réponse d'un sondage. Personne ne servait cet endpoint. Ce chantier l'écrit.
+
+**La forme servie n'est pas négociable** : les caisses sont déployées et sondent ces trois champs ; en servir d'autres voudrait dire une livraison sur chaque ligne du magasin. Le nœud répond donc exactement cela, et tout ce que l'écran sait de plus — la période, la population, le moment, le mode de confirmation — est résolu **avant** de répondre.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `appliesTo` | message désactivé | servi à personne — c'est ainsi qu'on retire une consigne |
+| `appliesTo` | aucune période / avant le début / après la fin | toujours servi / pas encore / plus ; **les deux bornes sont inclusives** (une consigne posée pour midi est servie à midi) |
+| `appliesTo` | population TOUTES / UNE CAISSE / UN ÎLOT | tout le monde / la caisse nommée seule / les caisses de l'îlot ; valeur absente → servi à personne |
+| `appliesTo` | population UN OPÉRATEUR | servi à **toutes** les caisses — le nœud ne sait pas qui est connecté où, le filtrage est celui de la caisse. Seule des quatre à fonctionner ainsi, et c'est testé comme tel pour que l'asymétrie soit délibérée |
+| `appliesTo` | hors période mais adressé à cette caisse | pas servi — la période prime, ce qui permet de préparer la consigne de demain |
+| `momentHasCome` | IMMÉDIAT | servi au prochain sondage, donc sous vingt secondes |
+| `momentHasCome` | À L'OUVERTURE | servi si la session ouverte sur cette caisse a commencé **après** le message ; un caissier déjà en poste ne le reçoit pas — c'est la seule lecture de « à l'ouverture » qui ne revienne pas à « tout de suite ». Début non borné → n'attend rien |
+| `momentHasCome` | À LA FERMETURE | servi quand la caisse n'a **plus** de session ouverte — là où le caissier le lit, après le Z |
+| `pending` | caisse sans message | 204 ; le sondeur laisse sa bannière intacte |
+| `pending` | plusieurs messages applicables | **le plus récent gagne** — la caisse n'affiche qu'une bannière, et c'est ce qu'attend un magasin qui corrige une consigne |
+| `pending` | caisse inconnue du référentiel | traitée sans îlot plutôt qu'en erreur — une ligne non déclarée sonde quand même |
+| `pending` | rôle ≠ store / jeton faux | 403 / 401, comme les autres surfaces machine |
+| Confirmation | réponse de sondage remontant en appel superviseur `SONDAGE` | **aucun canal nouveau** : la caisse remonte déjà par là, et cet appel nomme déjà la caisse et l'opérateur. Le nœud en fait un accusé horodaté — exactement le « n° caissière, nom-prénom, date » demandé |
+| Confirmation | appel d'un autre motif / sans séparateur / question inconnue | rien n'est classé — un appel superviseur n'est pas un accusé, et mieux vaut ne rien classer que classer sous le mauvais message |
+| Écran | message sans texte **ni** question | refusé — une bannière vide servie à quarante caisses est un défaut, pas un message |
+| Écran | population ciblée sans valeur / date illisible / fin avant début | refusés, chacun par son nom |
+| Écran | liste des accusés | **nominative et non comptée** : un magasin qui diffuse une consigne a besoin de savoir QUELLE caissière ne l'a pas lue |
+| Suppression | message supprimé | ses accusés partent avec lui — ils nommeraient un message qui n'existe plus |
+
+**L5 Message porté par l'article (12/10)** `/admin/article` [E/S] (BO-03-08-09)
+
+Une colonne `infoMessage` sur l'article, pas une table de règles : le message EST un attribut de l'article — « produit fragile », « vérifier la date », « appeler le rayon ». Le magasin l'écrit où il écrit le libellé, et il descend par le même domaine `PRODUCTS`.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| Caisse | article portant un message, venant d'être saisi | la phrase s'affiche en notice ; **la vente continue** — un article à refuser relève d'un point de contrôle, pas d'une phrase |
+| Caisse | message **et** prix au-dessus du seuil | le message de l'article passe d'abord : les deux partagent un emplacement de notice et le message est le plus spécifique des deux |
+| Caisse | une erreur est déjà à l'écran | ni l'un ni l'autre — une ligne refusée ne doit pas être recouverte par une notice sur la ligne d'avant |
+| Caisse | article sans message / ligne sans EAN / EAN inconnu | rien |
+| Écran | champ vidé | stocké null : l'article ne dit rien |
+
+**L6 Messages des fournisseurs (12/10)** `/admin/providers`, domaine `PROVIDER_MESSAGES` [E/S] (BO-03-08-06 et -07)
+
+Un tiers répond dans sa langue — `ERROR CODE 4 ITEM` — et montrer ça à un caissier, c'est lui montrer le journal de quelqu'un d'autre. L'entité `ProviderMessage` est la traduction, **clée sur la PAIRE fournisseur + code** : deux émetteurs qui numérotent leurs erreurs à partir de un ne disent pas la même chose avec le code 4. Le domaine de tirage passe de 17 à **18** (`PROVIDER_MESSAGES`, entre `DOCUMENT_TEMPLATES` et `SETTINGS`), l'union du `switch` de `getPage` de 21 à **22**.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `findFor` | fournisseur null / code null | rien — la paire est la clé, une demi-clé n'ouvre rien |
+| `screenTextFor` | rien de déclaré / texte écran null / texte écran blanc | **le texte du fournisseur** dans les trois cas — ne jamais vider le message d'un caissier |
+| `screenTextFor` | texte déclaré | remplace, rogné |
+| `ticketTextFor` | rien de déclaré / texte ticket null / blanc | **null — rien n'est imprimé**, et c'est la règle INVERSE de l'écran : la réponse technique d'un tiers n'a pas sa place sur le papier du client sans une phrase écrite par le magasin |
+| Tirage | ligne retirée du snapshot | **supprimée** et non désactivée — une substitution que personne ne déclare plus n'a pas d'histoire à garder, et la laisser ferait hériter la phrase d'un autre au magasin qui réutilise le code |
+| Écran | fournisseur ou code absent | refusé |
+
+Écart assumé sur ces deux lignes : **aucun client fournisseur ne renvoie aujourd'hui de code message** — les intégrations répondent un verdict, pas un code — donc la substitution n'a rien à remplacer tant qu'un protocole ne le fournit pas. Le référentiel, son écran et sa descente sont là ; le point de consommation attend l'intégration.
+
+**L7 Le justificatif du moyen de paiement (12/10)** `/admin/tenders` [E/S] (BO-03-02-26, -31, -32 et -33)
+
+Les commentaires de ces quatre lignes demandaient tous de « créer le moteur de modèles de document ». **Il existe depuis ce matin.** Il ne manquait que le lien : quatre colonnes sur le moyen de paiement.
+
+- `documentTemplateCode` — le gabarit imprimé quand ce moyen est utilisé. **Nommé par son code et non par clé étrangère** : les gabarits voyagent sur leur propre domaine, et un moyen qui en nomme un pas encore arrivé ne doit pas être bloqué pour autant.
+- `printCount` — le nombre d'impressions, 1 par défaut. **Sur le moyen et pas seulement sur le gabarit** : la même mise en page peut sortir une fois pour un moyen et deux pour un autre, et l'exigence demande le compte « par moyen de paiement ».
+- `printDuplicate` — un duplicata à côté des originaux. Pas la même chose qu'imprimer deux fois : il est rendu **comme une réimpression**, donc il porte le nom de réimpression du gabarit (lot 3 de ce matin).
+- `printForced` — imprimé même quand le ticket de caisse ne l'est pas. Le justificatif est une preuve de RÈGLEMENT, le ticket une preuve de VENTE.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `printTenderSlips` | moyen nommant un gabarit, 2 exemplaires | deux impressions, deux coupes |
+| `printTenderSlips` | duplicata demandé | un exemplaire de plus, rendu en réimpression |
+| `printTenderSlips` | ticket NON imprimé, moyen non forcé / forcé | rien / le justificatif sort quand même |
+| `printTenderSlips` | ticket null / sans règlement / moyen inconnu / sans gabarit / gabarit absent | rien à chaque fois — jamais un règlement mis en échec par un justificatif |
+| `printTenderSlips` | le même moyen a réglé deux fois | **un seul justificatif** : deux lignes d'espèces sont une façon de payer, en imprimer deux dirait le nombre d'exemplaires par accident |
+| Tirage | compte absent ou nul venant d'un nœud plus ancien | lu comme 1 — un moyen qui imprime un justificatif l'imprime |
+| Appel | après le ticket et le ticket CB, dans `applyPrintChoice` | reçoit la décision d'impression de `PrintPolicy` |
+
+**L8 Le taux de change et sa date (12/10)** `/admin/currencies` [E/S] (BO-03-02-39 et -40)
+
+L'écran des devises existait depuis EXP-22, avec son taux. Ce qu'il ne portait pas, c'est **quand** ce taux est devenu le taux — ni **dans quelle monnaie** le rendu se fait. Les deux lignes ne demandaient pas un écran de plus, elles demandaient deux champs et une table.
+
+- `Currency.changeTenderCode` — le moyen de paiement dans lequel la monnaie est rendue, **vide = en euros**. C'est un code de MOYEN DE PAIEMENT et non un code de devise : rendre en francs suisses et rendre en espèces suisses ne se décident pas au même endroit, et c'est le moyen qui porte le tiroir.
+- `CurrencyRateHistory` — une ligne par CHANGEMENT de taux : l'ancien taux, le nouveau, la date, l'opérateur. Écrite par l'écran et **jamais modifiée** : un historique qui se corrige n'est pas un historique.
+- Le taux en vigueur reste la colonne de la devise. Aucun lecteur existant ne change — une conversion qui demandait son taux à la devise continue de le lui demander.
+- L'écriture est **conditionnée au changement réel** et faite **avant** le remplacement. Enregistrer la devise sans toucher au taux n'écrit rien : un historique rempli de lignes qui disent le même chiffre cache les trois qui ne le disent pas.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `record` | taux suivant null | rien d'écrit |
+| `record` | taux inchangé | rien d'écrit |
+| `record` | même valeur écrite autrement (`0.95` / `0.9500`) | rien d'écrit — la comparaison porte sur la valeur, pas sur le texte |
+| `record` | premier taux (pas de précédent) | une ligne, prédécesseur null |
+| `record` | changement réel | une ligne portant les DEUX taux |
+| `listFor` | une devise | ses changements, le plus récent d'abord |
+| Ligne | à la construction | elle s'horodate elle-même ; l'appelant ne choisit pas la date |
+| `saveCurrency` | taux modifié | l'ancien taux est gardé, et gardé AVANT d'être remplacé |
+| `saveCurrency` | taux réenregistré à l'identique | historique muet |
+| `saveCurrency` | `changeTenderCode` posté / vide | enregistré / rendu en euros |
+| Écran | `GET /admin/currencies` | chaque devise sert son historique, sous elle, le plus récent d'abord |
+| Diffusion | `CURRENCIES` | `changeTenderCode` descend à la caisse et entre dans l'empreinte |
+| Diffusion | instantané siège **sans** le champ (nœud) | le choix du magasin est conservé — la monnaie de rendu est décidée sur le nœud |
+
+**Hors périmètre, signé et non fait** : l'historique n'est pas encore montré à la caisse, et le rendu dans la monnaie nommée par `changeTenderCode` est un travail de la campagne miroir — la colonne descend, le calcul du rendu reste à écrire côté caisse.
+
+**L9 La destination d'une plage de codes-barres (12/10)** `/admin/coupons`, domaine `ARTICLE_RANGES` [E/S] (BO-03-06-56, -60 et -61)
+
+Le vocabulaire positionnel des plages article disait depuis EXP-26 **comment lire** un code : préfixe, longueur, nature des caractères, deux zones. Il n'a jamais dit **ce que le code veut dire** — toute plage voulait dire « un article avec son prix ou son poids », parce que c'était la seule chose que la chaîne savait en faire. Trois lignes du questionnaire demandent trois autres sens sur le même vocabulaire. Aucune ne méritait une seconde table : même préfixe, même longueur, mêmes deux zones.
+
+- `ArticleBarcodeRange.purpose` — ARTICLE (par défaut, donc toute plage administrée avant la colonne continue exactement ce qu'elle faisait), REFUND, TARE, BALANCE_TICKET. Administrée sur `/admin/coupons`, elle descend aux caisses avec la plage et **entre dans l'empreinte** : un plan lu de la même façon mais traité autrement n'est pas le même plan.
+- `RangePurposeScanHandler` (nouveau, priorité 1) — il ne décode rien : la plage l'a fait. Il porte le SENS. `WeightedEanScanHandler` refuse les mêmes codes pour la même raison, donc la disjonction exigée par le contrat de chaîne tient par une décision unique, prise sur la plage.
+- REFUND — le code nomme l'article et porte son prix ; la ligne est passée en retour sur la vente en cours, **sans ticket d'origine** : le papier EST l'autorisation. C'est précisément pourquoi les deux autorisations administrées sur les retours (`returnWithoutOriginAllowed`, `returnInSaleAllowed`) sont honorées ici mot pour mot : un code-barres n'est pas un contournement de paramétrage.
+- TARE — le code porte le poids du contenant ; il est gardé **sur le ticket** (il part avec lui) et déduit de la prochaine ligne pesée, là où un poids devient une quantité. Lu une seule fois : une tare allège une ligne, pas la suivante.
+- BALANCE_TICKET — la référence du sachet comptoir, prise **brute, zéros de tête compris** : le magasin la rapproche caractère par caractère de ce que la balance a poussé. La plage administrée est consultée d'abord ; tant qu'aucune n'existe, la disposition 2x historique répond, inchangée.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `purpose` | plage d'avant la colonne | ARTICLE — rien ne bouge |
+| Chaîne | plage REFUND / TARE / BALANCE_TICKET | `WeightedEanScanHandler` laisse passer, sans message |
+| `RangePurposeScanHandler` | code nul / blanc / aucune plage / plage ARTICLE / plage BALANCE_TICKET | non consommé à chaque fois |
+| `RangePurposeScanHandler` | clé de contrôle administrée, fausse / juste | laisse passer / agit |
+| TARE | poids lisible | annoncé, notice « TARE x KG PRISE EN COMPTE », aucune ligne |
+| TARE | poids nul / zone illisible | refusé « TARE ILLISIBLE » — une tare de zéro et une tare illisible ne sont pas la même chose |
+| TARE | ligne pesée suivante | poids diminué de la tare, tare consommée |
+| TARE | tare ≥ poids pesé | « POIDS INVALIDE » — facturer le saladier n'est pas une vente |
+| TARE | fin de ticket | oubliée (`clear`) |
+| REFUND | plage à prix | retour quantité 1 au prix du code |
+| REFUND | plage à poids | retour du poids lu, au prix du catalogue ; sans prix courant, 0 et TVA par défaut |
+| REFUND | poids nul | « POIDS INVALIDE » |
+| REFUND | retour sans origine interdit | « RETOUR SANS TICKET D'ORIGINE INTERDIT » |
+| REFUND | retour en vente interdit, ticket commencé / vide | refusé / accepté |
+| REFUND | article inconnu | « ARTICLE BALANCE INTROUVABLE (x) » |
+| REFUND | zones hors du code | non consommé — jamais un retour sur un article que personne n'a nommé |
+| REFUND | mode retour déjà actif / inactif | restitué tel quel après la saisie |
+| BALANCE_TICKET | plage administrée, longueur et position propres | référence lue là où le magasin la met |
+| BALANCE_TICKET | référence à zéros de tête | gardée telle quelle |
+| BALANCE_TICKET | zone illisible / plage d'un autre sens | repli sur la disposition 2x historique |
+| Diffusion | `ARTICLE_RANGES` | `purpose` descend, entre dans l'empreinte ; instantané muet → ARTICLE à la caisse, choix du magasin conservé sur le nœud |
+
+**Déjà couvert, recoté sans une ligne de code** : BO-03-06-25 (date AAAAMMJJ). Le format `YYYYMMDD` et son décodage existent dans `CouponField.DateFormat` depuis le moteur de coupons, la position de lecture est administrée sur la zone, et l'écran propose tous les formats. Le commentaire éditeur qui demandait de l'ajouter était périmé.
+
+**Hors périmètre, signé et non fait** : l'alimentation des sachets comptoir se fait par POUSSAGE HTTP (`SyncIngestResource`) et non par récupération FTP comme le dit l'exigence — le format et le contenu sont les mêmes, le transport non.
+
+**L10 Trois documents que le moteur de gabarits ne portait pas (12/10)** `/admin/templates` [E/S] (BO-03-03-07, -36 et -37)
+
+Le moteur de gabarits compte maintenant **22 types de documents**. Deux de plus ici, et une colonne d'imprimerie qui manquait sur la ligne article. Aucun des trois ne demandait une donnée nouvelle : tout est dérivable de la vente ou déjà dans le référentiel.
+
+- **`EXIT_TICKET` — le ticket de sortie (BO-03-03-36).** Substitutif et non additionnel, et c'est tout l'intérêt : un magasin dont les clients montrent un papier à la sortie n'a pas besoin du ticket complet dans leur main, il a besoin des quelques chiffres qu'un portique ou un hôte vérifie — un total, un nombre d'articles, et les plus chers nommés, pour qu'un chariot se compare au papier sans lire quatre-vingts lignes. Titre, code-barres (la primitive existait), total TTC, nombre d'articles, et les X articles les plus chers — X étant paramétré, borné à 1–20 côté paramétrage et non côté imprimante. Le remplacement tient en **une** branche dans `applyPrintChoice` : l'imprimeur répond zéro quand le magasin ne l'administre pas, et le ticket sort comme avant.
+- **`PARKED_TICKET_RESUME` — le ticket de reprise (BO-03-03-07).** Le papier de mise en attente dit ce qu'on a mis de côté ; celui-ci dit que ça revient, et nomme **les deux numéros** — celui du ticket qui continue, et celui que portait le papier. Sur une reprise locale ils sont le même ; sur une reprise inter-caisses (EXP-46) ils diffèrent, et c'est exactement là-dessus qu'une contestation deux heures plus tard se joue. Le numéro d'origine est lu AVANT que la reprise ne réhéberge le ticket.
+- **Le code du taux de TVA sur la ligne (BO-03-03-37).** Le numéro de régime existait depuis toujours sur le référentiel ; ce qui manquait était de l'imprimer. Il est retrouvé à partir du TAUX que la ligne a figé au scan, donc un ticket réimprimé deux ans plus tard énonce le régime de SA vente et non celui d'aujourd'hui. Un taux qu'aucun régime ne porte n'imprime rien plutôt qu'un numéro invérifiable. Activable en France, désactivable en Belgique, comme l'exigence le demande.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `printExitTicket` | non administré / vente inconnue | zéro, rien d'imprimé |
+| `printExitTicket` | administré | titre, total TTC, nombre d'articles, les X plus chers, numéro et code-barres |
+| `printExitTicket` | X = 2 sur trois lignes | les deux plus chères, la plus chère d'abord ; la troisième absente |
+| `printExitTicket` | ligne annulée | jamais nommée — elle n'est pas vendue |
+| `printExitTicket` | moins de lignes que X | toutes nommées |
+| `printExitTicket` | vente sans ligne ni total | document quand même, 0,00 |
+| `printExitTicket` | gabarit administré | la mise en page du magasin remplace tout, le papier est coupé de même |
+| `applyPrintChoice` | ticket de sortie imprimé / pas administré | le ticket de caisse NE sort pas / sort comme avant |
+| Paramètre | nombre d'articles hors 1–20 / aux bornes | retombe sur 3 / accepté |
+| `printResumeTicket` | non administré / brouillon nul | zéro, rien d'imprimé |
+| `printResumeTicket` | administré | titre, date d'IMPRESSION, numéro du ticket, numéro d'origine |
+| `resume` | reprise locale | les deux numéros sont le même, le document les dit tous les deux |
+| `resumeForeign` | reprise inter-caisses | le numéro du papier, lu avant le réhébergement |
+| Code TVA | administré / par défaut | « CODE TVA : n » sous l'article / rien |
+| Code TVA | ligne sans taux / taux sans régime / régime sans numéro | rien — jamais un numéro invérifiable |
+
+**Déjà couvert, recoté sans une ligne de code** : BO-03-03-23 (lignes de promotion sous l'article). Le placement est dicté par le `printMode` de l'avantage moteur — `LINE` imprime sous l'article concerné, son absence vaut pied de ticket — et le mécanisme de caisse est en place et testé. Ce qui manque est le remplissage du champ par le moteur, c'est-à-dire un point de contrat imfid et non une mise en page : la ligne passe donc à **1a**, comme les messages fournisseurs.
+
+**Correction de dette trouvée en chemin** : `DocumentTemplateTest` affirmait encore **12** types de documents des deux côtés alors que les lots du matin en avaient porté le nombre à 20 — un test rouge laissé derrière. Il en affirme maintenant 22, et nomme les deux nouveaux.
+
+**L11 Les périphériques du point de contact (12/10)** `/admin/checkout-points`, domaine `CHECKOUT_POINTS` [E/S] (BO-03-09-15, -24, -25 et -26)
+
+Quatre lignes qui demandent la même chose quatre fois : **protocole, adresse, port**. Une balance DIGI, un monnayeur Gunnebo, un Glory, un Toshiba. Elles ne demandent pas quatre écrans ni quatre tables : elles demandent que le point de contact d'encaissement porte ses périphériques, comme il porte déjà ses afficheurs (BO-03-09-12/13) — type administré, résolution administrée, et aucun pilote dans ces dépôts.
+
+- `ScaleProtocol` — NONE, **CD06** (celui que la caisse pilotait déjà, réglé en ligne de commande), **DIGI** (BO-03-09-15).
+- `CoinMachineProtocol` — NONE, **GUNNEBO**, **GLORY**, **TOSHIBA** : **un seul choix administré pour trois lignes**, parce que les trois demandent le même triplet et ne diffèrent que par le nom. Un magasin qui change de fournisseur change une valeur.
+- Six colonnes sur `CheckoutPoint`, administrées sur l'écran existant, descendues aux caisses avec le point et **entrées dans l'empreinte** : une adresse corrigée au siège fait repasser la caisse au rattrapage.
+- Le port est un `Integer` **nullable et jamais zéro** : une machine sans port et un port mal saisi ne doivent pas se lire pareil, et zéro est un port que la caisse essaierait. Borné à 1–65535 au paramétrage et non à l'imprimante.
+- Un instantané muet laisse la caisse en NONE — aucune machine, ce qu'elle avait avant que la colonne existe, et jamais un protocole que personne n'a administré.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| Écran | `GET /admin/checkout-points` | les deux listes de protocoles servies au formulaire |
+| Save | protocole, adresse, port postés | enregistrés sur le point |
+| Save | protocole inconnu (balance / monnayeur) | NONE — jamais un protocole inventé |
+| Save | port vide / non numérique / 0 / 65536 | non enregistré (null) |
+| Save | port 1 / 65535 | acceptés, les deux bornes |
+| `fromName` | nom connu (espaces compris) / null / inconnu | résolu / null / null |
+| Diffusion | `CHECKOUT_POINTS` | les six valeurs descendent et entrent dans l'empreinte |
+| Diffusion | instantané sans protocole | NONE à la caisse, port null |
+
+**Hors périmètre, signé et non fait** : le DIALOGUE avec ces machines. Le protocole est nommé, l'adresse et le port sont administrés et distribués ; parler DIGI, Gunnebo, Glory ou Toshiba est le travail du module matériel, qui n'est pas dans ces dépôts — comme les afficheurs, dont le type est administré depuis BO-03-09-12 sans qu'aucun pilote d'afficheur n'existe ici.
+
+**L12 Où un groupe d'articles est affiché (12/10)** `/admin/touches`, domaine `TOUCH_GROUPS` [E/S] (BO-03-01-21, -22 et -23)
+
+Les trois lignes disaient « rattacher les groupes d'articles aux îlots, aux caisses, aux types de point de contact », et les trois commentaires éditeur disaient « il faut d'abord modéliser l'îlot et la caisse ». **Les deux entités existent** — `CheckoutIsland` depuis le lot 03-10, `CheckoutPoint` et son `tpvType` depuis 03-09. Il ne manquait que la portée.
+
+- Trois colonnes sur `TouchGroupSetting`, le bon propriétaire : la configuration d'écran, pas la nomenclature — un réimport du référentiel articles n'efface pas la portée.
+- **Rien de coché = partout.** C'est le comportement de la grille avant la colonne : un magasin qui n'ouvre jamais ce volet garde sa grille à l'identique. Une portée vide qui vaudrait « nulle part » cacherait tous les groupes au premier déploiement.
+- **Les trois portées se cumulent** : îlot ET caisse ET type. Et un type plutôt qu'une liste de caisses, parce que « tous les libre-service » est une règle qui doit survivre à l'ouverture du suivant.
+- La caisse lit son îlot et son type **sur le point de contact distribué**, pas sur elle-même : ce n'est pas la caisse qui décide dans quel îlot elle est.
+- Un sous-groupe hors périmètre n'est pas davantage affiché sous son parent : la portée est sur le groupe, pas sur son rang.
+- La portée entre dans **l'empreinte** du domaine : un groupe déplacé d'un îlot à l'autre fait repasser les caisses au rattrapage.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `isDrawnOn` | aucune portée (null) / portées blanches | affiché partout, même sur une caisse qui ne sait rien dire d'elle |
+| `isDrawnOn` | îlot nommé : le bon / un autre / aucun | affiché / non / **non** |
+| `isDrawnOn` | caisse nommée : la bonne / une autre / aucune | affiché / non / non |
+| `isDrawnOn` | type nommé : le bon / un autre / blanc | affiché / non / non |
+| `isDrawnOn` | îlot ET type, un seul des deux tenant | non affiché |
+| `isDrawnOn` | valeurs séparées par « ; » avec espaces | comparées élaguées |
+| Écran | portée cochée | repliée en liste séparée par « ; » |
+| Écran | rien de coché / valeur blanche postée | **null** et non chaîne vide |
+| Caisse | grille racine, catégorie, sous-groupes | filtrés aux trois endroits |
+| Empreinte | groupe déplacé d'îlot, de caisse, de type | empreinte différente à chaque fois |
+| Diffusion | instantané sans portée | le groupe redevient affiché partout |
+
+**Hors périmètre, signé et non fait** : BO-03-01-18, la désactivation d'un ARTICLE par îlot ou par caisse (P2). Même mécanique, mais posée sur le produit, c'est-à-dire sur un référentiel de quarante mille lignes diffusées — ça mérite son propre lot.
+
+**L13 Ce que l'îlot décide, et la plage du code-barres du ticket (12/10)** `/admin/settings` [E/S] (BO-03-10-05, -13, -14 et BO-03-06-55)
+
+Les clés d'îlot sont un mécanisme **déjà résolu** : le nœud résout la valeur par point de contact / îlot / PDV et la livre par le domaine `SETTINGS` (c'est ainsi que `island.change-allowed` et `island.auto-declaration` fonctionnent depuis le lot 03-10). Trois lignes de plus ne demandaient donc que trois clés et leur effet.
+
+- **`island.unknown-article-ticket` (BO-03-10-05)** — un vingt-quatrième type de document, `UNKNOWN_ARTICLE_TICKET` : le code **tel qu'il a été lu**, la caisse, l'heure. Ce n'est pas un second message d'écran : c'est le papier qu'un chef de rayon rapporte au référentiel. Le message écran est posé **avant** le papier et non à sa place, une caisse verrouillée n'imprime rien, et un `UnknownScanHandler` sans imprimante (hors CDI) affiche quand même : le papier est un ajout, jamais une condition. Mise en page redéfinissable par gabarit comme les autres.
+- **`island.block-article-popups` (BO-03-10-13)** et **`island.block-payment-popups` (BO-03-10-14)** — les messages d'INFORMATION sont tus, **les refus ne le sont jamais**. C'est la ligne de partage, et elle est nette dans le code : ce qui passe par `setWarning` peut être tu, ce qui passe par `setError` jamais. Un geste que le magasin interdit reste interdit et le dit.
+- **`ticket.barcode-prefix` (BO-03-06-55)** — la primitive code-barres existait (le commentaire éditeur qui demandait de la créer était périmé, c'est la cinquième de la journée). Ce qui manquait était la **plage** : un préfixe administré devant le numéro, pour que les portiques et les bornes de jeux reconnaissent ce qui leur est réservé. Un PRÉFIXE et non un code entier : le numéro reste celui par lequel un retour ou une réclamation se retrouve.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| Clés d'îlot | rien d'administré | les trois à faux : écran seul, tous les messages |
+| `printUnknownArticleTicket` | îlot sans papier / code nul / code blanc | zéro, rien d'imprimé |
+| `printUnknownArticleTicket` | îlot avec papier | titre, code lu élagué, caisse, date |
+| `printUnknownArticleTicket` | gabarit administré | la mise en page du magasin, papier coupé |
+| `UnknownScanHandler` | code inconnu | message ÉCRAN **et** demande de papier |
+| `UnknownScanHandler` | caisse verrouillée | ni message ni papier |
+| `UnknownScanHandler` | sans imprimante (hors CDI) | message quand même |
+| Messages article | îlot bloquant | message d'article ET alerte prix élevé tus |
+| Messages règlement | îlot bloquant, niveau WARN | alerte tue, le règlement passe |
+| Messages règlement | îlot bloquant, niveau BLOCK | **refus maintenu et affiché** |
+| Code-barres ticket | préfixe administré (avec espaces) | `[[BARCODE 29C04-00000001]]`, élagué |
+| Code-barres ticket | préfixe nul / blanc | le numéro seul, comme avant la clé |
+
+**Dette trouvée en chemin** : le message d'article (BO-03-08-09, livré ce matin) interroge le catalogue à **chaque** entrée de ligne, et `TicketServiceTest` ne stubait pas ce `Product.find` — la suite impos était rouge sur toute la famille « prix élevé ». Le helper d'entrée de ligne le stube maintenant, et le message d'article a enfin son propre test.
+
+**Lot abandonné, raison donnée** : la monétique (BO-03-09-30 codes produit VIC, BO-03-09-31 Label PDV). La trame de REQUÊTE Verifone est un `TODO(spec Verifone)` dans `VerifoneTerminalClient` — il n'y a pas de champ où poser un label ni un code produit. Ajouter les paramètres administrés sans trame où les émettre serait du remplissage de cotation. La classe que citaient les commentaires éditeur (`WimPaymentTerminal`) **n'existe pas dans ces dépôts**.
+
+**L14 Ce qu'un type de retour emporte avec lui (12/10)** `/admin/settings`, `HomeService`, `TicketService` [E/S] (BO-03-13-06, -08 et -10)
+
+Les types de retour existaient déjà comme une simple liste de libellés (`return.types`). Ce qui manquait n'était pas l'écran mais le fait qu'un type **emporte ses règles** : le magasin qui ouvre un type « Retour SAV » veut que ce type-là, et lui seul, dispense du cautionnement. La syntaxe reste celle de toutes les autres clés composées du catalogue : un libellé, `>`, puis les options séparées par des virgules. Une option inconnue est **ignorée** et non refusée — une clé administrée ne doit pas pouvoir empêcher une caisse d'ouvrir.
+
+- **`TICKET` (BO-03-13-06)** — le type imprime son propre document, séparé du ticket de vente.
+- **`NOORIGIN` (BO-03-13-08)** — ce type-là autorise le retour **sans ticket d'origine**, même quand la clé générale `return.without-origin` reste à faux. La permission générale et la permission du type sont lues en OU : l'une suffit, aucune des deux n'annule l'autre.
+- **`NOENDORSE` (BO-03-13-10)** — ce type-là dispense du cautionnement. Là encore un OU avec `gestureAuthorized` : la dispense du type n'éteint pas le cautionnement des autres types, et un type non dispensé continue à demander l'autorisation comme avant.
+- **`PRICE`** — le prix est **confirmé** à la saisie : la ligne passe par la même suspension pour saisie de prix que les articles à prix libre. La confirmation ne vaut que si le mode retour est **actif** : hors retour, un type qui porte `PRICE` ne change rien.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `returnTypes` | libellé seul | les quatre options à faux (compatibilité) |
+| `returnTypes` | `>TICKET,NOORIGIN,NOENDORSE,PRICE` | les quatre options à vrai |
+| `returnTypes` | option inconnue | ignorée, les autres options tenues |
+| `returnType(libellé)` | casse différente / libellé absent / clé vide / nul | résolu sans la casse, nul sinon |
+| `toggleReturnMode` | clé générale fausse, type `NOORIGIN` | retour **ouvert** |
+| `toggleReturnMode` | clé générale fausse, type sans option | retour refusé, comme avant |
+| `toggleReturnMode` | type `NOENDORSE` sans autorisation | retour ouvert sans cautionnement |
+| `toggleReturnMode` | type ordinaire sans autorisation | cautionnement demandé |
+| `suspendForEntry` | mode retour + type `PRICE` | suspension pour saisie de prix |
+| `suspendForEntry` | hors retour / type sans `PRICE` / aucun type actif | rien demandé |
+
+**L15 Les remises prêtes à l'emploi, et ce qu'une remise refuse de cumuler (12/10)** `/admin/settings`, `TicketService`, `TicketState` [E/S] (BO-03-07-03, -06, -11 et -12)
+
+Le moteur de remises était complet ; trois clés manquaient pour que le magasin décide **ce qui se cumule**. C'est le même constat que les plages de codes-barres : le mécanisme est là, l'administrabilité non.
+
+- **`discount.presets` (BO-03-07-03 et -06)** — des remises nommées, prêtes à l'emploi : `libellé>PERCENT:10` ou `libellé>AMOUNT:1,50`, avec une virgule décimale acceptée comme partout ailleurs dans le catalogue, et un `,CUMUL` final optionnel. Une entrée mal formée est **écartée** (pas de valeur, valeur non numérique, nature inconnue, libellé vide) : une clé fautive réduit la liste, elle ne casse pas l'écran. Coté 1a et non 1 : les remises administrées s'appliquent par les gestes ordinaires (`applyPreset` rejoint `applyDiscount` / `applyRemise`), la touche dédiée dans la modale de modification de prix reste à poser.
+- **`discount.cumulative-on-discounted` (BO-03-07-11)** — une **seconde** remise sur une ligne déjà réduite. Vrai par défaut : le comportement historique est intact. À faux, la seconde remise est refusée, et une remise portée par un préréglage `CUMUL` passe outre la clé — **dans les deux sens** : un préréglage peut autoriser ce que la clé refuse comme refuser ce que la clé autorise.
+- **`discount.global-on-discounted` (BO-03-07-12)** — la remise **globale** sur un ticket qui porte déjà des lignes réduites. À faux, les lignes déjà réduites sont épargnées **de l'assiette et de la répartition** : c'était le piège, épargner seulement la répartition aurait fait disparaître des centimes. La règle est fixée au moment où la remise globale est posée et oubliée avec le ticket.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `discountPresets` | `PERCENT` / `AMOUNT` / virgule décimale / `CUMUL` | les quatre lues comme annoncé |
+| `discountPresets` | sans valeur / valeur non numérique / nature inconnue / libellé vide | entrée écartée, les autres tenues |
+| `discountPreset(libellé)` | casse différente / absent / nul | résolu sans la casse, nul sinon |
+| Clés de cumul | rien d'administré / administrées à faux | vrai par défaut, puis faux |
+| `applyDiscount` / `applyRemise` | ligne déjà réduite, cumul permis | la seconde remise s'applique |
+| `applyDiscount` / `applyRemise` | ligne déjà réduite, cumul refusé | la seconde remise est refusée |
+| `applyPreset` | préréglage pourcentage / montant | la remise correspondante posée |
+| `applyPreset` | libellé inconnu / ligne nulle | faux, rien posé |
+| `applyPreset` | `CUMUL` contre clé à faux, et sans `CUMUL` contre clé à vrai | le préréglage l'emporte dans les deux sens |
+| `allocateGlobalDiscount` | lignes réduites épargnées | hors assiette **et** hors répartition |
+| `allocateGlobalDiscount` | lignes réduites non épargnées | répartition sur tout le ticket |
+| `allocateGlobalDiscount` | ligne que le moteur n'a pas réduite | jamais épargnée |
+| `clear` | ticket suivant | la règle d'épargne est oubliée |
+
+**L16 Trois choses de plus qu'une plage de codes-barres peut vouloir dire (12/10)** `/admin/coupons`, `ui/scanner` [E/S] (BO-03-06-43, -41 et -44)
+
+Même constat que pour la destination d'une plage : le vocabulaire positionnel dit **comment lire** un code, il ne disait pas tout ce qu'un code peut **vouloir dire**. Trois significations de plus, sur la même table et le même écran. Les trois sont cotées **1a**, et la raison est la même dans les trois cas : ce qui manque n'est pas chez nous.
+
+- **`PROMOTION` + `promotion_code` (BO-03-06-43)** — une plage **nomme** une promotion ; le scan arme ce nom sur le ticket et le panier le porte au moteur dans un bloc dédié (`scannedPromotions`, nul quand rien n'a été scanné, donc la requête reste octet pour octet celle que le moteur recevait). Un NOM et rien d'autre, délibérément : la caisse ne sait pas ce que vaut une promotion et n'a pas à le décider — c'est une règle que le moteur possède, exactement comme pour une promotion portée par la carte. Le second scan du même code est une **mise en garde** et non un refus ; une plage PROMOTION qui ne nomme rien est refusée haut et fort, parce qu'armer un nom vide enverrait au moteur une promotion que personne ne peut résoudre. **1a** : la synthèse de l'offre à partir du nom reste à écrire côté imvaluation.
+- **`EXTERNAL_LOOKUP` + `lookup_url` (BO-03-06-41)** — certains codes ne sont pas à ce référentiel de les lire : un bon de partenaire, une souche de billetterie, un coupon imprimé par un système que personne ici ne modélise. L'URL nomme le service qui sait, et peut porter `{code}` là où le code lu doit aller (sinon il est ajouté à la fin). Trois sorties, et la caisse dit laquelle : la réponse nomme un article du catalogue → la ligne est passée **au prix du magasin** (le tiers a dit ce que le code EST, le magasin dit toujours ce qu'il coûte) ; la réponse ne nomme rien de connu → elle est affichée **telle quelle**, parce qu'un partenaire qui refuse un bon écrit la phrase que le client doit entendre ; pas de réponse du tout → l'opérateur est prévenu et le code est consommé, car le laisser tomber en « code inconnu » serait un mensonge sur ce qui s'est passé. Deux secondes de patience au maximum : un client en caisse n'attend pas la panne d'un tiers. **1a** : le format de réponse d'un partenaire donné reste à cartographier — ici la réponse est lue comme du texte, pas comme un schéma inventé.
+- **`ACTIVATION_REQUIRED` + `ACTIVATION_PROVIDER` (BO-03-06-44)** — le produit démat. Le drapeau est une **propriété article** et non une colonne de plus : le questionnaire demande « le flag d'activation au catalogue produit », et le catalogue d'attributs est le véhicule administré qui existe déjà (treize attributs côté caisse, quinze maintenant). La ligne est passée **d'abord** — le client la paie — puis la caisse demande le code d'activation, et le scan suivant répond. Le code est conservé sur la ligne en mémoire **et** sur la ligne de ticket persistée, avec le fournisseur qui le doit : un client qui revient trois semaines plus tard avec une carte cadeau qui n'a jamais marché est répondu par la ligne vendue, et par rien d'autre. **1a** : la transmission au fournisseur attend son protocole — même refus que pour la monétique Verifone, on ne fabrique pas une trame que personne n'a spécifiée.
+
+**Le handler d'activation est disjoint par l'ÉTAT et non par la forme.** Un code d'activation n'a pas de forme : c'est ce que le fournisseur a imprimé. Ce qui se sait, c'est si la caisse **attend** une réponse. `ActivationCodeScanHandler` est seul en priorité **-1**, avant toute forme testée, et tant que l'attente est ouverte il avale tout, badge compris — délibérément : la caisse a posé une question et traite le scan suivant comme la réponse. Le contrat de chaîne dans `ScanContext` le dit, parce que c'est une décision et pas un accident. Une attente est fermée **quoi qu'il arrive** : si la ligne attendue a disparu (annulée sous la main de l'opérateur), l'opérateur est prévenu et l'attente se referme, plutôt que de laisser la caisse avaler tous les scans suivants.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `triggersPromotion` | autre destination / nom nul / nom blanc / nom posé | faux, faux, faux, vrai |
+| Plage PROMOTION | code lu | promotion armée, message, **aucune ligne** |
+| Plage PROMOTION | même code deux fois | mise en garde, pas un refus |
+| Plage PROMOTION | aucun nom administré | refusé et dit |
+| Panier moteur | promotions armées / aucune | bloc porté / bloc absent |
+| `hasExternalLookup` | autre destination / URL nulle / URL blanche / URL posée | faux, faux, faux, vrai |
+| `lookup` | URL avec `{code}` / sans | code substitué à sa place / ajouté à la fin |
+| `lookup` | statut < 200 / ≥ 300 / réponse nulle | aucune réponse |
+| `lookup` | corps nul / blanc / trop long | rien, rien, tronqué à 200 |
+| `lookup` | coupure réseau / interruption / URL mal formée | nul, nul **et drapeau reposé**, nul |
+| Plage EXTERNAL_LOOKUP | réponse = EAN / = PLU | ligne passée au prix du magasin |
+| Plage EXTERNAL_LOOKUP | réponse inconnue du catalogue | affichée telle quelle, aucune ligne |
+| Plage EXTERNAL_LOOKUP | service injoignable / hors CDI | prévenu, code consommé |
+| `activationRequired` | absent / vrai / faux / produit nul | faux, vrai, faux, faux |
+| `activationProvider` | absent / blanc / nommé | nul, nul, nom élagué |
+| Article démat scanné | ligne passée | attente ouverte sur CETTE ligne + demande à l'écran |
+| Article ordinaire | ligne passée | aucune attente, aucun fournisseur |
+| Scan suivant | code d'activation | stocké élagué sur la ligne, attente fermée |
+| Scan suivant | code nul / blanc | attente **maintenue ouverte** |
+| Scan suivant | ligne attendue disparue | prévenu, attente fermée quand même |
+| Persistance | ligne démat / ligne ordinaire | code et fournisseur portés / nuls |
+| `clear` | ticket suivant | ni promotion armée ni attente d'activation |
+
+**L17 Ce qu'on peut administrer d'une monétique dont la trame n'existe pas (12/10)** `/admin/tenders`, `/admin/settings`, `VerifoneTerminalClient` [E/S] (BO-03-09-30 et -31)
+
+Ces deux lignes étaient à **3** avec une raison vraie : le constructeur de requête de `VerifoneTerminalClient` est un `TODO(spec Verifone)` — code message, numéro de caisse, format du montant, devise, discriminant d'opération — et il n'y a donc pas de champ où poser quoi que ce soit. Ce constat ne bouge pas. Mais en relisant mes propres commentaires, la moitié de chaque ligne ne dépend **pas** de la trame : « porter le code produit sur le moyen de paiement » et « ajouter au catalogue le paramètre qui active son ajout » sont de l'administration, et l'administration, elle, se fait. Les deux passent donc à **1a**.
+
+- **`vic_product_code` sur le moyen de paiement (BO-03-09-30)** — le code produit VIC de la carte multiproduit, là où l'exigence le demande : **sur le moyen de paiement**, pas dans une table de plus. Stocké **verbatim**, tel que l'acquéreur l'écrit (`{DAJ}01` Mealpass, `{DBJ}01` Ecopass, `{DCJ}01` Gift pass) : la paire qu'un tag et sa valeur forment est à l'acquéreur de la dire, pas à nous de la composer. Écran `/admin/tenders`, diffusion par le domaine `TENDERS`, empreinte incluse. La caisse ne retient que les moyens **en service** : déclarer au terminal un produit que la caisse refusera ensuite, c'est le proposer au client pour rien.
+- **`terminal.pdv-label` + `terminal.pdv-label-enabled` (BO-03-09-31)** — le Label Point De Vente et, exactement comme le commentaire le demandait, **la clé qui active son ajout**. Même doctrine verbatim : le libellé est saisi sous la forme `{TAG}valeur` et émis sans retouche. Aucun tag n'est inventé — c'est là tout l'intérêt de la saisie verbatim, et c'est ce qui distingue ce lot d'une trame fabriquée. Le catalogue de paramètres passe à **216** clefs des deux côtés.
+- **La lecture est faite par le codec de la trame elle-même.** `VerifoneFrameCodec` lit déjà la syntaxe `{TAG}valeur` — celle dans laquelle le questionnaire écrit ces codes. Les paires administrées sont donc décodées par le même code que la réponse du terminal : zéro supposition.
+- **Ce qui reste à 3 dans ces deux lignes** : la **place** de ces paires dans la requête. Elles sont ajoutées en fin de trame, ce qui est la seule chose honnête à faire d'une paire dont personne n'a spécifié la position. Et `WimPaymentTerminal`, que citaient les commentaires éditeur, n'existe toujours pas dans ces dépôts.
+- **Le référentiel est une addition, jamais une condition.** La lecture des codes VIC se fait sur le fil d'échange, sous garde : un référentiel injoignable — pas de contexte de persistance, un hoquet de base au mauvais moment — ne doit pas coûter son paiement au client. Le paramètre administré est **transmis** au client monétique et non injecté, pour la raison qui vaut déjà pour le résolveur de messages : cette classe est construite par `TerminalClientProducer` et pas par le conteneur.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `activeVicProductCodes` | moyen en service avec code | retenu, élagué, dans l'ordre administré |
+| `activeVicProductCodes` | hors service / sans code / code blanc | écarté (chaque jambe) |
+| `activeVicProductCodes` | rien d'administré | liste vide, requête inchangée |
+| `buildRequest` | codes VIC administrés | paires ajoutées verbatim, dans l'ordre |
+| `buildRequest` | référentiel injoignable | requête construite quand même |
+| `buildRequest` | label activé (avec espaces) | ajouté élagué en fin de trame |
+| `buildRequest` | label désactivé | rien d'ajouté |
+| `buildRequest` | label blanc / nul / service absent | trame identique à celle d'avant la clé |
+| Clés d'écran | rien d'administré | ajout désactivé, label vide |
+| `/admin/tenders` | code posté (avec espaces) / blanc | élagué / **nul**, pas une paire vide |
+| Diffusion | code nommé par le central / absent | imposé / celui du magasin conservé |
+| Empreinte `TENDERS` | code VIC posé | empreinte changée |
+
+**L18 Ce que le central gèle, ce que le magasin garde, et le papier d'un règlement rendu (12/10)** `/admin/tenders`, `/admin/settings`, `PaymentService` [E/S] (BO-03-02-06, -07, -35 et -43)
+
+Quatre lignes à **3** dont les commentaires éditeur réclamaient de créer trois choses qui **existent déjà** : le référentiel des modes de règlement, le moteur de gabarits de documents, et la commande d'endossement de l'imprimante. Les quatre passent à **1**.
+
+- **La plage centrale figée (BO-03-02-06 et -07)** — « créer le référentiel de modes de règlement (identifiant sur 3 digits, écran, export) » : il existe depuis le lot 03-02 (`TenderDefinition.functionalId`, `MIN_FUNCTIONAL_ID_LENGTH = 3`, écran `/admin/tenders`, export CSV, domaine `TENDERS`). Ce qui manquait était le **découpage**. Une clé le porte : `tender.local-range` énumère les identifiants que le MAGASIN peut modifier, sous la forme qu'un acheteur écrit sur le papier (`500-599,900`) ; tout le reste est central. Hors de la plage, l'écran n'enregistre **que l'activation** — le reste de la description postée est jeté plutôt qu'appliqué à moitié —, un identifiant central ne se **crée** pas en magasin, et un mode central ne se **supprime** pas (le supprimer rendrait à la caisse ses propres défauts, exactement ce que le central a figé : il se désactive). La plage est lue sur l'identifiant **posté** autant que sur le stocké, pour qu'on ne sorte pas un mode de la plage centrale en le renommant.
+- **Et l'héritage par échelon, sans une ligne de code de plus.** Le commentaire demandait « un découpage central/local dans `EchelonSettingService` ». La plage ÉTANT une clé du catalogue, elle descend déjà par les cinq échelons existants (PAYS → ENSEIGNE → PDV → ÎLOT → POINT DE CONTACT) : le central pose la plage au pays ou à l'enseigne, chaque PDV l'hérite, et un magasin ne peut pas se l'élargir puisque la clé vient d'au-dessus. Le mécanisme était là ; il suffisait de lui donner quelque chose à porter. **Vide : le magasin modifie tout**, ce qu'il pouvait avant que la règle existe.
+- **Le ticket d'annulation de règlement (BO-03-02-35)** — « ce qui suppose de créer le moteur de modèles de document absent » : **faux**, le moteur a vingt-quatre types, vingt-cinq maintenant. `PAYMENT_CANCELLATION` est un type comme les autres : mise en page redéfinissable par gabarit, starter intégré en secours, papier coupé. Un règlement défait est un **événement** et non un non-événement : le client a tendu un chèque ou une carte et la caisse les a rendus. Le papier dit quel moyen, pour combien, sur quel ticket et quand. Émis sur les **deux** chemins d'annulation — un ticket par règlement dans l'annulation globale (imprimés **avant** que la liste soit vidée, après il n'y a plus rien à nommer), et le seul règlement retiré dans l'annulation unitaire (EXP-63). Le libellé est celui que le référentiel administre, la clé de règlement sinon. **Une panne d'imprimante ne fait jamais échouer l'annulation** : rendre le chèque est le geste, le papier en est le témoin.
+- **L'endos administré (BO-03-02-43)** — « commande d'endossement de l'imprimante » : **elle existe**. `ChequeReadingService.read(endorsement, …)` imprime déjà au dos pendant que le lecteur tient le chèque, et `PaymentService.endorsementText()` composait la date et le montant **en dur**. La clé `cheque.endorsement-lines` administre ce contenu, une ligne par point-virgule, avec les jetons `{date}`, `{heure}`, `{montant}`, `{caisse}`, `{pdv}`. Une ligne administrée vide n'imprime rien plutôt qu'une bande blanche — le dos d'un chèque est étroit — et un jeton auquel la caisse ne sait pas répondre rend **vide** : un chèque portant `{pdv}` à l'encre est pire qu'un chèque ne portant rien là.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `inRange` | `007` dans `001-099` / bornes incluses / `100` | vrai, vrai, faux |
+| `inRange` | identifiant seul / liste mêlant plage et singleton | reconnus |
+| `inRange` | identifiant non numérique | match littéral seulement |
+| `inRange` | borne mal formée / partie vide | ignorée, les saines répondent |
+| `inRange` | identifiant nul / blanc / plage nulle / blanche | faux (chaque jambe) |
+| `locallyModifiable` | plage absente / blanche | vrai : tout modifiable |
+| `locallyModifiable` | hors plage / dans la plage | faux / vrai |
+| `/admin/tenders` | mode central enregistré | **seule l'activation** posée, le reste intact |
+| `/admin/tenders` | mode local enregistré | administré comme avant |
+| `/admin/tenders` | identifiant central créé en magasin | refusé |
+| `/admin/tenders` | mode central supprimé | refusé, rien d'effacé |
+| `printPaymentCancellation` | moyen nul / blanc / montant nul / zéro / négatif | zéro, rien d'imprimé |
+| `printPaymentCancellation` | moyen et montant posés | moyen élagué, montant, ticket, papier coupé |
+| `printPaymentCancellation` | ticket inconnu | ligne vide, jamais « null » |
+| `printPaymentCancellation` | gabarit administré | la mise en page du magasin |
+| `cancelOnePayment` | index valide / index refusé | un ticket / aucun |
+| `cancelPayments` | deux règlements / aucun | deux tickets / aucun |
+| Endos | rien d'administré | date puis montant, comme avant la clé |
+| Endos | lignes administrées avec jetons | une ligne par point-virgule, jetons remplis |
+| Endos | ligne administrée vide | sautée |
+| Endos | jeton sans réponse (`{caisse}`, `{pdv}` hors CDI) | rendu vide, jamais le jeton à l'encre |
+| Clefs d'écran | rien d'administré | plage vide, endos vide |
+
+**Ce qui reste à 3 dans 03-02**, et pourquoi : le ticket CB (BO-03-02-34, trame d'**impression** Verifone), la borne de paiement (BO-03-02-36, le **pilote** de monnayeur — l'administration existe depuis le lot 03-09 : protocole, adresse et port par point de contact), le chèque auto (BO-03-02-24, la demande d'autorisation chèque — protocole acquéreur), et les deux lignes de caisse libre-service (BO-03-02-27 et -29) qui demandent un **parcours client complet** : l'attribut existe (`TpvType`, trois familles libre-service), l'écran n'existe pas, et le `SupervisorCallRegistry` que cite le commentaire -29 n'existe pas non plus dans ces dépôts — deuxième classe fantôme après `WimPaymentTerminal`.
+
+**L19 Sept lignes dont les commentaires étaient périmés (12/10)** `/admin/touches`, `/admin/articles`, `ui/scanner`, `ui/hardware` [E/S] (BO-03-03-09, -11, BO-03-01-18, -19, -20, BO-03-06-58, BO-03-09-27)
+
+Sept lignes à **3** dont les commentaires éditeur réclamaient de créer des choses qui existaient : l'entité acompte, le solde d'une carte cadeau, le modèle de l'îlot et de la caisse, l'entité commande. Quatre inventaires faux de plus, après les six de la journée.
+
+- **Le justificatif d'acompte (BO-03-03-09)** — « adossé à une vraie entité acompte qui n'existe pas » : **faux**, `CustomerOrder.depositPaid` existe depuis EXP-85, avec `OrderKind.isDepositAllowed()`. Un vingt-sixième type de document : la commande, le client, le montant, le récapitulatif TVA **tendu** par l'appelant (un acompte découpe la TVA de la commande qu'il règle, et cette imprimante n'interroge rien), et son numéro unique **en code-barres** pour que le solde se règle en le scannant. Rien n'est imprimé sans numéro ni sans montant positif : une preuve que personne ne peut retrouver n'est pas une preuve. **1a** : l'émission attend la commande **au niveau caisse** — impos ne porte aucune entité commande, elle vit sur le nœud magasin.
+- **Le justificatif de paiement par carte cadeau (BO-03-03-11)** — « le solde restant n'est pas porté non plus » : **faux**, `GiftCardIssuerClient.IssuerVerdict(valid, balance)` le renvoie et le règlement y est plafonné (EXP-66). Vingt-septième type, distinct du **bon d'émission** : celui-ci est pour le client qui **dépense** une carte, et ce qu'il ajoute est le solde qu'elle porte encore — la réponse de l'émetteur **moins** ce qui vient d'être dépensé, jamais négatif. Le numéro est imprimé **masqué**, quatre derniers caractères : une carte cadeau est de la monnaie au porteur, et un numéro entier sur un ticket laissé dans un caddie est une carte qu'un autre dépense. Émis au règlement, une panne d'imprimante ne le fait jamais échouer.
+- **La désactivation d'un article par îlot ou par caisse (BO-03-01-18)** — « modéliser l'îlot et la caisse » : **faux**, les deux entités existent depuis 03-09/03-10. Deux propriétés article de plus (`DISABLED_ISLANDS`, `DISABLED_TERMINALS`), sur le véhicule administré qui existe déjà et qui est déjà diffusé avec le produit — ni table ni domaine de plus. **Une question, cinq demandeurs** : l'EAN catalogue, le code interne, le PLU tapé, l'étiquette balance et la charge GS1 mènent au même article par des routes différentes, et un article sorti d'un îlot ne doit pas y rentrer par la balance. La décision vit donc dans `ArticleScopeService`, une fois, et les cinq chemins la consultent. Une caisse que le back-office ne décrit pas **continue de vendre** : une caisse absente du référentiel est un problème de référentiel, pas une raison de refuser un client.
+- **Les traductions, groupes (BO-03-01-19) et articles (BO-03-01-20)** — une table de traduction, un domaine de diffusion et un écran de saisie étaient demandés ; **deux colonnes ont suffi**, sur les deux véhicules administrés qui portent déjà ces objets : `TouchGroupSetting.labels` pour les groupes (et non la nomenclature — celle-ci est remplacée en entier à chaque intégration de la gestion commerciale, un libellé que le magasin a tapé pour ses clients néerlandophones doit y survivre) et l'attribut `TRANSLATED_LABELS` pour les articles. Même syntaxe des deux côtés, `nl=Zuivel;pt=Lacteos`, parce qu'un magasin n'a à en apprendre qu'une. La langue est celle où la caisse est réglée (`language.system`, `language.available`, le mécanisme était là), et le repli est le libellé du catalogue — ce que chaque touche et chaque ligne portaient avant que les traductions existent. Les libellés d'article passent par **un seul accesseur** consulté par les six chemins d'entrée.
+- **La commande rappelée par code-barres (BO-03-06-58)** — « créer l'entité commande/devis » : **faux**, `CustomerOrder` existe. Septième destination de plage, `CUSTOMER_ORDER` : la référence est lue **brute** du segment article, zéros de tête compris, parce qu'une référence est une clé que le magasin rapproche caractère par caractère — le même raisonnement que la référence de ticket comptoir. **1a** : ce que la caisse FAIT de la référence attend la commande au niveau caisse, et l'import Mercalys/SAP est hors de ces dépôts.
+- **L'application tierce en caisse (BO-03-09-27)** — clé `touch.external-apps`, `LIBELLÉ>URL` séparés par des points-virgules, entrée mal formée écartée. L'appel depuis le poste passe par `/external-app/{rang}` : la caisse résout l'entrée par son **rang administré** et redirige, pour qu'aucune adresse ne voyage dans une URL de caisse — une touche qui posterait l'adresse laisserait ouvrir n'importe quoi en fabriquant un lien, ce que précisément un référentiel d'applications autorisées sert à empêcher. **1a**, et deux refus assumés : la tuile dans la barre de touches de l'écran de vente reste à poser, et le « ou exécutable » du questionnaire n'est **pas** implémenté — une caisse qui lance un binaire arbitraire parce qu'une ligne de référentiel le dit est un trou de sécurité.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `printDepositReceipt` | sans numéro / montant nul, zéro | zéro, rien d'imprimé |
+| `printDepositReceipt` | commande, client, montant, TVA tendue | tout porté, numéro en code-barres |
+| `printDepositReceipt` | ligne de TVA nulle / client inconnu | sautée / vide, jamais « null » |
+| `maskedCardNumber` | nul / blanc / 4 caractères / plus long | vide, vide, entier, `****` + 4 |
+| `printGiftCardPaymentReceipt` | solde connu / inconnu | ligne portée / ligne absente |
+| Carte cadeau | solde 50, règlement 30 | solde restant 20 |
+| Carte cadeau | solde 12, demande 30 | règlement 12, solde restant **zéro** |
+| Carte cadeau | carte refusée | aucun ticket |
+| `soldOn` | listes vides / nommant autre chose | vendu partout |
+| `soldOn` | nommant cette caisse / cet îlot | refusé (casse et espaces ignorés) |
+| `soldHere` | caisse absente du référentiel / hors CDI / base injoignable | **continue de vendre** |
+| Scan EAN | article hors périmètre / dans le périmètre | refusé et dit / passé |
+| `translatedLabel` (article, groupe) | langue administrée / absente / nulle / blanche | libellé, nul, nul, nul |
+| `translatedLabel` | paire sans langue / sans libellé / vide | nul |
+| `saleLabel` | traduction présente / absente | traduction / libellé catalogue |
+| Empreinte `TOUCH_GROUPS` | libellé traduit posé | empreinte changée |
+| Diffusion groupes | libellés nommés par le central / absents | imposés / ceux du magasin conservés |
+| Plage CUSTOMER_ORDER | code lu | référence **brute** armée, aucune ligne |
+| Plage CUSTOMER_ORDER | segment illisible | refusé et dit |
+| `externalApps` | sans flèche / sans libellé / sans adresse / vide | écartées, les autres tenues |
+| `/external-app/{rang}` | rang administré / négatif / au-delà / liste vide | redirection 303 / 404 |
+| `clear` | ticket suivant | la commande rappelée est oubliée |
+
+**L20 Le libre-service, le client de caisse et la fin de période du magasin (12/10)** `/admin/tenders`, `/admin/settings`, `PaymentService`, `TicketNumberService` [E/S] (BO-03-02-27, -29, BO-03-06-53, BO-03-12-02)
+
+J'avais classé ces lignes « demande une surface entièrement neuve ». C'était faux pour trois d'entre elles, et ma propre arithmétique me l'a fait remarquer : si elles ne sont pas bloquées, elles sont faisables.
+
+- **Le règlement en libre-service (BO-03-02-27)** — je disais « il faut d'abord le parcours client ». Non : la ligne parle d'un **moyen de paiement**, pas d'un écran. Deux colonnes sur le référentiel des règlements et la règle est administrable et opposable aujourd'hui. `self_service_allowed`, **vraie par défaut** pour qu'un magasin qui n'ouvre jamais cette partie continue d'offrir tous les moyens partout. Une caisse sans personne derrière ne peut ni endosser un chèque ni vérifier une signature : le moyen que le magasin y interdit est refusé à l'UNIQUE entonnoir par lequel tout règlement passe (`handlePaymentWithChange`), avant que rien ne soit enregistré.
+- **La supervision du règlement en libre-service (BO-03-02-29)** — `self_service_supervision`, distincte de l'interdiction : un magasin peut laisser une caisse libre-service prendre un titre-restaurant **et** vouloir que quelqu'un le regarde. L'appel réutilise le **maintien superviseur** que toute règle de règlement administrée lève déjà, donc l'hôtesse voit le panneau qu'elle connaît, et il est sauté quand une autorisation est déjà en main — sinon on appellerait l'hôtesse pour le règlement qu'elle vient d'autoriser. **1a** : administré par moyen de paiement, la nuance par îlot n'est pas modélisée. `SupervisorCallRegistry` que citait le commentaire n'existe toujours pas, et n'est pas nécessaire.
+- **Les deux règles sont lues sur la CAISSE, pas sur sa croyance.** Le type de point de contact vient du référentiel que le back-office a distribué (`CheckoutPoint.isSelfService()`), et une caisse que le référentiel ne décrit pas est traitée comme **tenue** : une caisse absente du référentiel est un problème de référentiel, pas une raison de refuser un client au moment précis où il paie.
+- **Le client créé en caisse (BO-03-06-53)** — « introduire l'entité client et sa création en caisse (écran ui/ dédié) » : **l'entité ET la création existent**. `InvoiceService.createCustomer` ouvre un `AccountCustomer` en `Origin.VOLATILE` depuis le parcours facture, le numérote, le sauve et le déclare au back-office par l'outbox (LC-08-04-08/09, BO-10-04-01) — c'est exactement « pour les demandes de facture ». Ce qui manquait est l'autre moitié de la phrase : **la plage de codes**. `customer.local-code-range`, sous la forme `PRÉFIXE:PREMIER-DERNIER`, et le numéro est la borne basse plus ce que cette caisse a déjà créé, pour qu'un client ouvert en caisse ne collisionne jamais avec un client intégré. Plage absente, illisible ou **épuisée** : retour à la numérotation par caisse — une caisse à bout de numéros réservés doit encore pouvoir imprimer la facture du client qui est devant elle.
+- **La fin de période du point de vente (BO-03-12-02)** — le commentaire demandait trois choses ; **deux existaient**. Le calendrier d'ouverture, ce sont `financial.closed-weekdays` et `financial.closed-dates` ; les paramètres d'automatisation, ce sont `period.auto-close-enabled`, `period.end-time` et `period.close-lead-minutes`. Et comme ce sont des clés du catalogue, le central les pose **à l'échelon PDV** et chaque caisse les hérite : le « niveau point de vente » ne demandait pas une ligne de code. La troisième chose, à savoir ce que le MAGASIN enchaîne à ce moment-là, est maintenant administrée : `period.pdv-actions` (`CLOSE_REGISTERS;SAFE_COUNT;Z_REPORT;BANK_DEPOSIT`, dans l'ordre écrit, nom inconnu ignoré, doublon gardé une fois). **1a** : l'objet de clôture consolidée au-dessus des sessions reste à construire.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| Règlement libre-service | moyen interdit, caisse libre-service | refusé et dit, rien d'enregistré |
+| Règlement libre-service | moyen surveillé, caisse libre-service | maintien superviseur, rien d'enregistré |
+| Règlement libre-service | caisse tenue / caisse non décrite | rien d'opposé, règlement passé |
+| `/admin/tenders` | cases cochées / décochées | les deux règles posées / à faux |
+| Diffusion `TENDERS` | les deux règles | portées verbatim, empreinte changée |
+| `nextCustomerNumber` | plage administrée | borne basse + créations de cette caisse |
+| `nextCustomerNumber` | sans deux-points / sans tiret / sans préfixe | repli caisse |
+| `nextCustomerNumber` | bornes illisibles / inversées / **épuisées** | repli caisse |
+| `nextCustomerNumber` | rien d'administré / hors CDI | repli caisse |
+| `periodPdvActions` | liste administrée | dans l'ordre écrit |
+| `periodPdvActions` | nom inconnu / doublon / entrée vide | ignoré, gardé une fois, sautée |
+| `periodPdvActions` | rien d'administré / blanc | liste vide |
+
+**Pas faite : BO-03-03-15** (logo par pays / enseigne / PDV). C'est la seule des cinq que je laisse, et la raison est structurelle : les dix-huit domaines de diffusion ne portent **aucun** objet d'échelon vers la caisse, et le logo est binaire — une valeur de paramètre est plafonnée à 255 caractères. Il faut donc un dix-neuvième domaine (ou une charge « magasin »), trois colonnes d'image côté central avec leurs écrans d'import, la résolution « l'échelon le plus proche gagne » à l'export, et `ReceiptLogo` — aujourd'hui une ressource unique du classpath, en cache statique — qui rastérise ce que le référentiel a envoyé. L'impression graphique, elle, existe déjà.
+
+**L21 Quatre modèles de ticket fidélité, et pourquoi ce sont quatre types et pas quatre branches (14/10)** `/admin/documents`, `/admin/settings`, `TicketPrinterService` [E/S] (BO-10-03-05, -11, -12, -13 et -21)
+
+Les commentaires éditeur de ces cinq lignes demandaient tous la même chose : « introduire des modèles de ticket administrables, entité modèle, moteur de rendu en remplacement de la mise en page en dur de `TicketPrinterService` ». Le moteur existe depuis HD_35 et porte vingt-huit types de document. Ce qui manquait n'était pas le moteur, c'était **le choix du gabarit par cas**.
+
+- **Quatre cas, quatre types de document.** `LOYALTY_ONLINE`, `LOYALTY_OFFLINE`, `LOYALTY_NON_HOLDER_ONLINE`, `LOYALTY_NON_HOLDER_OFFLINE` — une carte a été présentée ou non, le programme a répondu ou non. Ce sont quatre **types** et non quatre branches d'un seul, parce que l'écran d'administration dérive sa liste de valeurs disponibles des données d'exemple du type : un paramétreur qui ouvre le gabarit « non porteur » ne doit pas y voir proposés un numéro de carte et un solde que son cas ne porte jamais. C'est aussi pourquoi ces types ne sont pas des documents : ils n'ont ni adresse de magasin ni numéro de ticket, ils sont une **zone** imprimée à l'intérieur d'un ticket qui porte déjà les deux.
+- **Cinq clés, pas huit.** `fidelity.template-online`, `-offline`, `-non-holder-online`, `-non-holder-offline` nomment le gabarit de chaque cas ; `fidelity.template-grouped` (BO-10-03-21) prend le pas sur le premier **quand, et seulement quand, le regroupement des avantages vaut `CATEGORY`** — c'est le seul cas où une mise en page regroupée a quelque chose à regrouper. Un porteur hors ligne n'a pas d'avantages, un non porteur n'a pas de carte : leur donner une variante regroupée aurait été trois clés de plus pour aucun ticket de plus.
+- **Vide veut dire « rien », pas « le gabarit nommé par la chaîne vide ».** Une clé blanche, c'est la caisse qui imprime sa zone intégrée — ce que fait tout magasin tant qu'un paramétreur n'est pas passé. Aucun ticket existant ne change de forme du fait de ce lot.
+- **Le gabarit administré remplace la zone, il ne s'y ajoute pas.** Les cinq blocs intégrés — numéro de carte, cagnotte du jour et avantages, soldes, message hors ligne, mot au non porteur — sont tous conditionnés à l'absence de gabarit. Sans cela, un magasin qui écrit sa propre zone verrait la sienne **et** celle de la caisse.
+- **Un gabarit nommé mais introuvable, ou qui ne compile pas, rend `null`** et la zone intégrée reprend la main. C'est la doctrine des justificatifs de règlement, et la raison est la même : une mise en page que personne ne sait rendre ne doit pas coûter son ticket au client.
+- **Les données d'exemple du nœud ont été remises au niveau de celles de la caisse** — type, catégorie et rang d'avantage, soldes prévisionnel et après débit, projection anonyme. Elles avaient divergé, et une clé que l'aperçu ne propose pas est une clé que le paramétreur n'écrit pas.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `fidelityTemplateCode` | carte + en ligne + regroupé, gabarit regroupé posé | le gabarit regroupé, valeur détourée |
+| `fidelityTemplateCode` | carte + en ligne + regroupé, gabarit regroupé vide | le gabarit porteur en ligne |
+| `fidelityTemplateCode` | carte + en ligne, sans regroupement | gabarit porteur en ligne |
+| `fidelityTemplateCode` | carte + hors ligne (regroupement demandé) | gabarit porteur hors ligne |
+| `fidelityTemplateCode` | sans carte + en ligne (regroupement demandé) | gabarit non porteur en ligne |
+| `fidelityTemplateCode` | sans carte + hors ligne | gabarit non porteur hors ligne |
+| `fidelityTemplateCode` | rien d'administré, les cinq cas | `null` |
+| `printTicket` | gabarit porteur en ligne administré | la zone administrée, **sans** le numéro de carte intégré |
+| `printTicket` | aucun gabarit, regroupement par catégorie | zone intégrée, aucun rendu demandé |
+| `printTicket` | gabarit nommé introuvable | zone intégrée |
+| `/admin/documents` | les quatre nouveaux types | aperçu alimenté par les valeurs fidélité |
+
+**L22 Un symbole monétaire, et les soixante-neuf endroits qui l'écrivaient en dur (14/10)** `/admin/settings`, `TicketPrinterService` [E/S] (BO-10-07-04, -05 et -06)
+
+Le commentaire disait « les montants sont aujourd'hui suffixés en dur ». Il avait raison, et plus qu'il ne croyait : le littéral `" E"` était concaténé à **soixante-neuf endroits** du service d'impression. Aucun paramètre n'aurait pu les atteindre tous ; c'est pourquoi la ligne était non couverte et pas partielle.
+
+- **Un seul endroit où un montant prend son symbole.** `money(String)` reçoit un montant déjà écrit et rend ce qui part à l'imprimante. Les soixante-neuf sites y passent désormais, et c'est le seul changement de forme du service : aucune mise en page n'a bougé.
+- **Les valeurs par défaut rendent l'octet près ce que la caisse imprimait hier** — symbole `E`, à droite, un espace entre les deux. C'est la condition pour qu'un lot de ce volume soit sans risque : le test de référence de mise en page (`TicketLayoutGoldenMasterTest`) compare des tickets entiers caractère par caractère, et il passe inchangé.
+- **« Ne pas imprimer » veut dire nu, pas « suivi d'un espace ».** L'espace séparateur appartient au symbole : un magasin qui coupe le symbole, ou qui en administre un vide, n'hérite pas d'un blanc en fin de ligne dont il ne saurait quoi faire.
+- **La position inconnue retombe à droite**, comme l'ordre de ticket inconnu retombe sur l'ordre d'enregistrement : une valeur mal saisie ne doit pas changer la forme du papier.
+- **Une caisse construite sans service de paramètres garde le symbole intégré** plutôt que d'échouer à imprimer — c'est le cas d'un harnais de test qui n'imprime aucun document paramétré, et la même doctrine que le gabarit introuvable.
+- **Ce qui n'est pas couvert, et pourquoi.** BO-10-07-05 demande aussi les deux textes du chèque — « Euro(s) », « Centime(s) » — pour l'écriture du montant en lettres. Il n'existe aucun module d'impression de chèque dans ces dépôts (BO-03-02-24 est non couvert pour la même raison), et administrer deux clés que personne ne lit serait une coquille. La ligne reste donc **partielle**, avec son écart nommé.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `money` | défauts du catalogue | `2,00 E`, identique à l'existant |
+| `money` | position `left` (casse libre) | `EUR 2,00` |
+| `money` | position inconnue | à droite |
+| `money` | impression coupée | montant nu, sans espace |
+| `money` | symbole blanc | montant nu, sans espace |
+| `money` | service de paramètres absent | symbole intégré |
+| `currencySymbol` / `-Printed` / `-Position` | lignes posées / rien d'administré | valeurs posées / `E`, vrai, `RIGHT` |
+
+**L23 Cinq règles de caisse qui n'avaient pas de clé (14/10)** `/admin/settings`, `AuthScanHandler`, `EanScanHandler`, `LockCheckFilter`, `TicketPrinterService` [E/S] (BO-10-02-13, -15, -20, -28 et -32)
+
+Cinq lignes du bloc Règles — Caisse décrivaient chacune un comportement que la caisse a déjà, à un paramètre près. Aucune ne demandait de mécanisme ; toutes demandaient **la clé et le point d'application**.
+
+- **La touche entrée valant TOTAL (BO-10-02-13)** — `keyboard.enter-as-total`, exposée aux gabarits par le même global Arc que le thème, donc **sans plomberie par écran**. Elle ne porte que sur la frappe **à vide** : un code tapé est validé par entrée dans les deux cas, et un magasin qui laisse la clé à faux ne voit aucune habitude changer.
+- **La vente pendant le règlement (BO-10-02-15)** — `sale.allow-during-payment`, **fausse par défaut**. La règle vit dans `TicketService.saleRefusedDuringPayment` et non dans chaque handler : un article entre par le scan, par un code tapé ou par un PLU, et les trois doivent répondre la même chose. Au scan, le code refusé est aussi **consommé** — sans cela il continuerait sa route et un handler derrière l'enregistrerait par un autre chemin.
+- **Le second code au ticket (BO-10-02-20)** — `ticket.second-code-print`, et le code interne **gelé sur la ligne** (`TicketLine.secondCode`) au moment où elle est créée, à côté de la famille et pour la même raison : un duplicata trois mois plus tard doit redire ce que le client a eu en main, pas ce que le référentiel porte aujourd'hui. Un article sans second code n'imprime rien, pas une ligne indentée vide.
+- **Verrouillage ou fermeture sur inactivité (BO-10-02-28)** — `auth.idle-action`. `LOCK` est le défaut et c'est l'existant (EXP-12 : l'opérateur est mis de côté et reprend sa vente avec son seul code) ; `CLOSE` appelle `logout()` et la caisse redevient libre, prise de poste complète. Une valeur inconnue retombe sur `LOCK` : une saisie fautive ne doit pas déconnecter une caissière au milieu d'un panier.
+- **Le préfixe du code-barres superviseur (BO-10-02-32)** — `scan.supervisor-prefix`, et c'est la seule des cinq qui change une règle de sécurité. Tant qu'un préfixe est posé, **une identification superviseur n'est acceptée que d'un code préfixé** : le code seul, celui qui se tape, n'endosse plus rien. La prise de poste, elle, est l'inverse — le badge la prend, le code-barres superviseur non. Le préfixe est **retiré avant lecture**, donc l'identifiant stocké reste celui de l'opérateur. Préfixe vide : rien ne change.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `saleRefusedDuringPayment` | rien en cours | passe, quelle que soit la règle |
+| `saleRefusedDuringPayment` | règlement en cours, interdit | refusé et dit |
+| `saleRefusedDuringPayment` | règlement en cours, autorisé | passe, rien dit |
+| `EanScanHandler` | article scanné pendant le règlement | refusé **et consommé**, aucune ligne |
+| `AuthScanHandler` | code préfixé / nu, avenant actif | endosse (préfixe retiré) / ignoré |
+| `AuthScanHandler` | code nu / préfixé, caisse verrouillée | prend le poste / ignoré |
+| `LockCheckFilter` | délai écoulé, `LOCK` (défaut) | caisse en pause, opérateur de côté |
+| `LockCheckFilter` | délai écoulé, `close` (casse libre) | caisse verrouillée, personne de côté |
+| `printTicket` | second code demandé / non demandé | imprimé sous l'article / absent |
+| `printTicket` | article sans second code | aucune ligne indentée |
+| Les cinq clés | lignes posées / rien d'administré | valeurs posées / défauts = existant |
+
+**L24 Deux ou trois décimales, et le calcul qui doit suivre (14/10)** `/admin/settings`, `InvoiceDocument` [E/S] (BO-10-02-19)
+
+L'exigence demande six figures configurables sur deux ou trois décimales — prix unitaire HT, total HT de ligne, base HT et montant de TVA, total HT et total TTC. Cinq existent sur le document commercial ; la sixième, le **total HT par ligne**, n'y figure pas du tout.
+
+- **Cinq clés `invoice.decimals-*`**, et non une seule : l'exigence laisse un magasin déclarer son prix unitaire sur trois décimales et garder ses totaux sur deux, ce que demande un commerce de produits pesés. Elles sont portées par un petit `record Decimals` que le service de facture remplit à partir du catalogue, pour que la mise en page n'ait pas à connaître les paramètres.
+- **Deux ou trois, et rien d'autre.** Une valeur hors plage retombe sur deux. Une facture à sept décimales serait illisible, une facture à zéro décimale énoncerait un prix qui n'est pas le prix.
+- **Le calcul suit l'affichage, sinon la décimale ment.** Le prix HT était calculé à l'échelle 2 avant d'être formaté ; l'imprimer sur trois décimales aurait donné `12,230` là où le calcul donne `12,227`. La division porte désormais l'échelle administrée, et la constante qui figeait l'arrondi à deux a disparu.
+- **Les documents existants ne bougent pas :** la fabrique courte, celle que tout le code appelait, passe `Decimals.standard()`, c'est-à-dire deux partout.
+- **Ce qui n'est pas couvert, et pourquoi.** Le document commercial n'a pas de colonne « total HT » par ligne : il porte le prix unitaire HT, le prix unitaire TTC et le total TTC. Ajouter une sixième colonne au tableau des articles n'est pas un paramètre, c'est une refonte de la mise en page du document, et elle n'est pas demandée ici. La ligne reste donc **partielle**, avec cet écart nommé.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `invoice.decimals-*` | `3` / `7` / `0` / rien | 3 / 2 / 2 / 2 |
+| `InvoiceDocument.of` | PU HT à 3, TTC à 3, reste à 2 | `12,227`, `50,79`, `56,600` |
+| `Decimals.standard` | — | deux partout |
+| fabrique courte | documents existants | inchangés |
+
+**L25 Le ticket, son archive et les codes-barres qui dorment (14/10)** `/admin/settings`, `TicketPrinterService`, `TicketSearchService`, `StoredValueRetentionService`, `AccountCustomerCsvResource` [E/S] (BO-10-07-10, -11, -16, BO-10-08-13, -14, -15 et -27)
+
+Sept lignes, trois endroits : ce que le ticket dit, jusqu'où la caisse cherche, et ce qu'elle finit par oublier.
+
+- **Le nombre d'articles (BO-10-07-10)** — `ticket.item-count-print` : `NONE`, `TOTAL_LINE` (entre parenthèses sur la ligne du total à payer) ou `OWN_LINE` (sous le total). Le compte est lu sur le **ticket clôturé**, donc un duplicata redit le chiffre que le client a vu. Valeur inconnue : nulle part.
+- **Le code-barres du ticket article inconnu (BO-10-07-11)** — `ticket.unknown-article-barcode`. Le ticket existait depuis BO-03-10-05 et portait le code en clair ; il porte maintenant la **directive `[[BARCODE …]]`** sous la transcription, pour que le rayon le rescanne au lieu de retaper treize chiffres. Le gabarit administré la reçoit aussi, par sa donnée `document.barcode`, pour la placer où il veut.
+- **La profondeur de recherche (BO-10-07-16)** — `ticket.search-days`. La fenêtre de recherche d'un ticket clôturé était une **constante** de trente jours dans `TicketSearchService` ; c'est elle que l'exigence appelle « délai avant abandon ». Zéro ou négatif n'est pas une profondeur de zéro — une caisse qui ne retrouve plus rien aurait l'air cassée — mais l'absence de paramètre : les trente jours intégrés reprennent.
+- **Les trois purges de codes-barres (BO-10-08-13/-14/-15)** — le balayage de rétention vit sur le **nœud** et ces instruments vivent sur la **caisse** : il fallait donc un balayage côté caisse, `StoredValueRetentionService`, et c'est le seul code neuf de ce lot. Trois familles qui ne sont pas la même : expiré jamais utilisé, daté puis épuisé, jamais daté — trois délais, administrés dans le **même catalogue** et descendus par la même diffusion. Zéro = conservation illimitée, comme sur le nœud. Il tourne à la **fermeture de session**, parce que la caisse n'a pas d'ordonnanceur et que c'est le seul moment où elle ne vend certainement pas ; une purge qui échoue est journalisée et **ne fait pas échouer la fermeture**, qui est déjà écrite.
+- **L'adresse obligatoire à l'intégration client (BO-10-08-27)** — le commentaire demandait « introduire le client en compte (entité et intégration) » ; `AccountCustomer` et son flux CSV existent, et c'est d'ailleurs sur cette entité que porte déjà la purge BO-10-08-26. Ce qui manquait est le contrôle : `customer.integration-require-address`, et une ligne sans rue, sans code postal ou sans ville est **rejetée en nommant les colonnes manquantes** dans le compte rendu d'import — l'importateur sait déjà isoler une ligne fautive et poursuivre le fichier.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `printTicket` | `total_line` / `OWN_LINE` / inconnu | `TOTAL TTC (3)` / ligne dédiée / rien |
+| `printUnknownArticleTicket` | code-barres demandé / non | directive présente / code en clair seul |
+| `searchDays` | sans service / 90 / 0 / −5 | 30 / 90 / 30 / 30 |
+| `sweep` | rien d'administré | aucune requête, zéro supprimé |
+| `sweep` | trois délais | trois suppressions, somme rendue |
+| `sweep` | un seul délai | une suppression, celle de sa famille |
+| fermeture de session | purge en échec | fermeture écrite, échec journalisé |
+| Intégration client | adresse incomplète, contrôle actif | ligne rejetée, colonnes nommées |
+| Intégration client | contrôle inactif | ligne intégrée telle quelle |
+
+**L26 Le nom sur le viseur client, et la tare qui part à la balance (14/10)** `/admin/settings`, `CustomerDisplayResource`, `TicketPrinterService` [E/S] (BO-10-03-03 et BO-10-05-04)
+
+Deux lignes, deux données qui existaient déjà et qui n'allaient nulle part.
+
+- **Le nom du porteur sur le viseur client (BO-10-03-03)** — `FidelityState` porte `holderLastName` et `holderFirstName` depuis la recherche fidélité, et l'écran caissier les affiche sous la règle de BO-10-03-04. Le viseur client, lui, ne les recevait pas. Clé **distincte** (`fidelity.show-holder-name-customer`), **fausse par défaut**, et ce n'est pas la même prudence deux fois : l'écran caissier fait face à une personne, le viseur client fait face à la file. Nouvelle méthode `getHolderName()` — nom en capitales, prénom tel quel — vide dès qu'il n'y a pas d'identité à énoncer : une carte scannée porte un numéro, pas une identité, et un écran ne doit pas en inventer une.
+- **La tare imprimée (BO-10-05-04)** — la caisse résolvait déjà la tare (contenant > article > défaut) et l'**envoyait à la balance**, qui rend le poids net ; cette valeur n'était ensuite conservée nulle part. Elle est maintenant posée sur la ligne en mémoire (`appliedTareKg`, distincte de `tareKg` qui est la tare de l'article gardée pour une resaisie manuelle), gelée sur la ligne vendue comme la famille et le second code, et imprimée sous l'article quand `balance.print-tare` le demande. Une tare nulle n'est pas une déduction : rien n'est imprimé.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `getHolderName` | sans carte / carte sans recherche | vide |
+| `getHolderName` | nom blanc / prénom blanc | vide / nom seul |
+| `getHolderName` | nom et prénom | `DUPONT Jean` |
+| `customerData` | règle active / inactive | nom poussé / chaîne vide |
+| `printTicket` | tare 0,035 demandée | `TARE 0,035 kg` sous la ligne |
+| `printTicket` | tare nulle / règle inactive | rien |
+
+**L27 Le numéro de certification, et le pays qui le demande (14/10)** `/admin/settings`, `TicketPrinterService` [E/S] (BO-10-06-03)
+
+Le commentaire demandait le numéro « au référentiel magasin, avec son écran, puis distribué aux caisses ». Une clé du catalogue fait tout cela sans entité ni écran neufs — et mieux : le mécanisme d'échelon la pose **à l'échelon PAYS**, d'où elle descend à toutes les caisses du pays, ce qu'un champ sur le magasin aurait demandé de recopier magasin par magasin.
+
+- **`fiscal.certificate-number`**, vide par défaut. Vide veut dire qu'aucune mention n'est imprimée : les tickets des pays qui n'exigent rien ne changent pas d'une ligne, ce qui est la condition pour poser une mention fiscale sur un chemin d'impression commun.
+- **Imprimé sur les documents de vente ET de retour**, par une seule méthode appelée aux deux endroits — c'est le mot « ensemble » de l'exigence, et le découpage évite qu'un des deux documents dérive de l'autre.
+- **Ce qui n'est pas couvert, et pourquoi.** L'exigence demande aussi que le numéro figure dans **l'exportation SAF-T**. Il n'existe aucune exportation SAF-T dans ces dépôts — ni sur la caisse ni sur le nœud — et l'écrire supposerait le schéma officiel portugais, qui est le même document externe que celui qui bloque BO-03-04-27. La ligne reste donc **partielle**, avec cet écart nommé.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `fiscalCertificateNumber` | numéro posé / rien | le numéro / chaîne vide |
+| `printTicket` | numéro administré (espaces compris) | `CERTIFICAT N° 0000/AT`, détouré |
+| `printRefund` | numéro administré | la même ligne sur le ticket de retour |
+| les deux | numéro blanc | aucune ligne |
+
+**L28 Ce que le panier emporte, et ce que l'imprimante doit agrandir (14/10)** `/admin/settings`, `ValuationService`, `TicketPrinterService` [E/S] (BO-10-03-19, -20, BO-10-07-14, BO-10-09-09)
+
+Quatre lignes du bloc Règles, dont **deux n'avaient besoin de rien** : la recette les a trouvées servies.
+
+- **Le regroupement des avantages par catégorie (BO-10-03-20)** — déjà là. `fidelity.advantage-grouping` accepte `TYPE`, `CATEGORY` et `NONE`, et la catégorie comme son libellé voyagent sur la ligne d'avantage gelée, donc le choix ne coûte aucune seconde requête. **1a** et pas entier : l'exigence demande aussi la *priorité* de catégorie « communiquée par la réponse », et le programme n'envoie pas de rang propre aux catégories — seuls les types en ont un. Les groupes sortent donc dans l'ordre d'arrivée.
+- **La promotion de péremption (BO-10-09-09)** — déjà là aussi. L'AI 17 est décodé, la date est posée sur la ligne (`gs1ExpiryDate`) **et transmise au moteur** dans `ItemDto.bestBeforeDate`. Ce qui reste — le délai qui déclenche l'offre — est une règle d'offre, administrée dans le moteur et pas dans ce back-office. La ligne est **entière** côté caisse et nœud.
+- **La sous-famille au moteur (BO-10-03-19)** — `fidelity.send-subfamily`. La famille la plus profonde sous laquelle le référentiel classe l'article **est** la sous-famille, et son parent est la famille : les deux se lisent d'une seule interrogation, et c'est pourquoi elles ne sont pas cherchées séparément. Article sans famille, article inconnu, ligne sans identifiant : rien n'est envoyé plutôt qu'un code vide sous lequel le moteur regrouperait.
+- **Le montant dû agrandi (BO-10-07-14)** — `ticket.due-amount-large` et une directive `[[DOUBLE]]…[[/DOUBLE]]`, de la même forme que la mise en gras déjà émise. La ligne est **alignée d'abord, encadrée ensuite** : les marqueurs ne sont pas des caractères que le cadrage a comptés — c'est l'erreur naturelle, et le Javadoc du gras la nomme déjà. **1a** : comme le gras, la directive attend son interprétation par le module matériel, qui n'est pas dans ces dépôts.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `fillNomenclature` | règle inactive | rien envoyé, référentiel non interrogé |
+| `fillNomenclature` | article au PLU, famille à parent | sous-famille et famille |
+| `fillNomenclature` | article à l'EAN, parent blanc | sous-famille seule |
+| `fillNomenclature` | sans identifiant / inconnu / sans famille | rien |
+| `printTicket` | montant dû agrandi / non | directive encadrant la ligne / aucune |
+
+**L29 L'éco-participation, et la mémoire des intégrations (14/10)** `/admin/settings`, `/admin/sync`, `TicketPrinterService`, `RefPullService` [E/S] (BO-10-06-06, BO-10-08-10 et -23)
+
+Deux lignes que j'avais écartées trop vite, et la recette a montré pourquoi.
+
+- **L'éco-participation au ticket (BO-10-06-06)** — j'avais écrit « attend que l'éco-taxe soit modélisée ». Elle l'est : `ECO_TAX` est un attribut article décimal depuis le catalogue d'attributs, et la **facture la totalise déjà** (`Invoice.totalEcoTax`). Ce qui manquait était le ticket. `ticket.ecotax-print` : `NONE`, `LINE` (sous chaque article concerné) ou `TOTAL` (une ligne sous la ventilation de TVA). Le montant est **lu sur l'article comme la facture le lit**, pas gelé sur la ligne : les deux documents d'une même vente doivent énoncer le même chiffre, c'est la règle que BO-03-03-04 impose déjà au tableau de TVA. Un article sans éco-participation n'imprime rien — pas un zéro que personne ne doit. **1a** : l'exigence dit « chaque écotaxe », et il n'existe pas de référentiel d'éco-taxes — une seule valeur par article — donc le choix est global et non par éco-taxe.
+- **L'audit des mises à jour du référentiel (BO-10-08-23) et sa rétention (BO-10-08-10)** — `RefState` dit ce que le nœud **détient** : une ligne par domaine, écrasée à chaque application. C'est un état, et un état n'a pas de mémoire : « quand les articles ont-ils échoué, et pourquoi » ne se lit nulle part. `RefApplyAudit` est cette mémoire — une ligne par tentative, avec son domaine, son empreinte visée, son horodatage, son issue et son motif d'échec.
+  - **Écrite seulement si le magasin le demande** (`referential.update-audit-enabled`, fausse par défaut) : un nœud qui intègre quinze domaines à chaque cycle remplirait sinon une table que personne ne lit.
+  - **Écrite après l'application, jamais à sa place**, et une panne d'écriture de trace est journalisée **sans faire échouer l'intégration** : une trace n'est pas une condition de fonctionnement.
+  - **Purgée comme toute histoire**, par une `Policy` de plus dans le balayage de fin de période (`retention.integration-results-days`, 0 = illimité) — une trace gardée pour toujours finit supprimée à la main.
+  - **Consultable** dans une carte de l'écran de supervision des synchronisations, à côté des états de tirage qu'elle complète. Traçage désactivé, la carte le **dit** au lieu de montrer un tableau vide qu'on lirait « il ne s'est jamais rien passé ».
+  - **1a pour BO-10-08-23** : l'audit est au niveau du domaine (article, nomenclature, client, promotion) et non article par article — les quinze méthodes d'application ne rendent pas de compte de lignes, et leur en faire rendre un n'est pas ce que l'exigence demande.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `ecoTaxPrint` | `TOTAL` posé / rien | `TOTAL` / `NONE` |
+| `printTicket` | `line`, article taxé × 2 | une ligne sous l'article |
+| `printTicket` | `TOTAL`, vente taxée | une ligne, avant le règlement |
+| `printTicket` | article sans éco-taxe / règle inactive | rien |
+| `recordAudit` | traçage inactif | aucune ligne écrite |
+| `pullOnce` | domaine appliqué / en échec | ligne APPLIED / FAILED avec son motif |
+| `pullOnce` | écriture d'audit en panne | intégration poursuivie, panne journalisée |
+| `/admin/sync` | traçage inactif | la carte le dit, pas de tableau vide |
+| balayage | délai administré | lignes d'audit purgées au-delà |
+
+**L30 Trois lignes trouvées en relisant les autres blocs (14/10)** `/products/import`, `/article-info`, `/admin/settings` [E/S] (BO-02-03-10, BO-04-01-38, BO-09-03-04)
+
+Les blocs 03 et 10 épuisés, j'ai relu les 76 lignes non couvertes des neuf autres. Trois tombent sous le même constat que d'habitude.
+
+- **Le message article à l'intégration (BO-02-03-10)** — le commentaire demandait « ajouter un message article (champ Product ou entrée du catalogue d'attributs), le porter dans l'import, la diffusion PRODUCTS et l'écran ». Tout existait **sauf une chose** : `Product.infoMessage` est une colonne des deux côtés, l'écran `/admin/articles` l'édite, la diffusion l'exporte, l'applique et l'intègre à l'empreinte, et la caisse en fait un avertissement au scan. Le **flux de la gestion commerciale** était la seule route qui ne le portait pas : une colonne `INFO_MESSAGE` de plus, et la ligne est servie. Une entrée absente laisse `null` et non chaîne vide — la caisse avertit sur un message qui existe, et une chaîne vide n'en est pas un.
+- **La vérification de prix au journal (BO-04-01-38)** — le journal électronique cherche par type d'événement, et sa liste de critères est **dérivée de l'énumération** : un type de plus y apparaît tout seul. `PRICE_CHECKED` est écrit par l'écran d'information article, **trouvé ou non** — un code que personne ne reconnaît est exactement ce qu'un magasin cherche après coup. Le formulaire vide n'est pas une vérification et n'écrit rien.
+- **Le compteur de tickets remis à 1 en fin de période (BO-09-03-04)** — `period.reset-ticket-counter`, appliquée à la clôture de session, au même endroit et avec la même doctrine que la purge des codes-barres : une remise à zéro qui échoue est journalisée et **ne fait pas échouer une clôture déjà écrite**. Seul le numéro de ticket repart : le numéro de session, celui de remboursement et celui de client continuent, et la **numérotation fiscale** n'est même pas sur cette ligne — une séquence fiscale qui compterait à rebours serait refusée par l'administration.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `feedProduct` | colonne `INFO_MESSAGE` présente / absente | message repris / `null` |
+| `infoPage` | code trouvé / inconnu | événement écrit dans les deux cas |
+| `infoPage` | formulaire vide ou blanc | rien écrit |
+| `resetTicketNumbers` | compteur à 4217 | ticket à 0, session, retour et client intacts |
+| clôture de session | règle active, remise en échec | clôture écrite, échec journalisé |
+
+**L31 L'écran qui manquait : les comptes (15/10)** `/admin/accounts`, `EmployeeIdentityProvider`, `AuthService` [E/S] (BO-01-01-01, -02, -06 et BO-01-02-12)
+
+Le back-office avait **deux** écrans autour d'un compte et **aucun ne le créait** : `/admin/employees` règle le volet financier d'une fiche qui existe, `/admin/users` rattache des profils à un titulaire qui existe. Les comptes venaient du seed. C'est ce vide qui rendait partielles quatre lignes du bloc 01 et impossible la cinquième.
+
+- **`/admin/accounts` crée, modifie, désactive et supprime** (BO-01-01-01, -02). Un seul geste pose les **deux** secrets d'un titulaire neuf — le code caisse et le mot de passe back-office — parce qu'un compte créé avec un seul des deux est un compte sur lequel il faut revenir ; et le titulaire doit le changer à sa première entrée.
+- **La suppression demande deux fois.** La confirmation que l'exigence nomme est sur le bouton, et le serveur **refuse un titulaire que l'historique nomme** : un compte qui a avalisé, compté ou vendu se désactive, il ne s'efface pas — l'effacer orphelinerait le journal qui le nomme.
+- **Département et niveau hiérarchique (BO-01-01-02)** ouvrent la délégation : un compte n'administre que des comptes d'un niveau **strictement inférieur** au sien, donc un responsable gère son équipe et personne ne relève ses propres droits. Le département est un texte libre et non une énumération : l'exigence liste des exemples et finit par « etc. ».
+- **Téléphone et date de début (BO-01-01-06)**, facultatifs comme l'exigence le demande. La date est déclarative et non opposable : refuser une entrée sur une date que personne n'a vérifiée à la création enfermerait un magasin dehors sur une faute de frappe.
+- **Le verrouillage après échecs (BO-01-01-01)** — `failedAttempts` et `lockedUntil` étaient sur l'entité et **lus à chaque authentification** ; rien ne les écrivait jamais, donc le verrouillage ne pouvait pas arriver. Les échecs sont maintenant comptés, le seuil et la durée sont administrés (3 et 15 minutes par défaut), et une entrée réussie **efface le compteur** : des échecs comptés doivent être consécutifs, sinon deux fautes lundi et une vendredi verrouillent un compte que son titulaire ne saurait pas expliquer.
+- **L'expiration de session back-office** est posée en configuration (30 minutes d'inactivité, cookie renouvelé toutes les 5).
+- **L'expiration du secret (BO-01-02-12)** — `auth.password-expiry-days`, **zéro par défaut**. Un secret jamais changé est échu dès qu'un délai existe : un compte qui porte encore le code de sa création est exactement celui pour qui la politique est écrite. Côté back-office, l'échéance alimente l'attribut que le filtre de changement de mot de passe lit déjà ; côté caisse, elle lève la même demande que le forçage superviseur d'EXP-14, donc la caissière retrouve l'écran qu'elle connaît. La date du dernier changement **descend par la diffusion** : le nœud est l'autorité sur le secret, la caisse ne pourrait pas savoir seule qu'il a changé.
+- **La langue du titulaire suit le même chemin.** `Employee.language` existait **sur la caisse**, était lue par le moteur de messages… et n'existait ni sur le nœud ni dans la diffusion : personne ne pouvait la renseigner. Elle est maintenant administrée et diffusée.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `save` | identifiant, nom ou adresse absent | refusé, chacun pour soi |
+| `save` | identifiant pris par un autre / par soi-même | refusé / accepté |
+| `save` | compte neuf sans code / code trop court | refusé |
+| `save` / `delete` | identifiant inconnu | refusé |
+| `delete` | titulaire nommé par l'historique | refusé, désactivation proposée |
+| `role` | absent, blanc, inconnu / connu | CASHIER / le rôle |
+| `secretExpired` | délai 0 ou négatif | jamais échu |
+| `secretExpired` | jamais changé, délai posé | échu |
+| `secretExpired` | changé il y a 10 j / 91 j, délai 90 | valable / échu |
+| verrouillage BO | seuil atteint / entrée réussie | compte verrouillé / compteur effacé |
+| empreinte EMPLOYEES | langue et date de changement | dans l'empreinte, nulles comprises |
+
+**L32 Les listes qui auraient dû être des référentiels (15/10)** `/admin/lists`, `PosListService`, domaine `POS_LISTS` [E/S/R] (BO-04-02-07, BO-04-03-12)
+
+Quatre choses que la caissière touche étaient administrées **sous la forme d'une chaîne à points-virgules** : les motifs de demande de service (`supervisor.service-reasons`), les motifs de dépense (`cash.movement-reasons`), les types de retour (`return.types`) et les contenants de tare (`balance.tare-containers`). Une chaîne dessine quatre touches et ne fait **rien d'autre** : pas de code, donc rien en aval ne peut nommer une entrée ; pas de sévérité, donc le back-office ne peut pas trier ce qu'il reçoit ; pas de regroupement, donc les mêmes motifs ne peuvent pas servir deux gestes sous un même libellé.
+
+- **Une entité, un écran, une diffusion — une fois, pas quatre.** `PosList` porte un code, un libellé, un **genre** (demandes de service, justifications, types de retour, contenants de tare) et, pour une liste de justifications, les **fonctions de caisse** qu'elle sert. `PosListItem` porte un code, un libellé, un rang et — **selon le genre** — une sévérité, un poids ou des marqueurs d'option. Quatre tables auraient voulu dire quatre écrans, quatre domaines de diffusion et quatre méthodes d'application pour un seul geste : administrer une liste de choses que la caissière touche.
+- **Le paramètre n'est pas supprimé, et c'est délibéré.** Tant qu'aucune liste d'un genre n'est distribuée, la caisse lit la chaîne qu'elle a toujours lue : un magasin qui n'ouvre jamais l'écran se comporte **exactement** comme avant. Le référentiel l'emporte dès qu'une liste de ce genre existe. Le bouton **Reprendre les valeurs actuelles** fait la bascule en un geste : il lit les quatre paramètres tels quels et écrit les listes qu'ils décrivent, **sans toucher** à une liste déjà créée — le geste est un point de départ, pas une remise à zéro.
+- **La sévérité est affichée à réception (BO-04-02-07).** Le nœud résout le motif reçu contre ses types administrés — par **libellé** (ce que la caisse envoie) ou par **code** — et la bannière du tableau de bord annonce `P2 —` devant l'appel. Un motif que rien ne reconnaît ne porte **aucune** priorité plutôt qu'une priorité inventée : il vient d'une caisse qui lit encore le paramètre, ou d'un geste qui appelle avec un motif à lui, SONDAGE le premier.
+- **Les justifications sont liées à des fonctions (BO-04-03-12).** Une liste nommant des fonctions ne sert que celles-là ; une liste n'en nommant aucune les sert toutes, ce qu'un magasin à une seule liste de motifs veut. Le repli, lui, est **limité à EXPENSE** : `cash.movement-reasons` nomme les motifs d'une dépense tiroir et rien d'autre, donc le servir à un autre geste proposerait « Achat de timbres » comme motif d'annulation.
+- **Reste à faire sur BO-04-03-12** : seule la dépense tiroir consulte aujourd'hui sa liste. Les autres gestes — annulation de ligne, annulation de ticket, forçage de prix, remise — n'ont pas d'écran de justification à alimenter ; les brancher demande d'abord ces écrans, pas ce référentiel.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `/admin/lists` `save` | code ou libellé absent | refusé, chacun pour soi |
+| `/admin/lists` `save` | code pris par une autre liste | refusé |
+| `/admin/lists` `item/save` | liste inconnue / code ou libellé absent | refusé |
+| `bootstrap` | listes déjà présentes / paramètres vides | rien créé, notice verte |
+| `bootstrap` | quatre paramètres renseignés | quatre listes reprises, codes dérivés |
+| `serviceRequestTypes` | liste distribuée / aucune | référentiel / chaîne à points-virgules |
+| `justifications` | fonction servie / non servie / aucune liste | entrées / vide / repli EXPENSE seul |
+| `returnTypes` | marqueurs TICKET, NOENDORSE, NOORIGIN, PRICE / inconnu | lus / ignoré |
+| `tareContainers` | poids absent ou négatif | entrée écartée |
+| empreinte POS_LISTS | une entrée modifiée | empreinte déplacée |
+| `severityOf` | libellé, code, entrée inactive, motif inconnu | priorité / 0 |
+
+**L33 Le logo n'était pas une image, c'était un fichier (15/10)** `/admin/images`, `StoreImageService`, domaine `STORE_IMAGES` [E/S/R] (BO-03-03-15, BO-10-03-09)
+
+La caisse imprimait **un** logo : `/print/logo.png`, une ressource de son classpath. Un groupe qui tient plusieurs pays, plusieurs enseignes et plusieurs concepts ne pouvait donc pas leur donner un papier différent — et l'exigence en demande **au moins dix**. L'impression graphique, elle, existait déjà et n'a pas bougé : c'est la SOURCE de l'image qui manquait.
+
+- **Un logo est une ligne posée à un échelon.** `StoreImage` porte un code, un libellé, un usage, l'échelon (pays, enseigne, PDV — ou rien, et c'est le défaut du groupe) et l'image elle-même, en `data:` URI PNG comme les visuels de touches (BO-03-01-24) : un instantané qui reste du texte reste comparable, empreintable et journalisable, et le back-office sait déjà redimensionner une image.
+- **L'échelon le plus proche gagne, et la résolution reste sur le nœud.** Un logo posé sur le PDV l'emporte sur celui de son enseigne, qui l'emporte sur celui de son pays, qui l'emporte sur le défaut du groupe — la même marche que la résolution des paramètres. La caisse ne reçoit **que le résultat** : elle n'a pas à détenir l'organigramme du groupe pour imprimer son propre papier, exactement comme elle reçoit des paramètres résolus et jamais les lignes d'échelon. Les deux échelons **internes au magasin** — l'îlot et le point de contact — ne sont pas offerts : un logo est le papier d'un magasin, pas d'une caisse, et deux caisses côte à côte imprimant des bannières différentes serait un défaut.
+- **Le même écran administre les visuels d'avantage fidélité (BO-10-03-09)**, parce que c'est le même objet : une image importée, posée à un échelon, portée aux caisses par le même domaine. Ce qui les distingue est l'usage et, pour un visuel, l'avantage qu'il illustre — le **code de la règle** fidélité, ou son **type** pour une famille entière, la règle précise l'emportant sur la famille.
+- **Le visuel s'imprime AU-DESSUS de sa ligne**, jamais à sa place : l'image illustre l'avantage, elle ne l'énonce pas. Une imprimante qui laisse tomber les images — ou un magasin qui n'a rien administré — rend exactement le ticket d'avant, qui est la règle que suit tout ajout graphique sur ce papier.
+- **Rien d'administré, rien de changé.** Aucune image distribuée : la caisse imprime le logo de son installation, le fichier qu'elle a toujours lu. Une image illisible, ou entièrement blanche, imprime l'en-tête texte plutôt que d'échouer le document.
+- **La facture suit le ticket (15/10).** `InvoiceDocument` porte désormais le logo administré comme un champ final de plus, posé par le service qui construit le document — le seul qui tienne le référentiel ; un document mis en page n'a rien à aller chercher en base. Les signatures existantes sont intactes : une surcharge de plus porte le logo, l'ancienne délègue avec `null`, et un document construit par un test ou par l'éditeur de gabarits imprime exactement ce qu'il imprimait. Un magasin dont le back-office a importé un logo le voit maintenant sur sa facture comme sur son ticket, et les deux ne peuvent plus diverger.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `closenessTo` | PDV / enseigne / pays / défaut du groupe | 3 / 2 / 1 / 0 |
+| `closenessTo` | échelon d'un autre magasin, îlot, point de contact | -1 |
+| `closest` | les quatre en concurrence | le PDV l'emporte |
+| `closest` | aucun candidat, aucun applicable | rien |
+| `closest` | égalité au même échelon | départagée par le code |
+| `closest` | nœud sans PDV, PDV inconnu, PDV sans enseigne | défaut du groupe |
+| `advantageVisuals` | deux échelons pour un même avantage | un visuel, le plus proche |
+| `resolvedImages` | logo + visuels / sans logo | logo d'abord / visuels seuls |
+| `/admin/images` `save` | code ou libellé absent, code déjà pris | refusé |
+| `/admin/images` `save` | échelon sans code, visuel sans avantage | refusé |
+| `/admin/images` `save` | image neuve sans fichier / fichier illisible | refusé |
+| `directive(image, largeur)` | image valide, base64 nu, URI data | même tramage |
+| `directive(image, largeur)` | base64 invalide, octets non-image, image blanche | rien imprimé |
+| `directive(image, largeur)` | image vide ou nulle | repli sur le fichier d'installation |
+| empreinte STORE_IMAGES | image remplacée à nom constant | empreinte déplacée |
+| ticket | avantage avec / sans visuel | image au-dessus de la ligne / ligne seule |
+| `InvoiceDocument.getLogo` | base64 nu / URI data / vide / absent | URI data / inchangée / repli installation / repli installation |
+
+**L34 Le registre des appels superviseur : un événement qui devient une demande (15/10)** `/dashboard`, `SupervisorCallRegistry`, `RemoteCommandService` [E/S/R] (BO-04-02-03, -04, -05)
+
+Le nœud recevait déjà les appels superviseur des caisses et les affichait en bandeau. Un bandeau n'a qu'une issue : **Acquitter**. Une demande, elle, a un **sort** — elle a été réglée à la caisse, on la renvoie à la caisse, ou on la refuse — et c'est exactement ce que les trois exigences demandent. L'appel devient donc une demande avec un statut, et le statut est écrit.
+
+- **Déjà traitée en caisse (BO-04-02-03), automatiquement.** Neuf fois sur dix le superviseur est à trois mètres et règle la demande avant que quiconque ait lu le bandeau — lequel restait affiché, et un responsable marchait vers une caisse dont le problème était résolu. La caisse est la seule à le savoir, donc **la caisse le dit** : tout aval accordé pousse un avis au nœud, qui marque *toutes* les demandes encore ouvertes de cette caisse. Toutes et pas la dernière : deux appels avant l'arrivée du superviseur sont **un** besoin. L'avis est tiré et oublié — un aval ne doit pas échouer parce que le nœud est lent — et le pire des cas est le bandeau qu'un responsable acquitte à la main, c'est-à-dire la conduite d'aujourd'hui.
+- **À traiter en caisse (BO-04-02-04).** Le back-office regarde la demande et décide que la caisse la règle elle-même. **Rien ne descend** : le responsable le dit à la personne qui est à la caisse, et le tableau enregistre la décision pour qu'un second responsable ne s'y rende pas. Ce que la caisse doit apprendre — le refus — a son propre ordre.
+- **Refusée (BO-04-02-05), avec un canal descendant qui existait déjà.** Le refus laisse à la caisse un ordre `SUPERVISOR_REFUSED` dans le registre d'ordres que la fermeture forcée emprunte depuis la phase 5 : la caisse le ramasse à son tour de boucle, écrit le **libellé que le responsable a tapé** dans la zone de message du caissier, et l'acquitte. Acquitté quoi que fasse l'écran : un refus est une **réponse**, et une réponse délivrée deux fois se lit comme un second refus. Un ordre sans libellé dit le moins qui reste vrai.
+- **Le motif voyage dans un SECOND motif de lecture.** La caisse lit les ordres avec une expression régulière à deux champs ; l'élargir aurait voulu dire une caisse qui cesse de lire **tous** les ordres — la fermeture forcée comprise — le jour où le nœud insère un champ entre les deux. Le motif est donc lu à part, dans la queue de l'objet de son propre ordre : introuvable, il ne coûte que son propre texte.
+- **Rester affichée ou disparaître (les trois exigences).** `supervision.settled-calls-kept`, active par défaut : une demande tranchée reste au tableau, **clairement marquée** par ce qu'elle est devenue (et par le motif du refus), jusqu'à son acquittement ; désactivée, elle quitte la liste au moment où elle est tranchée. L'acquittement, lui, n'est pas un sort : c'est un responsable qui dit avoir lu, et la demande quitte le tableau quel que soit le paramètre — sinon rien ne l'en retirerait jamais.
+- **La sévérité du type administré (BO-04-02-07, L32) s'affiche devant le motif** : `P2 — CAISSE1 demande un superviseur`. Un motif que rien ne reconnaît ne porte aucune priorité plutôt qu'une priorité inventée.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `settle` | demande tranchée, paramètre actif / inactif | marquée et gardée / retirée |
+| `settle` | identifiant inconnu | rien tranché |
+| `settleAtTill` | deux appels de la même caisse | les deux marqués |
+| `settleAtTill` | autre caisse, déjà tranchée, caisse non nommée | intacts, zéro |
+| `/dashboard/call/{id}/to-till` | demande en attente | marquée, aucun ordre émis |
+| `/dashboard/call/{id}/refuse` | avec / sans libellé | ordre émis, libellé ou défaut |
+| `/dashboard/call/{id}/refuse` | demande inconnue | 404, aucun ordre |
+| `/api/supervisor/settled` | nœud hors rôle / jeton faux / nominal | 403 / 401 / marquage |
+| `orders` | motif présent, absent, échappé, deux ordres | motif propre à chaque ordre |
+| `refuse` (caisse) | ordre avec / sans libellé | message affiché, ordre acquitté |
+| `dashboard-data` | demande tranchée | statut, libellé et motif portés à l'écran |
+
 **L3 Commandes & devis — rappel par code (chantier D expert)** `/admin/orders`, `CustomerOrderService` [E]
 
 Un seul mécanisme de rappel par code (`CustomerOrder` + `CustomerOrderService`) dont dérivent les quatre documents de l'onglet G : devis, commande, bon de vente, click and collect (EXP-90/91/92). Le back-office saisit et remet un code ; la caisse le rappelle et le règle en totalité ou par acompte (EXP-85).
@@ -1599,6 +2601,66 @@ Un seul mécanisme de rappel par code (`CustomerOrder` + `CustomerOrderService`)
 | Raccord coffre (EXP-87) | ingestion d'un mouvement WITHDRAWAL créé | alimente le coffre en `POUCH` (crédit, PENDING, période ouverte), une fois, réf = uid ; DEPOSIT/mise à jour n'alimentent pas |
 | Reste à faire | transfert live du panier garé vers l'autre caisse, saisie des lignes détaillées de commande | couplés à la production côté caisse — signalés |
 
+**L35 La mention légale de TVA sur le ticket et la facture (15/10)** `TicketPrinterService`, `InvoiceDocument` [E] [R] (BO-02-02-02)
+
+Un taux de TVA peut obliger à imprimer un texte — autoliquidation, exonération, régime particulier. Le référentiel porte désormais ce texte (H11) ; restait à le faire sortir sur les deux documents qui le réclament.
+
+- **Sur le ticket, après la ventilation** : les mentions des taux effectivement présents sur la vente, **distinctes** et dans leur ordre d'apparition, repliées à la largeur du papier. Deux taux portant la même mention ne l'impriment qu'une fois.
+- **Sur la facture, ligne par ligne** : la mention accompagne le seau de TVA qu'elle concerne, pas le pied du document, parce qu'une facture à trois taux peut porter trois régimes.
+- **Le remboursement imprime les mêmes mentions que la vente** : c'est le même régime fiscal, en sens inverse.
+- Un taux sans mention n'imprime rien du tout, et c'est le cas ordinaire.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `vatLegalMentions` | aucun taux ne porte de mention | aucune ligne |
+| `vatLegalMentions` | deux taux, même mention | une seule ligne |
+| `vatLegalMentions` | mention plus large que le papier | repliée, jamais tronquée |
+| Ticket de vente / remboursement | mentions présentes | imprimées après la ventilation |
+| `InvoiceDocument` | seau avec / sans mention | ligne de mention / rien |
+
+**L36 Le pied de ticket administré, en QR code (15/10)** `TicketPrinterService`, `DocumentLayout` [E] [R] (BO-03-05-08)
+
+Le pied de ticket pouvait porter du texte. L'exigence demande d'y porter une **adresse** — enquête de satisfaction, ticket dématérialisé, mentions légales en ligne — et une adresse qu'on tape à la main sur un téléphone n'est pas une adresse qu'on visite.
+
+- **Deux paramètres, pas un** : `ticket.footer-url` porte l'adresse, `ticket.footer-url-format` dit comment l'imprimer — QR, code-barres, texte, ou rien.
+- **Le format inconnu imprime un QR** plutôt que de ne rien imprimer : une adresse administrée qui disparaît sans un mot est le pire des trois résultats.
+- **L'adresse vide n'imprime rien**, quel que soit le format : c'est l'état par défaut, et un cadre vide sur chaque ticket coûte du papier à tout le monde.
+- La directive `[[QR ...]]` rejoint `[[BARCODE ...]]`, `[[IMAGE ...]]` et `[[DOUBLE]]` : le gabarit décrit, le pilote imprime.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `footerUrlBlock` | adresse vide / nulle | rien |
+| `footerUrlBlock` | format `QR` / `BARCODE` / `TEXTE` | directive QR / code-barres / ligne de texte |
+| `footerUrlBlock` | format `AUCUN` | rien |
+| `footerUrlBlock` | format inconnu / paramètres illisibles | QR |
+| `DocumentLayout.qr` / `.barcode` | valeur quelconque | directive bien formée |
+
+**L37 Création de commande en caisse (16/10)** `OrderResource`, `OrderCreationService`, `OrderRecallResource`, `CustomerOrderService` [E] [R] (LC-06-03-01/-02/-03/-05/-06/-07/-08)
+
+La caisse crée la commande elle-même : les articles sont enregistrés comme ceux d'une vente (Epic 2), l'acompte TTC est perçu, son code-barres rouvre la commande — et le document commandé vit sur le nœud magasin. LC-06-03-04 (l'acompte comme mouvement financier référencé) était déjà couvert ; ce chantier livre le reste.
+
+- **La caisse reste maîtresse de son panier** : l'écran `/order` (touche COMMANDE du menu AUTRE) montre les articles saisis et le total, et refuse de créer quoi que ce soit sans session ouverte, sur ticket vide, en mode formation, ou sur un acompte illisible, non strictement positif ou supérieur au total.
+- **La TVA de l'acompte est ventilée au prorata du total de la commande, par taux** (LC-06-03-05), dans la même règle que le ticket (TVA = TTC − TTC/(1+taux)), le dernier seau absorbant l'arrondi pour que les parts somment exactement dans l'acompte.
+- **Le ticket d'acompte est la clé du retour client** (LC-06-03-06) : articles, montant perçu, récapitulatif de la TVA calculée sur l'acompte, et le code de la commande en code-barres.
+- **La poussée et le règlement sont tolérants** : le nœud injoignable n'entrave ni la perception ni la clôture ; la caisse autonome garde la commande sur son ticket d'acompte (résidu [N]).
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| Écran caisse | `GET /order` (touche COMMANDE) | articles du panier, total, saisie d'acompte |
+| Refus de création | pas de session / ticket vide / mode formation / acompte null, ≤ 0 ou > total | retour `/order?error=…`, rien d'enregistré, le panier est intact |
+| Création | acompte TTC valide | mouvement `CUSTOMER_DEPOSIT` portant le code commande ; TVA par taux pro-rata (`depositVatDetail`) ; ticket d'acompte imprimé (articles + montant + TVA + `[[BARCODE <code>]]`) ; brouillon du panier annulé ; notice « COMMANDE <code> CRÉÉE » |
+| Code commande | réservation | `<terminal>-CMD<6 chiffres>`, séquence ORDER propre — distinct de tout numéro de ticket |
+| Ingestion | `POST /api/orders` corps `RecalledDocument` (kind COMMANDE) rôle store + jeton | 200, commande stockée OPEN, `depositVatDetail` tenu, lignes gelées ; idempotent par code (re-poussée = même ligne rafraîchie) |
+| Ingestion | hors rôle / mauvais jeton / corps null, code blanc ou kind inconnu | 403 / 401 / 400, rien n'est écrit |
+| Écran back-office | `GET /admin/orders` avec commande poussée | la commande créée en caisse est listée, sa colonne « TVA acompte » rend la ventilation par taux |
+| Rappel | `GET /api/orders/{code}` commande poussée | 200 JSON `RecalledDocument` + `depositVatDetail` + `totalAmount`, `acompteAlreadyPaid` = acompte du mouvement référencé |
+| Reprise par scan | scan du code-barres du ticket d'acompte sur l'écran de vente | articles chargés dans le panier, règlement « REPRISE D'ACOMPTE » crédité du montant, reste à payer = solde (LC-06-03-07) |
+| Reprise manuelle | saisie du code sur `/recall` | même chargement (parcours existant EXP-90) |
+| Solde | règlement du reste par le moyen choisi | ticket final portant, DISTINCTEMENT, la TVA totale du ticket et « TVA DÉJÀ PERÇUE SUR L'ACOMPTE » ventilée par taux (LC-06-03-08) |
+| Ingestion du ticket final | upsert du ticket soldant avec paiement ACOMPTE | la ligne `DepositPayment` tient `vatDetail` + `orderCode` ; le duplicata du nœud récite la même mention |
+| Clôture | `POST /api/orders/{code}/settled` à la clôture de la vente | commande PAID puis COLLECTED ; 200 idempotent (re-clôture = 200) ; code inconnu = 404 |
+| Anti-rejeu | re-scan du code d'une commande réglée | plus rien de rappelable (404 au rappel) |
+
 ## M. Paramétrage [E] [R]
 
 Toutes les surfaces de M sont `@RolesAllowed("ADMIN")` : anonyme → 302 login (page HTML), non-ADMIN → 403. POST → 303 + notice one-shot (`noticeOk`).
@@ -1618,6 +2680,9 @@ Toutes les surfaces de M sont `@RolesAllowed("ADMIN")` : anonyme → 302 login (
 | Save | entier négatif | 303 « Valeur invalide pour « <label> » — entier positif attendu. » `noticeOk=false` (refus au 1er invalide ; clés précédentes déjà stockées) |
 | Save | entier non numérique | même refus |
 | Save | booléen | normalisé `true`/`false` (`Boolean.parseBoolean`) |
+| Widget | clé à VALEURS FERMÉES (`PosSettingsService.CLOSED_VALUES`) | rendue en liste de choix et non en champ libre ; une valeur stockée hors liste (synonyme, valeur ancienne) est ajoutée à la liste et affichée telle quelle |
+| Save | valeur hors de la liste fermée | 303 « Valeur invalide pour « <label> » — attendu : A, B, C. » `noticeOk=false`, rien stocké |
+| Save | valeur hors liste mais ÉGALE à celle déjà stockée | acceptée (une configuration portant un synonyme reste enregistrable) |
 | Cache | 2 lectures autour d'une écriture | `store()` appelle `invalidate()` → la 2e lecture voit la nouvelle valeur, sans redémarrage (M4) |
 
 **M6 Fiche magasin** `/admin/store` [E]
@@ -1769,6 +2834,42 @@ L'îlot promu en objet de paramétrage (BO-03-10). `@RolesAllowed("ADMIN")`, ups
 | Libellés | `session.welcome-message` (SESSION CAISSE), `sale.waiting-label` (AFFICHAGE) | administrés (EXP-01, EXP-03) |
 | Divers | `payment.trd-card-cap` (RÈGLEMENTS RESTREINTS), `supervisor.service-reasons` (SUPERVISION) | EXP-60, EXP-84 |
 | Échelon | pose d'un `gesture.endorsement-*` au niveau ENSEIGNE, surchargé au PDV | résolution la plus spécifique gagne (E7) — « réglable par échelon » |
+| Points de contrôle | 10 `control.*` : `cancel-line`, `cancel-payment`, `refund`, `drawer-out-of-sale`, `quantity` + `quantity-max`, `ticket-total` + `ticket-total-max`, `parked-at-close`, `card-payment` | rendus GROUPÉS sous POINTS DE CONTRÔLE ; niveau NONE/WARN/BLOCK/ENDORSE par geste, défaut identique à celui que porte l'énumération de la caisse (BO-10-02-01 à -10) |
+| Retour client | 7 `return.{types,reasons,print-reason,in-sale-allowed,without-origin-allowed,foreign-store-accepted,dedicated-register}` | rendus RETOUR CLIENT (LC-05-02) |
+| Langues | 4 `language.{system,available,operator-change,customer-second}` | rendus LANGUE — la langue du magasin et celles qu'il offre (LC-13-06) |
+| Mouvement financier | 3 `movement.financial-{sources,destinations,print}` | rendus MOUVEMENT FINANCIER |
+| Commande de monnaie | `change-order.{print,roll-values}` | rendus COMMANDE DE MONNAIE |
+| Îlot / TPV | 3 `island.{auto-declaration,change-allowed,promotion-channel}` | rendus ILOT / TPV — le pendant administrable par clé de l'écran M13 (BO-03-10) |
+| Balance | `balance.{default-tare,tare-containers}` | rendus BALANCE — tare par défaut et catalogue des contenants (LC-14-01) |
+| Articles à enlever | `collect.{point-label,voucher-copies}` | rendus ARTICLES A ENLEVER (LC-02-08) |
+| Dans leur rubrique existante | `cash.withdrawal-destinations` (MOUVEMENTS DE CAISSE), `cash.variance-amount-visible` (CLÔTURE), `sale.line-warning-threshold` (AFFICHAGE), `fidelity.anonymous-projection` (FIDÉLITÉ), `sogec.bon-prefixes` (CODES GS1) | ajoutés à la suite des clés déjà portées de la même rubrique |
+
+Deuxième passe du chantier A (12/10) : les **38 clés** du catalogue de la caisse qui manquaient encore à celui du nœud y sont portées **verbatim** — clé, type, rubrique, libellé, aide, défaut et repli MicroProfile recopiés sans un caractère de changement, parce que c'est la MÊME exigence administrée au même endroit. Le catalogue passe de 161 à **199** `Def`, aucune clé en double, aucune rubrique scindée qui ne l'était déjà. Le nœud n'ajoute toujours aucun accesseur : il administre et il diffuse.
+
+**Les valeurs énumérées se CHOISISSENT.** Treize de ces clés ne portent pas du texte libre mais un mot d'une liste fermée : les huit niveaux de contrôle (`NONE`, `WARN`, `BLOCK`, `ENDORSE`), `cash.float-mode`, `gesture.endorsement-scope`, `fidelity.advantage-grouping`, `ticket.line-attribute-isolate` et `island.promotion-channel`. La caisse les lit avec un repli tolérant — une valeur illisible retombe sur le défaut du paramètre, pour qu'elle n'enlève ni n'ajoute un contrôle par accident — et c'est précisément ce qui rendait une faute de frappe INVISIBLE côté administration : `BLOK` au lieu de `BLOCK`, et le magasin croit avoir bloqué un geste qui passe toujours. Ces clés sont donc offertes en liste de choix (`CLOSED_VALUES` à côté du catalogue, pas dans le `Def` : les deux catalogues restent copiables au caractère) et le save refuse le hors-liste, en nommant les valeurs attendues. `language.system` n'en fait pas partie — les langues d'un nœud sont les bundles présents sur son classpath, qu'aucune liste écrite ne peut énoncer — ni les clés qui portent une LISTE de valeurs (`return.types`, `movement.financial-sources`…), où ce qui est fermé est l'élément, pas le champ.
+
+LA LISTE VAUT AUX DEUX ENDROITS OÙ L'ON POSE UNE VALEUR. L'écran des échelons (`/admin/echelons`, E1/E5) choisit d'abord la clé dans une liste puis saisit sa valeur : le champ y est donc PILOTÉ par la clé choisie. La page sert la carte `closedValues` et un script bascule, à chaque changement de clé, entre le champ libre et une liste de choix — les deux contrôles portent le même `name="value"` et celui qui ne sert pas est `disabled`, donc non posté, ce qui évite d'avoir à fabriquer un second paramètre de formulaire. Le refus côté serveur ne dépend pas de ce script : `saveSetting` refuse le hors-liste en nommant les valeurs attendues, qu'un poste administre par l'écran ou par un POST direct. Un échelon n'a PAS le droit d'inventer une valeur que le magasin refuserait : un geste est bloqué ou il ne l'est pas, et un `BLOK` posé à l'enseigne descendrait dans tous les magasins de l'enseigne.
+
+**Deux points de contrôle de plus (12/10, BO-10-02-16 et -17).** Le questionnaire demande le même
+contrôle — alerte, blocage, aval — sur le MONTANT d'un article et sur le MONTANT d'un règlement.
+La caisse ne savait plafonner ni l'un ni l'autre : quatre clés entrent aux deux catalogues, deux
+niveaux (`control.item-amount`, `control.payment-amount`) offerts en liste fermée comme les huit
+précédents, et deux plafonds (`control.item-amount-max`, `control.payment-amount-max`) laissés
+libres car ce sont des montants. Vides par défaut : un plafond vide est l'ABSENCE de plafond et non
+un plafond de zéro, qui refuserait chaque article et chaque règlement du magasin — et un plafond
+illisible répond pareil, pour qu'une faute de frappe ne bloque pas une ligne de caisses. La caisse
+compare EN VALEUR ABSOLUE : l'exigence veut le même plafond pour les ventes et pour les retours, et
+un retour est le même nombre avec l'autre signe. L'énumération des points passe donc de huit à dix,
+dont cinq avalisables — le prix forcé l'est, le règlement ne l'est pas, faute de cérémonie à
+l'écran de paiement.
+
+Le CONTRÔLE DE DÉRIVE est un `comm` des deux catalogues : après cette passe, il ne doit plus rester côté nœud que ses clés propres (`export.*`, `financial.*`, `retention.*`, `stream.*`) et, côté caisse, rien.
+
+```
+grep -o 'new Def("[^"]*"' ../impos/src/main/java/com/intermarche/pos/service/PosSettingsService.java | sed 's/new Def("//;s/"//' | sort > /tmp/keys-caisse
+grep -o 'new Def("[^"]*"' src/main/java/com/intermarche/edge/service/PosSettingsService.java | sed 's/new Def("//;s/"//' | sort > /tmp/keys-noeud
+comm -23 /tmp/keys-caisse /tmp/keys-noeud
+```
 
 **M15 Devises** `/admin/currencies` [E]
 
@@ -1939,7 +3040,7 @@ Points de code notables (au-delà de S-C) : la fiche magasin ne lit jamais le co
 
 ## P. GraphQL [E]
 
-Endpoint unique `/graphql`. **Matrice d'accès (par opération)** : queries `@RolesAllowed("MANAGER")`, mutations `@RolesAllowed("ADMIN")` ; anonyme → 401 ; rôle insuffisant → 403 ; autorisé → 200. Gestion d'erreurs centralisée par `GraphQLTrait.execute` : `AlreadyExistsException` et `IllegalArgumentException`/autres → `GraphQLException` dans l'enveloppe `errors` (pas 500) ; `PersistenceException` → `GraphQLException` « Database error while performing <op>. Please check your data. » ; `NoSuchElementException` relancée telle quelle (message spécifique dans `errors`). GraphQL répond toujours 200 sauf refus d'accès.
+Endpoint unique `/graphql`. **Matrice d'accès (par opération)** : queries `@RolesAllowed("MANAGER")`, mutations `@RolesAllowed("ADMIN")` ; anonyme → 401 (la politique HTTP exige une authentification sur `/graphql`) ; rôle insuffisant → **200 portant le refus dans l'enveloppe `errors`**, `data` à null — GraphQL sur HTTP ne promet pas de 403 une fois la requête authentifiée, et le refus est vérifié là où il est émis ; autorisé → 200. Gestion d'erreurs centralisée par `GraphQLTrait.execute` : `AlreadyExistsException` et `IllegalArgumentException`/autres → `GraphQLException` dans l'enveloppe `errors` (pas 500) ; `PersistenceException` → `GraphQLException` « Database error while performing <op>. Please check your data. » ; `NoSuchElementException` relancée telle quelle (message spécifique dans `errors`). GraphQL répond toujours 200 sauf refus d'accès.
 
 ---
 
@@ -2151,6 +3252,27 @@ Points notables relevés dans le code (écarts avec `e2e-scenarios.md`, aucun fi
 - **Q1/Q2 du doc** (« clôture de période, refus si caisse ouverte avec liste des caisses ») : `PeriodCloseService` ne clôture rien et ne renvoie aucune liste ; il dépose un ordre `CLOSE_SESSION_IF_IDLE` par caisse ouverte, idempotent par caisse.
 - Nombres exacts de domaines : `DOMAINS` = 16, `ECHELON_DOMAINS` = 4 (union = 20 dans `getPage`).
 
+**Q7 La fin de journée assistée (15/10)** `/admin/day-end`, `DayEndService`, `RegisterPresenceService` [E] [R] (BO-04-03-05, -06, BO-09-01-04, -05, -06, -08, BO-09-02-01, -02, -03, BO-09-03-03)
+
+Fermer le magasin était une suite de gestes dispersés : regarder les sessions ouvertes sur le tableau de bord, forcer une fermeture caisse par caisse, se demander si une caisse éteinte avait reçu l'ordre, et découvrir le lendemain un panier resté en attente. Dix exigences disaient la même chose : **un écran qui dit où en est la journée, et un bouton qui la termine.**
+
+- **La présence des caisses ne se déduit pas de ce qu'on reçoit, mais de ce qu'on ne reçoit plus.** Aucun protocole nouveau : chaque caisse vient chercher ses ordres toutes les vingt secondes, et c'est cette visite qui est horodatée. Passé le silence toléré — `supervision.register-offline-minutes`, trois minutes, soit huit tours manqués — la caisse est déclarée déconnectée, au tableau de bord comme ici.
+- **L'état de la journée tient en quatre cartes** : fermeture automatique et fin de période, caisses ouvertes, caisses muettes, paniers en attente. Une alerte s'allume dès que l'horizon administré — `period.alert-countdown-minutes`, soixante minutes — est atteint et que quelque chose résiste.
+- **Le lancement DEMANDE, il ne fait pas.** Chaque caisse ouverte reçoit un `CLOSE_SESSION_IF_IDLE` — un ordre qui se dérobe si la caisse est en pleine vente, parce qu'une fermeture au milieu d'un panier est une vente perdue. Une caisse qui porte déjà un tel ordre n'en reçoit pas un second : une main impatiente ne doit pas remplir le registre.
+- **Tout est journalisé**, le lancement comme les caisses qu'il a visées : une fin de journée doit pouvoir s'expliquer le lendemain.
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| `touch` | première visite / visite suivante | présence créée / horodatage remplacé |
+| `offline()` | silence inférieur / supérieur au seuil | absente / listée avec ses minutes |
+| `offlineMinutes()` | paramètre ≤ 0 ou illisible | trois minutes |
+| `state()` | rien d'ouvert, rien en attente | aucune alerte |
+| `state()` | horizon atteint et caisse ouverte | alerte |
+| `launch` | deux caisses ouvertes | deux ordres, deux événements |
+| `launch` | caisse portant déjà l'ordre | aucun second ordre |
+| Écran | `GET /admin/day-end` MANAGER / CASHIER | 200 / 403 |
+| Écran | `POST /admin/day-end/launch` | 303 et compte rendu |
+
 ## R. Robustesse et reprise [E] [R] [C] [V]
 
 Cross-cutting : chaque thème vérifie que le nœud absorbe une coupure ou un redémarrage sans perte ni double application. Vérification toujours côté nœud (la caisse et le moteur n'y sont que des clients).
@@ -2232,6 +3354,69 @@ Points notables relevés dans le code (pas des bugs, mais des comportements exac
 - `lastSuccessfulPull` et `lastErrors` de `RefPullService` sont EN MÉMOIRE : un redémarrage les remet à null/vide (ligne directrice « ne recule jamais / ne ment pas »).
 
 ---
+
+## S. Générosité — bloc 03 du questionnaire caisse [R] [E]
+
+Scénarios issus de la campagne bloc 03 (HD_42). Les tables suivent le code livré ;
+les références LC-03-xx-yy sont les lignes de l'onglet « Ligne de caisses ».
+
+**S1 Touches de remise préprogrammées** `POST /action/price-mod/preset` · modale de geste de prix [R]
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| Modale ligne ouverte | `discount.presets` administre « -10%>PERCENT:10 ; 2€>AMOUNT:2 » | Les touches « -10% » et « 2€ » sont rendues dans la modale (LC-03-02-02/-04) ; les taper applique le geste ordinaire sur la ligne visée |
+| Touche valide | ligne 10,00 €, touche « -10% » | Remise 10 % appliquée (prix 9,00 €), modale fermée, total recalculé |
+| Touche inconnue | POST avec un libellé non administré | Erreur « TOUCHE DE REMISE INCONNUE », rien appliqué, modale fermée |
+| Ligne disparue | POST avec un uid absent du ticket | Erreur « LIGNE INTROUVABLE » |
+| Article déjà remisé sans CUMUL | preset sans `,CUMUL` sur une ligne réduite | Erreur « ARTICLE DÉJÀ REMISÉ » (BO-03-07-11), rien appliqué |
+| Remises désactivées | `discount.enabled=false`, touche valide | Erreur « REMISES DÉSACTIVÉES » (BO-03-07-01) |
+| Liste vide | `discount.presets` vide | Aucune touche rendue, la modale reste celle d'avant |
+
+**S2 Garde-fous des gestes de prix** `TicketService#applyRemise/applyGlobalDiscount` [R]
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| Plafond % implicite ligne (LC-03-02-12) | rabais 6 € sur une ligne à 10 €, `discount.line-max-percent=50` | Refus silencieux, prix inchangé ; à 5 € exactement la remise passe |
+| Plafond % implicite ticket (LC-03-02-14) | rabais global 60 € sur une base de 100 €, `discount.global-max-percent=50` | Erreur « REMISE SUPERIEURE AU PLAFOND » ; à 50 € exactement le geste passe |
+| Article déjà remisé (LC-03-02-10) | remise saisie sur ligne réduite, `discount.cumulative-on-discounted=false` | Erreur « ARTICLE DÉJÀ REMISÉ », geste direct, aval approuvé et touche préréglée non cumulable |
+| Toutes lignes remisées (LC-03-02-15) | remise globale, `discount.global-on-discounted=false`, toutes les lignes réduites | Erreur « TOUTES LES LIGNES SONT DÉJÀ REMISÉES », rien posé ; une ligne propre suffit à faire passer le geste ; ticket vide : le geste s'arme comme avant |
+
+**S3 Le client fidélisé en caisse** `FidelityScanHandler` · `/action/fidelity-lookup` · `TicketPrinterService` [R]
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| Remplacement proposé (LC-03-04-08) | seconde carte DIFFÉRENTE scannée, scan multiple autorisé (défaut) | Modale « REMPLACER LA CARTE ? » nommant la carte attachée et la nouvelle ; OUI attache la nouvelle par le chemin d'attachement ordinaire, NON garde l'ancienne ; rien n'est substitué en silence |
+| Même carte rescannée (LC-03-04-08) | scan de la carte déjà attachée | Attachement direct (rafraîchissement), aucune modale |
+| Scan multiple interdit (BO-10-03-02) | `fidelity.allow-multiple-scan=false`, seconde carte | « CARTE FIDÉLITÉ DÉJÀ SCANNÉE », inchangé |
+| Nom et prénom en deux champs (LC-03-04-17) | mode NOM : champ NOM « DE LA CRUZ », champ PRÉNOM « JACQUES » | Les deux critères distincts partent à la recherche, le nom composé se cherche tel quel, les deux champs sont échoés après POST |
+| Champ manquant (LC-03-04-17) | mode NOM, prénom ou nom vide | « NOM ET PRÉNOM REQUIS POUR LA RECHERCHE », aucun appel au service de fidélité, critères échoés |
+| Code postal (LC-03-04-18) | modèle du porteur imfid (CardHolder) | AUCUNE adresse en base (ni code postal, ni ville, ni rue) et `/api/cards/lookup` ignore le critère ville — la donnée manque côté imfid, la ligne reste non couverte par la caisse |
+| Soldes imprimés (LC-03-05-03) | ticket porteur d'une carte, `fidelity-print-balances` actif | Zone « SOLDES CARTE » : solde disponible (ancien) + NOUVEAU SOLDE = projection de cagnotte pour une vente à gain seul, solde confirmé du grand livre pour une vente réglée sur la carte |
+
+**S4 Réaffectation d'un ticket à un client fidélisé** `ReprintResource` · `TicketReassignmentService` [R] [E]
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| Touche et aval (LC-03-06-01) | touche RÉAFFECTATION du menu réimpression, `gesture.endorsement-ticket-reassign` à vrai | Modale d'aval sur le détail du ticket ; à faux, le geste enchaîné court sans aval |
+| Recherche des non affectés (LC-03-06-02) | mode réaffectation, recherche par numéro / date / montant | Seuls les tickets clôturés SANS carte de fidélité sont listés ; un ticket déjà affecté n'est pas sélectionnable (refus nommé côté serveur aussi) |
+| Saisie de la carte (LC-03-06-03) | masque carte sur le détail d'un ticket non affecté | Numéro tapé au pavé ; carte vide → « NUMÉRO DE CARTE FIDÉLITÉ REQUIS » |
+| Recalcul des avantages (LC-03-06-04) | attachement, moteur joignable | Panier reconstruit DÉTACHÉ, valorisé avec le customerCode, trace TicketLineValuation réécrite sur le ticket fermé ; écart de montant annoncé (« AVANTAGES RECALCULÉS — ÉCART DE x € ») et journalisé, aucun encaissement ni remboursement effectué |
+| Recalcul dégradé (LC-03-06-04) | moteur injoignable | Carte attachée, opération tracée, « RÉAFFECTÉE SANS RECALCUL — MOTEUR DE VALORISATION INDISPONIBLE » |
+| Impression (LC-03-06-05) | geste abouti | Le nouveau ticket (carte + avantages) sort pour le client ; `reassign.pdv-duplicate` à vrai → un duplicata PDV sort de plus |
+| Trace (LC-03-06-06) | geste abouti | Événement technique TICKET_REASSIGNED portant carte, montant, avantages, caisse, opérateur — poussé au nœud par la voie EVENT ; ticket resynchronisé par la voie TICKET |
+
+**S5 Sondage client — déclenchements et types de réponse** `StoreMessageFeedResource` · `SurveyTriggerService` [E] [R]
+
+| Fonction | Cas | Attendu |
+| --- | --- | --- |
+| Début de transaction (LC-03-07-01) | sondage administré `TRANSACTION_START`, premier article scanné | La caisse demande le sondage du moment UNE fois par transaction (au premier article) ; sondage immédiat ne hijaque pas la demande |
+| Fin de transaction (LC-03-07-02) | sondage `TRANSACTION_END`, ticket payé | La caisse demande au moment de la clôture ; le nœud sert le sondage du moment même si la session est ouverte |
+| Scan (LC-03-07-03) | code `SONDAGE-12` scanné (pattern `scan.pattern.survey`, un groupe capturant = l'identifiant) | La caisse demande le sondage 12 au nœud (`GET /api/messages/survey/12`) ; marche pendant et hors transaction ; code non reconnu → chaîne inchangée ; identifiant exclu de l'audience → rien |
+| Réponse numérique (LC-03-07-06) | sondage `NUMERIC` | Pavé de saisie ; un nombre de 1 à 10 chiffres remonte ; toute autre valeur → « NOMBRE INVALIDE » et le sondage reste |
+| Code postal (LC-03-07-07) | sondage `POSTAL_CODE`, masque administré (CCCCC / CCCC / CCCC-CCC) | Contrôle du format par pays ; valeur hors masque → « CODE POSTAL INVALIDE », le sondage reste ; sans masque : bornes 4–10 caractères |
+| Liste des codes (LC-03-07-08) | liste `postalCodes` administrée | Contrôle d'appartenance ; code bien formé hors liste → « CODE POSTAL HORS LISTE » |
+| Informatif (LC-03-07-09) | sondage `INFORMATIVE` | Le bandeau porte un bouton VALIDER seul, rien ne se saisit, la validation remonte avec le marqueur VU — le type est déclaré, pas une convention d'options |
+| Facultatif (LC-03-07-10) | sondage `required=false` | Touche PASSER : le sondage disparaît sans remontée ET la caisse mémorise le passe-droit (le même sondage ne revient pas au tirage suivant) ; un autre message ou l'effacement du canal oublie la mémo ; `required=true` : aucune touche PASSER |
 
 ## Couverture — état de départ
 

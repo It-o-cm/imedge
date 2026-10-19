@@ -87,6 +87,32 @@ public enum Feature {
     /** The USER-to-profile assignment screen. */
     USER("user", Menu.ADMINISTRATION, "Utilisateurs", "/admin/users"),
 
+    /**
+     * The ACCOUNT screen: who exists at all (BO-01-01-01, -02, -06). Distinct
+     * from {@link #USER}, which binds profiles to an account that already
+     * exists, and from {@link #EMPLOYEE}, which settles its payroll side.
+     */
+    ACCOUNT("account", Menu.ADMINISTRATION, "Comptes", "/admin/accounts"),
+
+    /**
+     * The ADMINISTERED LISTS screen: the lists the cashier taps
+     * (BO-04-02-07, BO-04-03-12), which used to be semicolon-separated
+     * settings.
+     */
+    POS_LIST("pos_list", Menu.ADMINISTRATION, "Listes", "/admin/lists"),
+
+    /**
+     * The IMAGE screen: the receipt logos posed by echelon (BO-03-03-15) and
+     * the loyalty-advantage visuals (BO-10-03-09).
+     */
+    STORE_IMAGE("store_image", Menu.ADMINISTRATION, "Images", "/admin/images"),
+
+    /**
+     * The END OF DAY screen: what the end of period is about to find, and
+     * the button that launches it by hand (BO-09-01, BO-09-02).
+     */
+    DAY_END("day_end", Menu.SUPERVISION, "Fin de journée", "/admin/day-end"),
+
     /** The SUPERVISION dashboard. */
     SUPERVISION("supervision", Menu.SUPERVISION, "Supervision de la ligne", "/dashboard"),
 
@@ -139,6 +165,12 @@ public enum Feature {
      */
     SERVICE_PROVIDER("service_provider", Menu.PARAMETRAGE, "Fournisseurs de service",
             "/admin/providers"),
+
+    /**
+     * The STORE MESSAGES screen: what the store says to its registers, to whom,
+     * when, and who has read it (BO-03-08-01, -02, -04 and -08).
+     */
+    STORE_MESSAGE("store_message", Menu.PARAMETRAGE, "Messages aux caisses", "/admin/messages"),
 
     /** The FINANCIAL STATES screen: the X readings and Z documents of the node (X/Z campaign). */
     FINANCIAL_STATE("financial_state", Menu.FINANCIER, "États financiers X/Z", "/admin/financial-states");

@@ -84,13 +84,13 @@ class GroupDIT {
      * exactly the 16 store domains.
      */
     @Test
-    void d1_versions_storeRole_listsSixteenDomains() {
+    void d1_versions_storeRole_listsSeventeenDomains() {
         given().header("X-Sync-Token", syncToken)
                 .when().get("/api/referential/versions")
                 .then().log().ifValidationFails()
                 .statusCode(200)
                 .contentType(ContentType.JSON)
-                .body("size()", equalTo(16))
+                .body("size()", equalTo(17))
                 .body("PRODUCTS", notNullValue())
                 .body("PRICES", notNullValue())
                 .body("ENGINE_FEEDS", notNullValue());

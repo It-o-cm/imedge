@@ -200,19 +200,26 @@ class GroupCIT {
     }
 
     /**
-     * C1 (null tolerance, DISCREPANCY): the catalogue states a null
-     * {@code openingDate} is accepted ("parse tolère null"), so this test
-     * expects 200. It is left RED on purpose: {@code CashSession.openingDate}
-     * is {@code @NotNull}, so the node answers 500 (bean-validation
-     * {@code ne doit pas être nul} on {@code openingDate}). See the lot report.
+     * C1 (opening date required): a session pushed without {@code openingDate}
+     * is REFUSED.
+     *
+     * <p>{@code parse} tolerates a null text, which is what the catalogue used
+     * to read as "accepted" — but the parser is not the last word:
+     * {@code CashSession.openingDate} is {@code @NotNull} on a
+     * {@code nullable = false} column, here as on the register, because a
+     * session exists by the moment it was opened. The node must not invent that
+     * moment: stamping the ingestion time would hand the Z report and every
+     * duration a figure nobody measured. So the push is refused by
+     * bean-validation and the register keeps the only date that means
+     * anything — its own.
      */
     @Test
-    void c1_session_nullOpeningDate_catalogueExpects200() {
+    void c1_session_nullOpeningDate_refused() {
         sync().body("{\"sessionNumber\":\"ZCSESS6\",\"terminalId\":\"C01\",\"status\":\"OPEN\","
                 + "\"openingCashierLogin\":\"jdupont\",\"openingFloat\":50.00}")
                 .when().post("/api/sync/session")
                 .then().log().ifValidationFails()
-                .statusCode(200).body(equalTo("OK"));
+                .statusCode(500);
     }
 
     /**
@@ -652,19 +659,25 @@ class GroupCIT {
     }
 
     /**
-     * C7 (ticket not required, DISCREPANCY): the catalogue states a null
-     * {@code ticketNumber} is accepted ("ticket=null, ticketNumber conservé"),
-     * so this test expects 200. It is left RED on purpose: {@code Invoice.ticketNumber}
-     * is {@code @NotBlank}, so a null number answers 500 (bean-validation
-     * {@code ne doit pas être vide} on {@code ticketNumber}). See the lot report.
+     * C7 (ticket number required): a document pushed without
+     * {@code ticketNumber} is REFUSED.
+     *
+     * <p>Not to be confused with the next case. What the ingestion tolerates is
+     * a number naming no ticket KNOWN TO THE NODE — the link stays null, the
+     * number is kept — and that is the "ticket non exigé" of the catalogue.
+     * NO number at all is another matter: {@code Invoice.ticketNumber} is
+     * {@code @NotBlank} on a {@code nullable = false} column, here as on the
+     * register, because an invoice is the invoice OF a sale and names it in
+     * terms a report and an accountant can read. A number cannot be invented,
+     * so the push is refused rather than persisted half-identified.
      */
     @Test
-    void c7_document_nullTicketNumber_catalogueExpects200() {
+    void c7_document_nullTicketNumber_refused() {
         sync().body("{\"documentNumber\":\"ZCDOC9\",\"terminalId\":\"C01\","
                 + "\"issueDate\":\"2026-09-28T10:00:00\",\"customerName\":\"Test Co\"}")
                 .when().post("/api/sync/document")
                 .then().log().ifValidationFails()
-                .statusCode(200).body(equalTo("OK"));
+                .statusCode(500);
     }
 
     /**

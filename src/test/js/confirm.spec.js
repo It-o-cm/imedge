@@ -12,7 +12,7 @@ import { loadScript } from './harness.js';
 /**
  * Project-relative path of the source under test.
  */
-const SOURCE = 'src/main/resources/META-INF/resources/admin/confirm.js';
+const SOURCE = 'src/main/resources/META-INF/resources/admin-assets/confirm.js';
 
 /**
  * The module object exposing handleSubmit() once loaded.

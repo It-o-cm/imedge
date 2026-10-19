@@ -71,7 +71,7 @@
     {#else}
     <table class="data-table">
         <thead>
-        <tr><th>Caisse</th><th>Session</th><th>Compté €</th><th>Théorique €</th><th>Écart €</th><th>Prélevé €</th></tr>
+        <tr><th>Caisse</th><th>Session</th><th>Compté €</th><th>Théorique €</th><th>Écart €</th><th>Prélevé €</th><th>Arbitrage</th><th>Déclaration papier</th></tr>
         </thead>
         <tbody>
         {#for session in sessions}
@@ -80,8 +80,10 @@
             <td>{session.sessionNumber}</td>
             <td>{session.countedAmount ?: '—'}</td>
             <td>{session.theoreticalAmount ?: '—'}</td>
-            <td>{session.variance ?: '—'}</td>
+            <td>{#if session.floatingNoCount}non compté (flottant){#else}{session.variance ?: '—'}{/if}</td>
             <td>{session.withdrawnAmount ?: '—'}</td>
+            <td>{session.varianceEndorsedBy ?: ''}</td>
+            <td>{declarations[session.sessionNumber] ?: ''}</td>
         </tr>
         {/for}
         </tbody>

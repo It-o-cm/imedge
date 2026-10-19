@@ -118,6 +118,13 @@ public class SyncIngestService {
         session.variance = dto.variance;
         session.withdrawnAmount = dto.withdrawnAmount;
         session.countDetail = dto.countDetail;
+        // EXP-82/83/95: the nominative arbitration, the paper-tender
+        // declaration and the floating no-count flag ride the session push —
+        // the store node's Z shows who arbitrated the écart, compares the
+        // declared quantities and knows which evenings were not counted at all.
+        session.varianceEndorsedBy = dto.varianceEndorsedBy;
+        session.paperDeclaration = dto.paperDeclaration;
+        session.floatingNoCount = dto.floatingNoCount;
         session.persist();
         LOGGER.infof("Session %s %s (%s)", dto.sessionNumber, created ? "créée" : "mise à jour", dto.status);
         LOGGER.info("Exiting method ingestSession");
@@ -146,6 +153,12 @@ public class SyncIngestService {
         ticket.terminalId = dto.terminalId;
         ticket.status = Ticket.TicketStatus.valueOf(dto.status);
         ticket.creationDate = parse(dto.creationDate);
+        // BO-06-06-01: the parking and its recall, stored verbatim. A resumed
+        // cart is an ordinary sale everywhere else; these three columns are
+        // the only trace that it ever waited.
+        ticket.parkedAt = parse(dto.parkedAt);
+        ticket.resumedAt = parse(dto.resumedAt);
+        ticket.resumedTerminalId = dto.resumedTerminalId;
         ticket.closingDate = parse(dto.closingDate);
         ticket.store = requireStore(dto.storeCode);
         ticket.cashier = requireEmployee(dto.cashierLogin);
@@ -178,6 +191,18 @@ public class SyncIngestService {
                     earnDto.ruleCode, earnDto.label, earnDto.amount,
                     earnDto.advantageType, earnDto.advantageTypeLabel, earnDto.advantageTypeOrder,
                     earnDto.advantageCategory, earnDto.advantageCategoryLabel));
+        }
+        // GB-01-07-05/06: the offer messages as the selling register froze them.
+        // Rewritten wholesale on every push, like the loyalty zone: the register
+        // that made the sale is the only authority on what its paper said, and
+        // a duplicata restates the messages, never recomputes them.
+        if (ticket.messages == null) {
+            ticket.messages = new java.util.ArrayList<>();
+        }
+        ticket.messages.clear();
+        for (SyncPayloads.MessageDto messageDto : dto.messages) {
+            ticket.messages.add(new com.intermarche.edge.domain.sale.TicketMessage(
+                    messageDto.code, messageDto.text, messageDto.printMode));
         }
         ticket.digitalKey = dto.digitalKey;
         ticket.customerEmail = dto.customerEmail;
@@ -234,6 +259,8 @@ public class SyncIngestService {
             line.cancelled = lineDto.cancelled;
             line.cancellationDate = parse(lineDto.cancellationDate);
             line.cancelledBy = lineDto.cancelledBy;
+            line.cancellationReasonCode = lineDto.cancellationReasonCode;
+            line.cancellationReasonLabel = lineDto.cancellationReasonLabel;
             // Money-instrument and last-line-cancellation flags are stored verbatim
             // from the payload: the financial states read them to keep gift cards
             // out of the turnover (R12) and to split last-line from endorsed
@@ -258,6 +285,9 @@ public class SyncIngestService {
             if (payment instanceof com.intermarche.edge.domain.payment.CardPayment card) {
                 card.authorizationNumber = paymentDto.authorizationNumber;
                 card.degradedMode = paymentDto.degradedMode;
+                // EXP-54: the real CB entry mode rides the wire so the store
+                // node can surface it in the BO card states.
+                card.cardEntryMode = paymentDto.cardEntryMode;
             }
             if (payment instanceof com.intermarche.edge.domain.payment.ChequePayment cheque) {
                 cheque.magneticLine = paymentDto.magneticLine;
@@ -276,6 +306,13 @@ public class SyncIngestService {
                 credit.accountNumber = paymentDto.creditAccountNumber;
                 credit.accountName = paymentDto.creditAccountName;
                 credit.overLimit = paymentDto.creditOverLimit;
+            }
+            if (payment instanceof com.intermarche.edge.domain.payment.DepositPayment acompte) {
+                // LC-06-03-08: the deposit recovery arrives with its per-rate
+                // VAT detail and its order code, so the node holds the witness
+                // the back office accounts the recovery by rate against.
+                acompte.vatDetail = paymentDto.depositVatDetail;
+                acompte.orderCode = paymentDto.depositOrderCode;
             }
             payment.paymentIndex = paymentDto.paymentIndex;
             ticket.addPayment(payment);
@@ -324,6 +361,15 @@ public class SyncIngestService {
         refund.totalAmount = dto.totalAmount;
         refund.totalExcludingTax = dto.totalExcludingTax;
         refund.totalVat = dto.totalVat;
+        // BO-06-06-05: who refunded, who endorsed it, under which return type
+        // and for which reason. Stored verbatim from the payload: the node
+        // states what the register recorded and re-derives nothing.
+        refund.returnReason = dto.returnReason;
+        refund.returnReasonCode = dto.returnReasonCode;
+        refund.returnTypeCode = dto.returnTypeCode;
+        refund.returnTypeLabel = dto.returnTypeLabel;
+        refund.cashierBadgeId = dto.cashierBadgeId;
+        refund.supervisorBadgeId = dto.supervisorBadgeId;
 
         refund.lines.clear();
         for (SyncPayloads.RefundLineDto lineDto : dto.lines) {
@@ -530,7 +576,13 @@ public class SyncIngestService {
         event.eventType = TechnicalEvent.EventType.valueOf(dto.type);
         event.detail = dto.detail;
         event.operatorBadgeId = dto.operatorBadgeId;
-        event.eventDate = parse(dto.eventDate);
+        // A register that pushes an event without a date is pushing an event
+        // that happened NOW: the column is not nullable and the catalogue
+        // accepts the payload, so the node stamps it on arrival rather than
+        // refusing the push — the same reading the balance ticket's emittedAt
+        // already applies to its own date.
+        event.eventDate = dto.eventDate != null
+                ? parse(dto.eventDate) : java.time.LocalDateTime.now();
         event.persist();
         LOGGER.info("Exiting method ingestEvent");
     }

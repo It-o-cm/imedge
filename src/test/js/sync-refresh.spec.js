@@ -18,7 +18,7 @@ import { loadScript } from './harness.js';
 /**
  * Project-relative path of the source under test.
  */
-const SOURCE = 'src/main/resources/META-INF/resources/admin/sync-refresh.js';
+const SOURCE = 'src/main/resources/META-INF/resources/admin-assets/sync-refresh.js';
 
 /**
  * The refresh URL of the engine-feeds table body.
