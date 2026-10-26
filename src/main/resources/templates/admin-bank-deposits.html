@@ -5,91 +5,91 @@
 !}
 {#include admin-layout}
 
-{#title}Remises en banque{/title}
+{#title}{inject:i18n.get('t.remises-en-banque')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Remises en banque</h1>
-        <p class="page-sub">Sac, libellé et pochettes : le coffre est débité du total, les pièces comptables s'éditent.</p>
+        <h1>{inject:i18n.get('t.remises-en-banque')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.sac-libelle-et-pochettes-le-coffre-est')}</p>
     </div>
     <div class="page-actions">
-        <a class="btn btn-ghost" href="/admin/safe/pouches">Remises au coffre</a>
-        <a class="btn btn-ghost" href="/admin/safe/journal">Journal</a>
+        <a class="btn btn-ghost" href="/admin/safe/pouches">{inject:i18n.get('t.remises-au-coffre')}</a>
+        <a class="btn btn-ghost" href="/admin/safe/journal">{inject:i18n.get('t.journal')}</a>
     </div>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 <div class="card">
-    <h2 class="card-title">Nouvelle remise</h2>
-    <p class="card-sub">Pochettes disponibles au coffre : <strong>{availableTotal} €</strong></p>
+    <h2 class="card-title">{inject:i18n.get('t.nouvelle-remise')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.pochettes-disponibles-au-coffre')} <strong>{inject:i18n.money(availableTotal)} €</strong></p>
     {#if available.isEmpty()}
     <div class="empty-state">
-        <p>Aucune pochette au coffre.</p>
-        <p class="empty-hint">Déclarez d'abord une remise au coffre depuis l'écran <a class="link-strong" href="/admin/safe/pouches">Remises au coffre</a>.</p>
+        <p>{inject:i18n.get('t.aucune-pochette-au-coffre')}</p>
+        <p class="empty-hint">{inject:i18n.get('t.declarez-d-abord-une-remise-au-coffre')} <a class="link-strong" href="/admin/safe/pouches">{inject:i18n.get('t.remises-au-coffre')}</a>.</p>
     </div>
     {#else}
     <form method="post" action="/admin/safe/bank-deposits">
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="b-bag">N° de sac</label>
+                <label class="field-label" for="b-bag">{inject:i18n.get('t.n-de-sac')}</label>
                 <input class="input-control" id="b-bag" type="text" name="bagNumber" maxlength="40" required>
             </div>
             <div class="field">
-                <label class="field-label" for="b-label">Libellé</label>
+                <label class="field-label" for="b-label">{inject:i18n.get('t.libelle')}</label>
                 <input class="input-control" id="b-label" type="text" name="label" maxlength="120">
             </div>
             <div class="field">
-                <label class="field-label" for="b-day">Date</label>
+                <label class="field-label" for="b-day">{inject:i18n.get('t.date')}</label>
                 <input class="input-control" id="b-day" type="date" name="depositDay" value="{today}">
             </div>
         </div>
         <table class="data-table">
             <thead>
-            <tr><th>Prendre</th><th>Pochette</th><th>Journée</th><th>Montant €</th></tr>
+            <tr><th>{inject:i18n.get('t.prendre')}</th><th>{inject:i18n.get('t.pochette')}</th><th>{inject:i18n.get('t.journee')}</th><th>{inject:i18n.get('t.montant')}</th></tr>
             </thead>
             <tbody>
             {#for pouch in available}
             <tr>
                 <td><input type="checkbox" name="pouchId" value="{pouch.id}"></td>
                 <td>{pouch.pouchNumber}</td>
-                <td>{pouch.accountingDay}</td>
-                <td>{pouch.amountFormatted}</td>
+                <td>{pouch.accountingDay.format('dd/MM/yyyy')}</td>
+                <td>{inject:i18n.money(pouch.amount)}</td>
             </tr>
             {/for}
             </tbody>
         </table>
         <div class="page-actions" style="margin-top: 6px;">
-            <button class="btn btn-primary" type="submit">Enregistrer la remise</button>
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer-la-remise')}</button>
         </div>
     </form>
     {/if}
 </div>
 
 <div class="card">
-    <h2 class="card-title">Remises enregistrées</h2>
+    <h2 class="card-title">{inject:i18n.get('t.remises-enregistrees')}</h2>
     {#if deposits.isEmpty()}
     <div class="empty-state">
-        <p>Aucune remise en banque.</p>
+        <p>{inject:i18n.get('t.aucune-remise-en-banque')}</p>
     </div>
     {#else}
     <table class="data-table">
         <thead>
-        <tr><th>Sac</th><th>Date</th><th>Libellé</th><th>Montant €</th><th>Pièces</th></tr>
+        <tr><th>{inject:i18n.get('t.sac')}</th><th>{inject:i18n.get('t.date')}</th><th>{inject:i18n.get('t.libelle')}</th><th>{inject:i18n.get('t.montant')}</th><th>{inject:i18n.get('t.pieces')}</th></tr>
         </thead>
         <tbody>
         {#for deposit in deposits}
         <tr>
             <td>{deposit.bagNumber}</td>
-            <td>{deposit.depositDay}</td>
+            <td>{deposit.depositDay.format('dd/MM/yyyy')}</td>
             <td>{deposit.label ?: '—'}</td>
-            <td>{deposit.amountFormatted}</td>
+            <td>{inject:i18n.money(deposit.amount)}</td>
             <td>
-                <a class="btn btn-small btn-ghost" href="/admin/safe/bank-deposits/{deposit.id}/bordereau">Bordereau</a>
-                <a class="btn btn-small btn-ghost" href="/admin/safe/bank-deposits/{deposit.id}/versement">Versement</a>
+                <a class="btn btn-small btn-ghost" href="/admin/safe/bank-deposits/{deposit.id}/bordereau">{inject:i18n.get('t.bordereau')}</a>
+                <a class="btn btn-small btn-ghost" href="/admin/safe/bank-deposits/{deposit.id}/versement">{inject:i18n.get('t.versement')}</a>
             </td>
         </tr>
         {/for}

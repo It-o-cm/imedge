@@ -114,7 +114,7 @@ class FidelityVatReportTest {
     }
 
     /**
-     * The report names itself, its requirement and its family.
+     * The report names itself, its chart, its options and its filters.
      */
     @Test
     void theReportNamesItself() {
@@ -123,13 +123,19 @@ class FidelityVatReportTest {
         assertEquals("TVA du règlement fidélité", report.label());
         assertEquals("BO-06-07-02", report.requirement());
         assertEquals(ReportFamily.TAX, report.family());
-        assertEquals(8, report.columns().size());
+        assertEquals(11, report.columns().size());
+        assertEquals(7, report.chartColumn());
+        assertEquals(2, report.chartLabelColumn());
+        assertEquals("Niveau de détail", report.optionLabel());
+        assertEquals(List.of("SUMMARY:Résumé", "DETAIL:Par transaction"), report.optionChoices());
+        assertEquals("Tranche de transactions (n° de ticket)", report.boundLabel());
+        assertEquals(java.util.EnumSet.of(ReportFilter.TERMINALS, ReportFilter.ISLAND), report.filters());
     }
 
     /**
      * BO-06-07-02: the loyalty settlement is apportioned pro rata of what
      * each VAT code weighs in the ticket, and the cancelled line weighs
-     * nothing. A total row closes the table.
+     * nothing; a till ticket's settlement is the store's decagnottage.
      */
     @Test
     void theSettlementIsApportionedAcrossTheCodes() {
@@ -138,27 +144,53 @@ class FidelityVatReportTest {
                         line("0.0550", "40.00", false),
                         line("0.2000", "99.00", true))));
         try (MockedStatic<VatRate> rates = mockStatic(VatRate.class)) {
-            // The breakdown keys its buckets on the STRIPPED rate — 0.20 and
-            // 0.2000 are one and the same code — so the regime is looked up
-            // under that normalized figure, and the stub follows suit.
             BigDecimal normal = new BigDecimal("0.2000").stripTrailingZeros();
             BigDecimal reduced = new BigDecimal("0.0550").stripTrailingZeros();
             rates.when(() -> VatRate.findByRate(normal)).thenReturn(regime(1, "Taux normal"));
             rates.when(() -> VatRate.findByRate(reduced)).thenReturn(regime(2, "Taux réduit"));
             List<List<Object>> rows = report.rows(new ReportCriteria());
-            assertEquals(3, rows.size());
-            // The ventilation buckets are sorted by ASCENDING rate, so the
-            // reduced rate opens the table.
-            assertEquals("2", rows.get(0).get(0));
-            assertEquals("Taux réduit", rows.get(0).get(1));
-            assertEquals(new BigDecimal("40.00"), rows.get(0).get(2));
-            assertEquals("1", rows.get(1).get(0));
-            assertEquals("Taux normal", rows.get(1).get(1));
-            assertEquals(new BigDecimal("60.00"), rows.get(1).get(2));
-            assertEquals(new BigDecimal("4.00"), rows.get(0).get(6));
-            assertEquals(new BigDecimal("6.00"), rows.get(1).get(6));
-            assertEquals("Total", rows.get(2).get(1));
-            assertEquals(new BigDecimal("10.00"), rows.get(2).get(6));
+            assertEquals(2, rows.size());
+            assertEquals("", rows.get(0).get(0));
+            assertEquals("2", rows.get(0).get(1));
+            assertEquals("Taux réduit", rows.get(0).get(2));
+            assertEquals(new BigDecimal("40.00"), rows.get(0).get(3));
+            assertEquals("1", rows.get(1).get(1));
+            assertEquals(new BigDecimal("60.00"), rows.get(1).get(3));
+            assertEquals(new BigDecimal("4.00"), rows.get(0).get(7));
+            assertEquals(new BigDecimal("6.00"), rows.get(1).get(7));
+            assertEquals(new BigDecimal("6.00"), rows.get(1).get(9));
+            assertEquals(BigDecimal.ZERO, rows.get(1).get(10));
+        }
+    }
+
+    /**
+     * BO-06-07-02: per transaction, each ticket keeps rows of its own, the
+     * range keeps the tickets inside it, and a site order's settlement is the
+     * site's decagnottage.
+     */
+    @Test
+    void theDetailIsPerTransactionAndComparesTheSite() {
+        Ticket store = ticket("2.00", line("0.20", "20.00", false));
+        store.ticketNumber = "T001";
+        Ticket site = ticket("3.00", line("0.20", "30.00", false));
+        site.ticketNumber = "T002";
+        site.salesChannel = com.intermarche.edge.domain.sale.SalesChannel.ECOMMERCE;
+        Ticket outside = ticket("1.00", line("0.20", "10.00", false));
+        outside.ticketNumber = "T900";
+        FidelityVatReport report = reportOver(List.of(store, site, outside));
+        ReportCriteria criteria = new ReportCriteria();
+        criteria.option = "DETAIL";
+        criteria.boundFrom = "T001";
+        criteria.boundTo = "T100";
+        try (MockedStatic<VatRate> rates = mockStatic(VatRate.class)) {
+            List<List<Object>> rows = report.rows(criteria);
+            assertEquals(2, rows.size());
+            assertEquals("T001", rows.get(0).get(0));
+            assertEquals(new BigDecimal("2.00"), rows.get(0).get(9));
+            assertEquals(BigDecimal.ZERO, rows.get(0).get(10));
+            assertEquals("T002", rows.get(1).get(0));
+            assertEquals(BigDecimal.ZERO, rows.get(1).get(9));
+            assertEquals(new BigDecimal("3.00"), rows.get(1).get(10));
         }
     }
 
@@ -174,18 +206,15 @@ class FidelityVatReportTest {
             rates.when(() -> VatRate.findByRate(new BigDecimal("0.2000")))
                     .thenReturn(regime(1, "Taux normal"));
             List<List<Object>> rows = report.rows(new ReportCriteria());
-            assertEquals(2, rows.size());
-            // A money cell the report derives by division renders at the
-            // two-decimal scale, so the nil fidelity share is 0.00; the
-            // settled amount itself, never added to, stays a bare zero.
-            assertEquals(BigDecimal.ZERO, rows.get(0).get(6));
-            assertEquals(new BigDecimal("0.00"), rows.get(0).get(5));
+            assertEquals(1, rows.size());
+            assertEquals(BigDecimal.ZERO, rows.get(0).get(7));
+            assertEquals(new BigDecimal("0.00"), rows.get(0).get(6));
         }
     }
 
     /**
      * A rate no regime carries is named by its own percentage rather than
-     * left blank, and a report with no ticket has no total row.
+     * left blank, and a report with no ticket has no row.
      */
     @Test
     void anUnknownRateIsNamedByItsPercentage() {
@@ -194,9 +223,9 @@ class FidelityVatReportTest {
         try (MockedStatic<VatRate> rates = mockStatic(VatRate.class)) {
             rates.when(() -> VatRate.findByRate(any())).thenReturn(null);
             List<List<Object>> rows = report.rows(new ReportCriteria());
-            assertEquals(2, rows.size());
-            assertEquals("", rows.get(0).get(0));
-            assertEquals("13.00 %", rows.get(0).get(1));
+            assertEquals(1, rows.size());
+            assertEquals("", rows.get(0).get(1));
+            assertEquals("13,00 %", rows.get(0).get(2));
         }
         assertTrue(reportOver(List.of()).rows(new ReportCriteria()).isEmpty());
     }
@@ -219,5 +248,55 @@ class FidelityVatReportTest {
         assertTrue(report.rows(filtered).isEmpty());
         org.mockito.Mockito.verify(entityManager)
                 .createQuery(contains("t.terminalId in :terminals"), eq(Ticket.class));
+    }
+
+    /**
+     * Null purse amounts are ignored and zero sales cannot produce a spurious
+     * loyalty tax allocation.
+     *
+     * @throws Exception never
+     */
+    @Test
+    void coverageNullPurseAndZeroSales() throws Exception {
+        Ticket noPurseAmount = ticket(null);
+        noPurseAmount.payments.add(new FidelityPayment(null));
+        var report = reportOver(List.of(ticket("1.00", line("0.20", "0.00", false))));
+        var settlement = FidelityVatReport.class.getDeclaredMethod("fidelitySettlement", Ticket.class);
+        settlement.setAccessible(true);
+        assertEquals(BigDecimal.ZERO, settlement.invoke(report, noPurseAmount));
+        try (var rates = mockStatic(VatRate.class)) {
+            var rows = report.rows(new ReportCriteria());
+            assertEquals(1, rows.size());
+            assertEquals(0, ((BigDecimal) rows.getFirst().get(7)).signum());
+        }
+    }
+
+    /**
+     * Absent rates and nullable regime codes and labels render blank
+     * identities or the numeric rate; a null ticket reads as the summary.
+     *
+     * @throws Exception never
+     */
+    @Test
+    void coverageNullableVatRegimeMetadata() throws Exception {
+        var report = reportOver(List.of());
+        var describe = FidelityVatReport.class.getDeclaredMethod("describe", BigDecimal.class, String.class);
+        describe.setAccessible(true);
+        var render = FidelityVatReport.class.getDeclaredMethod("render", describe.getReturnType());
+        render.setAccessible(true);
+        var absent = (List<?>) render.invoke(report, describe.invoke(report, null, null));
+        assertEquals("", absent.get(0));
+        assertEquals("", absent.get(1));
+        assertEquals("", absent.get(2));
+        VatRate regime = new VatRate();
+        regime.number = null;
+        regime.label = null;
+        try (var rates = mockStatic(VatRate.class)) {
+            rates.when(() -> VatRate.findByRate(new BigDecimal("0.2"))).thenReturn(regime);
+            var row = (List<?>) render.invoke(report, describe.invoke(report, new BigDecimal("0.2"), "T1"));
+            assertEquals("T1", row.get(0));
+            assertEquals("", row.get(1));
+            assertEquals("20,00 %", row.get(2));
+        }
     }
 }

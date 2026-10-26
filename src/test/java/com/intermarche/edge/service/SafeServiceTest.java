@@ -777,4 +777,98 @@ class SafeServiceTest {
             assertEquals(3L, service.countPending(period));
         }
     }
+
+    /**
+     * Builds a service whose administered controls are on or off.
+     *
+     * @param on whether the forcing and ceiling controls are active
+     * @return the service
+     */
+    private SafeService controlled(boolean on) {
+        SafeService service = new SafeService();
+        service.posSettingsService = mock(com.intermarche.edge.service.PosSettingsService.class);
+        when(service.posSettingsService.forcingLevelControl()).thenReturn(on);
+        when(service.posSettingsService.advanceLimitControl()).thenReturn(on);
+        return service;
+    }
+
+    /**
+     * Builds an employee of a forcing level.
+     *
+     * @param level the forcing level
+     * @return the employee
+     */
+    private Employee level(int level) {
+        Employee employee = new Employee();
+        employee.id = 40L + level;
+        employee.forcingLevel = level;
+        return employee;
+    }
+
+    /**
+     * A movement entered by a level 2 is validated by a level 3 and refused to
+     * a level 2 or to nobody (BO-05-02-15).
+     */
+    @Test
+    void amovementIsValidatedOnlyByAHigherForcingLevel() {
+        SafeService service = controlled(true);
+        SafeMovement movement = movement(SafeMovementType.EXPENSE, "10.00");
+        movement.enteredBy = level(2);
+        assertNull(service.forcingRefusal(movement, level(3)));
+        assertEquals("Ce mouvement a été saisi par un niveau de forçage 2 : il se valide par un niveau supérieur.",
+                service.forcingRefusal(movement, level(2)));
+        assertNotNull(service.forcingRefusal(movement, null));
+    }
+
+    /**
+     * No level to outrank — no movement, no author, a level zero, or the
+     * control switched off — refuses nothing: every leg of the guard.
+     */
+    @Test
+    void withoutALevelToOutrankNothingIsRefused() {
+        SafeService service = controlled(true);
+        assertNull(service.forcingRefusal(null, null));
+        SafeMovement anonymous = movement(SafeMovementType.EXPENSE, "10.00");
+        assertNull(service.forcingRefusal(anonymous, null));
+        anonymous.enteredBy = level(0);
+        assertNull(service.forcingRefusal(anonymous, null));
+        anonymous.enteredBy = level(2);
+        assertNull(controlled(false).forcingRefusal(anonymous, null));
+    }
+
+    /**
+     * An expense that would carry what an employee received beyond their
+     * ceiling is refused; one within it passes (BO-05-02-15).
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void anExpenseBeyondTheAdvanceCeilingIsRefused() {
+        SafeService service = controlled(true);
+        Employee employee = level(1);
+        employee.advanceLimit = new BigDecimal("100.00");
+        PanacheQuery<SafeMovement> query = mock(PanacheQuery.class);
+        when(query.list()).thenReturn(List.of(movement(SafeMovementType.EXPENSE, "70.00")));
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> SafeMovement.find("employee.id = ?1", employee.id)).thenReturn(query);
+            assertNull(service.advanceRefusal(SafeMovementType.EXPENSE, new BigDecimal("30.00"), employee));
+            assertEquals("Plafond d'acompte dépassé : 100,00 € autorisés, 70,00 € déjà versés.",
+                    service.advanceRefusal(SafeMovementType.EXPENSE, new BigDecimal("-30.01"), employee));
+        }
+    }
+
+    /**
+     * No ceiling applies to another kind, to no amount, to nobody, to a file
+     * without ceiling, or when the control is off: every leg of the guard.
+     */
+    @Test
+    void withoutACeilingNothingIsRefused() {
+        SafeService service = controlled(true);
+        Employee capped = level(1);
+        capped.advanceLimit = BigDecimal.ONE;
+        assertNull(service.advanceRefusal(SafeMovementType.RECEIPT, BigDecimal.TEN, capped));
+        assertNull(service.advanceRefusal(SafeMovementType.EXPENSE, null, capped));
+        assertNull(service.advanceRefusal(SafeMovementType.EXPENSE, BigDecimal.TEN, null));
+        assertNull(service.advanceRefusal(SafeMovementType.EXPENSE, BigDecimal.TEN, level(1)));
+        assertNull(controlled(false).advanceRefusal(SafeMovementType.EXPENSE, BigDecimal.TEN, capped));
+    }
 }

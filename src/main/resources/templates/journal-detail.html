@@ -6,15 +6,15 @@
 !}
 {#include admin-layout}
 
-{#title}Détail du ticket{/title}
+{#title}{inject:i18n.get('t.detail-du-ticket')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Détail du ticket</h1>
-        <p class="page-sub">Document consolidé, lecture seule.</p>
+        <h1>{inject:i18n.get('t.detail-du-ticket')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.document-consolide-lecture-seule')}</p>
     </div>
-    <a class="btn btn-ghost" href="/admin/journal">Retour au journal</a>
+    <a class="btn btn-ghost" href="/admin/journal">{inject:i18n.get('t.retour-au-journal')}</a>
 </div>
 
 {#if ticket}
@@ -22,70 +22,125 @@
     <h2 class="card-title">{ticket.number}</h2>
     <div class="field-grid">
         <div class="field">
-            <span class="field-label">N° TPV</span>
+            <span class="field-label">{inject:i18n.get('t.n-tpv')}</span>
             <span>{ticket.terminal}</span>
         </div>
         <div class="field">
-            <span class="field-label">Statut</span>
-            <span>{ticket.status}</span>
+            <span class="field-label">{inject:i18n.get('t.statut')}</span>
+            <span>{inject:i18n.code('t.s21-st-', ticket.status)}</span>
         </div>
         <div class="field">
-            <span class="field-label">Date</span>
+            <span class="field-label">{inject:i18n.get('t.date')}</span>
             <span>{ticket.date} {ticket.time}</span>
         </div>
         <div class="field">
-            <span class="field-label">Caissière</span>
+            <span class="field-label">{inject:i18n.get('t.caissiere-2')}</span>
             <span>{ticket.cashier} ({ticket.cashierBadge})</span>
         </div>
         <div class="field">
-            <span class="field-label">Magasin</span>
+            <span class="field-label">{inject:i18n.get('t.magasin')}</span>
             <span>{ticket.store}</span>
         </div>
         <div class="field">
-            <span class="field-label">Carte fidélité</span>
+            <span class="field-label">{inject:i18n.get('t.carte-fidelite')}</span>
             <span>{ticket.fidelityCard}</span>
         </div>
         <div class="field">
-            <span class="field-label">Total TTC</span>
+            <span class="field-label">{inject:i18n.get('t.total-ttc')}</span>
             <span>{ticket.totalIncludingTax}</span>
         </div>
         <div class="field">
-            <span class="field-label">Total HT</span>
+            <span class="field-label">{inject:i18n.get('t.total-ht')}</span>
             <span>{ticket.totalExcludingTax}</span>
         </div>
         <div class="field">
-            <span class="field-label">Total TVA</span>
+            <span class="field-label">{inject:i18n.get('t.total-tva')}</span>
             <span>{ticket.totalVat}</span>
+        </div>
+        <div class="field">
+            <span class="field-label">{inject:i18n.get('t.ecole')}</span>
+            <span id="detail-training">{ticket.trainingMode}</span>
+        </div>
+        <div class="field">
+            <span class="field-label">{inject:i18n.get('t.autonome')}</span>
+            <span id="detail-autonomous">{ticket.autonomous}{#if ticket.selfScanControlled} — {inject:i18n.get('t.s21-controle-hotesse')}{/if}{#if ticket.selfScanVerified} — {inject:i18n.get('t.s21-verification-systeme')}{/if}</span>
+        </div>
+        <div class="field">
+            <span class="field-label">{inject:i18n.get('t.s21-deconnecte')}</span>
+            <span id="detail-offline">{#if ticket.offline}O{#else}N{/if}</span>
         </div>
     </div>
 </div>
 
 <div class="card">
-    <h2 class="card-title">Articles</h2>
-    <p class="col-muted">Les articles annulés en cours de vente sont conservés et
-    signalés : ils n'entrent dans aucun total.</p>
+    <h2 class="card-title">{inject:i18n.get('t.s21-ventilation-tva')}</h2>
+    <table class="data-table" id="detail-vat">
+        <thead><tr><th>{inject:i18n.get('t.taux-de-tva')}</th><th>{inject:i18n.get('t.total-ht')}</th><th>{inject:i18n.get('t.total-tva')}</th><th>{inject:i18n.get('t.total-ttc')}</th></tr></thead>
+        <tbody>
+            {#for vat in ticket.vatRows}
+            <tr><td>{vat.rate} %</td><td>{vat.base}</td><td>{vat.tax}</td><td>{vat.total}</td></tr>
+            {/for}
+        </tbody>
+    </table>
+</div>
+
+{#if !ticket.unknownCodes.isEmpty()}
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.s21-codes-inconnus-scannes')}</h2>
+    <ul id="detail-unknown">
+        {#for code in ticket.unknownCodes}<li class="mono">{code}</li>{/for}
+    </ul>
+</div>
+{/if}
+
+{#if !ticket.cancelledPayments.isEmpty()}
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.s21-reglements-annules')}</h2>
+    <ul id="detail-cancelled-payments">
+        {#for payment in ticket.cancelledPayments}<li>{inject:eventWording.payment(payment)}</li>{/for}
+    </ul>
+</div>
+{/if}
+
+{#if !ticket.documents.isEmpty()}
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.s21-factures-et-bons')}</h2>
+    <table class="data-table" id="detail-documents">
+        <tbody>
+            {#for document in ticket.documents}
+            <tr><td>{inject:i18n.text(document.title)}</td><td class="mono">{document.number}</td>
+                <td class="col-actions"><a class="btn btn-small" href="/admin/journal/document/{document.id}/duplicate">{inject:i18n.get('t.s21-reimprimer-duplicata')}</a></td></tr>
+            {/for}
+        </tbody>
+    </table>
+</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.articles')}</h2>
+    <p class="col-muted">{inject:i18n.get('t.les-articles-annules-en-cours-de-vente')}</p>
     <table class="data-table">
         <thead>
             <tr>
                 <th>N°</th>
-                <th>Libellé</th>
-                <th>EAN</th>
-                <th>PLU</th>
-                <th>Quantité</th>
-                <th>Total</th>
-                <th>Modification</th>
+                <th>{inject:i18n.get('t.libelle')}</th>
+                <th>{inject:i18n.get('t.ean')}</th>
+                <th>{inject:i18n.get('t.plu')}</th>
+                <th>{inject:i18n.get('t.quantite')}</th>
+                <th>{inject:i18n.get('t.total')}</th>
+                <th>{inject:i18n.get('t.modification')}</th>
             </tr>
         </thead>
         <tbody>
             {#for line in ticket.lines}
             <tr{#if line.cancelled} class="is-cancelled"{/if}>
                 <td>{line.number}</td>
-                <td>{line.label}{#if line.cancelled} <span class="tag-cancelled">ANNULÉ</span>{/if}</td>
+                <td>{inject:i18n.text(line.label)}{#if line.cancelled} <span class="tag-cancelled">{inject:i18n.get('t.annule')}</span>{/if}</td>
                 <td>{line.ean}</td>
                 <td>{line.plu}</td>
                 <td>{line.quantity}</td>
                 <td>{line.total}</td>
-                <td>{line.modifier}</td>
+                <td>{inject:i18n.text(line.modifier)}</td>
             </tr>
             {/for}
         </tbody>
@@ -93,18 +148,18 @@
 </div>
 
 <div class="card">
-    <h2 class="card-title">Règlements</h2>
+    <h2 class="card-title">{inject:i18n.get('t.reglements')}</h2>
     <table class="data-table">
         <thead>
             <tr>
-                <th>Mode</th>
-                <th>Montant</th>
+                <th>{inject:i18n.get('t.mode')}</th>
+                <th>{inject:i18n.get('t.montant-2')}</th>
             </tr>
         </thead>
         <tbody>
             {#for payment in ticket.payments}
             <tr>
-                <td>{payment.method}{#if payment.entryMode} — {payment.entryMode}{/if}</td>
+                <td>{inject:i18n.code('t.s21-pm-', payment.method)}{#if payment.entryMode} — {payment.entryMode}{/if}{#if payment.guaranteeAuthorization} — {inject:i18n.get('t.fx19-garantie-cheque')} {payment.guaranteeAuthorization}{#if payment.guaranteeProvider} ({payment.guaranteeProvider}){/if}{/if}</td>
                 <td>{payment.amount}</td>
             </tr>
             {/for}
@@ -114,7 +169,7 @@
 
 {#if !ticket.fidelityGroups.isEmpty()}
 <div class="card">
-    <h2 class="card-title">Fidélité</h2>
+    <h2 class="card-title">{inject:i18n.get('t.fidelite')}</h2>
     <table class="data-table">
         <tbody>
             {#for group in ticket.fidelityGroups}
@@ -123,7 +178,7 @@
             {/if}
             {#for advantage in group.advantages}
             <tr>
-                <td>{advantage.label}</td>
+                <td>{inject:i18n.text(advantage.label)}</td>
                 <td>{advantage.amount}</td>
             </tr>
             {/for}
@@ -134,9 +189,9 @@
 {/if}
 {#else}
 <div class="card">
-    <p class="col-muted">Ce ticket n'existe pas sur ce nœud.</p>
+    <p class="col-muted">{inject:i18n.get('t.ce-ticket-n-existe-pas-sur-ce')}</p>
 </div>
 {/if}
 {/body}
 
-{#footer}Le journal ne produit aucune donnée : il ouvre en lecture les documents remontés par l'outbox de consolidation.{/footer}
+{#footer}{inject:i18n.get('t.le-journal-ne-produit-aucune-donnee-il')}{/footer}

@@ -236,4 +236,14 @@ class ReportFormatTest {
         assertEquals(false, ReportColumn.text("t", "T").numeric());
         assertEquals(false, ReportColumn.dateTime("m", "M").numeric());
     }
+
+    /**
+     * A decimal figure that is not money carries two decimals, grouped, and no
+     * currency sign.
+     */
+    @Test
+    void decimalFigureCarriesNoSign() {
+        ReportColumn column = ReportColumn.decimal("d", "Cadence");
+        assertEquals("1\u202f234,50", ReportFormat.cell(column, new java.math.BigDecimal("1234.5")));
+    }
 }

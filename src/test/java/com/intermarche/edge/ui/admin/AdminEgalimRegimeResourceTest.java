@@ -461,4 +461,14 @@ class AdminEgalimRegimeResourceTest {
         assertEquals(new BigDecimal("0.3350"),
                 privateMethod("fraction", String.class).invoke(resource, "33,5"));
     }
+
+    /** BO-03: an overlong regime code is rejected independently of the empty-code guard. */
+    @Test
+    void overlongRegimeCodeIsRejected() throws Exception {
+        var method = AdminEgalimRegimeResource.class.getDeclaredMethod("code", String.class);
+        method.setAccessible(true);
+        assertNull(method.invoke(new AdminEgalimRegimeResource(), "A".repeat(1000)));
+        assertNull(method.invoke(new AdminEgalimRegimeResource(), " "));
+    }
+
 }

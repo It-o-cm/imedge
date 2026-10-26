@@ -159,4 +159,77 @@ class StoreMessageTest {
             assertFalse(confirmation.getLabel().isBlank(), confirmation.name());
         }
     }
+    /** BO-03/08: the finder selects the required business scope and ordering, preserving the returned rows. */
+    @org.junit.jupiter.api.Test
+    void listAllOrderedUsesItsBusinessScopeAndOrder() {
+        var row = new StoreMessage();
+        java.util.List<StoreMessage> rows = java.util.List.of(row);
+        try (var panache = org.mockito.Mockito.mockStatic(io.quarkus.hibernate.orm.panache.PanacheEntityBase.class)) {
+            panache.when(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase.list("order by createdAt desc")).thenReturn(rows);
+            org.junit.jupiter.api.Assertions.assertSame(rows, StoreMessage.listAllOrdered());
+            panache.verify(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase.list("order by createdAt desc"));
+        }
+    }
+
+    /** LC-03-07-06/-09: survey input modes expose distinct labels to administration rather than enum identifiers. */
+    @Test
+    void surveyInputLabelsDescribeTheExpectedCashierInput() {
+        org.junit.jupiter.api.Assertions.assertEquals("Choix parmi les options", StoreMessage.ResponseType.OPTIONS.getLabel());
+        org.junit.jupiter.api.Assertions.assertEquals("Saisie d'un nombre", StoreMessage.ResponseType.NUMERIC.getLabel());
+        org.junit.jupiter.api.Assertions.assertEquals("Saisie d'un code postal", StoreMessage.ResponseType.POSTAL_CODE.getLabel());
+        org.junit.jupiter.api.Assertions.assertEquals("Message informatif à valider", StoreMessage.ResponseType.INFORMATIVE.getLabel());
+    }
+
+    /**
+     * BO-06-03-01: the days of the week and the daily hours restrict the
+     * message; no day, blank days, or a moment inside them serve it.
+     */
+    @Test
+    void theDaysAndHoursRestrictTheMessage() {
+        StoreMessage message = everyone();
+        message.activeDays = " ";
+        assertTrue(message.appliesTo("C04", null, NOON));
+        message.activeDays = "1;3";
+        assertTrue(message.appliesTo("C04", null, NOON));
+        message.activeDays = "2;3";
+        assertFalse(message.appliesTo("C04", null, NOON));
+        message.activeDays = null;
+        message.dailyFrom = java.time.LocalTime.of(12, 0);
+        message.dailyTo = java.time.LocalTime.of(13, 0);
+        assertTrue(message.servedOn(NOON));
+        assertFalse(message.servedOn(NOON.minusMinutes(1)));
+        assertFalse(message.servedOn(NOON.plusHours(1)));
+    }
+
+    /**
+     * BO-06-03-01: the days are read as ISO day numbers, anything else
+     * dropped; none are read from no days.
+     */
+    @Test
+    void theDaysAreRead() {
+        StoreMessage message = everyone();
+        assertTrue(message.days().isEmpty());
+        message.activeDays = "1; 7;8;x;";
+        org.junit.jupiter.api.Assertions.assertEquals(java.util.List.of(1, 7), message.days());
+    }
+
+    /**
+     * BO-06-03-01: an island audience may name several islands, blanks
+     * dropped; none are read from no value.
+     */
+    @Test
+    void theIslandsAreRead() {
+        StoreMessage message = everyone();
+        assertTrue(message.islands().isEmpty());
+        message.audience = StoreMessage.Audience.ISLAND;
+        message.audienceValue = "CLS; ;LIGNE";
+        org.junit.jupiter.api.Assertions.assertEquals(java.util.List.of("CLS", "LIGNE"), message.islands());
+        assertTrue(message.appliesTo("C04", "LIGNE", NOON));
+    }
+
+    /** BO-06-03-01: the yes / no question names itself to the screen. */
+    @Test
+    void theYesNoQuestionNamesItself() {
+        org.junit.jupiter.api.Assertions.assertEquals("Oui / Non", StoreMessage.ResponseType.YES_NO.getLabel());
+    }
 }

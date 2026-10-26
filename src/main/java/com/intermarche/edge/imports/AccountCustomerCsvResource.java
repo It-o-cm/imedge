@@ -3,15 +3,7 @@ package com.intermarche.edge.imports;
 import com.intermarche.edge.domain.payment.AccountCustomer;
 import com.intermarche.edge.domain.store.Address;
 import io.quarkus.hibernate.orm.panache.Panache;
-import io.smallrye.common.annotation.RunOnVirtualThread;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.POST;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.QueryParam;
-import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
 
@@ -59,7 +51,6 @@ import java.util.Set;
 // document and to keep in step, and the permission policy had to name them
 // one by one — an importer forgotten there was a door left open.
 @ApplicationScoped
-@RunOnVirtualThread
 public class AccountCustomerCsvResource extends ImporterCsvResource {
 
     /** Technical log of this class. */
@@ -136,7 +127,7 @@ public class AccountCustomerCsvResource extends ImporterCsvResource {
      *        nothing — for the evening's delta
      * @return a JSON summary of the created and updated counts and the errors
      */
-    public Response importCustomers(InputStream inputStream, @QueryParam("mode") String mode) {
+    public Response importCustomers(InputStream inputStream, String mode) {
         LOGGER.info("Entering method importCustomers with mode: " + mode);
         SEEN.remove();
         try {

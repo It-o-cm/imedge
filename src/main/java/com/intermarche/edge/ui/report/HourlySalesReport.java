@@ -9,7 +9,6 @@ import org.jboss.logging.Logger;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -29,10 +28,10 @@ import java.util.Map;
  * column says units; a shop reading this state on its fruit aisle should read
  * the turnover column beside it.
  *
- * <p>The article filter is the report's option: a family code, an EAN or the
- * head of one. The requirement also asks for a filter on a saved article
- * selection; those selections are administered on the node's article screens and
- * the filter will read them the day a report needs to be tied to one.
+ * <p>The article sample is chosen with the frame's article criteria — an EAN
+ * range, EAN codes, families, a saved article list, which combine — and the
+ * slice width is the report's option: the hour range of the criteria narrows
+ * the day and the quarter details it, which is the « zoom au 1/4 d'heure ».
  */
 @ApplicationScoped
 public class HourlySalesReport implements ReportDefinition {
@@ -109,52 +108,68 @@ public class HourlySalesReport implements ReportDefinition {
     /**
      * {@inheritDoc}
      *
-     * @return the label of the article filter
+     * @return the label of the slice width, the zoom of the requirement
      */
     @Override
     public String optionLabel() {
-        return "Filtre article (code famille ou début d'EAN)";
+        return TimeSlices.LABEL;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * @return the hour, the half-hour and the quarter
+     */
+    @Override
+    public List<String> optionChoices() {
+        return TimeSlices.CHOICES;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * @return the registers, the island, the hour range and the article criteria
+     */
+    @Override
+    public java.util.Set<ReportFilter> filters() {
+        return java.util.EnumSet.of(ReportFilter.TERMINALS, ReportFilter.ISLAND, ReportFilter.HOURS,
+                ReportFilter.ARTICLES);
     }
 
     /**
      * {@inheritDoc}
      *
      * @param criteria the edition parameters
-     * @return one row per non-empty hour, in chronological order
+     * @return one row per non-empty slice, in chronological order
      */
     @Override
     public List<List<Object>> rows(ReportCriteria criteria) {
         LOGGER.info("Entering method rows");
-        String filter = criteria.option;
-        StringBuilder jpql = new StringBuilder(
-                "select t.closingDate, l.quantity, l.totalPrice from Ticket t join t.lines l"
-                        + " where t.status = :closed and t.closingDate >= :from"
-                        + " and t.closingDate < :to and l.cancelled = false");
-        if (filter != null && !filter.isBlank()) {
-            jpql.append(" and (l.familyCode = :filter or l.ean like :prefix or l.plu = :filter)");
-        }
-        var query = entityManager.createQuery(jpql.toString(), Object[].class)
+        int minutes = TimeSlices.width(criteria.optionOr("60"));
+        var query = entityManager.createQuery(
+                        "select t.closingDate, l.quantity, l.totalPrice from Ticket t join t.lines l"
+                                + " where t.status = :closed and t.closingDate >= :from"
+                                + " and t.closingDate < :to and l.cancelled = false"
+                                + criteria.terminalFilter("t.terminalId") + criteria.lineFilter("l"), Object[].class)
                 .setParameter("closed", Ticket.TicketStatus.CLOSED)
                 .setParameter("from", criteria.from())
                 .setParameter("to", criteria.to());
-        if (filter != null && !filter.isBlank()) {
-            query.setParameter("filter", filter.trim());
-            query.setParameter("prefix", filter.trim() + "%");
-        }
-        Map<Integer, BigDecimal[]> byHour = new LinkedHashMap<>();
+        criteria.bindTerminals(query);
+        criteria.bindLines(query);
+        Map<Integer, BigDecimal[]> bySlot = new java.util.TreeMap<>();
         for (Object[] line : query.getResultList()) {
-            int hour = ((LocalDateTime) line[0]).getHour();
-            BigDecimal[] slot = byHour.computeIfAbsent(hour,
+            LocalDateTime when = (LocalDateTime) line[0];
+            if (!criteria.inHours(when)) {
+                continue;
+            }
+            BigDecimal[] slot = bySlot.computeIfAbsent(TimeSlices.start(when, minutes),
                     key -> new BigDecimal[]{BigDecimal.ZERO, BigDecimal.ZERO});
             slot[0] = slot[0].add(line[1] == null ? BigDecimal.ZERO : (BigDecimal) line[1]);
             slot[1] = slot[1].add(line[2] == null ? BigDecimal.ZERO : (BigDecimal) line[2]);
         }
-        List<Integer> hours = new ArrayList<>(byHour.keySet());
-        hours.sort(Integer::compareTo);
         List<List<Object>> rows = new ArrayList<>();
-        for (int hour : hours) {
-            BigDecimal[] slot = byHour.get(hour);
-            rows.add(List.of(String.format("%02d:00 – %02d:00", hour, (hour + 1) % 24), slot[0], slot[1]));
+        for (Map.Entry<Integer, BigDecimal[]> slot : bySlot.entrySet()) {
+            rows.add(List.of(TimeSlices.name(slot.getKey(), minutes), slot.getValue()[0], slot.getValue()[1]));
         }
         LOGGER.info("Exiting method rows with " + rows.size() + " row(s)");
         return rows;

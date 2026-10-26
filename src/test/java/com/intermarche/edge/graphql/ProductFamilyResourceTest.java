@@ -64,6 +64,13 @@ class ProductFamilyResourceTest {
     /** The resource under test; the trait default method is real, no collaborators are injected. */
     private final ProductFamilyResource resource = new ProductFamilyResource();
 
+    /** The stamp mover of the resource, a mock: every successful mutation calls it. */
+    private final ReferentialChangeNotifier referentialChange = org.mockito.Mockito.mock(ReferentialChangeNotifier.class);
+
+    {
+        resource.referentialChange = referentialChange;
+    }
+
     /**
      * Builds a bare {@link Product} carrying only the supplied id.
      *
@@ -542,6 +549,7 @@ class ProductFamilyResourceTest {
             panache.when(() -> ProductFamily.deleteById(FAMILY_ID)).thenReturn(true);
             boolean result = resource.deleteProductFamily(FAMILY_ID);
             assertTrue(result);
+            verify(referentialChange).changed();
         }
     }
 

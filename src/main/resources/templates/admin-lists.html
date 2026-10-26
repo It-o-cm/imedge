@@ -10,107 +10,133 @@
 !}
 {#include admin-layout}
 
-{#title}Listes{/title}
+{#title}{inject:i18n.get('t.listes')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Listes administrees</h1>
-        <p class="page-sub">Les listes que la caisse propose : demandes de service, justifications, types de retour, contenants de tare. Elles descendent aux caisses avec le referentiel. Tant qu'aucune liste d'un genre n'existe, la caisse lit le parametre correspondant des <a class="link-strong" href="/admin/settings">Parametres</a>.</p>
+        <h1>{inject:i18n.get('t.listes-administrees')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.les-listes-que-la-caisse-propose-demandes')} <a class="link-strong" href="/admin/settings">{inject:i18n.get('t.parametres')}</a>.</p>
     </div>
     <form method="post" action="/admin/lists/bootstrap">
-        <button class="btn" type="submit">Reprendre les valeurs actuelles</button>
+        <button class="btn" type="submit">{inject:i18n.get('t.reprendre-les-valeurs-actuelles')}</button>
     </form>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 <div class="card">
-    <h2 class="card-title">Creer une liste</h2>
-    <p class="card-sub">Le code identifie la liste pour la distribution. Les fonctions ne concernent que les listes de justification : les codes des gestes servis, separes par des points-virgules (EXPENSE, WITHDRAWAL, DEPOSIT, LINE_CANCEL, TICKET_CANCEL, PRICE_OVERRIDE, DISCOUNT, RETURN). Vide : tous les gestes.</p>
+    <h2 class="card-title">{inject:i18n.get('t.creer-une-liste')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.le-code-identifie-la-liste-pour-la')}</p>
     <form method="post" action="/admin/lists/save">
         <div class="form-grid">
-            <label>Code<input type="text" name="code" maxlength="40" required></label>
-            <label>Libelle<input type="text" name="label" maxlength="80" required></label>
-            <label>Genre
+            <label>{inject:i18n.get('t.code')}<input type="text" name="code" maxlength="40" required></label>
+            <label>{inject:i18n.get('t.libelle-2')}<input type="text" name="label" maxlength="80" required></label>
+            <label>{inject:i18n.get('t.genre')}
                 <select name="kind">
-                    {#for kind in kinds}<option value="{kind}">{kind.label}</option>{/for}
+                    {#for kind in kinds}<option value="{kind}">{inject:i18n.text(kind.label)}</option>{/for}
                 </select>
             </label>
-            <label>Fonctions servies<input type="text" name="functions" maxlength="200" placeholder="EXPENSE;WITHDRAWAL"></label>
-            <label class="check"><input type="checkbox" name="active" checked> Active</label>
+            <label>{inject:i18n.get('t.fonctions-servies')}<input type="text" name="functions" maxlength="200" placeholder="{inject:i18n.get('t.expense-withdrawal')}"></label>
+            <label class="check"><input type="checkbox" name="active" checked> {inject:i18n.get('t.active')}</label>
         </div>
-        <button class="btn btn-primary" type="submit">Creer</button>
+        <button class="btn btn-primary" type="submit">{inject:i18n.get('t.creer')}</button>
     </form>
 </div>
 
 {#for posList in lists}
 <div class="card">
-    <h2 class="card-title">{posList.label} <span class="mono">({posList.code})</span></h2>
-    <p class="card-sub">{posList.kindLabel}{#if posList.functions} &middot; fonctions : {posList.functions}{/if}{#if !posList.active} &middot; inactive{/if}</p>
+    <h2 class="card-title">{inject:i18n.text(posList.label)} <span class="mono">({posList.code})</span></h2>
+    <p class="card-sub">{inject:i18n.text(posList.kindLabel)}{#if posList.functions} {inject:i18n.get('t.fonctions')} {posList.functions}{/if}{#if !posList.active} {inject:i18n.get('t.inactive')}{/if}</p>
     <form method="post" action="/admin/lists/save" class="filter-row">
         <input type="hidden" name="id" value="{posList.id}">
         <input type="hidden" name="code" value="{posList.code}">
-        <label>Libelle<input type="text" name="label" value="{posList.label}" maxlength="80" required></label>
-        <label>Genre
+        <label>{inject:i18n.get('t.libelle-2')}<input type="text" name="label" value="{posList.label}" maxlength="80" required></label>
+        <label>{inject:i18n.get('t.genre')}
             <select name="kind">
-                {#for kind in kinds}<option value="{kind}" {#if kind.name() == posList.kind}selected{/if}>{kind.label}</option>{/for}
+                {#for kind in kinds}<option value="{kind}" {#if kind.name() == posList.kind}selected{/if}>{inject:i18n.text(kind.label)}</option>{/for}
             </select>
         </label>
-        <label>Fonctions<input type="text" name="functions" value="{posList.functions}" maxlength="200"></label>
-        <label class="check"><input type="checkbox" name="active" {#if posList.active}checked{/if}> Active</label>
-        <button class="btn" type="submit">Enregistrer</button>
+        <label>{inject:i18n.get('t.fonctions-2')}<input type="text" name="functions" value="{posList.functions}" maxlength="200"></label>
+        <label class="check"><input type="checkbox" name="active" {#if posList.active}checked{/if}> {inject:i18n.get('t.active')}</label>
+        <button class="btn" type="submit">{inject:i18n.get('t.enregistrer')}</button>
     </form>
-    <table class="admin-table">
+    <table class="data-table">
         <thead>
-            <tr><th>Code</th><th>Libelle</th><th>Rang</th>{#if posList.usesSeverity}<th>Severite</th>{/if}{#if posList.usesWeight}<th>Poids (kg)</th>{/if}{#if posList.usesOptions}<th>Options</th>{/if}<th>Active</th><th></th></tr>
+            <tr><th>{inject:i18n.get('t.code')}</th><th>{inject:i18n.get('t.libelle-2')}</th><th>{inject:i18n.get('t.rang')}</th>{#if posList.usesSeverity}<th>{inject:i18n.get('t.severite')}</th>{/if}{#if posList.usesWeight}<th>{inject:i18n.get(posList.valueLabelKey)}</th>{/if}{#if posList.usesOptions}<th>{inject:i18n.get('t.options')}</th>{/if}<th>{inject:i18n.get('t.active')}</th><th></th></tr>
         </thead>
         <tbody>
             {#for item in posList.items}
             <tr class="{#if !item.active}row-muted{/if}">
                 <td class="mono">{item.code}</td>
-                <td>{item.label}</td>
+                <td>{inject:i18n.text(item.label)}</td>
                 <td>{item.displayOrder}</td>
                 {#if posList.usesSeverity}<td>{item.severity}</td>{/if}
-                {#if posList.usesWeight}<td>{item.numericValue}</td>{/if}
-                {#if posList.usesOptions}<td class="mono">{item.options}</td>{/if}
-                <td>{#if item.active}oui{#else}non{/if}</td>
-                <td class="cell-actions">
-                    <form method="post" action="/admin/lists/item/delete" onsubmit="return confirm('Supprimer l entree {item.code} ?');">
+                {#if posList.usesWeight}<td>{#if posList.valueLabelKey == 't.montant-maximum-de-la-depense'}{inject:i18n.money(item.numericValue)}{#else}{inject:i18n.number(item.numericValue)}{/if}</td>{/if}
+                {#if posList.usesOptions}<td class="mono cell-wrap">{item.options}</td>{/if}
+                <td>{#if item.active}{inject:i18n.get('t.oui')}{#else}{inject:i18n.get('t.non')}{/if}</td>
+                <td class="col-actions">
+                    {! BO-03-02-46, BO-03-13-03 : l'activation en un geste. !}
+                    <form method="post" action="/admin/lists/item/toggle">
                         <input type="hidden" name="id" value="{item.id}">
-                        <button class="btn btn-danger" type="submit">Supprimer</button>
+                        <button class="btn" type="submit">{#if item.active}{inject:i18n.get('t.desactiver')}{#else}{inject:i18n.get('t.activer')}{/if}</button>
                     </form>
+                    <form method="post" action="/admin/lists/item/delete" onsubmit="return confirm('{inject:i18n.js('t.supprimer-l-entree')} {item.code} ?');">
+                        <input type="hidden" name="id" value="{item.id}">
+                        <button class="btn btn-danger" type="submit">{inject:i18n.get('t.supprimer')}</button>
+                    </form>
+                </td>
+            </tr>
+            {! BO-03-02-45, BO-03-07-03/-06, BO-03-13-01 : la modification d'une entree,
+             ! repliee sous sa ligne pour que le tableau ne deborde pas. !}
+            <tr class="row-edit">
+                <td colspan="8">
+                    <details>
+                        <summary>{inject:i18n.get('t.modifier')} {item.code}</summary>
+                        <form method="post" action="/admin/lists/item/save" class="filter-row">
+                            <input type="hidden" name="id" value="{item.id}">
+                            <input type="hidden" name="listId" value="{posList.id}">
+                            <input type="hidden" name="code" value="{item.code}">
+                            <label>{inject:i18n.get('t.libelle-2')}<input type="text" name="label" value="{item.label}" maxlength="80" required></label>
+                            <label>{inject:i18n.get('t.rang')}<input type="number" name="displayOrder" value="{item.displayOrder}"></label>
+                            {#if posList.usesSeverity}<label>{inject:i18n.get('t.severite')}<input type="number" name="severity" min="0" value="{item.severity}"></label>{/if}
+                            {#if posList.usesWeight}<label>{inject:i18n.get(posList.valueLabelKey)}<input type="text" name="numericValue" value="{item.numericValue}"></label>{/if}
+                            {#if posList.usesOptions}<label>{inject:i18n.get('t.options')}<input type="text" name="options" maxlength="120" value="{item.options}" placeholder="{inject:i18n.get(posList.optionsHintKey)}"></label>{/if}
+                            <label class="check"><input type="checkbox" name="active" {#if item.active}checked{/if}> {inject:i18n.get('t.active')}</label>
+                            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer')}</button>
+                        </form>
+                    </details>
                 </td>
             </tr>
             {/for}
             {#if posList.items.isEmpty()}
-            <tr><td colspan="8" class="cell-empty">Cette liste est vide : la caisse ne proposera rien.</td></tr>
+            <tr><td colspan="8" class="cell-empty">{inject:i18n.get('t.cette-liste-est-vide-la-caisse-ne')}</td></tr>
             {/if}
         </tbody>
     </table>
     <form method="post" action="/admin/lists/item/save" class="filter-row">
         <input type="hidden" name="listId" value="{posList.id}">
-        <label>Code<input type="text" name="code" maxlength="40" required></label>
-        <label>Libelle<input type="text" name="label" maxlength="80" required></label>
-        <label>Rang<input type="number" name="displayOrder" value="0"></label>
-        {#if posList.usesSeverity}<label>Severite<input type="number" name="severity" min="0" value="1"></label>{/if}
-        {#if posList.usesWeight}<label>Poids (kg)<input type="text" name="numericValue" placeholder="0.035"></label>{/if}
-        {#if posList.usesOptions}<label>Options<input type="text" name="options" maxlength="120" placeholder="TICKET,NOORIGIN"></label>{/if}
-        <label class="check"><input type="checkbox" name="active" checked> Active</label>
-        <button class="btn btn-primary" type="submit">Ajouter</button>
+        <label>{inject:i18n.get('t.code')}<input type="text" name="code" maxlength="40" required></label>
+        <label>{inject:i18n.get('t.libelle-2')}<input type="text" name="label" maxlength="80" required></label>
+        <label>{inject:i18n.get('t.rang')}<input type="number" name="displayOrder" value="0"></label>
+        {#if posList.usesSeverity}<label>{inject:i18n.get('t.severite')}<input type="number" name="severity" min="0" value="1"></label>{/if}
+        {#if posList.usesWeight}<label>{inject:i18n.get(posList.valueLabelKey)}<input type="text" name="numericValue"></label>{/if}
+        {#if posList.usesOptions}<label>{inject:i18n.get('t.options')}<input type="text" name="options" maxlength="120" placeholder="{inject:i18n.get(posList.optionsHintKey)}"></label>{/if}
+        <label class="check"><input type="checkbox" name="active" checked> {inject:i18n.get('t.active')}</label>
+        <button class="btn btn-primary" type="submit">{inject:i18n.get('t.ajouter')}</button>
     </form>
-    <form method="post" action="/admin/lists/delete" onsubmit="return confirm('Supprimer definitivement la liste {posList.code} et ses entrees ?');">
+    <form method="post" action="/admin/lists/delete" onsubmit="return confirm('{inject:i18n.js('t.supprimer-definitivement-la-liste')} {posList.code} {inject:i18n.js('t.et-ses-entrees')}');">
         <input type="hidden" name="id" value="{posList.id}">
-        <button class="btn btn-danger" type="submit">Supprimer la liste</button>
+        <button class="btn btn-danger" type="submit">{inject:i18n.get('t.supprimer-la-liste')}</button>
     </form>
 </div>
 {/for}
 
 {#if lists.isEmpty()}
 <div class="card">
-    <p class="card-sub">Aucune liste n'est administree : les caisses lisent les parametres a points-virgules. Reprendre les valeurs actuelles cree les quatre listes standard a partir de ces parametres.</p>
+    <p class="card-sub">{inject:i18n.get('t.aucune-liste-n-est-administree-les-caisses')}</p>
 </div>
 {/if}
 {/body}

@@ -1,16 +1,15 @@
 package com.intermarche.edge.domain.util;
 
-import java.lang.reflect.Constructor;
-import java.lang.reflect.InvocationTargetException;
-import java.time.LocalDateTime;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
+import java.time.LocalDateTime;
+
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mockStatic;
 
 /**
@@ -118,7 +117,7 @@ class DateTimeProviderTest {
         Constructor<DateTimeProvider> constructor = DateTimeProvider.class.getDeclaredConstructor();
         constructor.setAccessible(true);
         InvocationTargetException wrapper = assertThrows(InvocationTargetException.class, constructor::newInstance);
-        assertTrue(wrapper.getCause() instanceof UnsupportedOperationException);
+        assertInstanceOf(UnsupportedOperationException.class, wrapper.getCause());
         assertEquals("This is a utility class and cannot be instantiated", wrapper.getCause().getMessage());
     }
 }

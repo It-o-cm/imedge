@@ -20,12 +20,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.*;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.verify;
@@ -117,7 +119,7 @@ class EmployeeCsvResourceTest {
         EmployeeCsvResource resource = new EmployeeCsvResource();
         Response response = resource.importEmployees(stream("BADGE_ID|LOGIN|PIN|FIRST_NAME|LAST_NAME|EMAIL|ROLE\n"));
         assertEquals(200, response.getStatus());
-        assertEquals("{\"createdCount\":0, \"updatedCount\":0}", response.getEntity());
+        assertEquals("{\"createdCount\":0,\"updatedCount\":0}", response.getEntity());
     }
 
     /**

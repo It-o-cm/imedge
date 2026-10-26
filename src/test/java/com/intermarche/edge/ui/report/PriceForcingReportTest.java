@@ -275,4 +275,12 @@ class PriceForcingReportTest {
         assertEquals(Ticket.TicketStatus.CLOSED, Ticket.TicketStatus.valueOf("CLOSED"));
         assertEquals(1, rows.size());
     }
+    /** BO-06: absent reference prices or zero divisors yield zero rather than an undefined report ratio. */
+    @Test
+    void ratioKeepsItsZeroFallback() throws Exception {
+        var method = PriceForcingReport.class.getDeclaredMethod("rate", java.math.BigDecimal.class, java.math.BigDecimal.class);
+        method.setAccessible(true);
+        org.junit.jupiter.api.Assertions.assertEquals(java.math.BigDecimal.ZERO, method.invoke(new PriceForcingReport(), null, java.math.BigDecimal.ONE));
+    }
+
 }

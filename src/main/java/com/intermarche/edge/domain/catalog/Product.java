@@ -4,7 +4,6 @@ import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -49,9 +48,11 @@ public class Product extends BaseEntity {
     /**
      * The EAN (European Article Number) code, commonly known as barcode.
      * This is the primary identifier used for lookups at the register.
-     * Unique constraint implies a database index.
+     * Unique constraint implies a database index. Up to 38 characters: an
+     * EAN-8 or EAN-13, an alphanumeric Code 128 article code, or the text of a
+     * 2D code (BO-03-06-01, -10).
      */
-    @Column(name = "ean", unique = true, nullable = false, length = 13)
+    @Column(name = "ean", unique = true, nullable = false, length = 38)
     @NotBlank(message = "EAN is mandatory")
     public String ean;
 
@@ -96,9 +97,8 @@ public class Product extends BaseEntity {
      * le rayon". A store writes it where it writes the article's label, and it
      * travels down the same road.
      *
-     * <p>Never blocking. It is an information, so it leaves a notice and the
-     * sale goes on — an article the shop wants to refuse is handled by a
-     * control point, not by a sentence.
+     * <p>LC-02-03-11: INFO_MESSAGE_BLOCKING makes this message refuse registration.
+     * Otherwise the registered article carries an informational warning.
      */
     @Column(name = "info_message", length = 200)
     public String infoMessage;
@@ -191,6 +191,17 @@ public class Product extends BaseEntity {
     public boolean active = true;
 
     /**
+     * The quantity of this article the shop's registers sold over the
+     * administered window (BO-03-01-13), computed by the store node from the
+     * sale lines its registers pushed and distributed with the article, so the
+     * direct-entry groups can show the best sellers first. Zero until the first
+     * computation; excluded from {@link #getChecksum()} because no feed carries
+     * it.
+     */
+    @Column(name = "sales_volume", nullable = false)
+    public long salesVolume = 0L;
+
+    /**
      * Flag to indicate that the product is forbidden to sell at the register.
      * <p>
      * When true, scanning or keying this product must be refused: no ticket line is
@@ -268,9 +279,62 @@ public class Product extends BaseEntity {
     public Map<String, String> attributes = new HashMap<>();
 
     // --------------------------------------------------
+    // Sale codes (BO-02-03-03)
+    // --------------------------------------------------
+
+    /**
+     * The ADDITIONAL sale codes of the article (BO-02-03-03): every barcode
+     * besides {@link #ean} that rings this article at the register — the EAN-13
+     * of another packaging, an EAN-8, the code of a former supplier. The set is
+     * unbounded, which is the "nombre non limité" the requirement asks for, and
+     * a code belongs to ONE article: the column is unique across the table.
+     *
+     * <p>{@link #ean} stays the portable identity — the line, the valuation
+     * engine and the sync payloads keep naming the article by it — and a sale
+     * code is only another way IN: the register resolves it to the article and
+     * rings the article's EAN.
+     *
+     * <p>Referential data, integrated by the {@code SALE_CODES} column of the
+     * article feed and administered on the fiche, distributed with the
+     * article in the PRODUCTS domain.
+     */
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "product_sale_codes",
+            joinColumns = @JoinColumn(name = "product_id"))
+    @Column(name = "sale_code", length = 38, unique = true)
+    public java.util.Set<String> saleCodes = new java.util.TreeSet<>();
+
+    // --------------------------------------------------
     // Panache Active Record Queries
     // --------------------------------------------------
 
+    /**
+     * Finds the active article one of whose ADDITIONAL sale codes is the given
+     * code (BO-02-03-03).
+     *
+     * @param code the scanned or keyed code
+     * @return the active Product, or null when no active article carries it
+     */
+    public static Product findActiveBySaleCode(String code) {
+        return find("select p from Product p join p.saleCodes c where c = ?1 and p.active = true", code)
+                .firstResult();
+    }
+
+    /**
+     * Finds the active article a scanned or keyed code designates when the code
+     * is not its EAN: one of its additional sale codes first (BO-02-03-03), then
+     * its internal code (BO-02-03-04).
+     *
+     * @param code the scanned or keyed code, or null
+     * @return the active Product, or null when no active article answers to it
+     */
+    public static Product findActiveByAlias(String code) {
+        if (code == null || code.isBlank()) {
+            return null;
+        }
+        Product bySaleCode = findActiveBySaleCode(code);
+        return bySaleCode != null ? bySaleCode : findActiveByInternalCode(code);
+    }
 
     /**
      * The effective sale-line label (BO-02-03-02): the checkout label when it
@@ -361,12 +425,14 @@ public class Product extends BaseEntity {
      * {@code egalimRegime} is included for the same reason as the attributes: a
      * reclassification arriving alone in a feed must be a detectable change,
      * otherwise the checksum short-circuit would skip it and the fiche would
-     * keep showing the former category.
+     * keep showing the former category. The additional {@code saleCodes}
+     * (BO-02-03-03) are included for the same reason, hashed
+     * order-independently by the set.
      *
      * @return Checksum integer value
      */
     @Override
     public int getChecksum() {
-        return Objects.hash(ean, plu==null? "":plu ,name, description, brand, referenceWeight, referenceVolume, productType, unitName, active, forbiddenToSale, checkoutLabel, internalCode, variableWeight, egalimRegime, attributes);
+        return Objects.hash(ean, plu==null? "":plu ,name, description, brand, referenceWeight, referenceVolume, productType, unitName, active, forbiddenToSale, checkoutLabel, internalCode, variableWeight, egalimRegime, attributes, saleCodes);
     }
 }

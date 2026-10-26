@@ -11,6 +11,7 @@ import jakarta.ws.rs.core.MultivaluedHashMap;
 import jakarta.ws.rs.core.MultivaluedMap;
 import jakarta.ws.rs.core.Response;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedConstruction;
 import org.mockito.MockedStatic;
 
 import java.math.BigDecimal;
@@ -24,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -322,5 +324,84 @@ class AdminEmployeeResourceTest {
             stubAll(panache, List.of(onlyLogin));
             assertEquals(List.of(onlyLogin), resource.search("special"));
         }
+    }
+
+    /**
+     * A person's file is created from this screen with a generated login,
+     * badge and address, a scope naming no register, and the payroll columns
+     * typed (BO-05-02-15).
+     */
+    @Test
+    void apersonsFileIsCreatedFromThisScreen() {
+        AdminEmployeeResource resource = newResource();
+        MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
+        form.add("lastName", "Martin");
+        form.add("firstName", "Paul");
+        form.add("forcingLevel", "2");
+        form.add("advanceLimit", "150,00");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
+                MockedConstruction<Employee> created = mockConstruction(Employee.class)) {
+            panache.when(() -> Employee.count(org.mockito.ArgumentMatchers.eq("loginName = ?1 or badgeId = ?2"),
+                    org.mockito.ArgumentMatchers.any(Object[].class))).thenReturn(1L, 0L);
+            Response response = resource.create(form);
+            assertTrue(response.getLocation().toString().contains("noticeOk=true"));
+            Employee file = created.constructed().get(0);
+            assertEquals("Martin", file.lastName);
+            assertEquals("Paul", file.firstName);
+            assertTrue(file.loginName.matches("paie-\\d{9}"));
+            assertEquals(file.loginName + "@paie.invalid", file.email);
+            assertTrue(file.badgeId.matches("P\\d{9}"));
+            assertTrue(file.password.startsWith("$2"));
+            assertEquals(Employee.EmployeeRole.CASHIER, file.role);
+            assertEquals(AdminEmployeeResource.PAYROLL_SCOPE, file.echelonScopes);
+            assertFalse(file.legalEntity);
+            assertEquals(2, file.forcingLevel);
+            assertEquals(new BigDecimal("150.00"), file.advanceLimit);
+            assertTrue(file.active);
+            verify(file).persist();
+        }
+    }
+
+    /**
+     * A company's file carries its business name and no first name; a person
+     * typed without a first name gets the placeholder too.
+     */
+    @Test
+    void acompanysFileCarriesItsBusinessName() {
+        AdminEmployeeResource resource = newResource();
+        MultivaluedMap<String, String> company = new MultivaluedHashMap<>();
+        company.add("lastName", "Nettoyage SA");
+        company.add("firstName", "ignored");
+        company.add("legalEntity", "on");
+        company.add("forcingLevel", "-3");
+        MultivaluedMap<String, String> person = new MultivaluedHashMap<>();
+        person.add("lastName", "Durand");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
+                MockedConstruction<Employee> created = mockConstruction(Employee.class)) {
+            panache.when(() -> Employee.count(org.mockito.ArgumentMatchers.eq("loginName = ?1 or badgeId = ?2"),
+                    org.mockito.ArgumentMatchers.any(Object[].class))).thenReturn(0L);
+            String location = java.net.URLDecoder.decode(resource.create(company).getLocation().toString(),
+                    java.nio.charset.StandardCharsets.UTF_8);
+            assertTrue(location.contains("Fiche de personne morale créée."));
+            assertEquals("-", created.constructed().get(0).firstName);
+            assertTrue(created.constructed().get(0).legalEntity);
+            assertEquals(0, created.constructed().get(0).forcingLevel);
+            assertNull(created.constructed().get(0).advanceLimit);
+            resource.create(person);
+            assertEquals("-", created.constructed().get(1).firstName);
+        }
+    }
+
+    /**
+     * A file without a name, or with a negative ceiling, is refused.
+     */
+    @Test
+    void anUnnamedOrNegativelyCappedFileIsRefused() {
+        AdminEmployeeResource resource = newResource();
+        assertTrue(resource.create(new MultivaluedHashMap<>()).getLocation().toString().contains("noticeOk=false"));
+        MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
+        form.add("lastName", "Martin");
+        form.add("advanceLimit", "-1");
+        assertTrue(resource.create(form).getLocation().toString().contains("noticeOk=false"));
     }
 }

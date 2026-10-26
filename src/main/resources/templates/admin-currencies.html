@@ -4,24 +4,24 @@
  ! admin-vat-rates. !}
 {#include admin-layout}
 
-{#title}Devises{/title}
+{#title}{inject:i18n.get('t.devises')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Devises</h1>
-        <p class="page-sub">Le taux de conversion en euros d'une devise étrangère ou héritée (le franc, 6,55957). Administré ici, il descend aux caisses par le tirage référentiel — rien n'est figé dans le logiciel de caisse (EXP-22, LC-02-05-02).</p>
+        <h1>{inject:i18n.get('t.devises')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.le-taux-de-conversion-en-euros-d')}</p>
     </div>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 <div class="card">
-    <h2 class="card-title">Devises</h2>
+    <h2 class="card-title">{inject:i18n.get('t.devises')}</h2>
     {#if currencies.isEmpty()}
-    <p class="page-sub">Aucune devise n'est administrée.</p>
+    <p class="page-sub">{inject:i18n.get('t.aucune-devise-n-est-administree')}</p>
     {#else}
     {#for currency in currencies}
     <form method="post" action="/admin/currencies/save" class="field-grid">
@@ -30,56 +30,56 @@
             <span class="field-label">{currency.code}</span>
         </div>
         <div class="field">
-            <label class="field-label" for="cl-{currency.code}">Libellé</label>
+            <label class="field-label" for="cl-{currency.code}">{inject:i18n.get('t.libelle')}</label>
             <input class="input-control" id="cl-{currency.code}" type="text" name="label" maxlength="40" value="{currency.label ?: ''}">
         </div>
         <div class="field">
-            <label class="field-label" for="cs-{currency.code}">Symbole</label>
+            <label class="field-label" for="cs-{currency.code}">{inject:i18n.get('t.symbole')}</label>
             <input class="input-control" id="cs-{currency.code}" type="text" name="symbol" maxlength="5" value="{currency.symbol ?: ''}">
         </div>
         <div class="field">
-            <label class="field-label" for="cr-{currency.code}">Euros pour une unité</label>
+            <label class="field-label" for="cr-{currency.code}">{inject:i18n.get('t.euros-pour-une-unite')}</label>
             <input class="input-control" id="cr-{currency.code}" type="text" name="euroPerUnit" value="{currency.euroPerUnit}">
         </div>
         <div class="field">
-            <label class="field-label" for="co-{currency.code}">Ordre</label>
+            <label class="field-label" for="co-{currency.code}">{inject:i18n.get('t.ordre')}</label>
             <input class="input-control" id="co-{currency.code}" type="number" name="displayOrder" min="0" value="{currency.displayOrder}">
         </div>
         <div class="field">
-            <label class="field-label" for="ca-{currency.code}">Active</label>
+            <label class="field-label" for="ca-{currency.code}">{inject:i18n.get('t.active')}</label>
             <input id="ca-{currency.code}" type="checkbox" name="active" {#if currency.active}checked{/if}>
         </div>
         {! BO-03-02-39 : la monnaie dans laquelle le rendu de cette devise est
          ! donne. Un code de MOYEN DE PAIEMENT et non de devise : le rendu sort
          ! du tiroir comme un reglement y entre. !}
         <div class="field">
-            <label class="field-label" for="cx-{currency.code}">Monnaie de rendu</label>
+            <label class="field-label" for="cx-{currency.code}">{inject:i18n.get('t.monnaie-de-rendu')}</label>
             <input class="input-control" id="cx-{currency.code}" type="text" name="changeTenderCode" maxlength="20" value="{currency.changeTenderCode ?: ''}">
-            <span class="field-hint">Code du moyen de paiement rendu en monnaie. Vide : rendu en euros.</span>
+            <span class="field-hint">{inject:i18n.get('t.code-du-moyen-de-paiement-rendu-en')}</span>
         </div>
         <div class="page-actions">
-            <button class="btn btn-primary" type="submit">Enregistrer</button>
-            <button class="btn btn-muted" type="submit" formaction="/admin/currencies/delete">Supprimer</button>
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer')}</button>
+            <button class="btn btn-muted" type="submit" formaction="/admin/currencies/delete">{inject:i18n.get('t.supprimer')}</button>
         </div>
     </form>
     {! BO-03-02-40 : l'historique date des taux. Ecrit par l'enregistrement,
      ! jamais modifiable — un historique qu'on corrige n'en est pas un. !}
     <details class="panel">
-        <summary class="panel-title">Historique du taux<span class="panel-count">{history.get(currency.code).size()}</span></summary>
+        <summary class="panel-title">{inject:i18n.get('t.historique-du-taux')}<span class="panel-count">{history.get(currency.code).size()}</span></summary>
         {#if history.get(currency.code).size() > 0}
         <table class="data-table">
-            <tr><th>Le</th><th>Taux précédent</th><th>Nouveau taux</th><th>Par</th></tr>
+            <tr><th>{inject:i18n.get('t.le')}</th><th>{inject:i18n.get('t.taux-precedent')}</th><th>{inject:i18n.get('t.nouveau-taux')}</th><th>{inject:i18n.get('t.par')}</th></tr>
             {#for entry in history.get(currency.code)}
             <tr>
                 <td>{entry.changedAt.format('dd/MM/yyyy HH:mm')}</td>
-                <td>{entry.previousEuroPerUnit ?: '—'}</td>
-                <td>{entry.euroPerUnit}</td>
+                <td>{#if entry.previousEuroPerUnit != null}{inject:i18n.number(entry.previousEuroPerUnit)}{#else}—{/if}</td>
+                <td>{inject:i18n.number(entry.euroPerUnit)}</td>
                 <td>{entry.changedBy ?: '—'}</td>
             </tr>
             {/for}
         </table>
         {#else}
-        <p class="card-sub">Le taux n'a pas été modifié depuis la création de la devise.</p>
+        <p class="card-sub">{inject:i18n.get('t.le-taux-n-a-pas-ete-modifie')}</p>
         {/if}
     </details>
     {/for}
@@ -87,33 +87,33 @@
 </div>
 
 <div class="card">
-    <h2 class="card-title">Nouvelle devise</h2>
+    <h2 class="card-title">{inject:i18n.get('t.nouvelle-devise')}</h2>
     <form method="post" action="/admin/currencies/save" class="field-grid">
         <div class="field">
-            <label class="field-label" for="new-code">Code ISO</label>
+            <label class="field-label" for="new-code">{inject:i18n.get('t.code-iso')}</label>
             <input class="input-control" id="new-code" type="text" name="code" maxlength="3" required>
         </div>
         <div class="field">
-            <label class="field-label" for="new-label">Libellé</label>
+            <label class="field-label" for="new-label">{inject:i18n.get('t.libelle')}</label>
             <input class="input-control" id="new-label" type="text" name="label" maxlength="40">
         </div>
         <div class="field">
-            <label class="field-label" for="new-symbol">Symbole</label>
+            <label class="field-label" for="new-symbol">{inject:i18n.get('t.symbole')}</label>
             <input class="input-control" id="new-symbol" type="text" name="symbol" maxlength="5">
         </div>
         <div class="field">
-            <label class="field-label" for="new-rate">Euros pour une unité</label>
+            <label class="field-label" for="new-rate">{inject:i18n.get('t.euros-pour-une-unite')}</label>
             <input class="input-control" id="new-rate" type="text" name="euroPerUnit" placeholder="6,55957" required>
         </div>
         <div class="field">
-            <label class="field-label" for="new-order">Ordre</label>
+            <label class="field-label" for="new-order">{inject:i18n.get('t.ordre')}</label>
             <input class="input-control" id="new-order" type="number" name="displayOrder" min="0" value="0">
         </div>
         <div class="field">
-            <label class="field-label" for="new-active">Active</label>
+            <label class="field-label" for="new-active">{inject:i18n.get('t.active')}</label>
             <input id="new-active" type="checkbox" name="active" checked>
         </div>
-        <div class="page-actions"><button class="btn btn-primary" type="submit">Créer la devise</button></div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.creer-la-devise')}</button></div>
     </form>
 </div>
 {/body}

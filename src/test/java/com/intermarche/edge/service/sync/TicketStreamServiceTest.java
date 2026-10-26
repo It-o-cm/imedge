@@ -818,4 +818,432 @@ class TicketStreamServiceTest {
             return new String(gzip.readAllBytes(), StandardCharsets.UTF_8);
         }
     }
+    /** BO-11-02: nullable wire metadata and a legacy CARD discriminator preserve every payload leg. */
+    @Test
+    void payloadsTolerateMissingMetadataAndLegacyCardTypes() throws Exception {
+        TicketStreamService service = service(true, false, mock(ExternalRelayService.class));
+        Ticket ticket = new Ticket();
+        ticket.ticketNumber = "T1";
+        ticket.status = null;
+        ticket.creationDate = null;
+        ticket.closingDate = null;
+        ticket.cashier = new Employee();
+        ticket.cashier.loginName = "OP";
+        ticket.session = new CashSession();
+        ticket.session.sessionNumber = "S1";
+        ticket.lines = new ArrayList<>();
+        ticket.payments = new ArrayList<>();
+        TicketPayment legacy = mock(TicketPayment.class);
+        when(legacy.getMethodKey()).thenReturn("CARD");
+        ticket.payments.add(legacy);
+        var ticketMethod = TicketStreamService.class.getDeclaredMethod("ticketEvent", Ticket.class);
+        ticketMethod.setAccessible(true);
+        var payload = (StreamPayloads.TicketEvent) ticketMethod.invoke(service, ticket);
+        Assertions.assertNull(payload.status);
+        Assertions.assertNull(payload.creationDate);
+        Assertions.assertEquals("OP", payload.cashierLogin);
+        Assertions.assertEquals("S1", payload.sessionNumber);
+        var moneticsMethod = TicketStreamService.class.getDeclaredMethod("moneticsEvent", Ticket.class);
+        moneticsMethod.setAccessible(true);
+        var monetics = (StreamPayloads.MoneticsEvent) moneticsMethod.invoke(service, ticket);
+        Assertions.assertEquals(1, monetics.cards.size());
+        Assertions.assertNull(monetics.cards.get(0).authorizationNumber);
+        var refundMethod = TicketStreamService.class.getDeclaredMethod("refundEvent", Refund.class);
+        refundMethod.setAccessible(true);
+        Refund refund = refund("R1");
+        refund.status = null;
+        refund.refundMethod = null;
+        refund.session = ticket.session;
+        var returned = (StreamPayloads.RefundEvent) refundMethod.invoke(service, refund);
+        Assertions.assertNull(returned.status);
+        Assertions.assertNull(returned.method);
+        Assertions.assertEquals("S1", returned.sessionNumber);
+        refund.status = Refund.RefundStatus.OPEN;
+        refund.refundMethod = Refund.RefundMethod.CASH;
+        returned = (StreamPayloads.RefundEvent) refundMethod.invoke(service, refund);
+        Assertions.assertEquals("OPEN", returned.status);
+        Assertions.assertEquals("CASH", returned.method);
+    }
+
+    /** BO-11-02-02: compression failure keeps the exact printed text and advertises plain encoding. */
+    @Test
+    void compressionFailureFallsBackToPlainImage() throws Exception {
+        TicketStreamService service = service(true, true, mock(ExternalRelayService.class));
+        var payload = new StreamPayloads.TicketEvent();
+        var method = TicketStreamService.class.getDeclaredMethod("applyImage", StreamPayloads.TicketEvent.class, String.class);
+        method.setAccessible(true);
+        try (var gzip = mockConstruction(java.util.zip.GZIPOutputStream.class, (mocked, context) -> {
+            org.mockito.Mockito.doThrow(new java.io.IOException("compression unavailable")).when(mocked).write(any(byte[].class));
+        })) {
+            method.invoke(service, payload, "PRINTED BODY");
+        }
+        Assertions.assertEquals("PRINTED BODY", payload.image);
+        Assertions.assertEquals(StreamPayloads.IMAGE_PLAIN, payload.imageEncoding);
+    }
+
+    /** BO-11-02-05: the CDI proxy is used when present and a null handle result falls back to the bean. */
+    @Test
+    void selfUsesTheAvailableCdiProxy() {
+        TicketStreamService service = service(true, false, mock(ExternalRelayService.class));
+        TicketStreamService proxy = mock(TicketStreamService.class);
+        io.quarkus.arc.ArcContainer container = mock(io.quarkus.arc.ArcContainer.class);
+        io.quarkus.arc.InstanceHandle<TicketStreamService> handle = mock(io.quarkus.arc.InstanceHandle.class);
+        when(container.instance(TicketStreamService.class)).thenReturn(handle);
+        try (var arc = mockStatic(io.quarkus.arc.Arc.class)) {
+            arc.when(io.quarkus.arc.Arc::container).thenReturn(container);
+            Assertions.assertSame(service, service.self());
+            when(handle.get()).thenReturn(proxy);
+            Assertions.assertSame(proxy, service.self());
+        }
+    }
+
+    /** BO-11-02-02: a serializing failure with a real subscriber never creates an empty queued event. */
+    @Test
+    void serializerFailureStopsEnqueueForARealSubscriber() throws Exception {
+        TicketStreamService service = service(true, false, mock(ExternalRelayService.class));
+        service.objectMapper = mock(ObjectMapper.class);
+        when(service.objectMapper.writeValueAsString(any())).thenThrow(new IllegalStateException("serialization failed"));
+        ServiceProvider provider = provider("VIDEO", ServiceProvider.ProviderType.EXPLOITATION, "https://video", "key", true);
+        try (var base = mockStatic(PanacheEntityBase.class);
+             var events = mockConstruction(StreamEvent.class)) {
+            stubProviders(base, List.of(provider), List.of());
+            service.onRefund(refund("R1"));
+            Assertions.assertTrue(events.constructed().isEmpty());
+        }
+    }
+
+    /** BO-11-02-05: an HTTP response below 200 increments retry state instead of acknowledging the event. */
+    @Test
+    void informationalStatusDoesNotAcknowledgeAnEvent() {
+        TicketStreamService service = service(true, false, relayAnswering(true, 199));
+        StreamEvent pending = event("VIDEO", StreamEvent.Kind.TICKET, "T1", 0, null);
+        ServiceProvider provider = provider("VIDEO", ServiceProvider.ProviderType.EXPLOITATION, "https://video", "key", true);
+        try (var base = mockStatic(PanacheEntityBase.class)) {
+            stubPending(base, List.of(pending));
+            stubFindByCode(base, provider);
+            Assertions.assertEquals(0, service.deliverPending());
+        }
+        Assertions.assertEquals(1, pending.attempts);
+        Assertions.assertEquals("HTTP 199", pending.lastError);
+    }
+
+    /** BO-11-02-02: tickets without a cashier or session publish null identities explicitly. */
+    @Test
+    void ticketPayloadKeepsMissingCashierAndSessionNull() throws Exception {
+        TicketStreamService service = service(true, false, mock(ExternalRelayService.class));
+        Ticket ticket = new Ticket();
+        ticket.lines = new ArrayList<>();
+        ticket.cashier = null;
+        ticket.session = null;
+        var method = TicketStreamService.class.getDeclaredMethod("ticketEvent", Ticket.class);
+        method.setAccessible(true);
+        var payload = (StreamPayloads.TicketEvent) method.invoke(service, ticket);
+        Assertions.assertNull(payload.cashierLogin);
+        Assertions.assertNull(payload.sessionNumber);
+    }
+
+    /** BO-11: startup installs one daemon worker at the administered cadence without performing an export. */
+    @org.junit.jupiter.api.Test
+    void startupUsesOneDaemonAtTheAdministeredCadence() {
+        var service = service(true, false, mock(ExternalRelayService.class));
+        var executor = org.mockito.Mockito.mock(java.util.concurrent.ScheduledExecutorService.class);
+        var factory = org.mockito.ArgumentCaptor.forClass(java.util.concurrent.ThreadFactory.class);
+        try (var executors = org.mockito.Mockito.mockStatic(java.util.concurrent.Executors.class)) {
+            executors.when(() -> java.util.concurrent.Executors.newSingleThreadScheduledExecutor(org.mockito.ArgumentMatchers.any(java.util.concurrent.ThreadFactory.class))).thenReturn(executor);
+            service.onStart(new io.quarkus.runtime.StartupEvent());
+            executors.verify(() -> java.util.concurrent.Executors.newSingleThreadScheduledExecutor(factory.capture()));
+            var thread = factory.getValue().newThread(() -> { });
+            org.junit.jupiter.api.Assertions.assertEquals("ticket-stream", thread.getName());
+            org.junit.jupiter.api.Assertions.assertTrue(thread.isDaemon());
+            org.junit.jupiter.api.Assertions.assertEquals(Thread.State.NEW, thread.getState());
+            org.mockito.Mockito.verify(executor).scheduleWithFixedDelay(org.mockito.ArgumentMatchers.any(Runnable.class), org.mockito.ArgumentMatchers.eq(10L), org.mockito.ArgumentMatchers.eq(10L), org.mockito.ArgumentMatchers.eq(java.util.concurrent.TimeUnit.SECONDS));
+        }
+    }
+
+    /** BO-11-02-05: successful empty delivery passes return normally so the scheduler remains usable after its failure path. */
+    @Test
+    void enabledLoopCompletesEmptyDeliveryPasses() {
+        var service = service(true, false, mock(ExternalRelayService.class));
+        try (var events = mockStatic(StreamEvent.class)) {
+            events.when(() -> StreamEvent.nextPending(50)).thenReturn(List.of());
+            Assertions.assertDoesNotThrow(service::tickSafely);
+            Assertions.assertDoesNotThrow(service::tickSafely);
+            events.verify(() -> StreamEvent.nextPending(50), times(2));
+        }
+    }
+
+    /**
+     * Builds a Catalina server.
+     *
+     * @param code its code
+     * @param endpoint its address, possibly null
+     * @return the provider
+     */
+    private ServiceProvider catalina(String code, String endpoint) {
+        ServiceProvider provider = provider(code, ServiceProvider.ProviderType.EXPLOITATION, endpoint, "k", true);
+        provider.protocol = ServiceProvider.ProviderProtocol.CATALINA;
+        return provider;
+    }
+
+    /**
+     * BO-03-09-20: a closed sale of a register whose Catalina flow is on is
+     * filed for the reachable Catalina servers, the general stream being off.
+     */
+    @Test
+    void aSaleOfACatalinaRegisterIsFiledForTheCatalinaServers() {
+        TicketStreamService service = service(false, false, mock(ExternalRelayService.class));
+        when(service.posSettingsService.catalinaEnabledFor("CA01")).thenReturn(true);
+        ServiceProvider server = catalina("CATA", "https://catalina");
+        ServiceProvider unreachable = catalina("CATA2", null);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
+                MockedConstruction<StreamEvent> filed = mockConstruction(StreamEvent.class)) {
+            panache.when(() -> ServiceProvider.list("protocol = ?1 and active = true order by code",
+                    ServiceProvider.ProviderProtocol.CATALINA)).thenReturn(List.of(server, unreachable));
+            stubFindByUid(panache, null);
+            service.onTicket(ticket("T1", null, payment("CASH", "12.00")));
+            Assertions.assertEquals(1, filed.constructed().size());
+            Assertions.assertEquals("CATA", filed.constructed().get(0).providerCode);
+            Assertions.assertEquals(StreamEvent.Kind.TICKET, filed.constructed().get(0).kind);
+        }
+    }
+
+    /** BO-03-09-20: a parked cart, or a register whose flow is off, is not sent to Catalina. */
+    @Test
+    void onlyTheClosedSalesOfAnActivatedRegisterGoToCatalina() {
+        TicketStreamService service = service(false, false, mock(ExternalRelayService.class));
+        when(service.posSettingsService.catalinaEnabledFor("CA01")).thenReturn(true);
+        Ticket parked = ticket("T2", null, payment("CASH", "12.00"));
+        parked.status = Ticket.TicketStatus.PARKED;
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
+                MockedConstruction<StreamEvent> filed = mockConstruction(StreamEvent.class)) {
+            service.onTicket(parked);
+            Assertions.assertTrue(filed.constructed().isEmpty());
+            panache.verifyNoInteractions();
+        }
+    }
+
+    /** BO-03-09-20: a Catalina server is never a subscriber of the general stream. */
+    @Test
+    void aCatalinaServerIsNotAStreamSubscriber() {
+        TicketStreamService service = service(true, false, mock(ExternalRelayService.class));
+        ServiceProvider floor = provider("ANAVEO", ServiceProvider.ProviderType.EXPLOITATION,
+                "https://anaveo", "k", true);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            stubProviders(panache, List.of(floor, catalina("CATA", "https://catalina")), List.of());
+            Assertions.assertEquals(List.of(floor), service.subscribers(StreamEvent.Kind.TICKET));
+        }
+    }
+
+    /** BO-03-09-20: the loop delivers what is pending even while the general stream is off. */
+    @Test
+    void theLoopDeliversPendingEventsWhileTheStreamIsOff() {
+        ExternalRelayService relay = relayAnswering(true, 200);
+        TicketStreamService service = service(false, false, relay);
+        ServiceProvider server = catalina("CATA", "https://catalina");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            StreamEvent pending = mock(StreamEvent.class);
+            pending.providerCode = "CATA";
+            pending.payload = "{}";
+            stubPending(panache, List.of(pending));
+            panache.when(() -> StreamEvent.count("deliveredAt is null")).thenReturn(1L);
+            stubFindByCode(panache, server);
+            service.tickSafely();
+            verify(relay).relay(any(), anyString(), anyString(), anyString(), anyLong(), any());
+        }
+        ExternalRelayService idle = mock(ExternalRelayService.class);
+        TicketStreamService quiet = service(false, false, idle);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> StreamEvent.count("deliveredAt is null")).thenReturn(0L);
+            quiet.tickSafely();
+        }
+        verify(idle, never()).relay(any(), anyString(), anyString(), anyString(), anyLong(), any());
+    }
+
+    /** BO-03-09-20: the pending check answers true with one event waiting and false with none. */
+    @Test
+    void hasPendingReflectsTheBacklog() {
+        TicketStreamService service = service(false, false, mock(ExternalRelayService.class));
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> StreamEvent.count("deliveredAt is null")).thenReturn(1L, 0L);
+            Assertions.assertTrue(service.hasPending());
+            Assertions.assertFalse(service.hasPending());
+        }
+    }
+
+    /**
+     * Builds a reachable provider speaking a protocol.
+     *
+     * @param code its code
+     * @param type its kind of service
+     * @param protocol its protocol
+     * @param endpoint its address, possibly null
+     * @return the provider
+     */
+    private ServiceProvider speaking(String code, ServiceProvider.ProviderType type,
+            ServiceProvider.ProviderProtocol protocol, String endpoint) {
+        ServiceProvider provider = provider(code, type, endpoint, "k", true);
+        provider.protocol = protocol;
+        return provider;
+    }
+
+    /**
+     * Stubs the active providers of one protocol.
+     *
+     * @param panache the Panache static mock
+     * @param protocol the protocol
+     * @param providers the providers speaking it
+     */
+    private void stubProtocol(MockedStatic<PanacheEntityBase> panache, ServiceProvider.ProviderProtocol protocol,
+            List<ServiceProvider> providers) {
+        panache.when(() -> ServiceProvider.list("protocol = ?1 and active = true order by code", protocol))
+                .thenReturn(providers);
+    }
+
+    /**
+     * BO-11-02-01 / -04: a closed sale is filed for the TFREMA, DS and Anaveo
+     * receivers in their own shapes, unreachable ones left out; a parked cart
+     * reaches only the video journal, and a sale rung on no shift (an
+     * e-commerce order) every receiver but the video journal.
+     */
+    @Test
+    void theProtocolReceiversGetTheirOwnShapes() {
+        TicketStreamService service = service(true, false, mock(ExternalRelayService.class));
+        ServiceProvider tfrema = speaking("GC", ServiceProvider.ProviderType.COMMERCIAL,
+                ServiceProvider.ProviderProtocol.TFREMA, "https://gc");
+        ServiceProvider deaf = speaking("GC2", ServiceProvider.ProviderType.COMMERCIAL,
+                ServiceProvider.ProviderProtocol.TFREMA, null);
+        ServiceProvider ds = speaking("MERC", ServiceProvider.ProviderType.COMMERCIAL,
+                ServiceProvider.ProviderProtocol.DS_VENTES, "https://mercalys");
+        ServiceProvider video = speaking("ANA", ServiceProvider.ProviderType.EXPLOITATION,
+                ServiceProvider.ProviderProtocol.ANAVEO, "https://anaveo");
+        Ticket parked = ticket("T2", null);
+        parked.status = Ticket.TicketStatus.PARKED;
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
+                MockedConstruction<StreamEvent> filed = mockConstruction(StreamEvent.class)) {
+            stubProviders(panache, List.of(), List.of());
+            stubProtocol(panache, ServiceProvider.ProviderProtocol.TFREMA, List.of(tfrema, deaf));
+            stubProtocol(panache, ServiceProvider.ProviderProtocol.DS_VENTES, List.of(ds));
+            stubProtocol(panache, ServiceProvider.ProviderProtocol.ANAVEO, List.of(video));
+            stubFindByUid(panache, null);
+            service.onTicket(ticket("T1", null, payment("CASH", "12.00")));
+            Assertions.assertEquals(3, filed.constructed().size());
+            Assertions.assertEquals("GC", filed.constructed().get(0).providerCode);
+            Assertions.assertTrue(filed.constructed().get(0).payload.contains("\"lignes\""));
+            Assertions.assertEquals("MERC", filed.constructed().get(1).providerCode);
+            Assertions.assertTrue(filed.constructed().get(1).payload.startsWith("DS12345"));
+            Assertions.assertEquals("ANA", filed.constructed().get(2).providerCode);
+            Assertions.assertTrue(filed.constructed().get(2).payload.contains("|TOTAL|CLOSED|"));
+            service.onTicket(parked);
+            Assertions.assertEquals(4, filed.constructed().size());
+            Assertions.assertEquals("ANA", filed.constructed().get(3).providerCode);
+            Ticket online = ticket("ECOM-1", null, payment("CARD", "12.00"));
+            online.session = null;
+            service.onTicket(online);
+            Assertions.assertEquals(6, filed.constructed().size());
+            Assertions.assertEquals("GC", filed.constructed().get(4).providerCode);
+            Assertions.assertEquals("MERC", filed.constructed().get(5).providerCode);
+        }
+    }
+
+    /** BO-11-02-01 / -04: a receiver speaking its own protocol is never a subscriber of the house stream. */
+    @Test
+    void aProtocolReceiverIsNotAStreamSubscriber() {
+        TicketStreamService service = service(true, false, mock(ExternalRelayService.class));
+        ServiceProvider floor = provider("FLOOR", ServiceProvider.ProviderType.EXPLOITATION, "https://f", "k", true);
+        ServiceProvider video = speaking("ANA", ServiceProvider.ProviderType.EXPLOITATION,
+                ServiceProvider.ProviderProtocol.ANAVEO, "https://anaveo");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            stubProviders(panache, List.of(floor, video), List.of());
+            Assertions.assertEquals(List.of(floor), service.subscribers(StreamEvent.Kind.TICKET));
+        }
+    }
+
+    /**
+     * BO-11-04-03: the integration report goes back to the reachable e-commerce
+     * platforms with the point of sale; a null report, one with no reference,
+     * or a store that does not return the status files nothing.
+     */
+    @Test
+    void theEcommerceStatusIsReturnedToThePlatforms() {
+        TicketStreamService service = service(false, false, mock(ExternalRelayService.class));
+        ServiceProvider shop = provider("SHOP", ServiceProvider.ProviderType.ECOMMERCE, "https://shop", "k", true);
+        ServiceProvider deaf = provider("SHOP2", ServiceProvider.ProviderType.ECOMMERCE, null, "k", true);
+        com.intermarche.edge.service.EcommerceIntegrationService.Report report =
+                new com.intermarche.edge.service.EcommerceIntegrationService.Report();
+        report.reference = "WEB-1";
+        report.status = "INTEGRATED";
+        report.ticketNumber = "ECOM-1";
+        report.total = new BigDecimal("42.00");
+        report.message = "ok";
+        report.unknownLines = 1;
+        com.intermarche.edge.service.EcommerceIntegrationService.Report nameless =
+                new com.intermarche.edge.service.EcommerceIntegrationService.Report();
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
+                MockedConstruction<StreamEvent> filed = mockConstruction(StreamEvent.class)) {
+            panache.when(() -> ServiceProvider.list("providerType = ?1 and active = true order by code",
+                    ServiceProvider.ProviderType.ECOMMERCE)).thenReturn(List.of(shop, deaf));
+            stubFindByUid(panache, null);
+            service.onEcommerceReport(report);
+            Assertions.assertTrue(filed.constructed().isEmpty());
+            when(service.posSettingsService.ecommerceStatusReturn()).thenReturn(true);
+            service.onEcommerceReport(null);
+            service.onEcommerceReport(nameless);
+            Assertions.assertTrue(filed.constructed().isEmpty());
+            service.onEcommerceReport(report);
+            Assertions.assertEquals(1, filed.constructed().size());
+            StreamEvent event = filed.constructed().get(0);
+            Assertions.assertEquals("SHOP", event.providerCode);
+            Assertions.assertEquals(StreamEvent.Kind.ECOMMERCE, event.kind);
+            Assertions.assertTrue(event.payload.contains("\"pdvNumber\":\"12345\""));
+            Assertions.assertTrue(event.payload.contains("\"status\":\"INTEGRATED\""));
+        }
+    }
+
+    /**
+     * Each receiver is posted in its protocol: the house JSON on /events, the
+     * Catalina and TFREMA JSON on their own address, the DS and Anaveo text with
+     * their media type — a provider with no protocol reading as the house JSON.
+     */
+    @Test
+    void eachReceiverIsPostedInItsProtocol() {
+        ExternalRelayService relay = mock(ExternalRelayService.class);
+        ExternalRelayService.RelayResult ok = new ExternalRelayService.RelayResult(true, 200, "");
+        when(relay.relay(any(), anyString(), anyString(), anyString(), anyLong(), any())).thenReturn(ok);
+        when(relay.relay(any(), anyString(), anyString(), anyString(), anyLong(), any(), anyString())).thenReturn(ok);
+        TicketStreamService service = service(true, false, relay);
+        List<ServiceProvider> providers = new ArrayList<>();
+        providers.add(speaking("CAT", ServiceProvider.ProviderType.DECISIONNEL,
+                ServiceProvider.ProviderProtocol.CATALINA, "https://cat"));
+        providers.add(speaking("TFR", ServiceProvider.ProviderType.COMMERCIAL,
+                ServiceProvider.ProviderProtocol.TFREMA, "https://tfr"));
+        providers.add(speaking("DSV", ServiceProvider.ProviderType.COMMERCIAL,
+                ServiceProvider.ProviderProtocol.DS_VENTES, "https://ds"));
+        providers.add(speaking("ANA", ServiceProvider.ProviderType.EXPLOITATION,
+                ServiceProvider.ProviderProtocol.ANAVEO, "https://ana"));
+        providers.add(speaking("JSON", ServiceProvider.ProviderType.EXPLOITATION,
+                ServiceProvider.ProviderProtocol.HTTP_JSON, "https://json"));
+        ServiceProvider bare = provider("BARE", ServiceProvider.ProviderType.EXPLOITATION, "https://bare", "k", true);
+        bare.protocol = null;
+        providers.add(bare);
+        List<StreamEvent> pending = new ArrayList<>();
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            for (ServiceProvider provider : providers) {
+                StreamEvent event = mock(StreamEvent.class);
+                event.providerCode = provider.code;
+                event.payload = "body-" + provider.code;
+                pending.add(event);
+                stubFindByCode(panache, provider);
+            }
+            stubPending(panache, pending);
+            Assertions.assertEquals(6, service.deliverPending());
+        }
+        verify(relay).relay(any(), eq("POST"), eq(""), eq("body-CAT"), anyLong(), eq("k"));
+        verify(relay).relay(any(), eq("POST"), eq(""), eq("body-TFR"), anyLong(), eq("k"));
+        verify(relay).relay(any(), eq("POST"), eq(""), eq("body-DSV"), anyLong(), eq("k"),
+                eq("text/plain; charset=UTF-8"));
+        verify(relay).relay(any(), eq("POST"), eq(""), eq("body-ANA"), anyLong(), eq("k"),
+                eq("text/plain; charset=UTF-8"));
+        verify(relay).relay(any(), eq("POST"), eq("/events"), eq("body-JSON"), anyLong(), eq("k"));
+        verify(relay).relay(any(), eq("POST"), eq("/events"), eq("body-BARE"), anyLong(), eq("k"));
+    }
 }

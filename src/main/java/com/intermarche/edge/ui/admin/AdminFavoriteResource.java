@@ -6,6 +6,8 @@ import com.intermarche.edge.domain.setting.Feature;
 import com.intermarche.edge.domain.people.Menu;
 import com.intermarche.edge.domain.people.UserFavorite;
 import com.intermarche.edge.service.PermissionService;
+import com.intermarche.edge.ui.report.ReportDefinition;
+import com.intermarche.edge.ui.report.ReportService;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
@@ -34,7 +36,9 @@ import org.jboss.logging.Logger;
 /**
  * The FAVORITES self-service screen ({@code /admin/favorites}, BO-01-04-08):
  * within the limits of what their profiles allow, an account hides the
- * features it does not want cluttering its interface.
+ * features and menus it does not want cluttering its interface, hides the
+ * report types it never reads, and puts the features it uses most in a
+ * "Favoris" menu of its own.
  * <p>
  * This is a personal convenience, not a right: the screen only offers the
  * features the signed-in account may actually {@link CrudOption#VIEW view}
@@ -62,7 +66,11 @@ public class AdminFavoriteResource {
     @Inject
     SecurityIdentity identity;
 
-    /** One rendered feature the account may view, with its hidden state. */
+    /** The report catalog, whose types an account may hide (BO-01-04-08). */
+    @Inject
+    ReportService reportService;
+
+    /** One rendered feature the account may view, with its hidden and favorite states. */
     public static class FavoriteRow {
         /** The feature key (posted token). */
         public String key;
@@ -74,10 +82,37 @@ public class AdminFavoriteResource {
         public boolean firstOfMenu;
         /** Whether the account currently hides the feature. */
         public boolean hidden;
+        /** Whether the account put the feature in its favorites menu. */
+        public boolean starred;
+    }
+
+    /** One rendered menu holding at least one feature the account may view. */
+    public static class MenuRow {
+        /** The menu name (posted token). */
+        public String name;
+        /** The menu label. */
+        public String label;
+        /** Whether the account currently hides the whole menu. */
+        public boolean hidden;
+        /** The menu's viewable features. */
+        public List<FavoriteRow> features = new ArrayList<>();
+    }
+
+    /** One report type the account may hide from the report list. */
+    public static class ReportRow {
+        /** The report code (posted token). */
+        public String code;
+        /** The report label. */
+        public String label;
+        /** The report family label. */
+        public String family;
+        /** Whether the account currently hides the report type. */
+        public boolean hidden;
     }
 
     /**
-     * Shows the favorites of the signed-in account.
+     * Shows the display preferences of the signed-in account: the menus and
+     * features it hides, its favorite features, and the report types it hides.
      *
      * @param notice the one-shot outcome message, or null
      * @param noticeOk whether the message reports a success
@@ -93,36 +128,59 @@ public class AdminFavoriteResource {
             LOGGER.info("Exiting method favoritesPage");
             return redirect("Compte introuvable.", false);
         }
-        Set<String> hidden = UserFavorite.hiddenKeys(employee.id);
-        List<FavoriteRow> rows = new ArrayList<>();
+        Set<String> tokens = UserFavorite.hiddenKeys(employee.id);
         String loginName = employee.loginName;
-        Menu lastMenu = null;
-        for (Feature feature : Feature.values()) {
-            if (!permissionService.isAllowed(loginName, feature, CrudOption.VIEW)) {
-                continue;
+        List<MenuRow> menus = new ArrayList<>();
+        for (Menu menu : Menu.values()) {
+            MenuRow menuRow = new MenuRow();
+            menuRow.name = menu.name();
+            menuRow.label = menu.getLabel();
+            menuRow.hidden = tokens.contains(UserFavorite.MENU + menu.name());
+            for (Feature feature : menu.features()) {
+                if (!permissionService.isAllowed(loginName, feature, CrudOption.VIEW)) {
+                    continue;
+                }
+                FavoriteRow row = new FavoriteRow();
+                row.key = feature.getKey();
+                row.label = feature.getLabel();
+                row.menu = menu.getLabel();
+                row.firstOfMenu = menuRow.features.isEmpty();
+                row.hidden = tokens.contains(feature.getKey());
+                row.starred = tokens.contains(UserFavorite.STAR + feature.getKey());
+                menuRow.features.add(row);
             }
-            FavoriteRow row = new FavoriteRow();
-            row.key = feature.getKey();
-            row.label = feature.getLabel();
-            row.menu = feature.getMenu().getLabel();
-            row.firstOfMenu = feature.getMenu() != lastMenu;
-            row.hidden = hidden.contains(feature.getKey());
-            lastMenu = feature.getMenu();
-            rows.add(row);
+            if (!menuRow.features.isEmpty()) {
+                menus.add(menuRow);
+            }
+        }
+        List<ReportRow> reports = new ArrayList<>();
+        if (permissionService.isAllowed(loginName, Feature.REPORT, CrudOption.VIEW)) {
+            for (ReportDefinition definition : reportService.catalog().all()) {
+                ReportRow row = new ReportRow();
+                row.code = definition.code();
+                row.label = definition.label();
+                row.family = definition.family().getLabel();
+                row.hidden = tokens.contains(UserFavorite.REPORT + definition.code());
+                reports.add(row);
+            }
         }
         LOGGER.info("Exiting method favoritesPage");
-        return adminFavorites.data("rows", rows)
+        return adminFavorites.data("menus", menus)
+                .data("reports", reports)
                 .data("notice", notice)
                 .data("noticeOk", noticeOk);
     }
 
     /**
-     * Rewrites the account's hidden-feature set from the posted selection.
+     * Rewrites the account's display preferences from the posted selection.
      * <p>
-     * Only keys the account may actually view are honoured, so a forged post
-     * cannot record a preference on a feature the profiles do not grant.
+     * Only features the account may actually view are honoured, so a forged
+     * post cannot record a preference on a feature the profiles do not grant;
+     * a menu or a report type must exist.
      *
-     * @param form the posted form, one {@code hide} value per feature to hide
+     * @param form the posted form: {@code hide} per feature to hide,
+     *             {@code star} per favorite feature, {@code hideMenu} per menu
+     *             and {@code hideReport} per report type to hide
      * @return a 303 redirect carrying the outcome notice
      */
     @POST
@@ -137,21 +195,52 @@ public class AdminFavoriteResource {
             return redirect("Compte introuvable.", false);
         }
         UserFavorite.clearFor(employee.id);
-        List<String> hide = form.get("hide");
-        if (hide != null) {
-            String loginName = employee.loginName;
-            for (String key : hide) {
-                Feature feature = Feature.fromKey(key);
-                if (feature != null && permissionService.isAllowed(loginName, feature, CrudOption.VIEW)) {
-                    UserFavorite row = new UserFavorite();
-                    row.employeeId = employee.id;
-                    row.featureKey = feature.getKey();
-                    row.persist();
+        String loginName = employee.loginName;
+        Set<String> tokens = new java.util.LinkedHashSet<>();
+        for (String key : values(form, "hide")) {
+            Feature feature = Feature.fromKey(key);
+            if (feature != null && permissionService.isAllowed(loginName, feature, CrudOption.VIEW)) {
+                tokens.add(feature.getKey());
+            }
+        }
+        for (String key : values(form, "star")) {
+            Feature feature = Feature.fromKey(key);
+            if (feature != null && permissionService.isAllowed(loginName, feature, CrudOption.VIEW)) {
+                tokens.add(UserFavorite.STAR + feature.getKey());
+            }
+        }
+        for (String name : values(form, "hideMenu")) {
+            for (Menu menu : Menu.values()) {
+                if (menu.name().equals(name)) {
+                    tokens.add(UserFavorite.MENU + menu.name());
                 }
             }
         }
+        for (String code : values(form, "hideReport")) {
+            if (reportService.catalog().find(code) != null) {
+                tokens.add(UserFavorite.REPORT + code);
+            }
+        }
+        for (String token : tokens) {
+            UserFavorite row = new UserFavorite();
+            row.employeeId = employee.id;
+            row.featureKey = token;
+            row.persist();
+        }
         LOGGER.info("Exiting method save");
         return redirect("Préférences d'affichage enregistrées.", true);
+    }
+
+    /**
+     * Reads the values of one posted field.
+     *
+     * @param form the posted form
+     * @param field the field name
+     * @return its values, empty when absent
+     */
+    private List<String> values(MultivaluedMap<String, String> form, String field) {
+        List<String> values = form.get(field);
+        return values == null ? List.of() : values;
     }
 
     /**

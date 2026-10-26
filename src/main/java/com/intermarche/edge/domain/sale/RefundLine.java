@@ -1,7 +1,11 @@
 package com.intermarche.edge.domain.sale;
 
 import com.intermarche.edge.domain.BaseEntity;
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Index;
+import jakarta.persistence.Table;
+
 import java.math.BigDecimal;
 import java.util.Objects;
 
@@ -38,7 +42,11 @@ public class RefundLine extends BaseEntity {
     @Column(name = "quantity", nullable = false, precision = 10, scale = 3)
     public BigDecimal quantity;
 
-    /** The unit price refunded (original unit price including tax). */
+    /**
+     * The unit price refunded, tax included: the price the customer ACTUALLY
+     * PAID on the original line (LC-05-02-12), advantages of the sale included,
+     * not the catalog unit price of that line.
+     */
     @Column(name = "price", nullable = false, precision = 19, scale = 4)
     public BigDecimal price;
 

@@ -28,7 +28,7 @@ import java.time.format.DateTimeFormatter;
  * field order and widths used by the invoice flow are the house reading of the
  * requirement and are to be confirmed before any real exchange.
  */
-final class FlatRecord {
+public final class FlatRecord {
 
     /** The characters accumulated so far, already padded to their widths. */
     private final StringBuilder buffer = new StringBuilder();
@@ -40,7 +40,7 @@ final class FlatRecord {
      * @param width the width of the field, in characters
      * @return this record, to chain the next field
      */
-    FlatRecord text(String value, int width) {
+    public FlatRecord text(String value, int width) {
         String safe = value == null ? "" : value.replaceAll("[\\r\\n;]", " ");
         if (safe.length() > width) {
             buffer.append(safe, 0, width);
@@ -63,7 +63,7 @@ final class FlatRecord {
      * @param width the width of the field, in characters
      * @return this record, to chain the next field
      */
-    FlatRecord amount(BigDecimal value, int width) {
+    public FlatRecord amount(BigDecimal value, int width) {
         BigDecimal safe = value == null ? BigDecimal.ZERO : value;
         BigDecimal cents = safe.setScale(2, RoundingMode.HALF_UP)
                 .movePointRight(2).setScale(0, RoundingMode.HALF_UP);
@@ -89,7 +89,7 @@ final class FlatRecord {
      * @param width the width of the field, in characters
      * @return this record, to chain the next field
      */
-    FlatRecord number(long value, int width) {
+    public FlatRecord number(long value, int width) {
         String digits = Long.toString(Math.abs(value));
         boolean negative = value < 0;
         int room = negative ? width - 1 : width;
@@ -111,7 +111,7 @@ final class FlatRecord {
      * @param value the date, possibly null — then eight spaces
      * @return this record, to chain the next field
      */
-    FlatRecord date(LocalDate value) {
+    public FlatRecord date(LocalDate value) {
         if (value == null) {
             return text(null, 8);
         }
@@ -124,7 +124,7 @@ final class FlatRecord {
      * @param value the instant, possibly null — then twelve spaces
      * @return this record, to chain the next field
      */
-    FlatRecord instant(LocalDateTime value) {
+    public FlatRecord instant(LocalDateTime value) {
         if (value == null) {
             return text(null, 12);
         }
@@ -140,7 +140,7 @@ final class FlatRecord {
      *
      * @return the assembled record
      */
-    String line() {
+    public String line() {
         return buffer.toString();
     }
 }

@@ -113,16 +113,13 @@ public class CancellationReport implements ReportDefinition {
                         + " from Ticket t join t.lines l"
                         + " where l.cancelled = true and l.cancellationDate >= :from"
                         + " and l.cancellationDate < :to");
-        if (!criteria.terminals.isEmpty()) {
-            jpql.append(" and t.terminalId in :terminals");
-        }
+        // BO-03-09-01: the registers chosen, and the deactivated ones left out.
+        jpql.append(criteria.terminalFilter("t.terminalId"));
         jpql.append(" order by l.cancellationDate");
         var query = entityManager.createQuery(jpql.toString(), Object[].class)
                 .setParameter("from", criteria.from())
                 .setParameter("to", criteria.to());
-        if (!criteria.terminals.isEmpty()) {
-            query.setParameter("terminals", criteria.terminals);
-        }
+        criteria.bindTerminals(query);
         List<List<Object>> rows = new ArrayList<>();
         for (Object[] line : query.getResultList()) {
             Employee cashier = (Employee) line[1];

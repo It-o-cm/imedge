@@ -10,6 +10,13 @@
     white-space: nowrap;
 }
 
+/* A figure never breaks, its HEADING does: "% des ventes nettes", "Vente
+   moyenne par ligne" kept on one line pushed the nine columns of the family
+   sales state out of the page down to 1366 px (BO-02-03-31). */
+.data-table th.report-num {
+    white-space: normal;
+}
+
 .report-total td {
     font-weight: 700;
     border-top: 2px solid var(--im-line, #d7dce3);
@@ -61,4 +68,78 @@
 
 .report-form .filter-actions {
     margin-top: 10px;
+}
+
+/* lot 21 (BO-06-01-04): a chart wider than the page scrolls inside its box,
+   never the page; the series and the pie slices take distinct colours. */
+.report-chart-box {
+    overflow-x: auto;
+}
+
+.report-chart.report-chart-wide {
+    max-width: none;
+}
+
+.report-table-box {
+    overflow-x: auto;
+    max-width: 100%;
+}
+
+/* A report table scrolls inside its box: its headings and cells wrap between
+   words only, never inside one (« NOMBR / E » at 800 x 600), the box taking
+   the width the words need. */
+.report-table-box .data-table th,
+.report-table-box .data-table td {
+    overflow-wrap: normal;
+    word-break: normal;
+}
+
+.report-chart-s0 { fill: #0b6ab0; stroke: #0b6ab0; }
+.report-chart-s1 { fill: #d9822b; stroke: #d9822b; }
+.report-chart-s2 { fill: #2e8b57; stroke: #2e8b57; }
+.report-chart-s3 { fill: #8e44ad; stroke: #8e44ad; }
+.report-chart-s4 { fill: #c0392b; stroke: #c0392b; }
+.report-chart-s5 { fill: #7f8c8d; stroke: #7f8c8d; }
+
+.report-chart-line {
+    fill: none;
+    stroke-width: 2;
+}
+
+.report-chart-p0 { fill: #0b6ab0; }
+.report-chart-p1 { fill: #d9822b; }
+.report-chart-p2 { fill: #2e8b57; }
+.report-chart-p3 { fill: #8e44ad; }
+.report-chart-p4 { fill: #c0392b; }
+.report-chart-p5 { fill: #7f8c8d; }
+.report-chart-p6 { fill: #16a085; }
+.report-chart-p7 { fill: #f1c40f; }
+.report-chart-p8 { fill: #34495e; }
+.report-chart-p9 { fill: #e84393; }
+.report-chart-p10 { fill: #6c5ce7; }
+.report-chart-p11 { fill: #b2bec3; }
+
+.report-chart-slice {
+    stroke: #fff;
+    stroke-width: 1;
+}
+
+.report-chart-legend {
+    fill: #36404a;
+    font-size: 12px;
+}
+
+.report-subtotal td {
+    font-weight: 600;
+    background: #eef3f8;
+}
+
+.report-preamble {
+    margin: 0 0 6px;
+    color: #36404a;
+}
+
+.report-signature {
+    margin: 24px 0 4px;
+    font-weight: 600;
 }

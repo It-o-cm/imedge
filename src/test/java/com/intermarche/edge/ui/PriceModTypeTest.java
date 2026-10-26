@@ -59,8 +59,8 @@ class PriceModTypeTest {
     @Test
     void everyModeCarriesALabel() {
         for (PriceModType type : PriceModType.values()) {
-            Assertions.assertNotNull(type.getLabel(), "titre absent pour " + type);
-            Assertions.assertFalse(type.getLabel().isBlank(), "titre vide pour " + type);
+            Assertions.assertNotNull(type.getLabelKey(), "titre absent pour " + type);
+            Assertions.assertFalse(type.getLabelKey().isBlank(), "titre vide pour " + type);
         }
     }
 

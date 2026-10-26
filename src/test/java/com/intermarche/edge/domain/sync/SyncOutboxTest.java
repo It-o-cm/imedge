@@ -1,9 +1,10 @@
 package com.intermarche.edge.domain.sync;
 
 import com.intermarche.edge.domain.sync.SyncOutbox.EntityType;
-import java.time.LocalDateTime;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+
+import java.time.LocalDateTime;
 
 /**
  * Unit tests for {@link SyncOutbox}, targeting 100% branch coverage.
@@ -67,13 +68,15 @@ class SyncOutboxTest {
      * values exposes exactly the six declared constants in declaration order,
      * the ordinal being the documented drain order: MOVEMENT drains right after
      * SESSION (its sole dependency) and ahead of the tickets and refunds it is
-     * independent of (lot C5a), CUSTOMER last since it references nothing
-     * (LC-08-04-09).
+     * independent of (lot C5a), CUSTOMER after the events since it references
+     * nothing (LC-08-04-09), then DOCUMENT, the printed tickets, the training
+     * sales and the traces of the tickets on hold last (LC-08-02-02, LC-13-05-06,
+     * LC-04-01-03), then the printed and the scanned instruments (BO-03-06-63).
      */
     @Test
-    void entityTypeValuesHoldsSevenConstantsInOrder() {
+    void entityTypeValuesHoldsTwelveConstantsInOrder() {
         EntityType[] values = EntityType.values();
-        Assertions.assertEquals(7, values.length);
+        Assertions.assertEquals(12, values.length);
         Assertions.assertEquals(EntityType.SESSION, values[0]);
         Assertions.assertEquals(EntityType.MOVEMENT, values[1]);
         Assertions.assertEquals(EntityType.TICKET, values[2]);
@@ -81,6 +84,11 @@ class SyncOutboxTest {
         Assertions.assertEquals(EntityType.EVENT, values[4]);
         Assertions.assertEquals(EntityType.CUSTOMER, values[5]);
         Assertions.assertEquals(EntityType.DOCUMENT, values[6]);
+        Assertions.assertEquals(EntityType.PRINTOUT, values[7]);
+        Assertions.assertEquals(EntityType.TRAINING, values[8]);
+        Assertions.assertEquals(EntityType.PARKING, values[9]);
+        Assertions.assertEquals(EntityType.STORED_VALUE, values[10]);
+        Assertions.assertEquals(EntityType.SCANNED_BARCODE, values[11]);
     }
 
     /**

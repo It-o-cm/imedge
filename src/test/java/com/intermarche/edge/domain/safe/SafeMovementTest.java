@@ -93,7 +93,8 @@ class SafeMovementTest {
     }
 
     /**
-     * The VAT total sums the lines, tax included.
+     * The VAT total sums the lines, tax included; the VAT amount sums their
+     * VAT alone, a line without VAT and a movement without lines counting zero.
      */
     @Test
     void thevatTotalSumsTheLines() {
@@ -104,6 +105,11 @@ class SafeMovementTest {
                 new SafeVatLine(new BigDecimal("5.50"), new BigDecimal("55.00"),
                         new BigDecimal("5.00"))));
         assertEquals(new BigDecimal("120.00"), movement.vatTotal());
+        assertEquals(new BigDecimal("15.00"), movement.vatAmount());
+        movement.vatLines.add(new SafeVatLine(BigDecimal.ZERO, BigDecimal.ONE, null));
+        assertEquals(new BigDecimal("15.00"), movement.vatAmount());
+        movement.vatLines = null;
+        assertEquals(BigDecimal.ZERO, movement.vatAmount());
     }
 
     /**

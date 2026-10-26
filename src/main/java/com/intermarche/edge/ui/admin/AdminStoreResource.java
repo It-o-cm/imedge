@@ -1,11 +1,14 @@
 package com.intermarche.edge.ui.admin;
 
+import io.quarkus.security.Authenticated;
+import com.intermarche.edge.security.FeatureAccess;
+import com.intermarche.edge.domain.setting.Feature;
+import com.intermarche.edge.domain.people.CrudOption;
 import com.intermarche.edge.domain.store.Address;
 import com.intermarche.edge.domain.store.Store;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
@@ -61,7 +64,8 @@ public class AdminStoreResource {
      * @return the page; {@code store} is null when this node has no row yet
      */
     @GET
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.STORE)
     public TemplateInstance storePage(@QueryParam("notice") String notice,
                                        @QueryParam("noticeOk") @DefaultValue("true") boolean noticeOk) {
         LOGGER.info("Entering method storePage with notice: " + notice + ", noticeOk: " + noticeOk);
@@ -83,7 +87,8 @@ public class AdminStoreResource {
      * @return a 303 redirect to the page with the notice
      */
     @POST
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.STORE, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response save(MultivaluedMap<String, String> form) {

@@ -16,6 +16,11 @@ import java.nio.charset.StandardCharsets;
  * <p>Values are rendered for a HUMAN, like the screen — an export is the list in
  * another container, not another measurement. The reader who wants to compute
  * takes the spreadsheet.
+ *
+ * <p>The title, the period, the preamble, the headings, the textual cells and
+ * the signature are written in the language of the edition
+ * ({@link ReportCriteria#language}), as the screen shows them; the numbers are
+ * written the same whatever the language.
  */
 @ApplicationScoped
 public class CsvReportWriter implements ReportWriter {
@@ -66,22 +71,31 @@ public class CsvReportWriter implements ReportWriter {
     @Override
     public byte[] write(ReportData data, ReportCriteria criteria) {
         LOGGER.info("Entering method write for report: " + data.definition.code());
+        com.intermarche.edge.ui.admin.BackOfficeMessages messages =
+                com.intermarche.edge.ui.admin.BackOfficeMessages.in(criteria.language);
         StringBuilder csv = new StringBuilder("﻿");
-        csv.append(escape(data.definition.label() + " — " + ReportHeading.period(criteria))).append('\n');
+        csv.append(escape(messages.text(data.definition.label()) + " — " + ReportHeading.period(criteria, messages)))
+                .append('\n');
+        for (String line : data.definition.preamble(criteria)) {
+            csv.append(escape(messages.text(line))).append('\n');
+        }
         boolean first = true;
         for (ReportColumn column : data.definition.columns()) {
             if (!first) {
                 csv.append(SEPARATOR);
             }
             first = false;
-            csv.append(escape(column.label()));
+            csv.append(escape(messages.text(column.label())));
         }
         csv.append('\n');
         for (java.util.List<Object> row : data.rows) {
-            append(csv, data, row);
+            append(csv, data, row, messages);
         }
         if (data.hasTotals()) {
-            append(csv, data, data.totals);
+            append(csv, data, data.totals, messages);
+        }
+        if (data.definition.signature() != null) {
+            csv.append(escape(messages.text(data.definition.signature()) + " :")).append('\n');
         }
         LOGGER.info("Exiting method write");
         return csv.toString().getBytes(StandardCharsets.UTF_8);
@@ -93,14 +107,18 @@ public class CsvReportWriter implements ReportWriter {
      * @param csv the document being built
      * @param data the executed report, read for its columns
      * @param row the row to append
+     * @param messages the language of the edition, for the textual cells
      */
-    private void append(StringBuilder csv, ReportData data, java.util.List<Object> row) {
+    private void append(StringBuilder csv, ReportData data, java.util.List<Object> row,
+                        com.intermarche.edge.ui.admin.BackOfficeMessages messages) {
         for (int i = 0; i < data.definition.columns().size(); i++) {
             if (i > 0) {
                 csv.append(SEPARATOR);
             }
             Object value = i < row.size() ? row.get(i) : null;
-            csv.append(escape(ReportFormat.cell(data.definition.columns().get(i), value)));
+            ReportColumn column = data.definition.columns().get(i);
+            String rendered = ReportFormat.cell(column, value);
+            csv.append(escape(column.numeric() ? rendered : messages.text(rendered)));
         }
         csv.append('\n');
     }
@@ -112,9 +130,6 @@ public class CsvReportWriter implements ReportWriter {
      * @return the CSV field
      */
     private String escape(String value) {
-        if (value == null) {
-            return "";
-        }
         if (value.indexOf(SEPARATOR) < 0 && value.indexOf('"') < 0
                 && value.indexOf('\n') < 0 && value.indexOf('\r') < 0) {
             return value;

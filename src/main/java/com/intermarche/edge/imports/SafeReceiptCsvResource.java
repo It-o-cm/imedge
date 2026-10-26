@@ -45,7 +45,13 @@ import java.util.Set;
  * closure nobody checked.
  *
  * <p>Consumed columns, resolved by header name: REFERENCE (key), LABEL, AMOUNT,
- * DATE, and the optional VAT_RATE / VAT_BASE / VAT_AMOUNT triplet.
+ * DATE, and the optional VAT_RATE / VAT_BASE / VAT_AMOUNT triplet, repeated with
+ * the suffixes {@code _2} to {@code _5} for a receipt bearing several rates: a
+ * receipt bears no VAT, one, or several.
+ *
+ * <p>The EXISTING FEEDS keep their own layout: deposited with their flow's code
+ * ({@code mode}), their file is first rewritten in this canonical layout by
+ * {@link com.intermarche.edge.service.ReceiptFlowService}.
  */
 // No @Path: the ONE door is POST /feeds/import/{CODE}, which delegates here.
 // A second address for the same import is a second thing to secure, to
@@ -75,6 +81,51 @@ public class SafeReceiptCsvResource extends ImporterCsvResource {
 
     /** The columns this importer cannot work without. */
     private static final List<String> REQUIRED_COLUMNS = List.of(COL_AMOUNT);
+
+    /** How many VAT triplets one receipt may state. */
+    static final int VAT_TRIPLETS = 5;
+
+    /** Reads the existing feeds in their own layout (BO-05-02-03). */
+    @jakarta.inject.Inject
+    com.intermarche.edge.service.ReceiptFlowService receiptFlowService;
+
+    /**
+     * Integrates the receipts of an existing feed, read in its own layout
+     * (BO-05-02-03); without a flow, the file is in the canonical layout.
+     *
+     * @param inputStream the stream carrying the feed's file
+     * @param flowCode the code of the flow the file belongs to, or null
+     * @return a JSON summary of the created and updated counts and the errors,
+     *         or 400 when the flow is unknown or inactive
+     */
+    public Response importReceipts(InputStream inputStream, String flowCode) {
+        LOGGER.info("Entering method importReceipts with flow: " + flowCode);
+        if (flowCode == null || flowCode.isBlank()) {
+            LOGGER.info("Exiting method importReceipts: canonical file");
+            return importReceipts(inputStream);
+        }
+        receiptFlowService.ensureDefaults();
+        com.intermarche.edge.domain.safe.ReceiptFlow flow =
+                com.intermarche.edge.domain.safe.ReceiptFlow.findByCode(flowCode);
+        if (flow == null || !flow.active) {
+            LOGGER.info("Exiting method importReceipts: unknown flow");
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(ImporterCsvResource.errorAnswer("Flux de recettes inconnu ou inactif")).build();
+        }
+        String content;
+        try {
+            content = new String(inputStream.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        } catch (java.io.IOException unreadable) {
+            LOGGER.info("Exiting method importReceipts: unreadable file");
+            return Response.serverError().entity(ImporterCsvResource.errorAnswer("Fichier illisible")).build();
+        }
+        Response answer = importReceipts(new java.io.ByteArrayInputStream(receiptFlowService.translate(flow, content)
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        receiptFlowService.recordImport(flow.code, com.intermarche.edge.service.ReceiptFlowService.summary(flow.code, answer.getStatus(),
+                answer.getEntity()));
+        LOGGER.info("Exiting method importReceipts");
+        return answer;
+    }
 
     /**
      * Integrates the receipts carried by a CSV stream.
@@ -118,7 +169,11 @@ public class SafeReceiptCsvResource extends ImporterCsvResource {
      * <p>A movement whose period has been CLOSED is left alone: the period is
      * frozen, and a feed resending an old file must not reopen it behind the
      * closure's back. The line is counted as neither created nor updated, which
-     * is what it is — nothing happened.
+     * is what it is — nothing happened. A zero amount credits nothing and is
+     * passed over. An amount that is absent, unreadable or negative, a date that
+     * cannot be read and a new receipt with no period open are REFUSED: the line
+     * goes to the import's errors instead of vanishing from the count, so the
+     * operator knows a receipt of the file was not credited.
      *
      * @param data the parsed row
      * @param entityMap the movements already integrated, by reference
@@ -126,15 +181,24 @@ public class SafeReceiptCsvResource extends ImporterCsvResource {
      */
     @Override
     protected void processLineLogic(LineData data, Map<String, Object> entityMap, int[] counters) {
-        BigDecimal amount = decimal(safeGet(data, COL_AMOUNT));
-        if (amount == null || amount.signum() <= 0) {
+        String rawAmount = safeGet(data, COL_AMOUNT);
+        BigDecimal amount = decimal(rawAmount);
+        if (amount == null || amount.signum() < 0) {
+            throw new IllegalArgumentException("Montant absent, illisible ou négatif : « "
+                    + java.util.Objects.toString(rawAmount, "").trim() + " »");
+        }
+        if (amount.signum() == 0) {
             return;
+        }
+        String rawDate = java.util.Objects.toString(safeGet(data, COL_DATE), "");
+        if (!rawDate.isBlank() && date(rawDate) == null) {
+            throw new IllegalArgumentException("Date illisible : « " + rawDate.trim() + " »");
         }
         SafeMovement movement = (SafeMovement) entityMap.get(data.code);
         if (movement == null) {
             AccountingPeriod period = AccountingPeriod.open();
             if (period == null) {
-                return;
+                throw new IllegalStateException("Aucune période du coffre ouverte : recette non intégrée.");
             }
             movement = new SafeMovement();
             movement.type = SafeMovementType.AUTOMATIC_RECEIPT;
@@ -192,10 +256,13 @@ public class SafeReceiptCsvResource extends ImporterCsvResource {
      */
     List<SafeVatLine> vatLinesOf(LineData data) {
         List<SafeVatLine> lines = new ArrayList<>();
-        SafeVatLine line = new SafeVatLine(decimal(safeGet(data, COL_VAT_RATE)),
-                decimal(safeGet(data, COL_VAT_BASE)), decimal(safeGet(data, COL_VAT_AMOUNT)));
-        if (line.isStated()) {
-            lines.add(line);
+        for (int triplet = 1; triplet <= VAT_TRIPLETS; triplet++) {
+            String suffix = triplet == 1 ? "" : "_" + triplet;
+            SafeVatLine line = new SafeVatLine(decimal(safeGet(data, COL_VAT_RATE + suffix)),
+                    decimal(safeGet(data, COL_VAT_BASE + suffix)), decimal(safeGet(data, COL_VAT_AMOUNT + suffix)));
+            if (line.isStated()) {
+                lines.add(line);
+            }
         }
         return lines;
     }

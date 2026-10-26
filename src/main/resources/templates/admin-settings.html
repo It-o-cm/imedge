@@ -7,54 +7,60 @@
 !}
 {#include admin-layout}
 
-{#title}Paramètres caisse{/title}
+{#title}{inject:i18n.get('t.parametres-caisse')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Paramètres caisse</h1>
-        <p class="page-sub">{settingCount} paramètres en {sections.size()} rubriques — appliqués aux caisses au prochain tirage référentiel.</p>
+        <h1>{inject:i18n.get('t.parametres-caisse')}</h1>
+        <p class="page-sub">{settingCount} {inject:i18n.get('t.parametres-en')} {sections.size()} {inject:i18n.get('t.rubriques-appliques-aux-caisses-au-prochain-tira')}</p>
     </div>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 <form method="post" action="/admin/settings">
     <div class="page-actions panel-actions">
-        <button class="btn btn-ghost" type="button" data-panels="open">Tout déplier</button>
-        <button class="btn btn-ghost" type="button" data-panels="close">Tout replier</button>
+        <button class="btn btn-ghost" type="button" data-panels="open">{inject:i18n.get('t.tout-deplier')}</button>
+        <button class="btn btn-ghost" type="button" data-panels="close">{inject:i18n.get('t.tout-replier')}</button>
     </div>
 
     {#for section in sections}
     <details class="card panel">
         <summary class="card-title panel-title">
-            {section.label}<span class="panel-count">{section.count}</span>
+            {inject:i18n.text(section.label)}<span class="panel-count">{section.count}</span>
         </summary>
         <div class="field-grid">
             {#for entry in section.entries}
             <div class="field">
-                <label class="field-label" for="f-{entry.key}">{entry.label}</label>
+                <label class="field-label" for="f-{entry.key}">{inject:i18n.text(entry.label)}</label>
                 {#if entry.bool}
                 <select class="input-control" id="f-{entry.key}" name="{entry.key}">
-                    <option value="true" {#if entry.value == 'true'}selected{/if}>Activé</option>
-                    <option value="false" {#if entry.value != 'true'}selected{/if}>Désactivé</option>
+                    <option value="true" {#if entry.value == 'true'}selected{/if}>{inject:i18n.get('t.active-2')}</option>
+                    <option value="false" {#if entry.value != 'true'}selected{/if}>{inject:i18n.get('t.desactive')}</option>
                 </select>
                 {#else if entry.integer}
                 <input type="number" id="f-{entry.key}" name="{entry.key}" value="{entry.value}" min="0">
+                {#else if entry.secret}
+                {! BO-10-03-08 : un secret ne revient jamais sur la page — champ
+                 ! masque, vide = valeur enregistree conservee. !}
+                <input class="input-control" type="password" id="f-{entry.key}" name="{entry.key}" value="" maxlength="120" autocomplete="new-password" placeholder="{#if entry.secretSet}{inject:i18n.get('t.secret-renseigne')}{#else}{inject:i18n.get('t.secret-non-renseigne')}{/if}">
                 {#else if entry.choices.size() > 0}
                 {! Valeurs fermees : on CHOISIT, on ne tape pas — une faute de
                  ! frappe retomberait en silence sur le defaut du parametre. !}
                 <select class="input-control" id="f-{entry.key}" name="{entry.key}">
                     {#for choice in entry.choices}
-                    <option value="{choice}" {#if entry.value == choice}selected{/if}>{#if choice.isEmpty()}— aucune —{#else}{choice}{/if}</option>
+                    <option value="{choice}" {#if entry.value == choice}selected{/if}>{#if choice.isEmpty()}{inject:i18n.get('t.aucune')}{#else}{choice}{/if}</option>
                     {/for}
                 </select>
                 {#else}
-                <input type="text" id="f-{entry.key}" name="{entry.key}" value="{entry.value}" maxlength="120">
+                {! BO-04-02-01, BO-04-03-08/10 : les listes de regles se posent une par
+                 ! ligne ; un champ d'une ligne de 120 caracteres ne les tenait pas. !}
+                <textarea class="input-control" id="f-{entry.key}" name="{entry.key}" rows="2" maxlength="4000">{entry.value}</textarea>
                 {/if}
-                <span class="field-hint">{entry.hint}</span>
+                <span class="field-hint">{inject:i18n.text(entry.hint)}</span>
             </div>
             {/for}
         </div>
@@ -62,8 +68,8 @@
     {/for}
 
     <div class="page-actions" style="margin-top: 6px;">
-        <button class="btn btn-primary" type="submit">Enregistrer</button>
-        <a class="btn btn-ghost" href="/admin/settings">Annuler</a>
+        <button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer')}</button>
+        <a class="btn btn-ghost" href="/admin/settings">{inject:i18n.get('t.annuler')}</a>
     </div>
 </form>
 
@@ -83,4 +89,4 @@ document.querySelectorAll('[data-panels]').forEach(function (button) {
 |}
 {/body}
 
-{#footer}Les paramètres sont distribués aux caisses par le tirage référentiel (domaine SETTINGS), comme les produits et les prix.{/footer}
+{#footer}{inject:i18n.get('t.les-parametres-sont-distribues-aux-caisses-par')}{/footer}

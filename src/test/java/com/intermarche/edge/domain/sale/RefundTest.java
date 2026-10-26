@@ -1,11 +1,12 @@
 package com.intermarche.edge.domain.sale;
 
 import com.intermarche.edge.domain.session.CashSession;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Objects;
-import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests for {@link Refund}, targeting 100% branch coverage.
@@ -104,7 +105,8 @@ class RefundTest {
     }
 
     /**
-     * The RefundMethod enum exposes exactly CASH, CARD, VOUCHER and LOYALTY, round-tripping by name.
+     * The RefundMethod enum exposes exactly CASH, CARD, VOUCHER, LOYALTY and
+     * CREDIT (LC-05-06-05), round-tripping by name.
      */
     @Test
     void refundMethodEnumValues() {
@@ -113,15 +115,17 @@ class RefundTest {
                         Refund.RefundMethod.CASH,
                         Refund.RefundMethod.CARD,
                         Refund.RefundMethod.VOUCHER,
-                        Refund.RefundMethod.LOYALTY},
+                        Refund.RefundMethod.LOYALTY,
+                        Refund.RefundMethod.CREDIT},
                 Refund.RefundMethod.values());
         Assertions.assertEquals(Refund.RefundMethod.LOYALTY, Refund.RefundMethod.valueOf("LOYALTY"));
+        Assertions.assertEquals(Refund.RefundMethod.CREDIT, Refund.RefundMethod.valueOf("CREDIT"));
     }
 
-
-
     /**
-     * getChecksum hashes the refund number, ticket id, total, status and method.
+     * getChecksum hashes the refund number, ticket id, total, status, method,
+     * the return reason (LC-05-05-01) and the credit account number
+     * (LC-05-06-05), all carried on the refund.
      */
     @Test
     void checksumHashesSalientFields() {
@@ -131,18 +135,21 @@ class RefundTest {
         refund.totalAmount = new BigDecimal("10.0000");
         refund.status = Refund.RefundStatus.CLOSED;
         refund.refundMethod = Refund.RefundMethod.CASH;
+        refund.returnReason = "Article périmé";
+        refund.creditAccountNumber = "CC1";
         int expected = Objects.hash("C04-R000012", 42L, new BigDecimal("10.0000"),
-                Refund.RefundStatus.CLOSED, Refund.RefundMethod.CASH);
+                Refund.RefundStatus.CLOSED, Refund.RefundMethod.CASH, "Article périmé", "CC1");
         Assertions.assertEquals(expected, refund.getChecksum());
     }
 
     /**
-     * getChecksum tolerates the null-valued identifying and financial fields.
+     * getChecksum tolerates the null-valued identifying and financial fields,
+     * the return reason and credit account number included.
      */
     @Test
     void checksumToleratesNulls() {
         Refund refund = new Refund();
-        int expected = Objects.hash(null, null, null, Refund.RefundStatus.OPEN, null);
+        int expected = Objects.hash(null, null, null, Refund.RefundStatus.OPEN, null, null, null);
         Assertions.assertEquals(expected, refund.getChecksum());
     }
 
@@ -156,5 +163,47 @@ class RefundTest {
         int before = refund.getChecksum();
         refund.totalAmount = new BigDecimal("20.0000");
         Assertions.assertNotEquals(before, refund.getChecksum());
+    }
+
+    /**
+     * The recalculation fields (LC-05-02-13) default to absent — no status, no
+     * amount, no surviving advantage, nothing sent to the loyalty programme — so
+     * a refund created before the recalculation existed reads as one that never
+     * ran.
+     */
+    @Test
+    void recalculationFieldsDefaultToAbsent() {
+        Refund refund = new Refund();
+        Assertions.assertNull(refund.recalculationStatus);
+        Assertions.assertNull(refund.withdrawnGenerosity);
+        Assertions.assertNull(refund.keptAdvantages);
+        Assertions.assertFalse(refund.loyaltyRecalculationSent);
+    }
+
+    /**
+     * The recalculation fields round-trip what the return established
+     * (LC-05-02-13): the status, the advantage withdrawn, the surviving
+     * advantages joined in one column and the loyalty notification.
+     */
+    @Test
+    void recalculationFieldsRoundTrip() {
+        Refund refund = new Refund();
+        refund.recalculationStatus = "RECOMPUTED";
+        refund.withdrawnGenerosity = new BigDecimal("2.5000");
+        refund.keptAdvantages = "REMISE PANIER | OFFRE-7";
+        refund.loyaltyRecalculationSent = true;
+        Assertions.assertEquals("RECOMPUTED", refund.recalculationStatus);
+        Assertions.assertEquals(new BigDecimal("2.5000"), refund.withdrawnGenerosity);
+        Assertions.assertEquals("REMISE PANIER | OFFRE-7", refund.keptAdvantages);
+        Assertions.assertTrue(refund.loyaltyRecalculationSent);
+    }
+
+    /** LC-07 credit sync: misplaced relationship annotations on returnReason must not prevent node startup. */
+    @Test
+    void refundAssociationBelongsToLines() throws Exception {
+        org.junit.jupiter.api.Assertions.assertNotNull(Refund.class.getDeclaredField("lines")
+                .getAnnotation(jakarta.persistence.OneToMany.class));
+        org.junit.jupiter.api.Assertions.assertNull(Refund.class.getDeclaredField("returnReason")
+                .getAnnotation(jakarta.persistence.OneToMany.class));
     }
 }

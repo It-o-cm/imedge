@@ -12,7 +12,6 @@ import jakarta.persistence.Table;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalTime;
-import java.util.List;
 
 /**
  * One administered field of a barcode range, given by its POSITION rather than
@@ -341,7 +340,7 @@ public class CouponField extends PanacheEntity {
          * @return the date, or null when the characters do not form one
          */
         public LocalDate toDate(String raw, int century) {
-            if (isTime() || raw == null || raw.length() != width) {
+            if (raw == null || raw.length() != width) {
                 return null;
             }
             try {
@@ -377,6 +376,44 @@ public class CouponField extends PanacheEntity {
             } catch (NumberFormatException | java.time.DateTimeException e) {
                 return null;
             }
+        }
+
+        /**
+         * Writes a date the way this layout reads it, the printing half of
+         * {@link #toDate} (BO-03-06-30 to -38).
+         *
+         * @param date the date to write, or null
+         * @return the characters, or null for a null date or a time layout
+         */
+        public String format(java.time.LocalDate date) {
+            if (date == null || isTime()) {
+                return null;
+            }
+            return switch (this) {
+                case DDMMYY -> String.format("%02d%02d%02d", date.getDayOfMonth(), date.getMonthValue(), date.getYear() % 100);
+                case MMDDYY -> String.format("%02d%02d%02d", date.getMonthValue(), date.getDayOfMonth(), date.getYear() % 100);
+                case DDMM -> String.format("%02d%02d", date.getDayOfMonth(), date.getMonthValue());
+                case MMDD -> String.format("%02d%02d", date.getMonthValue(), date.getDayOfMonth());
+                case DDMMYYYY -> String.format("%02d%02d%04d", date.getDayOfMonth(), date.getMonthValue(), date.getYear());
+                case YYYYMMDD -> String.format("%04d%02d%02d", date.getYear(), date.getMonthValue(), date.getDayOfMonth());
+                default -> String.format("%03d", date.getDayOfYear());
+            };
+        }
+
+        /**
+         * Writes a time of day the way this layout reads it, the printing half
+         * of {@link #toTime} (BO-03-06-30 to -32).
+         *
+         * @param time the time to write, or null
+         * @return the characters, or null for a null time or a date layout
+         */
+        public String format(LocalTime time) {
+            if (time == null || !isTime()) {
+                return null;
+            }
+            return this == HHMM
+                    ? String.format("%02d%02d", time.getHour(), time.getMinute())
+                    : String.format("%02d%02d%02d", time.getHour(), time.getMinute(), time.getSecond());
         }
 
         /**

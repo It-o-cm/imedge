@@ -1,14 +1,12 @@
 package com.intermarche.edge.domain.barcode;
 
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalTime;
-import java.util.List;
-import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Test;
-import org.mockito.MockedStatic;
-import static org.mockito.Mockito.mockStatic;
 
 /**
  * Unit tests for {@link CouponField}, targeting 100% branch coverage.
@@ -505,5 +503,31 @@ class CouponFieldTest {
     @Test
     void toTimeOnAnImpossibleHourIsNull() {
         Assertions.assertNull(CouponField.DateFormat.HHMM.toTime("2545"));
+    }
+
+    /**
+     * Each date layout writes a date the way it reads it, and each time layout
+     * a time (BO-03-06-30 to -32): a null value, a date asked of a time layout
+     * and a time asked of a date layout write nothing.
+     */
+    @Test
+    void eachLayoutWritesWhatItReads() {
+        LocalDate date = LocalDate.of(2027, 3, 9);
+        LocalTime time = LocalTime.of(7, 5, 3);
+        Assertions.assertEquals("090327", CouponField.DateFormat.DDMMYY.format(date));
+        Assertions.assertEquals("030927", CouponField.DateFormat.MMDDYY.format(date));
+        Assertions.assertEquals("0903", CouponField.DateFormat.DDMM.format(date));
+        Assertions.assertEquals("0309", CouponField.DateFormat.MMDD.format(date));
+        Assertions.assertEquals("09032027", CouponField.DateFormat.DDMMYYYY.format(date));
+        Assertions.assertEquals("20270309", CouponField.DateFormat.YYYYMMDD.format(date));
+        Assertions.assertEquals("068", CouponField.DateFormat.DDD.format(date));
+        Assertions.assertEquals("0705", CouponField.DateFormat.HHMM.format(time));
+        Assertions.assertEquals("070503", CouponField.DateFormat.HHMMSS.format(time));
+        Assertions.assertNull(CouponField.DateFormat.DDMMYY.format((LocalDate) null));
+        Assertions.assertNull(CouponField.DateFormat.HHMM.format(date));
+        Assertions.assertNull(CouponField.DateFormat.HHMM.format((LocalTime) null));
+        Assertions.assertNull(CouponField.DateFormat.DDMMYY.format(time));
+        Assertions.assertEquals(date, CouponField.DateFormat.DDMMYYYY.toDate(
+                CouponField.DateFormat.DDMMYYYY.format(date), 2000));
     }
 }

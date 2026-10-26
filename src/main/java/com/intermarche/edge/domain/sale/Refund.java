@@ -4,6 +4,7 @@ import com.intermarche.edge.domain.BaseEntity;
 import com.intermarche.edge.domain.session.CashSession;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotNull;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -41,6 +42,10 @@ import java.util.Objects;
 )
 public class Refund extends BaseEntity {
 
+    /** LC-07-07-03: actual WCL server for this card credit, never a receipt archive. */
+    @jakarta.persistence.Column(name = "monetic_server", length = 16)
+    public String moneticServer;
+
     /** Lifecycle status of a refund document. */
     public enum RefundStatus {
         /** Being built (unused since lot 4: refunds are created closed). */
@@ -58,7 +63,12 @@ public class Refund extends BaseEntity {
         /** A store voucher printed for the refunded amount. */
         VOUCHER,
         /** Credited on the customer's loyalty balance. */
-        LOYALTY
+        LOYALTY,
+        /**
+         * Credited on the customer's in-account credit (LC-05-06-05): the
+         * refund lowers what the account owes the store.
+         */
+        CREDIT
     }
 
     /** The sequential refund number, e.g. "C04-R000012" (null on legacy rows). */
@@ -104,15 +114,14 @@ public class Refund extends BaseEntity {
     @Column(name = "total_vat", precision = 19, scale = 4)
     public BigDecimal totalVat;
 
-    /** The refunded lines. */
-    @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true)
-    @JoinColumn(name = "refund_id", nullable = false)
-
     /**
      * The return reason chosen by the cashier, from the administered list
      * ({@code LC-05-05-01/02}, {@code BO-06-06-05}), or null when none was
-     * chosen. Stored verbatim from the payload: the node states what the
-     * register recorded, it never re-derives it.
+     * chosen. It applies to the WHOLE refund (all returned lines at once), is
+     * journaled and — when the store administers it — printed on the return
+     * ticket, so it is exploitable in the back-office reports. Stored verbatim
+     * from the payload: the node states what the register recorded, it never
+     * re-derives it.
      */
     @Column(name = "return_reason", length = 255)
     public String returnReason;
@@ -158,6 +167,68 @@ public class Refund extends BaseEntity {
     @Column(name = "return_type_label", length = 60)
     public String returnTypeLabel;
 
+    /**
+     * The account number credited when the refund method is {@code CREDIT}
+     * (LC-05-06-05), or null for every other method. It names the in-account
+     * customer whose outstanding balance the refund lowered, so the refund
+     * record is exploitable in the store's account statements.
+     */
+    @Column(name = "credit_account_number", length = 40)
+    public String creditAccountNumber;
+
+    /**
+     * How far the recalculation of the KEPT basket against the promotion engine
+     * got (LC-05-02-13): {@code NOT_APPLICABLE} (no engine administered, or the
+     * whole ticket came back), {@code RECOMPUTED} (the engine answered) or
+     * {@code UNAVAILABLE} (it was asked and could not answer — the refund went
+     * through anyway, the customer being at the till). Null on rows written
+     * before the recalculation existed.
+     */
+    @Column(name = "recalculation_status", length = 20)
+    public String recalculationStatus;
+
+    /**
+     * The generosity the kept basket no longer deserves, tax included
+     * (LC-05-02-13): what the return takes back BEYOND the price refunded,
+     * because the advantages of the sale were granted on a basket that no longer
+     * exists. Null unless the recalculation ran; never negative — a return
+     * never grants a new advantage.
+     */
+    @Column(name = "withdrawn_generosity", precision = 19, scale = 4)
+    public BigDecimal withdrawnGenerosity;
+
+    /**
+     * The labels of the advantages the kept basket STILL earns, joined by
+     * {@code " | "} in the engine's own order, or null when the recalculation did
+     * not run or the kept basket earns none (LC-05-07-02, printed on the return
+     * ticket). Joined in one column, as the restricted tenders of a ticket line
+     * are: the register restates these labels and computes nothing from them.
+     */
+    @Column(name = "kept_advantages", length = 500)
+    public String keptAdvantages;
+
+    /**
+     * Whether the return was notified to the external loyalty service
+     * (LC-05-02-13): true when the origin ticket carried a card, so the
+     * {@code TICKET_RETURN} event was enqueued and the décagnottage is the
+     * loyalty service's to compute. The register prints that it was sent and
+     * never an amount it did not compute.
+     */
+    @Column(name = "loyalty_recalculation_sent", nullable = false)
+    public boolean loyaltyRecalculationSent;
+
+    /**
+     * The loyalty advantages the return takes back, line by line (LC-05-07-02):
+     * the décagnottage and the vouchers and coupons withdrawn, as the loyalty
+     * programme computes them; empty when the programme could not say.
+     */
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "refund_fidelity_lines", joinColumns = @JoinColumn(name = "refund_id"))
+    public List<RefundFidelityLine> fidelityLines = new ArrayList<>();
+
+    /** The refunded lines; association annotations belong here, never on the reason text (LC-07 credit sync). */
+    @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true)
+    @JoinColumn(name = "refund_id", nullable = false)
     public List<RefundLine> lines = new ArrayList<>();
 
 
@@ -168,6 +239,7 @@ public class Refund extends BaseEntity {
      */
     @Override
     public int getChecksum() {
-        return Objects.hash(refundNumber, originalTicketId, totalAmount, status, refundMethod);
+        return Objects.hash(refundNumber, originalTicketId, totalAmount, status, refundMethod,
+                returnReason, creditAccountNumber);
     }
 }

@@ -36,6 +36,9 @@ public record ReportColumn(String key, String label, ReportColumn.Kind kind, boo
         /** A share of a whole, one decimal, rendered with a percent sign. */
         PERCENT,
 
+        /** A figure with decimals that is not money: a mean, a rate, a cadence. */
+        DECIMAL,
+
         /** A calendar day. */
         DATE,
 
@@ -95,6 +98,43 @@ public record ReportColumn(String key, String label, ReportColumn.Kind kind, boo
     }
 
     /**
+     * Builds an AVERAGE or a ratio expressed as an amount — a mean basket, an
+     * amount per register — that a total row must not sum.
+     *
+     * @param key the technical name
+     * @param label the header
+     * @return the column
+     */
+    public static ReportColumn average(String key, String label) {
+        return new ReportColumn(key, label, Kind.AMOUNT, false);
+    }
+
+    /**
+     * Builds a count that a total row must not sum — a number of distinct
+     * customers per family, a rank, a duration in seconds — because the sum of
+     * the parts is not the whole.
+     *
+     * @param key the technical name
+     * @param label the header
+     * @return the column
+     */
+    public static ReportColumn figure(String key, String label) {
+        return new ReportColumn(key, label, Kind.INTEGER, false);
+    }
+
+    /**
+     * Builds a column of figures with decimals that are not money — a mean
+     * number of articles, articles per minute — never totalled.
+     *
+     * @param key the technical name
+     * @param label the header
+     * @return the column
+     */
+    public static ReportColumn decimal(String key, String label) {
+        return new ReportColumn(key, label, Kind.DECIMAL, false);
+    }
+
+    /**
      * Builds a column of days and times.
      *
      * @param key the technical name
@@ -112,6 +152,6 @@ public record ReportColumn(String key, String label, ReportColumn.Kind kind, boo
      * @return true for counts, amounts and percentages
      */
     public boolean numeric() {
-        return kind == Kind.INTEGER || kind == Kind.AMOUNT || kind == Kind.PERCENT;
+        return kind == Kind.INTEGER || kind == Kind.AMOUNT || kind == Kind.PERCENT || kind == Kind.DECIMAL;
     }
 }

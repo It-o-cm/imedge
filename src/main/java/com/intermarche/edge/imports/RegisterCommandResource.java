@@ -1,5 +1,7 @@
 package com.intermarche.edge.imports;
 
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.intermarche.edge.domain.sync.RegisterCommand;
 import com.intermarche.edge.service.sync.RegisterCommandService;
 import jakarta.inject.Inject;
@@ -71,21 +73,16 @@ public class RegisterCommandResource {
         // and nowhere else: this is the one call every lane makes on its own
         // cycle whatever it is doing, which is exactly what presence means.
         registerPresenceService.touch(terminalId);
-        StringBuilder json = new StringBuilder("[");
-        boolean first = true;
+        ArrayNode orders = JsonNodeFactory.instance.arrayNode();
         for (RegisterCommand command : registerCommandService.pending(terminalId)) {
-            if (!first) {
-                json.append(',');
-            }
-            first = false;
-            json.append("{\"uid\":\"").append(command.commandUid)
-                    .append("\",\"type\":\"").append(command.commandType)
-                    .append("\",\"issuedBy\":").append(quoted(command.issuedBy))
-                    .append(",\"reason\":").append(quoted(command.reason))
-                    .append('}');
+            orders.addObject()
+                    .put("uid", command.commandUid)
+                    .put("type", String.valueOf(command.commandType))
+                    .put("issuedBy", command.issuedBy)
+                    .put("reason", command.reason);
         }
         LOGGER.info("Exiting method pending");
-        return Response.ok(json.append(']').toString()).build();
+        return Response.ok(orders.toString()).build();
     }
 
     /**
@@ -110,8 +107,8 @@ public class RegisterCommandResource {
         boolean stamped = registerCommandService.acknowledge(commandUid);
         LOGGER.info("Exiting method acknowledge with " + stamped);
         return stamped
-                ? Response.ok("{\"acknowledged\":true}").build()
-                : Response.status(Response.Status.NOT_FOUND).entity("{\"acknowledged\":false}").build();
+                ? Response.ok(acknowledged(true)).build()
+                : Response.status(Response.Status.NOT_FOUND).entity(acknowledged(false)).build();
     }
 
     /**
@@ -123,23 +120,22 @@ public class RegisterCommandResource {
     private Response gate(String presentedToken) {
         if ("register".equalsIgnoreCase(role)) {
             return Response.status(Response.Status.FORBIDDEN)
-                    .entity("{\"error\":\"Ce nœud ne distribue pas d'ordres\"}").build();
+                    .entity(ImporterCsvResource.errorAnswer("Ce nœud ne distribue pas d'ordres")).build();
         }
         if (token.isPresent() && !token.get().isBlank() && !token.get().equals(presentedToken)) {
             return Response.status(Response.Status.UNAUTHORIZED)
-                    .entity("{\"error\":\"Jeton de synchronisation invalide\"}").build();
+                    .entity(ImporterCsvResource.errorAnswer("Jeton de synchronisation invalide")).build();
         }
         return null;
     }
 
     /**
-     * Renders a nullable text as a JSON string or the literal null.
+     * Builds the answer of an acknowledgement, by the JSON library.
      *
-     * @param value the value, possibly null
-     * @return the JSON fragment
+     * @param stamped whether the order was stamped
+     * @return {@code {"acknowledged":stamped}}
      */
-    private String quoted(String value) {
-        return value == null ? "null"
-                : "\"" + value.replace("\\", "\\\\").replace("\"", "'") + "\"";
+    private String acknowledged(boolean stamped) {
+        return JsonNodeFactory.instance.objectNode().put("acknowledged", stamped).toString();
     }
 }

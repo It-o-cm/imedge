@@ -1,5 +1,12 @@
 package com.intermarche.edge.ui.admin;
 
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.quarkus.security.Authenticated;
+import com.intermarche.edge.security.FeatureAccess;
+import com.intermarche.edge.domain.setting.Feature;
+import com.intermarche.edge.domain.people.CrudOption;
 import com.intermarche.edge.domain.catalog.Nomenclature;
 import com.intermarche.edge.domain.catalog.NomenclatureLevel;
 import com.intermarche.edge.domain.catalog.ProductFamily;
@@ -8,7 +15,6 @@ import com.intermarche.edge.service.NomenclatureImportService;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
@@ -377,7 +383,8 @@ public class AdminNomenclatureResource {
      * @return the page
      */
     @GET
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.NOMENCLATURE)
     @Produces(MediaType.TEXT_HTML)
     public TemplateInstance nomenclaturesPage(@QueryParam("scheme") String schemeCode,
             @QueryParam("parent") String parentCode,
@@ -441,7 +448,8 @@ public class AdminNomenclatureResource {
      */
     @POST
     @jakarta.ws.rs.Path("/import")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.NOMENCLATURE, option = CrudOption.CREATE)
     @Consumes(MediaType.MULTIPART_FORM_DATA)
     public Response importFile(@MultipartForm ImportForm form) {
         LOGGER.info("Entering method importFile");
@@ -524,7 +532,8 @@ public class AdminNomenclatureResource {
      */
     @POST
     @jakarta.ws.rs.Path("/nodes")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.NOMENCLATURE, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response saveNode(MultivaluedMap<String, String> form) {
@@ -642,7 +651,8 @@ public class AdminNomenclatureResource {
      */
     @POST
     @jakarta.ws.rs.Path("/nodes/delete")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.NOMENCLATURE, option = CrudOption.DELETE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response deleteNode(MultivaluedMap<String, String> form) {
@@ -724,7 +734,8 @@ public class AdminNomenclatureResource {
      */
     @GET
     @jakarta.ws.rs.Path("/api/children")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.NOMENCLATURE)
     @Produces(MediaType.APPLICATION_JSON)
     public Response children(@QueryParam("scheme") String schemeCode,
             @QueryParam("parent") String parentCode) {
@@ -737,17 +748,12 @@ public class AdminNomenclatureResource {
         String parent = parentCode == null ? "" : parentCode.trim();
         int level = levelOf(scheme, parent);
         List<ProductFamily> below = ProductFamily.listAtLevel(scheme, level + 1);
-        StringBuilder body = new StringBuilder("[");
-        boolean first = true;
+        ArrayNode body = JsonNodeFactory.instance.arrayNode();
         for (ProductFamily node : childrenOf(scheme, parent, level)) {
-            if (!first) {
-                body.append(',');
-            }
-            first = false;
-            body.append(nodeJson(node, hasPrefix(below, node.code)));
+            body.add(nodeJson(node, hasPrefix(below, node.code)));
         }
         LOGGER.info("Exiting method children");
-        return Response.ok(body.append(']').toString()).build();
+        return Response.ok(body.toString()).build();
     }
 
     /**
@@ -764,7 +770,8 @@ public class AdminNomenclatureResource {
      */
     @GET
     @jakarta.ws.rs.Path("/api/search")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.NOMENCLATURE)
     @Produces(MediaType.APPLICATION_JSON)
     public Response search(@QueryParam("scheme") String schemeCode,
             @QueryParam("q") String query) {
@@ -775,24 +782,17 @@ public class AdminNomenclatureResource {
             LOGGER.info("Exiting method search");
             return Response.ok("[]").build();
         }
-        StringBuilder body = new StringBuilder("[");
-        int found = 0;
+        ArrayNode body = JsonNodeFactory.instance.arrayNode();
         for (ProductFamily node : ProductFamily.listInNomenclature(scheme)) {
-            if (!matches(node, needle)) {
-                continue;
-            }
-            if (found > 0) {
-                body.append(',');
-            }
-            if (++found > SEARCH_LIMIT) {
+            if (body.size() >= SEARCH_LIMIT) {
                 break;
             }
-            body.append(nodeJson(node, false));
-            body.setLength(body.length() - 1);
-            body.append(",\"path\":\"").append(escape(pathOf(scheme, node))).append("\"}");
+            if (matches(node, needle)) {
+                body.add(nodeJson(node, false).put("path", flat(pathOf(scheme, node))));
+            }
         }
         LOGGER.info("Exiting method search");
-        return Response.ok(body.append(']').toString()).build();
+        return Response.ok(body.toString()).build();
     }
 
     /**
@@ -803,7 +803,8 @@ public class AdminNomenclatureResource {
      */
     @POST
     @jakarta.ws.rs.Path("/api/nodes")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.NOMENCLATURE, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Produces(MediaType.APPLICATION_JSON)
     @Transactional
@@ -821,7 +822,8 @@ public class AdminNomenclatureResource {
      */
     @POST
     @jakarta.ws.rs.Path("/api/nodes/delete")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.NOMENCLATURE, option = CrudOption.DELETE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Produces(MediaType.APPLICATION_JSON)
     @Transactional
@@ -843,13 +845,13 @@ public class AdminNomenclatureResource {
         Nomenclature scheme = schemeCode.isEmpty() ? null : Nomenclature.findByCode(schemeCode);
         if (scheme == null) {
             return Response.status(Response.Status.NOT_FOUND)
-                    .entity("{\"ok\":false,\"message\":\"Nomenclature introuvable.\"}").build();
+                    .entity(unknownScheme()).build();
         }
         Verdict verdict = saving
                 ? applyNode(scheme, value(form, "code"), value(form, "label"))
                 : removeNode(scheme, value(form, "code"));
-        return Response.ok("{\"ok\":" + verdict.ok + ",\"message\":\""
-                + escape(verdict.message) + "\"}").build();
+        return Response.ok(JsonNodeFactory.instance.objectNode()
+                .put("ok", verdict.ok).put("message", flat(verdict.message)).toString()).build();
     }
 
     /**
@@ -860,7 +862,8 @@ public class AdminNomenclatureResource {
      */
     @POST
     @jakarta.ws.rs.Path("/api/nodes/move")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.NOMENCLATURE, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Produces(MediaType.APPLICATION_JSON)
     @Transactional
@@ -871,7 +874,7 @@ public class AdminNomenclatureResource {
         if (scheme == null) {
             LOGGER.info("Exiting method apiMoveNode");
             return Response.status(Response.Status.NOT_FOUND)
-                    .entity("{\"ok\":false,\"message\":\"Nomenclature introuvable.\"}").build();
+                    .entity(unknownScheme()).build();
         }
         Verdict verdict = moveNode(scheme, value(form, "code"), value(form, "parent"));
         LOGGER.info("Exiting method apiMoveNode");
@@ -886,7 +889,8 @@ public class AdminNomenclatureResource {
      */
     @POST
     @jakarta.ws.rs.Path("/api/nodes/recode")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.NOMENCLATURE, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Produces(MediaType.APPLICATION_JSON)
     @Transactional
@@ -897,7 +901,7 @@ public class AdminNomenclatureResource {
         if (scheme == null) {
             LOGGER.info("Exiting method apiRecodeNode");
             return Response.status(Response.Status.NOT_FOUND)
-                    .entity("{\"ok\":false,\"message\":\"Nomenclature introuvable.\"}").build();
+                    .entity(unknownScheme()).build();
         }
         Verdict verdict = recodeNode(scheme, value(form, "code"), value(form, "segment"));
         LOGGER.info("Exiting method apiRecodeNode");
@@ -912,9 +916,21 @@ public class AdminNomenclatureResource {
      * @return the JSON body
      */
     private String verdictJson(Verdict verdict) {
-        return "{\"ok\":" + verdict.ok + ",\"message\":\"" + escape(verdict.message)
-                + "\",\"code\":" + (verdict.code == null ? "null"
-                        : "\"" + escape(verdict.code) + "\"") + "}";
+        return JsonNodeFactory.instance.objectNode()
+                .put("ok", verdict.ok)
+                .put("message", flat(verdict.message))
+                .put("code", verdict.code == null ? null : flat(verdict.code))
+                .toString();
+    }
+
+    /**
+     * The verdict of a write naming a scheme this node does not hold.
+     *
+     * @return the JSON body
+     */
+    private String unknownScheme() {
+        return JsonNodeFactory.instance.objectNode()
+                .put("ok", false).put("message", "Nomenclature introuvable.").toString();
     }
 
     /**
@@ -1153,13 +1169,14 @@ public class AdminNomenclatureResource {
      *
      * @param node the node
      * @param openable whether anything hangs under it
-     * @return the JSON object
+     * @return the JSON object, built by the JSON library
      */
-    private String nodeJson(ProductFamily node, boolean openable) {
-        return "{\"code\":\"" + escape(node.code) + "\",\"label\":\""
-                + escape(node.description) + "\",\"level\":"
-                + (node.level == null ? "null" : node.level)
-                + ",\"openable\":" + openable + "}";
+    private ObjectNode nodeJson(ProductFamily node, boolean openable) {
+        return JsonNodeFactory.instance.objectNode()
+                .put("code", flat(node.code))
+                .put("label", flat(node.description))
+                .put("level", node.level)
+                .put("openable", openable);
     }
 
     /**
@@ -1214,17 +1231,17 @@ public class AdminNomenclatureResource {
     }
 
     /**
-     * Escapes a value for the JSON bodies above.
+     * Puts a value on one line for the tree, which shows it in a single row;
+     * the JSON library escapes it.
      *
      * @param value the value, possibly null
-     * @return the escaped value, never null
+     * @return the value on one line, never null
      */
-    private String escape(String value) {
+    private String flat(String value) {
         if (value == null) {
             return "";
         }
-        return value.replace("\\", "\\\\").replace("\"", "\\\"")
-                .replace("\n", " ").replace("\r", " ");
+        return value.replace("\n", " ").replace("\r", " ");
     }
 
     /**
@@ -1248,7 +1265,8 @@ public class AdminNomenclatureResource {
      */
     @POST
     @Path("/levels")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.NOMENCLATURE, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response saveLevels(MultivaluedMap<String, String> form) {
@@ -1312,7 +1330,8 @@ public class AdminNomenclatureResource {
      */
     @POST
     @Path("/levels/add")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.NOMENCLATURE, option = CrudOption.CREATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response addLevel(MultivaluedMap<String, String> form) {
@@ -1363,7 +1382,8 @@ public class AdminNomenclatureResource {
      */
     @POST
     @Path("/levels/delete")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.NOMENCLATURE, option = CrudOption.DELETE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response deleteLevel(MultivaluedMap<String, String> form) {

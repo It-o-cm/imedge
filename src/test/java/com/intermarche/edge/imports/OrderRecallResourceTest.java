@@ -15,6 +15,8 @@ import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
@@ -276,7 +278,7 @@ class OrderRecallResourceTest {
                 org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(),
-                org.mockito.ArgumentMatchers.any())).thenReturn(order());
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(order());
         Response response = resource.ingest(null, dto);
         assertEquals(200, response.getStatus());
         org.mockito.ArgumentCaptor<java.util.List<CustomerOrder.OrderLine>> lines =
@@ -287,7 +289,7 @@ class OrderRecallResourceTest {
                 org.mockito.ArgumentMatchers.eq("C04-CMD000001"),
                 org.mockito.ArgumentMatchers.eq(OrderKind.COMMANDE),
                 org.mockito.ArgumentMatchers.eq(new BigDecimal("100.00")),
-                detail.capture(), lines.capture());
+                detail.capture(), lines.capture(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
         assertEquals("0.2:1", detail.getValue());
         assertEquals(2, lines.getValue().size());
         assertEquals(0, new BigDecimal("6.00").compareTo(lines.getValue().get(0).totalPrice));
@@ -308,7 +310,7 @@ class OrderRecallResourceTest {
         when(resource.customerOrderService.createFromTill(
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
-                org.mockito.ArgumentMatchers.any())).thenReturn(null);
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(null);
         assertEquals(400, resource.ingest(null, dto).getStatus());
     }
 
@@ -360,5 +362,331 @@ class OrderRecallResourceTest {
                 io.quarkus.hibernate.orm.panache.PanacheQuery.class);
         when(query.firstResult()).thenReturn(row);
         return query;
+    }
+    /** LC-06-03: authenticated pushes cover blank identity and absent line/price fields without guessing money. */
+    @Test
+    void authenticatedPushesHandleMissingIdentityAndLinePrice() throws Exception {
+        OrderRecallResource resource = storeResource(Optional.of("secret"));
+        var dto = new OrderRecallResource.OrderPushDto();
+        dto.code = " ";
+        dto.kind = "COMMANDE";
+        assertEquals(400, resource.ingest("secret", dto).getStatus());
+        dto.code = "CMD1";
+        dto.lines = null;
+        when(resource.customerOrderService.createFromTill(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(order());
+        assertEquals(200, resource.ingest("secret", dto).getStatus());
+        var method = OrderRecallResource.class.getDeclaredMethod("toOrderLines", List.class);
+        method.setAccessible(true);
+        var line = new OrderRecallResource.OrderPushLineDto();
+        line.unitPrice = null;
+        line.quantity = BigDecimal.ONE;
+        var lines = (List<CustomerOrder.OrderLine>) method.invoke(resource, List.of(line));
+        assertEquals(BigDecimal.ZERO, lines.get(0).unitPrice);
+        assertEquals(new BigDecimal("0.00"), lines.get(0).totalPrice);
+        try (var base = mockStatic(PanacheEntityBase.class)) {
+            var absent = query(null);
+            base.when(() -> PanacheEntityBase.find("code", "GHOST")).thenReturn(absent);
+            assertEquals(404, resource.settled("GHOST", "secret").getStatus());
+        }
+    }
+
+
+    /** LC-06-03-01: an order push with an absent code is refused before the service is called. */
+    @Test
+    void missingPushCodeIsRefused() {
+        var resource = storeResource(Optional.empty());
+        var dto = new OrderRecallResource.OrderPushDto();
+        dto.kind = "COMMANDE";
+        assertEquals(400, resource.ingest(null, dto).getStatus());
+        org.mockito.Mockito.verifyNoInteractions(resource.customerOrderService);
+    }
+
+
+    /**
+     * LC-06-02-02 / -04: the recall carries the document's own label, its
+     * deposit rule and, per line, the quantity delivered beside the ordered one.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void recallCarriesTheLabelTheDepositRuleAndTheDeliveredQuantity() {
+        OrderRecallResource resource = storeResource(Optional.empty());
+        CustomerOrder order = order();
+        order.label = "CUISINE DUPONT";
+        order.depositRule = "MANDATORY";
+        order.lines.get(0).deliveredQuantity = new BigDecimal("1");
+        when(resource.customerOrderService.recall("CMD1")).thenReturn(order);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> CashMovement.list("type = ?1 and orderReference = ?2",
+                    CashMovement.MovementType.CUSTOMER_DEPOSIT, "CMD1")).thenReturn(List.of());
+            Map<String, Object> json = (Map<String, Object>) resource.recall("CMD1", null).getEntity();
+            assertEquals("CUISINE DUPONT", json.get("label"));
+            assertEquals("MANDATORY", json.get("depositRule"));
+            List<Map<String, Object>> lines = (List<Map<String, Object>>) json.get("lines");
+            assertEquals(new BigDecimal("1"), lines.get(0).get("deliveredQuantity"));
+        }
+    }
+
+    /**
+     * LC-06-02-02 / -10: a document of the commercial management tool is pushed
+     * with its label, its deposit rule — trimmed, a blank one reading as none —
+     * and its delivered quantities; an unknown rule is refused.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void ingestCarriesTheExternalDocumentFields() {
+        OrderRecallResource resource = storeResource(Optional.empty());
+        OrderRecallResource.OrderPushDto dto = new OrderRecallResource.OrderPushDto();
+        dto.code = "DV000123";
+        dto.kind = "DEVIS";
+        dto.label = "CUISINE DUPONT";
+        dto.depositRule = " OPTIONAL ";
+        OrderRecallResource.OrderPushLineDto line = new OrderRecallResource.OrderPushLineDto();
+        line.ean = "301";
+        line.label = "PLAN DE TRAVAIL";
+        line.quantity = new BigDecimal("3");
+        line.deliveredQuantity = new BigDecimal("2");
+        line.unitPrice = new BigDecimal("100.00");
+        line.vatRate = new BigDecimal("0.20");
+        dto.lines.add(line);
+        when(resource.customerOrderService.createFromTill(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(order());
+        assertEquals(200, resource.ingest(null, dto).getStatus());
+        org.mockito.ArgumentCaptor<java.util.List<CustomerOrder.OrderLine>> lines =
+                org.mockito.ArgumentCaptor.forClass(java.util.List.class);
+        verify(resource.customerOrderService).createFromTill(org.mockito.ArgumentMatchers.eq("DV000123"),
+                org.mockito.ArgumentMatchers.eq(OrderKind.DEVIS), org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.isNull(), lines.capture(),
+                org.mockito.ArgumentMatchers.eq("CUISINE DUPONT"), org.mockito.ArgumentMatchers.eq("OPTIONAL"));
+        assertEquals(new BigDecimal("2"), lines.getValue().get(0).deliveredQuantity);
+        dto.depositRule = " ";
+        assertEquals(200, resource.ingest(null, dto).getStatus());
+        verify(resource.customerOrderService).createFromTill(org.mockito.ArgumentMatchers.eq("DV000123"),
+                org.mockito.ArgumentMatchers.eq(OrderKind.DEVIS), org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.isNull(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.eq("CUISINE DUPONT"), org.mockito.ArgumentMatchers.isNull());
+        dto.depositRule = "SOMETIMES";
+        assertEquals(400, resource.ingest(null, dto).getStatus());
+    }
+
+    /**
+     * LC-06-02-04: the deposit a register took is gated like the recall: off-role
+     * answers 403, a bad token 401, and a node without token lets the deposit through to its checks.
+     */
+    @Test
+    void depositIsGated() {
+        OrderRecallResource register = new OrderRecallResource();
+        register.role = "register";
+        register.token = Optional.empty();
+        register.customerOrderService = mock(CustomerOrderService.class);
+        assertEquals(403, register.deposit("CMD1", null, new OrderRecallResource.OrderDepositDto()).getStatus());
+        OrderRecallResource badToken = storeResource(Optional.of("secret"));
+        assertEquals(401, badToken.deposit("CMD1", "wrong", new OrderRecallResource.OrderDepositDto()).getStatus());
+        OrderRecallResource open = storeResource(Optional.empty());
+        assertEquals(400, open.deposit("CMD1", null, null).getStatus());
+    }
+
+    /**
+     * LC-06-02-04 / -07: an unreadable deposit answers 400, an unknown code 404,
+     * and a known document follows the shared mechanism: recorded answers 200,
+     * refused 409.
+     */
+    @Test
+    void depositFollowsTheSharedMechanism() {
+        OrderRecallResource resource = storeResource(Optional.of("secret"));
+        assertEquals(400, resource.deposit("CMD1", "secret", null).getStatus());
+        OrderRecallResource.OrderDepositDto dto = new OrderRecallResource.OrderDepositDto();
+        assertEquals(400, resource.deposit("CMD1", "secret", dto).getStatus());
+        dto.amount = BigDecimal.ZERO;
+        assertEquals(400, resource.deposit("CMD1", "secret", dto).getStatus());
+        dto.amount = new BigDecimal("20.00");
+        dto.vatDetail = "0.2:3.33";
+        io.quarkus.hibernate.orm.panache.PanacheQuery<CustomerOrder> ghost = query(null);
+        io.quarkus.hibernate.orm.panache.PanacheQuery<CustomerOrder> known = query(order());
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> CustomerOrder.find("code", "GHOST")).thenReturn(ghost);
+            assertEquals(404, resource.deposit("GHOST", "secret", dto).getStatus());
+            CustomerOrder order = known.firstResult();
+            mocked.when(() -> CustomerOrder.find("code", "CMD1")).thenReturn(known);
+            when(resource.customerOrderService.recordTillDeposit(order, "0.2:3.33")).thenReturn(true);
+            assertEquals(200, resource.deposit("CMD1", "secret", dto).getStatus());
+            when(resource.customerOrderService.recordTillDeposit(order, "0.2:3.33")).thenReturn(false);
+            assertEquals(409, resource.deposit("CMD1", "secret", dto).getStatus());
+        }
+    }
+    /**
+     * LC-06-05-02 / -04 / -05: a selfscanning basket is pushed with the control
+     * its device asks for — trimmed, a blank one reading as none — and the
+     * vouchers it recorded, only those with a positive amount kept; an unknown
+     * control is refused.
+     */
+    @Test
+    void ingestCarriesTheSelfScanControlAndVouchers() {
+        OrderRecallResource resource = storeResource(Optional.empty());
+        OrderRecallResource.OrderPushDto dto = new OrderRecallResource.OrderPushDto();
+        dto.code = "SS00000001";
+        dto.kind = "SELF_SCAN";
+        dto.control = " PARTIAL ";
+        dto.vouchers = new java.util.ArrayList<>();
+        dto.vouchers.add(null);
+        OrderRecallResource.OrderPushVoucherDto amountless = new OrderRecallResource.OrderPushVoucherDto();
+        dto.vouchers.add(amountless);
+        OrderRecallResource.OrderPushVoucherDto zero = new OrderRecallResource.OrderPushVoucherDto();
+        zero.amount = BigDecimal.ZERO;
+        dto.vouchers.add(zero);
+        OrderRecallResource.OrderPushVoucherDto voucher = new OrderRecallResource.OrderPushVoucherDto();
+        voucher.code = "BR1";
+        voucher.label = "BON 2 EUROS";
+        voucher.amount = new BigDecimal("2.00");
+        dto.vouchers.add(voucher);
+        CustomerOrder stored = order();
+        when(resource.customerOrderService.createFromTill(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(stored);
+        assertEquals(200, resource.ingest(null, dto).getStatus());
+        verify(resource.customerOrderService).createFromTill(org.mockito.ArgumentMatchers.eq("SS00000001"),
+                org.mockito.ArgumentMatchers.eq(OrderKind.SELF_SCAN), org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.isNull(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.isNull(), org.mockito.ArgumentMatchers.isNull());
+        assertEquals("PARTIAL", stored.controlRequest);
+        assertEquals(1, stored.vouchers.size());
+        assertEquals("BR1", stored.vouchers.get(0).code);
+        assertEquals("BON 2 EUROS", stored.vouchers.get(0).label);
+        assertEquals(new BigDecimal("2.00"), stored.vouchers.get(0).amount);
+        dto.control = " ";
+        dto.vouchers = null;
+        assertEquals(200, resource.ingest(null, dto).getStatus());
+        assertNull(stored.controlRequest);
+        assertTrue(stored.vouchers.isEmpty());
+        dto.control = null;
+        assertEquals(200, resource.ingest(null, dto).getStatus());
+        assertNull(stored.controlRequest);
+        dto.control = "RANDOM";
+        assertEquals(400, resource.ingest(null, dto).getStatus());
+        assertNotNull(new CustomerOrder.OrderVoucher());
+    }
+
+    /**
+     * LC-06-05-02 / -04 / -05: the recall of a selfscanning basket hands back its
+     * control and its vouchers.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void recallCarriesTheSelfScanControlAndVouchers() {
+        OrderRecallResource resource = storeResource(Optional.empty());
+        CustomerOrder order = order();
+        order.kind = OrderKind.SELF_SCAN;
+        order.controlRequest = "TOTAL";
+        order.vouchers.add(new CustomerOrder.OrderVoucher("BR1", "BON", new BigDecimal("1.50")));
+        when(resource.customerOrderService.recall("CMD1")).thenReturn(order);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> CashMovement.list("type = ?1 and orderReference = ?2",
+                    CashMovement.MovementType.CUSTOMER_DEPOSIT, "CMD1")).thenReturn(List.of());
+            Map<String, Object> json = (Map<String, Object>) resource.recall("CMD1", null).getEntity();
+            assertEquals("SELF_SCAN", json.get("kind"));
+            assertEquals("TOTAL", json.get("control"));
+            assertEquals(List.of(Map.of("code", "BR1", "label", "BON", "amount", new BigDecimal("1.50"))),
+                    json.get("vouchers"));
+        }
+    }
+
+    /**
+     * BO-10-01-18: the recall by customer number is gated like every recall,
+     * refuses an unknown kind, answers 404 when the customer has nothing
+     * recallable and the order JSON otherwise.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void theRecallByCustomerIsGatedAndAnswersTheLatestBasket() {
+        OrderRecallResource offRole = storeResource(Optional.empty());
+        offRole.role = "register";
+        assertEquals(403, offRole.recallByCustomer("C9", "SELF_SCAN", null).getStatus());
+        OrderRecallResource resource = storeResource(Optional.of("secret"));
+        assertEquals(401, resource.recallByCustomer("C9", "SELF_SCAN", "nope").getStatus());
+        assertEquals(400, resource.recallByCustomer("C9", "UNKNOWN", "secret").getStatus());
+        assertEquals(400, storeResource(Optional.empty()).recallByCustomer("C9", null, null).getStatus());
+        assertEquals(404, resource.recallByCustomer("C9", "SELF_SCAN", "secret").getStatus());
+        CustomerOrder basket = order();
+        basket.kind = OrderKind.SELF_SCAN;
+        basket.customerAccountNumber = "C9";
+        when(resource.customerOrderService.recallByCustomer("C9", OrderKind.SELF_SCAN)).thenReturn(basket);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> CashMovement.list("type = ?1 and orderReference = ?2",
+                    CashMovement.MovementType.CUSTOMER_DEPOSIT, "CMD1")).thenReturn(List.of());
+            Response response = resource.recallByCustomer("C9", "SELF_SCAN", "secret");
+            assertEquals(200, response.getStatus());
+            assertEquals("C9", ((Map<String, Object>) response.getEntity()).get("customerNumber"));
+        }
+    }
+
+    /**
+     * BO-10-01-18 / -39 / -40: the recall states the customer, the business date
+     * and the settlements a mobility device collected; an undated order states
+     * no date.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void theRecallStatesTheCustomerTheDateAndTheMobilitySettlements() {
+        OrderRecallResource resource = storeResource(Optional.empty());
+        CustomerOrder transaction = order();
+        transaction.kind = OrderKind.MOBILITY;
+        transaction.orderDate = java.time.LocalDateTime.of(2026, 10, 24, 9, 30);
+        transaction.payments.add(new CustomerOrder.OrderPayment("CARD", new BigDecimal("8.00")));
+        CustomerOrder undated = order();
+        when(resource.customerOrderService.recall("CMD1")).thenReturn(transaction, undated);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> CashMovement.list("type = ?1 and orderReference = ?2",
+                    CashMovement.MovementType.CUSTOMER_DEPOSIT, "CMD1")).thenReturn(List.of());
+            Map<String, Object> json = (Map<String, Object>) resource.recall("CMD1", null).getEntity();
+            assertEquals("2026-10-24T09:30:00", json.get("orderDate"));
+            assertNull(json.get("customerNumber"));
+            List<Map<String, Object>> payments = (List<Map<String, Object>>) json.get("payments");
+            assertEquals("CARD", payments.get(0).get("tender"));
+            assertEquals(new BigDecimal("8.00"), payments.get(0).get("amount"));
+            Map<String, Object> second = (Map<String, Object>) resource.recall("CMD1", null).getEntity();
+            assertNull(second.get("orderDate"));
+            assertTrue(((List<Object>) second.get("payments")).isEmpty());
+        }
+    }
+
+    /**
+     * BO-10-01-18 / -39: the push carries the customer number — trimmed, a
+     * blank one dropped — and the mobility settlements with a positive amount
+     * only; a push without settlements stores none.
+     */
+    @Test
+    void ingestCarriesTheCustomerAndTheMobilitySettlements() {
+        OrderRecallResource resource = storeResource(Optional.empty());
+        CustomerOrder stored = order();
+        when(resource.customerOrderService.createFromTill(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any())).thenReturn(stored);
+        OrderRecallResource.OrderPushDto dto = new OrderRecallResource.OrderPushDto();
+        dto.code = "MB1";
+        dto.kind = "MOBILITY";
+        dto.customerNumber = " C9 ";
+        OrderRecallResource.OrderPushPaymentDto paid = new OrderRecallResource.OrderPushPaymentDto();
+        paid.tender = "CARD";
+        paid.amount = new BigDecimal("8.00");
+        OrderRecallResource.OrderPushPaymentDto zero = new OrderRecallResource.OrderPushPaymentDto();
+        zero.amount = BigDecimal.ZERO;
+        OrderRecallResource.OrderPushPaymentDto empty = new OrderRecallResource.OrderPushPaymentDto();
+        dto.payments = java.util.Arrays.asList(paid, null, zero, empty);
+        assertEquals(200, resource.ingest(null, dto).getStatus());
+        assertEquals("C9", stored.customerAccountNumber);
+        assertEquals(1, stored.payments.size());
+        assertEquals("CARD", stored.payments.get(0).tender);
+        dto.customerNumber = " ";
+        dto.payments = null;
+        resource.ingest(null, dto);
+        assertNull(stored.customerAccountNumber);
+        assertTrue(stored.payments.isEmpty());
+        dto.customerNumber = null;
+        resource.ingest(null, dto);
+        assertNull(stored.customerAccountNumber);
     }
 }

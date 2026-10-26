@@ -26,7 +26,10 @@ import com.intermarche.edge.domain.BaseEntity;
  * <p>
  * The absence of a row is the normal state (nothing hidden); one row per
  * hidden feature is added when the operator hides it and removed when they
- * restore it.
+ * restore it. The same row carries the other preferences of the screen as a
+ * prefixed token: {@code MENU:<menu>} hides a whole menu,
+ * {@code REPORT:<code>} hides a report type, and {@code STAR:<feature>} puts
+ * a feature in the account's "Favoris" menu.
  */
 @Entity
 @Table(name = "user_favorites",
@@ -35,6 +38,15 @@ import com.intermarche.edge.domain.BaseEntity;
         }
 )
 public class UserFavorite extends BaseEntity {
+
+    /** The token prefix of a hidden menu. */
+    public static final String MENU = "MENU:";
+
+    /** The token prefix of a hidden report type. */
+    public static final String REPORT = "REPORT:";
+
+    /** The token prefix of a favorite feature. */
+    public static final String STAR = "STAR:";
 
     /** The id of the employee whose interface this preference belongs to. */
     @Column(name = "employee_id", nullable = false)
@@ -45,10 +57,11 @@ public class UserFavorite extends BaseEntity {
     public String featureKey;
 
     /**
-     * Returns the keys of the features an employee has hidden.
+     * Returns the keys of the features an employee has hidden, with the
+     * prefixed tokens of its other display preferences.
      *
      * @param employeeId the employee's id
-     * @return the set of hidden feature keys, empty when nothing is hidden
+     * @return the set of hidden feature keys and preference tokens, empty when nothing is set
      */
     public static Set<String> hiddenKeys(Long employeeId) {
         List<UserFavorite> rows = list("employeeId", employeeId);

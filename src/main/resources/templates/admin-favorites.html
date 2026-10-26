@@ -1,62 +1,111 @@
 {!
  ! Back-office FAVORITES self-service (BO-01-04-08): within the limits of the
- ! account's profiles, hide the features it does not want to see. Only viewable
- ! features are offered; hiding one changes display only, never authorization.
- ! POST -> 303 -> notice.
+ ! account's profiles, hide the menus, features and report types it does not
+ ! want to see, and put the features it uses most in its own "Favoris" menu.
+ ! Only viewable features are offered; a preference changes display only,
+ ! never authorization. POST -> 303 -> notice.
 !}
 {#include admin-layout}
 
-{#title}Mes favoris{/title}
+{#title}{inject:i18n.get('t.mes-favoris')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Mes favoris</h1>
-        <p class="page-sub">Masquez les fonctionnalités que vous ne souhaitez pas afficher.</p>
+        <h1>{inject:i18n.get('t.mes-favoris')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.choisissez-vos-favoris-et-masquez-les-menus')}</p>
     </div>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 <form method="post" action="/admin/favorites">
     <div class="card">
-        {#if rows.isEmpty()}
+        {#if menus.isEmpty()}
         <div class="empty-state">
-            <p>Aucune fonctionnalité accessible.</p>
-            <p class="empty-hint">Vos profils n'autorisent la visualisation d'aucun écran.</p>
+            <p>{inject:i18n.get('t.aucune-fonctionnalite-accessible')}</p>
+            <p class="empty-hint">{inject:i18n.get('t.vos-profils-n-autorisent-la-visualisation-d')}</p>
         </div>
         {#else}
         <table class="data-table">
             <thead>
                 <tr>
-                    <th>Menu</th>
-                    <th>Fonctionnalité</th>
-                    <th class="col-actions">Masquer</th>
+                    <th>{inject:i18n.get('t.menu')}</th>
+                    <th>{inject:i18n.get('t.fonctionnalite')}</th>
+                    <th class="col-actions">{inject:i18n.get('t.favori')}</th>
+                    <th class="col-actions">{inject:i18n.get('t.masquer')}</th>
                 </tr>
             </thead>
             <tbody>
-                {#for row in rows}
-                <tr>
-                    <td class="col-muted">{#if row.firstOfMenu}{row.menu}{#else}{/if}</td>
-                    <td>{row.label}</td>
+                {#for menu in menus}
+                <tr class="grant-menu-row">
+                    <td><strong>{inject:i18n.text(menu.label)}</strong></td>
+                    <td class="col-muted"><em>{inject:i18n.get('t.tout-le-menu')}</em></td>
+                    <td class="col-actions">—</td>
                     <td class="col-actions">
                         <label class="toggle">
-                            <input type="checkbox" name="hide" value="{row.key}"{#if row.hidden} checked{/if}>
-                            <span>Masquée</span>
+                            <input type="checkbox" name="hideMenu" value="{menu.name}" aria-label="{inject:i18n.get('t.masquer-le-menu')} {inject:i18n.text(menu.label)}"{#if menu.hidden} checked{/if}>
+                            <span>{inject:i18n.get('t.masque')}</span>
+                        </label>
+                    </td>
+                </tr>
+                {#for row in menu.features}
+                <tr>
+                    <td class="col-muted"></td>
+                    <td>{inject:i18n.text(row.label)}</td>
+                    <td class="col-actions">
+                        <label class="toggle">
+                            <input type="checkbox" name="star" value="{row.key}" aria-label="{inject:i18n.get('t.favori')} {inject:i18n.text(row.label)}"{#if row.starred} checked{/if}>
+                            <span>{inject:i18n.get('t.favori')}</span>
+                        </label>
+                    </td>
+                    <td class="col-actions">
+                        <label class="toggle">
+                            <input type="checkbox" name="hide" value="{row.key}" aria-label="{inject:i18n.get('t.masquer')} {inject:i18n.text(row.label)}"{#if row.hidden} checked{/if}>
+                            <span>{inject:i18n.get('t.masquee')}</span>
+                        </label>
+                    </td>
+                </tr>
+                {/for}
+                {/for}
+            </tbody>
+        </table>
+        {/if}
+    </div>
+    {#if !reports.isEmpty()}
+    <div class="card">
+        <h2 class="card-title">{inject:i18n.get('t.types-de-rapport')}</h2>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>{inject:i18n.get('t.famille')}</th>
+                    <th>{inject:i18n.get('t.rapport')}</th>
+                    <th class="col-actions">{inject:i18n.get('t.masquer')}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {#for report in reports}
+                <tr>
+                    <td class="col-muted">{inject:i18n.text(report.family)}</td>
+                    <td>{inject:i18n.text(report.label)}</td>
+                    <td class="col-actions">
+                        <label class="toggle">
+                            <input type="checkbox" name="hideReport" value="{report.code}" aria-label="{inject:i18n.get('t.masquer')} {inject:i18n.text(report.label)}"{#if report.hidden} checked{/if}>
+                            <span>{inject:i18n.get('t.masque')}</span>
                         </label>
                     </td>
                 </tr>
                 {/for}
             </tbody>
         </table>
-        {/if}
     </div>
+    {/if}
     <div class="page-actions" style="margin-top: 6px;">
-        <button class="btn btn-primary" type="submit">Enregistrer</button>
+        <button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer')}</button>
     </div>
 </form>
 {/body}
 
-{#footer}Vos favoris n'affectent que votre affichage : ils ne modifient aucun droit.{/footer}
+{#footer}{inject:i18n.get('t.vos-favoris-n-affectent-que-votre-affichage')}{/footer}

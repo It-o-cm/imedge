@@ -285,4 +285,16 @@ class TicketTest {
         ticket.totalIncludingTax = new BigDecimal("20.0000");
         Assertions.assertNotEquals(before, ticket.getChecksum());
     }
+
+    /** LC-04-05 and BO-10-04/02: the lookup preserves its business identifier and returns the exact matching entity. */
+    @org.junit.jupiter.api.Test
+    void findLastClosedByTerminalUsesTheExactBusinessIdentifier() {
+        var row = new Ticket();
+        var query = org.mockito.Mockito.mock(io.quarkus.hibernate.orm.panache.PanacheQuery.class);
+        org.mockito.Mockito.when(query.firstResult()).thenReturn(row);
+        try (var panache = org.mockito.Mockito.mockStatic(io.quarkus.hibernate.orm.panache.PanacheEntityBase.class)) {
+            panache.when(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase.find("terminalId = ?1 and status = ?2 order by id desc", "C04", Ticket.TicketStatus.CLOSED)).thenReturn(query);
+            org.junit.jupiter.api.Assertions.assertSame(row, Ticket.findLastClosedByTerminal("C04"));
+        }
+    }
 }

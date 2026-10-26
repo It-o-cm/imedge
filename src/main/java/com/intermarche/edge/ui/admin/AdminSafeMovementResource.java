@@ -1,5 +1,9 @@
 package com.intermarche.edge.ui.admin;
 
+import io.quarkus.security.Authenticated;
+import com.intermarche.edge.security.FeatureAccess;
+import com.intermarche.edge.domain.setting.Feature;
+import com.intermarche.edge.domain.people.CrudOption;
 import com.intermarche.edge.domain.people.Employee;
 import com.intermarche.edge.domain.safe.AccountingPeriod;
 import com.intermarche.edge.domain.safe.SafeMovement;
@@ -10,7 +14,6 @@ import com.intermarche.edge.service.SafeService;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
@@ -78,7 +81,8 @@ public class AdminSafeMovementResource {
      * @return the movements page
      */
     @GET
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SAFE_MOVEMENT)
     public TemplateInstance list(@QueryParam("notice") String notice,
                                  @QueryParam("noticeOk") @DefaultValue("true") boolean noticeOk) {
         LOGGER.info("Entering method list");
@@ -104,7 +108,8 @@ public class AdminSafeMovementResource {
      * @return a 303 back to the list with the notice
      */
     @POST
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SAFE_MOVEMENT, option = CrudOption.CREATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response record(MultivaluedMap<String, String> form) {
@@ -125,6 +130,11 @@ public class AdminSafeMovementResource {
             return back("Libellé obligatoire.", false);
         }
         Employee concerned = employeeOf(AdminForms.id(form.getFirst("employeeId")));
+        String ceiling = safeService.advanceRefusal(type, amount, concerned);
+        if (ceiling != null) {
+            LOGGER.info("Exiting method record: over the advance ceiling");
+            return back(ceiling, false);
+        }
         SafeMovement movement = safeService.record(type, amount, label,
                 AdminForms.day(form.getFirst("movementDate")), signedIn(), concerned,
                 AdminForms.text(form, "reference"), vatLinesOf(form));
@@ -144,7 +154,8 @@ public class AdminSafeMovementResource {
      */
     @POST
     @Path("/validate")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SAFE_MOVEMENT, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response validate(MultivaluedMap<String, String> form) {
@@ -154,7 +165,13 @@ public class AdminSafeMovementResource {
             LOGGER.info("Exiting method validate: unknown movement");
             return back("Mouvement inconnu.", false);
         }
-        if (!safeService.validate(movement, signedIn())) {
+        Employee validator = signedIn();
+        String outranked = safeService.forcingRefusal(movement, validator);
+        if (outranked != null) {
+            LOGGER.info("Exiting method validate: forcing level");
+            return back(outranked, false);
+        }
+        if (!safeService.validate(movement, validator)) {
             LOGGER.info("Exiting method validate: already validated");
             return back("Ce mouvement est déjà validé.", false);
         }
@@ -173,19 +190,25 @@ public class AdminSafeMovementResource {
      */
     @POST
     @Path("/validate-all")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SAFE_MOVEMENT, option = CrudOption.UPDATE)
     @Transactional
     public Response validateAll() {
         LOGGER.info("Entering method validateAll");
         Employee by = signedIn();
         int validated = 0;
+        int reserved = 0;
         for (SafeMovement movement : safeService.movementsOf(safeService.openPeriod())) {
-            if (safeService.validate(movement, by)) {
+            if (!movement.isValidated() && safeService.forcingRefusal(movement, by) != null) {
+                reserved++;
+            } else if (safeService.validate(movement, by)) {
                 validated++;
             }
         }
         LOGGER.info("Exiting method validateAll with " + validated + " movement(s)");
-        return back(validated + " mouvement(s) validé(s).", true);
+        return reserved == 0 ? back(validated + " mouvement(s) validé(s).", true)
+                : back(validated + " mouvement(s) validé(s), " + reserved
+                        + " réservé(s) à un niveau de forçage supérieur.", true);
     }
 
     /**
@@ -196,7 +219,8 @@ public class AdminSafeMovementResource {
      */
     @POST
     @Path("/correct")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SAFE_MOVEMENT, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response correct(MultivaluedMap<String, String> form) {

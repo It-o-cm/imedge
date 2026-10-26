@@ -65,4 +65,20 @@ class PosSettingTest {
             Assertions.assertNull(PosSetting.findByKey("unknown.key"));
         }
     }
+
+    /** BO-10: a stored override is found by its catalog key with its value intact. */
+    @org.junit.jupiter.api.Test
+    void settingLookupPreservesTheStoredOverride() {
+        var setting = new PosSetting();
+        setting.settingKey = "display.show-ean";
+        setting.settingValue = "false";
+        var query = org.mockito.Mockito.mock(io.quarkus.hibernate.orm.panache.PanacheQuery.class);
+        org.mockito.Mockito.when(query.firstResult()).thenReturn(setting);
+        try (var panache = org.mockito.Mockito.mockStatic(io.quarkus.hibernate.orm.panache.PanacheEntityBase.class)) {
+            panache.when(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase.find("settingKey", "display.show-ean")).thenReturn(query);
+            var found = PosSetting.findByKey("display.show-ean");
+            org.junit.jupiter.api.Assertions.assertSame(setting, found);
+            org.junit.jupiter.api.Assertions.assertEquals("false", found.settingValue);
+        }
+    }
 }

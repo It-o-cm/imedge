@@ -157,12 +157,14 @@ class RegisterCommandResourceTest {
     }
 
     /**
-     * Two orders are separated by a comma, and the text fields are escaped: a
-     * backslash is doubled and a quote is degraded to an apostrophe so the
-     * hand-written JSON cannot be broken by a free-text reason.
+     * Two orders are two elements of the array, and the text fields are
+     * escaped by the JSON library: a backslash, a quote and a line break in a
+     * free-text reason read back unchanged with a real parser.
+     *
+     * @throws Exception when the answer is not valid JSON
      */
     @Test
-    void pendingSeparatesAndEscapesEveryOrder() {
+    void pendingSeparatesAndEscapesEveryOrder() throws Exception {
         RegisterCommandService service = mock(RegisterCommandService.class);
         when(service.pending("POS07")).thenReturn(List.of(
                 command("u-1", "Marie Curie", "fin de service"),
@@ -172,8 +174,12 @@ class RegisterCommandResourceTest {
         assertEquals("[{\"uid\":\"u-1\",\"type\":\"CLOSE_SESSION\",\"issuedBy\":\"Marie Curie\","
                         + "\"reason\":\"fin de service\"},"
                         + "{\"uid\":\"u-2\",\"type\":\"CLOSE_SESSION\",\"issuedBy\":\"C:\\\\poste\","
-                        + "\"reason\":\"dit 'maintenant'\"}]",
+                        + "\"reason\":\"dit \\\"maintenant\\\"\"}]",
                 response.getEntity());
+        com.fasterxml.jackson.databind.JsonNode orders = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readTree((String) response.getEntity());
+        assertEquals("C:\\poste", orders.get(1).get("issuedBy").asText());
+        assertEquals("dit \"maintenant\"", orders.get(1).get("reason").asText());
     }
 
     /**

@@ -14,13 +14,13 @@
 !}
 {#include admin-layout}
 
-{#title}Supervision magasin{/title}
+{#title}{inject:i18n.get('t.supervision-magasin')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Supervision magasin</h1>
-        <p class="page-sub">Activité consolidée du jour, rafraîchie toutes les 5 secondes.</p>
+        <h1>{inject:i18n.get('t.supervision-magasin')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.activite-consolidee-du-jour-rafraichie-toutes-le')}</p>
     </div>
     <span class="page-sub sup-clock" id="clock"></span>
 </div>
@@ -34,27 +34,27 @@
 <div class="alert period-banner" id="periodZone" role="status" hidden></div>
 
 <div class="card">
-    <h2 class="card-title">Activité du jour</h2>
-    <p class="card-sub">Cumuls de la journée, toutes caisses confondues.</p>
+    <h2 class="card-title">{inject:i18n.get('t.activite-du-jour')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.cumuls-de-la-journee-toutes-caisses-confondues')}</p>
     <div class="kpi-grid">
         <div class="kpi">
-            <span class="kpi-label">CA du jour</span>
+            <span class="kpi-label">{inject:i18n.get('t.ca-du-jour')}</span>
             <span class="kpi-value is-accent" id="kpiRevenue">—</span>
         </div>
         <div class="kpi">
-            <span class="kpi-label">Tickets</span>
+            <span class="kpi-label">{inject:i18n.get('t.tickets')}</span>
             <span class="kpi-value" id="kpiTickets">—</span>
         </div>
         <div class="kpi">
-            <span class="kpi-label">Panier moyen</span>
+            <span class="kpi-label">{inject:i18n.get('t.panier-moyen')}</span>
             <span class="kpi-value" id="kpiBasket">—</span>
         </div>
         <div class="kpi">
-            <span class="kpi-label">Annulation</span>
+            <span class="kpi-label">{inject:i18n.get('t.annulation')}</span>
             <span class="kpi-value is-warn" id="kpiCancel">—</span>
         </div>
         <div class="kpi">
-            <span class="kpi-label">Remboursements</span>
+            <span class="kpi-label">{inject:i18n.get('t.remboursements')}</span>
             <span class="kpi-value is-warn" id="kpiRefunds">—</span>
         </div>
     </div>
@@ -64,23 +64,23 @@
  ! choisit. Masquee tant que le parametre dashboard.indicators ne nomme rien :
  ! une carte vide ne dit rien a personne. !}
 <div class="card" id="indicatorCard" hidden>
-    <h2 class="card-title">Indicateurs choisis</h2>
-    <p class="card-sub">Indicateurs du paramètre « Indicateurs du tableau de bord », sur la journée.</p>
+    <h2 class="card-title">{inject:i18n.get('t.indicateurs-choisis')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.indicateurs-du-parametre-indicateurs-du-tableau')}</p>
     <div class="kpi-grid" id="indicatorZone"></div>
 </div>
 
 <div class="sup-columns">
     <div class="card">
-        <h2 class="card-title">CA par caisse</h2>
-        <div id="perRegisterZone"><div class="sup-empty">Aucune vente aujourd'hui</div></div>
+        <h2 class="card-title">{inject:i18n.get('t.ca-par-caisse')}</h2>
+        <div id="perRegisterZone"><div class="sup-empty">{inject:i18n.get('t.aucune-vente-aujourd-hui')}</div></div>
     </div>
     <div class="card">
-        <h2 class="card-title">Sessions actives</h2>
-        <div id="sessionsZone"><div class="sup-empty">Aucune session ouverte</div></div>
+        <h2 class="card-title">{inject:i18n.get('t.sessions-actives')}</h2>
+        <div id="sessionsZone"><div class="sup-empty">{inject:i18n.get('t.aucune-session-ouverte')}</div></div>
     </div>
     <div class="card">
-        <h2 class="card-title">Top ventes du jour</h2>
-        <div id="topSalesZone"><div class="sup-empty">Aucune vente aujourd'hui</div></div>
+        <h2 class="card-title">{inject:i18n.get('t.top-ventes-du-jour')}</h2>
+        <div id="topSalesZone"><div class="sup-empty">{inject:i18n.get('t.aucune-vente-aujourd-hui')}</div></div>
     </div>
 </div>
 
@@ -110,8 +110,8 @@
       document.getElementById('kpiRefunds').textContent = data.refundTotal + ' € (' + data.refundCount + ')';
 
       renderRows('perRegisterZone', data.perRegister.map(r =>
-        '<span>' + r.terminal + ' <span class="sup-muted">(' + r.tickets + ' tickets)</span></span>'
-        + '<span class="sup-amount">' + r.revenue + ' €</span>'), "Aucune vente aujourd'hui");
+        '<span>' + r.terminal + ' <span class="sup-muted">(' + r.tickets + ' ' + '{inject:i18n.js('t.rc3-dash-tickets')}' + ')</span></span>'
+        + '<span class="sup-amount">' + r.revenue + ' €</span>'), '{inject:i18n.js('t.aucune-vente-aujourd-hui')}');
 
       /* LC-01-02-07 : la fermeture se DEMANDE, elle ne se fait pas d'ici. La
          caisse relève l'ordre à son tour de boucle et l'acquitte ; tant qu'elle
@@ -120,11 +120,11 @@
          qui est peut-être éteinte ou en pleine vente. */
       renderRows('sessionsZone', data.sessions.map(s =>
         '<span>' + s.terminal + ' — ' + s.operator + '</span>'
-        + '<span class="sup-muted">' + s.number + ' · depuis ' + s.since + '</span>'
+        + '<span class="sup-muted">' + s.number + ' ' + '{inject:i18n.js('t.depuis')}' + ' ' + s.since + '</span>'
         + (s.closing
-            ? '<span class="badge badge-off">fermeture demandée</span>'
-            : '<button class="btn btn-small btn-danger" onclick="forceClose(\'' + s.terminal + '\')">Forcer la fermeture</button>')
-      ), 'Aucune session ouverte');
+            ? '<span class="badge badge-off">' + '{inject:i18n.js('t.rc3-dash-fermeture-demandee')}' + '</span>'
+            : '<button class="btn btn-small btn-danger" onclick="forceClose(\'' + s.terminal + '\')">' + '{inject:i18n.js('t.rc3-dash-forcer-la-fermeture')}' + '</button>')
+      ), '{inject:i18n.js('t.aucune-session-ouverte')}');
 
       /* BO-04-03-01/-03/-15 : les tuiles administrees. Le serveur a deja
          formate les valeurs et donne le suffixe a mettre derriere : cette
@@ -151,7 +151,7 @@
       }
 
       renderRows('topSalesZone', data.topSales.map(t =>
-        '<span>' + t.label + '</span><span class="sup-amount">×' + t.quantity + '</span>'), "Aucune vente aujourd'hui");
+        '<span>' + t.label + '</span><span class="sup-amount">×' + t.quantity + '</span>'), '{inject:i18n.js('t.aucune-vente-aujourd-hui')}');
 
       /* Un ordre par clic : le service du nœud est idempotent par caisse, donc
          une main impatiente ne ferme pas deux fois. */
@@ -166,9 +166,9 @@
       } else {
         period.hidden = false;
         period.textContent = data.periodCountdown === 0
-          ? 'Fin de période (' + data.periodEnd + ') : fermeture automatique des caisses en cours.'
-          : 'Fin de période à ' + data.periodEnd + ' — fermeture automatique des caisses ouvertes dans '
-              + data.periodCountdown + ' min.';
+          ? '{inject:i18n.js('t.rc3-dash-fin-de-periode-en-cours')}'.replace('%1', data.periodEnd)
+          : '{inject:i18n.js('t.rc3-dash-fin-de-periode-a')}'.replace('%1', data.periodEnd)
+              .replace('%2', data.periodCountdown);
       }
 
       /* BO-04-03-05 : les caisses qui ne repondent plus, au meme endroit que
@@ -181,12 +181,16 @@
           const banner = document.createElement('div');
           banner.className = 'alert alert-error';
           banner.setAttribute('role', 'alert');
-          banner.textContent = 'Caisse ' + r.terminal + ' deconnectee depuis ' + r.silent + ' min.';
+          banner.textContent = '{inject:i18n.js('t.rc3-dash-caisse-deconnectee')}'.replace('%1', r.terminal).replace('%2', r.silent);
           offline.appendChild(banner);
         });
       }
       const calls = document.getElementById('callsZone');
       calls.innerHTML = '';
+      /* Ce que la caisse envoie est du texte : il est echappe avant d'entrer
+         dans le bandeau. */
+      const esc = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
       data.calls.forEach(c => {
         const banner = document.createElement('div');
         banner.className = 'alert alert-error call-banner';
@@ -203,12 +207,21 @@
             banner.className = 'alert call-banner';
         }
         const outcome = settled
-            ? ' <span class="call-context">[' + c.statusLabel
-                + (c.refusalReason ? ' : ' + c.refusalReason : '') + ']</span>'
+            ? ' <span class="call-context">[' + esc(c.statusLabel)
+                + (c.refusalReason ? ' : ' + esc(c.refusalReason) : '') + ']</span>'
             : '';
-        banner.innerHTML = '<span class="call-subject">' + priority + c.terminal + ' demande un superviseur — '
-            + c.reason + ' <span class="call-context">(' + c.operator + ', ' + c.time + ')</span>'
+        banner.innerHTML = '<span class="call-subject">' + priority + esc(c.terminal) + ' ' + '{inject:i18n.js('t.rc3-dash-demande-un-superviseur')}' + ' — '
+            + esc(c.reasonLabel || c.reason) + ' <span class="call-context">(' + esc(c.operator) + ', ' + esc(c.time) + ')</span>'
             + outcome + '</span>';
+        /* LC-01-05-08 : une demande d'autorisation envoyee par la caisse nomme le
+           geste retenu, pour que le responsable sache ce qu'il autorise. Ecrit
+           comme du texte : le libelle vient de la caisse. */
+        if (c.message) {
+            const gesture = document.createElement('span');
+            gesture.className = 'call-context';
+            gesture.textContent = ' — ' + (c.gesture || c.message);
+            banner.firstChild.appendChild(gesture);
+        }
         if (!settled) {
             /* BO-04-02-02 : autoriser le geste que la caisse retient. L'ordre
                dit que le geste PEUT etre fait ; la caissiere appuie toujours
@@ -216,24 +229,24 @@
             const grant = document.createElement('button');
             grant.className = 'btn btn-small btn-primary';
             grant.type = 'button';
-            grant.textContent = 'Autoriser';
+            grant.textContent = '{inject:i18n.js('t.rc3-dash-autoriser')}';
             grant.onclick = () => fetch('/dashboard/call/' + c.id + '/authorise').then(poll);
             banner.appendChild(grant);
             const toTill = document.createElement('button');
             toTill.className = 'btn btn-small';
             toTill.type = 'button';
-            toTill.textContent = 'A traiter en caisse';
+            toTill.textContent = '{inject:i18n.js('t.rc3-dash-a-traiter-en-caisse')}';
             toTill.onclick = () => fetch('/dashboard/call/' + c.id + '/to-till').then(poll);
             banner.appendChild(toTill);
             const refuse = document.createElement('button');
             refuse.className = 'btn btn-small btn-danger';
             refuse.type = 'button';
-            refuse.textContent = 'Refuser';
+            refuse.textContent = '{inject:i18n.js('t.rc3-dash-refuser')}';
             refuse.onclick = () => {
                 /* Le motif part a la caisse tel quel : c'est la phrase que la
                    caissiere va lire. Annuler ne refuse rien. */
-                const reason = window.prompt('Motif du refus envoye a la caisse ?',
-                    'Demande refusee par le back-office');
+                const reason = window.prompt('{inject:i18n.js('t.rc3-dash-motif-du-refus')}',
+                    '{inject:i18n.js('t.rc3-dash-demande-refusee')}');
                 if (reason === null) { return; }
                 fetch('/dashboard/call/' + c.id + '/refuse?reason='
                     + encodeURIComponent(reason)).then(poll);
@@ -243,7 +256,7 @@
         const ack = document.createElement('button');
         ack.className = 'btn btn-small btn-danger';
         ack.type = 'button';
-        ack.textContent = 'Acquitter';
+        ack.textContent = '{inject:i18n.js('t.rc3-dash-acquitter')}';
         ack.onclick = () => fetch('/dashboard/ack/' + c.id).then(poll);
         banner.appendChild(ack);
         calls.appendChild(banner);
@@ -264,4 +277,4 @@
 </script>
 {/body}
 
-{#footer}Vue consolidée du nœud magasin : les caisses y remontent leurs ventes, leurs sessions et leurs appels superviseur.{/footer}
+{#footer}{#if inject:nodeRole.central}{inject:i18n.get('t.w21-tableau-central')}{#else}{inject:i18n.get('t.vue-consolidee-du-nud-magasin-les-caisses')}{/if}{/footer}

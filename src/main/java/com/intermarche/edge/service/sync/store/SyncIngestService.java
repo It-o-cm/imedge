@@ -61,6 +61,10 @@ public class SyncIngestService {
     @Inject
     com.intermarche.edge.service.TicketRenderService ticketRenderService;
 
+    /** The SAF-T at the flow of the Portuguese documents (BO-05-01-05). */
+    @Inject
+    com.intermarche.edge.service.fiscal.SaftStreamService saftStreamService;
+
     /** What the coin machines of the line hold ({@code BO-05-02-16}). */
     @Inject
     com.intermarche.edge.service.CoinMachineService coinMachineService;
@@ -75,6 +79,18 @@ public class SyncIngestService {
      */
     @Inject
     com.intermarche.edge.service.sync.TicketStreamService ticketStreamService;
+
+    /** The central instrument base (BO-03-06-48). */
+    @Inject
+    CentralInstrumentRelay centralInstrumentRelay;
+
+    /** This node's point of sale, the key of its instruments at the central node (BO-03-06-48). */
+    @Inject
+    com.intermarche.edge.service.NodeEchelonService nodeEchelonService;
+
+    /** Sends the files consolidated from the registers up to the commercial management (BO-02-04-13). */
+    @Inject
+    com.intermarche.edge.service.sync.CustomerUplinkService customerUplinkService;
 
     /** Payment factories indexed by their method key. */
     private final Map<String, TicketPayment.Factory> paymentFactories = new HashMap<>();
@@ -159,6 +175,8 @@ public class SyncIngestService {
         ticket.parkedAt = parse(dto.parkedAt);
         ticket.resumedAt = parse(dto.resumedAt);
         ticket.resumedTerminalId = dto.resumedTerminalId;
+        // BO-06-06-02/03: when the cashier went to payment, stored verbatim.
+        ticket.paymentStartedAt = parse(dto.paymentStartedAt);
         ticket.closingDate = parse(dto.closingDate);
         ticket.store = requireStore(dto.storeCode);
         ticket.cashier = requireEmployee(dto.cashierLogin);
@@ -179,6 +197,8 @@ public class SyncIngestService {
         ticket.fidelityProjectedAfterEarn = dto.fidelityProjectedAfterEarn;
         ticket.fidelityBalanceAfter = dto.fidelityBalanceAfter;
         ticket.fidelityAnonymousProjection = dto.fidelityAnonymousProjection;
+        ticket.fidelityPotBalances = dto.fidelityPotBalances;
+        ticket.fidelityMessages = dto.fidelityMessages;
         if (ticket.fidelityLines == null) {
             ticket.fidelityLines = new java.util.ArrayList<>();
         }
@@ -206,7 +226,15 @@ public class SyncIngestService {
         }
         ticket.digitalKey = dto.digitalKey;
         ticket.customerEmail = dto.customerEmail;
+        ticket.customerTaxId = dto.customerTaxId;
+        // BO-07-01-02: the channel of an integrated transaction, so the revenue
+        // of the point of sale tells its lanes from the systems it integrates.
+        ticket.salesChannel = com.intermarche.edge.domain.sale.SalesChannel.fromName(dto.salesChannel);
         ticket.itemCount = dto.itemCount;
+        ticket.selfScanning = dto.selfScanning;
+        ticket.selfScanControlled = dto.selfScanControlled;
+        ticket.selfScanVerified = dto.selfScanVerified;
+        ticket.offline = dto.offline;
         ticket.totalExcludingTax = dto.totalExcludingTax;
         ticket.totalIncludingTax = dto.totalIncludingTax;
         ticket.totalVat = dto.totalVat;
@@ -218,15 +246,24 @@ public class SyncIngestService {
         if (dto.formattedContent != null && !dto.formattedContent.isBlank()) {
             ticket.formattedContent = dto.formattedContent;
         }
+        // LC-13-06-14: the language the ticket was printed in, which the API
+        // restitution states beside the printed form.
+        ticket.customerLanguage = dto.customerLanguage;
         ticket.previousSignature = dto.previousSignature;
         ticket.grandTotal = dto.grandTotal;
-        ticket.valuationStatus = Ticket.ValuationStatus.valueOf(dto.valuationStatus);
+        // A payload naming no valuation status is a ticket never valued, not
+        // an ingestion failure that would block the register's whole outbox.
+        ticket.valuationStatus = dto.valuationStatus == null ? Ticket.ValuationStatus.NOT_VALUATED
+                : Ticket.ValuationStatus.valueOf(dto.valuationStatus);
 
         ticket.lines.clear();
         for (SyncPayloads.LineDto lineDto : dto.lines) {
             TicketLine line = new TicketLine();
             line.lineNumber = lineDto.lineNumber;
             line.lineUid = lineDto.lineUid;
+            line.linkedParentUid = lineDto.linkedParentUid;
+            line.linkedArticleEan = lineDto.linkedArticleEan;
+            line.linkedRecordedQuantity = lineDto.linkedRecordedQuantity;
             line.ean = lineDto.ean;
             line.plu = lineDto.plu;
             if (lineDto.plu != null) {
@@ -238,6 +275,10 @@ public class SyncIngestService {
             line.quantity = lineDto.quantity;
             line.unitPrice = lineDto.unitPrice;
             line.vatRate = lineDto.vatRate;
+            line.vatNumber = lineDto.vatNumber;
+            line.vatExempt = lineDto.vatExempt;
+            line.thirdPartySale = lineDto.thirdPartySale;
+            line.service = lineDto.service;
             line.modifierLabel = lineDto.modifierLabel;
             // A word this version does not know reads as no gesture rather than as a
             // failed ingest: the ticket is still consolidated, minus a modifier nobody
@@ -261,12 +302,20 @@ public class SyncIngestService {
             line.cancelledBy = lineDto.cancelledBy;
             line.cancellationReasonCode = lineDto.cancellationReasonCode;
             line.cancellationReasonLabel = lineDto.cancellationReasonLabel;
+            // BO-03-13-12: the return type of a return line, stored verbatim.
+            line.returnTypeCode = lineDto.returnTypeCode;
+            line.returnTypeLabel = lineDto.returnTypeLabel;
+            line.returnLine = lineDto.returnLine;
             // Money-instrument and last-line-cancellation flags are stored verbatim
             // from the payload: the financial states read them to keep gift cards
             // out of the turnover (R12) and to split last-line from endorsed
             // cancellations (R10). Never re-derived store-side.
             line.moneyProduct = lineDto.moneyProduct;
             line.cancelledLast = lineDto.cancelledLast;
+            line.scanned = lineDto.scanned;
+            line.priceEntered = lineDto.priceEntered;
+            line.carriedOut = lineDto.carriedOut;
+            line.appliedTareKg = lineDto.appliedTareKg;
             ticket.addLine(line);
         }
 
@@ -278,6 +327,8 @@ public class SyncIngestService {
                 throw new IllegalStateException("Mode de paiement inconnu: " + paymentDto.methodKey);
             }
             TicketPayment payment = factory.create(paymentDto.amount, paymentDto.tenderedAmount);
+            payment.moneticServer = paymentDto.moneticServer;
+            payment.tenderCode = paymentDto.tenderCode;
             if (payment instanceof VoucherPayment voucher) {
                 voucher.voucherLabel = paymentDto.voucherLabel;
                 voucher.voucherNumber = paymentDto.voucherNumber;
@@ -291,6 +342,9 @@ public class SyncIngestService {
             }
             if (payment instanceof com.intermarche.edge.domain.payment.ChequePayment cheque) {
                 cheque.magneticLine = paymentDto.magneticLine;
+                cheque.accountNumber = paymentDto.chequeAccountNumber;
+                cheque.guaranteeAuthorization = paymentDto.chequeGuaranteeAuthorization;
+                cheque.guaranteeProvider = paymentDto.chequeGuaranteeProvider;
             }
             if (payment instanceof com.intermarche.edge.domain.payment.BackupPayment secours) {
                 secours.methodLabel = paymentDto.backupMethodLabel;
@@ -319,6 +373,10 @@ public class SyncIngestService {
         }
 
         ticket.persist();
+        // BO-10-06-03: the Portuguese documents stating the sale, kept for the
+        // SAF-T export of the store.
+        storeFiscalDocuments(dto.fiscalDocuments, ticket.id, null);
+        storeValuations(dto.valuations, ticket);
         coinMachineService.collect(ticket, previousCash);
         // BO-11-02-02/03: mise en file de la diffusion au fil de l'eau DANS la
         // transaction d'ingestion. Un ticket consolidé mais non mis en file ne
@@ -327,6 +385,40 @@ public class SyncIngestService {
         ticketStreamService.onTicket(ticket);
         LOGGER.infof("Ticket %s %s (%s)", dto.ticketNumber, created ? "créé" : "mis à jour", dto.status);
         LOGGER.info("Exiting method ingestTicket");
+    }
+
+    /**
+     * Replaces the valuation trace of a ticket by the one the register pushed
+     * (BO-06-08-02): the promotions each line took, which the promotional
+     * article sales state reads. An upsert rewrites the trace whole, as the
+     * register does at every valuation.
+     *
+     * @param valuations the pushed traces, possibly null from an older register
+     * @param ticket the persisted ticket
+     */
+    void storeValuations(java.util.List<SyncPayloads.ValuationDto> valuations, Ticket ticket) {
+        if (valuations == null || ticket.id == null) {
+            return;
+        }
+        com.intermarche.edge.domain.sale.TicketLineValuation.delete("ticket.id", ticket.id);
+        for (SyncPayloads.ValuationDto dto : valuations) {
+            if (dto.lineUid == null) {
+                continue;
+            }
+            com.intermarche.edge.domain.sale.TicketLineValuation trace =
+                    new com.intermarche.edge.domain.sale.TicketLineValuation();
+            trace.ticket = ticket;
+            trace.lineUid = dto.lineUid;
+            trace.localTotal = dto.localTotal == null ? java.math.BigDecimal.ZERO : dto.localTotal;
+            trace.valuedTotal = dto.valuedTotal == null ? java.math.BigDecimal.ZERO : dto.valuedTotal;
+            trace.offerLabel = dto.offerLabel;
+            trace.advantageLabel = dto.advantageLabel;
+            trace.advantageAmount = dto.advantageAmount;
+            trace.advantagePrintMode = dto.advantagePrintMode;
+            trace.correctionLabel = dto.correctionLabel;
+            trace.correctionAmount = dto.correctionAmount;
+            trace.persist();
+        }
     }
 
     /**
@@ -350,9 +442,15 @@ public class SyncIngestService {
             refund.refundNumber = dto.refundNumber;
             created = true;
         }
+        // BO-05-02-16: the cash this refund had already paid out of the coin
+        // machine, read before it is rewritten — a re-pushed refund must not
+        // empty the machine twice.
+        java.math.BigDecimal previousCash = created
+                ? java.math.BigDecimal.ZERO : coinMachineService.refundCashOf(refund);
         refund.terminalId = dto.terminalId;
         refund.status = Refund.RefundStatus.valueOf(dto.status);
         refund.refundMethod = dto.refundMethod != null ? Refund.RefundMethod.valueOf(dto.refundMethod) : null;
+        refund.moneticServer = dto.moneticServer;
         refund.originalTicketId = original.id;
         refund.session = dto.sessionNumber != null
                 ? CashSession.<CashSession>find("sessionNumber", dto.sessionNumber).firstResult()
@@ -391,11 +489,61 @@ public class SyncIngestService {
         }
 
         refund.persist();
+        // BO-10-06-03: the credit notes stating the return, for the SAF-T export.
+        storeFiscalDocuments(dto.fiscalDocuments, null, refund.id);
+        coinMachineService.collectRefund(refund, previousCash);
         // BO-11-02-02: le retour est l'un des types de ticket que l'exigence
         // nomme, et il part sur le même mécanisme que la vente.
         ticketStreamService.onRefund(refund);
         LOGGER.infof("Remboursement %s %s", dto.refundNumber, created ? "créé" : "mis à jour");
         LOGGER.info("Exiting method ingestRefund");
+    }
+
+    /**
+     * Upserts the Portuguese fiscal documents a register pushed with a sale or
+     * a return (BO-10-06-03), by number: a document pushed twice is rewritten,
+     * never duplicated, and the node renumbers nothing.
+     *
+     * @param documents the pushed documents, empty for a sale stated on none
+     * @param ticketId the node's id of the sale they state, or null
+     * @param refundId the node's id of the return they state, or null
+     */
+    void storeFiscalDocuments(java.util.List<SyncPayloads.FiscalDocumentDto> documents,
+            Long ticketId, Long refundId) {
+        for (SyncPayloads.FiscalDocumentDto dto : documents) {
+            com.intermarche.edge.domain.sale.FiscalDocument document =
+                    com.intermarche.edge.domain.sale.FiscalDocument.findByNumber(dto.number);
+            if (document == null) {
+                document = new com.intermarche.edge.domain.sale.FiscalDocument();
+                document.number = dto.number;
+            }
+            document.documentType = com.intermarche.edge.domain.sale.FiscalDocument.Type.valueOf(dto.documentType);
+            document.series = dto.series;
+            document.rank = dto.rank;
+            document.atcud = dto.atcud;
+            document.saftDocumentId = dto.saftDocumentId;
+            document.terminalId = dto.terminalId;
+            document.issuedAt = parse(dto.issuedAt);
+            document.ticketId = ticketId;
+            document.refundId = refundId;
+            document.part = dto.part;
+            document.lineUids = dto.lineUids;
+            document.sourceNumber = dto.sourceNumber;
+            document.customerTaxId = dto.customerTaxId;
+            document.customerName = dto.customerName;
+            document.customerAddress = dto.customerAddress;
+            document.grossTotal = dto.grossTotal;
+            document.taxTotal = dto.taxTotal;
+            document.hash = dto.hash;
+            document.previousHash = dto.previousHash;
+            document.qrPayload = dto.qrPayload;
+            document.cancelled = dto.cancelled;
+            document.sourceBilling = dto.sourceBilling;
+            document.persist();
+            // BO-05-01-05: the document is queued for the SAF-T at the flow in
+            // the ingestion's own transaction, like the stream.
+            saftStreamService.onDocument(document);
+        }
     }
 
     /**
@@ -426,6 +574,23 @@ public class SyncIngestService {
         }
         LOGGER.info("Exiting method renderTicketDuplicate");
         return ticketRenderService.renderTicket(ticket, true, Math.max(1, ticket.printCount));
+    }
+
+    /**
+     * Reads the origin a register states for a customer.
+     *
+     * @param name the origin's name, possibly null, blank or unknown
+     * @return the origin, or null when none or an unknown one is stated
+     */
+    static com.intermarche.edge.domain.payment.AccountCustomer.Origin customerOrigin(String name) {
+        if (name == null || name.isBlank()) {
+            return null;
+        }
+        try {
+            return com.intermarche.edge.domain.payment.AccountCustomer.Origin.valueOf(name.trim());
+        } catch (IllegalArgumentException unknown) {
+            return null;
+        }
     }
 
     /**
@@ -463,7 +628,25 @@ public class SyncIngestService {
         customer.vatNumber = dto.vatNumber;
         customer.phone = dto.phone;
         customer.email = dto.email;
+        // BO-02-04-13: the NIF corrected at the till travels too; a register of
+        // an older version states none, which must not erase the one held here.
+        if (dto.taxId != null) {
+            customer.taxId = dto.taxId;
+        }
+        // BO-06-03-04: a passing customer opened at a till stays VOLATILE here,
+        // so the customer list tells it from a customer in account; a register
+        // of an older version states no origin, which keeps the one held here.
+        com.intermarche.edge.domain.payment.AccountCustomer.Origin origin = customerOrigin(dto.origin);
+        if (origin != null) {
+            customer.origin = origin;
+        }
         customer.persist();
+        // BO-02-04-13: a file created or corrected at a register goes up to the
+        // commercial management, acknowledged and replayed like a back-office one.
+        if (customerUplinkService != null) {
+            customerUplinkService.enqueue(customer,
+                    com.intermarche.edge.domain.sync.CustomerUplink.Source.REGISTER);
+        }
         LOGGER.infof("Client en compte %s %s", dto.accountNumber, created ? "créé" : "mis à jour");
         LOGGER.info("Exiting method ingestCustomer");
     }
@@ -533,6 +716,12 @@ public class SyncIngestService {
         document.totalEcoTax = dto.totalEcoTax == null
                 ? java.math.BigDecimal.ZERO : dto.totalEcoTax;
         document.printCount = dto.printCount;
+        // BO-03-03-02 / BO-03-04-09: the order number and the administered
+        // document the paper was drawn as — the latter is what stops the back
+        // office from deleting a document that has already been printed.
+        document.orderNumber = dto.orderNumber;
+        document.documentCode = dto.documentCode;
+        document.documentTitle = dto.documentTitle;
         document.persist();
         LOGGER.infof("Document %s %s", dto.documentNumber, created ? "créé" : "mis à jour");
         LOGGER.info("Exiting method ingestDocument");
@@ -576,6 +765,9 @@ public class SyncIngestService {
         event.eventType = TechnicalEvent.EventType.valueOf(dto.type);
         event.detail = dto.detail;
         event.operatorBadgeId = dto.operatorBadgeId;
+        event.ticketNumber = dto.ticketNumber;
+        event.amount = dto.amount;
+        event.code = dto.code;
         // A register that pushes an event without a date is pushing an event
         // that happened NOW: the column is not nullable and the catalogue
         // accepts the payload, so the node stamps it on arrival rather than
@@ -703,6 +895,10 @@ public class SyncIngestService {
             movement.movementUid = dto.movementUid;
             created = true;
         }
+        // BO-05-02-16: what this movement had already moved in the coin machine,
+        // read before it is rewritten.
+        java.math.BigDecimal previousImpact = created
+                ? java.math.BigDecimal.ZERO : coinMachineService.impactOf(movement);
         movement.terminalId = dto.terminalId;
         movement.session = dto.sessionNumber != null
                 ? CashSession.<CashSession>find("sessionNumber", dto.sessionNumber).firstResult()
@@ -712,11 +908,17 @@ public class SyncIngestService {
         movement.amount = dto.amount;
         movement.reason = dto.reason;
         movement.movementDate = parse(dto.movementDate);
-        movement.endorsedBy = dto.endorsedBy;
+        // BO-05-02-09: a movement the back office validated keeps its
+        // validation when the register pushes it again without one.
+        movement.endorsedBy = dto.endorsedBy == null ? movement.endorsedBy : dto.endorsedBy;
         movement.safeDeposit = dto.safeDeposit;
         movement.orderReference = dto.orderReference;
+        movement.paymentMethod = dto.paymentMethod;
+        movement.transferTo = dto.transferTo;
+        movement.denominationDetail = dto.denominationDetail;
         movement.persist();
         feedSafe(created, movement);
+        coinMachineService.collectMovement(movement, previousImpact);
         LOGGER.infof("Mouvement %s %s (%s)", dto.movementUid, created ? "créé" : "mis à jour", dto.type);
         LOGGER.info("Exiting method ingestMovement");
     }
@@ -798,6 +1000,231 @@ public class SyncIngestService {
      * @param value the ISO string, or null
      * @return the timestamp, or null
      */
+    /**
+     * Upserts a ticket a register printed (LC-08-02-02), keyed by its register
+     * and the register's id, so a push repeated by the outbox never duplicates it.
+     *
+     * @param dto the printed ticket
+     */
+    @Transactional
+    public void ingestPrintout(SyncPayloads.PrintoutDto dto) {
+        LOGGER.info("Entering method ingestPrintout with sourceId: " + dto.sourceId);
+        com.intermarche.edge.domain.sale.PrintedTicket printout =
+                com.intermarche.edge.domain.sale.PrintedTicket.findBySource(dto.terminalId, dto.sourceId);
+        if (printout == null) {
+            printout = new com.intermarche.edge.domain.sale.PrintedTicket();
+            printout.terminalId = dto.terminalId;
+            printout.sourceId = dto.sourceId;
+        }
+        printout.source = dto.source;
+        printout.audience = dto.audience == null ? com.intermarche.edge.domain.sale.PrintedTicket.Audience.CUSTOMER
+                : com.intermarche.edge.domain.sale.PrintedTicket.Audience.valueOf(dto.audience);
+        printout.content = dto.content;
+        printout.issuedAt = parse(dto.issuedAt);
+        printout.persist();
+        LOGGER.info("Exiting method ingestPrintout");
+    }
+
+    /**
+     * Upserts a sale a register made in training mode (LC-13-05-06), keyed by
+     * its register and the register's id, in the training table no revenue or
+     * accounting flow reads.
+     *
+     * @param dto the training sale
+     */
+    @Transactional
+    public void ingestTrainingTicket(SyncPayloads.TrainingTicketDto dto) {
+        LOGGER.info("Entering method ingestTrainingTicket with sourceId: " + dto.sourceId);
+        com.intermarche.edge.domain.sale.TrainingTicket training =
+                com.intermarche.edge.domain.sale.TrainingTicket.findBySource(dto.terminalId, dto.sourceId);
+        if (training == null) {
+            training = new com.intermarche.edge.domain.sale.TrainingTicket();
+            training.terminalId = dto.terminalId;
+            training.sourceId = dto.sourceId;
+        }
+        training.cashierLogin = dto.cashierLogin;
+        training.issuedAt = parse(dto.issuedAt);
+        training.itemCount = dto.itemCount;
+        training.totalIncludingTax = dto.totalIncludingTax;
+        training.content = dto.content;
+        // BO-06-06-01: a training cart put on hold and its recall.
+        training.parkedAt = parse(dto.parkedAt);
+        training.parkedBy = dto.parkedBy;
+        training.resumedAt = parse(dto.resumedAt);
+        training.resumedTerminalId = dto.resumedTerminalId;
+        training.resumedBy = dto.resumedBy;
+        training.persist();
+        LOGGER.info("Exiting method ingestTrainingTicket");
+    }
+
+    /**
+     * Upserts the signed trace of a ticket put on hold, resumed or purged
+     * (LC-04-01-03), keyed by its register and the register's id. The record is
+     * kept exactly as signed, so the node can check the register's chain.
+     *
+     * @param dto the record
+     */
+    @Transactional
+    public void ingestParkedTicket(SyncPayloads.ParkedTicketDto dto) {
+        LOGGER.info("Entering method ingestParkedTicket with sourceId: " + dto.sourceId);
+        com.intermarche.edge.domain.sale.ParkedTicketRecord record =
+                com.intermarche.edge.domain.sale.ParkedTicketRecord.findBySource(dto.terminalId, dto.sourceId);
+        if (record == null) {
+            record = new com.intermarche.edge.domain.sale.ParkedTicketRecord();
+            record.terminalId = dto.terminalId;
+            record.sourceId = dto.sourceId;
+        }
+        record.ticketNumber = dto.ticketNumber;
+        record.event = dto.event == null ? null
+                : com.intermarche.edge.domain.sale.ParkedTicketRecord.Event.valueOf(dto.event);
+        record.eventDate = parse(dto.eventDate);
+        record.operator = dto.operator;
+        record.itemCount = dto.itemCount;
+        record.totalAmount = dto.totalAmount;
+        record.content = dto.content;
+        record.previousSignature = dto.previousSignature;
+        record.signature = dto.signature;
+        record.persist();
+        LOGGER.info("Exiting method ingestParkedTicket");
+    }
+
+    /**
+     * Upserts an instrument a register reported (BO-03-06-62, -48), keyed by the
+     * register that printed it and its number: the last report gives the balance.
+     *
+     * @param dto the instrument as the reporting register knows it
+     */
+    @Transactional
+    public void ingestStoredValue(SyncPayloads.StoredValueDto dto) {
+        LOGGER.info("Entering method ingestStoredValue with number: " + dto.number);
+        // BO-03-06-48: a register reports no point of sale — the instrument is
+        // this shop's, or the one it was learnt under; a store reporting to the
+        // central node names its own, part of the key there.
+        boolean fromShop = dto.pdvNumber != null;
+        com.intermarche.edge.domain.barcode.StoredValueRecord record = fromShop
+                ? com.intermarche.edge.domain.barcode.StoredValueRecord.findByIssuer(
+                        dto.pdvNumber, dto.issuingTerminalId, dto.number)
+                : com.intermarche.edge.domain.barcode.StoredValueRecord.findByIssuer(dto.issuingTerminalId, dto.number);
+        if (record == null) {
+            record = new com.intermarche.edge.domain.barcode.StoredValueRecord();
+            record.issuingTerminalId = dto.issuingTerminalId;
+            record.number = dto.number;
+            record.pdvNumber = fromShop ? dto.pdvNumber : nodeEchelonService.currentPdv();
+        }
+        record.kind = dto.kind;
+        record.initialAmount = dto.initialAmount;
+        record.balance = dto.balance;
+        record.status = dto.status;
+        record.issuedAt = parse(dto.issuedAt);
+        record.validUntil = parse(dto.validUntil);
+        record.exhaustedAt = parse(dto.exhaustedAt);
+        record.issuingDocumentNumber = dto.issuingDocumentNumber;
+        record.reportedBy = dto.terminalId;
+        record.updatedAt = LocalDateTime.now();
+        record.persist();
+        if (!fromShop) {
+            // BO-03-06-48: passed on to the central node, so another shop of the
+            // network can recognise it.
+            dto.pdvNumber = record.pdvNumber;
+            centralInstrumentRelay.forward(dto);
+        }
+        LOGGER.info("Exiting method ingestStoredValue");
+    }
+
+    /**
+     * Upserts a payment barcode read at a till (BO-03-06-63), keyed by its
+     * register and the register's id.
+     *
+     * @param dto the reading
+     */
+    @Transactional
+    public void ingestScannedBarcode(SyncPayloads.ScannedBarcodeDto dto) {
+        LOGGER.info("Entering method ingestScannedBarcode with sourceId: " + dto.sourceId);
+        com.intermarche.edge.domain.barcode.ScannedBarcode reading =
+                com.intermarche.edge.domain.barcode.ScannedBarcode.findBySource(dto.terminalId, dto.sourceId);
+        if (reading == null) {
+            reading = new com.intermarche.edge.domain.barcode.ScannedBarcode();
+            reading.terminalId = dto.terminalId;
+            reading.sourceId = dto.sourceId;
+        }
+        reading.code = dto.code;
+        reading.typeCode = dto.typeCode;
+        reading.typeLabel = dto.typeLabel;
+        reading.ticketNumber = dto.ticketNumber;
+        reading.amount = dto.amount;
+        reading.validUntil = parse(dto.validUntil);
+        reading.scannedAt = parse(dto.scannedAt);
+        reading.found = dto.found;
+        reading.gs1 = dto.gs1;
+        reading.persist();
+        LOGGER.info("Exiting method ingestScannedBarcode");
+    }
+
+    /**
+     * Finds the instrument a register of the shop printed under a number
+     * (BO-03-06-48).
+     *
+     * @param number the scanned number
+     * @return the instrument, or null when no register of the shop printed it
+     */
+    @Transactional
+    public SyncPayloads.StoredValueDto findStoredValue(String number) {
+        LOGGER.info("Entering method findStoredValue with number: " + number);
+        com.intermarche.edge.domain.barcode.StoredValueRecord record =
+                com.intermarche.edge.domain.barcode.StoredValueRecord.findByNumber(number);
+        if (record == null) {
+            // BO-03-06-48: absent from this shop's base, the code is looked for
+            // in the central one; an instrument found there is kept here under
+            // its own shop, so its redemption reaches the central row it came from.
+            SyncPayloads.StoredValueDto central = centralInstrumentRelay.lookup(number);
+            if (central != null) {
+                adopt(central);
+            }
+            LOGGER.info("Exiting method findStoredValue (central: " + (central != null) + ")");
+            return central;
+        }
+        SyncPayloads.StoredValueDto dto = new SyncPayloads.StoredValueDto();
+        dto.issuingTerminalId = record.issuingTerminalId;
+        dto.terminalId = record.reportedBy;
+        dto.number = record.number;
+        dto.kind = record.kind;
+        dto.initialAmount = record.initialAmount;
+        dto.balance = record.balance;
+        dto.status = record.status;
+        dto.issuedAt = record.issuedAt == null ? null : record.issuedAt.toString();
+        dto.validUntil = record.validUntil == null ? null : record.validUntil.toString();
+        dto.exhaustedAt = record.exhaustedAt == null ? null : record.exhaustedAt.toString();
+        dto.issuingDocumentNumber = record.issuingDocumentNumber;
+        dto.pdvNumber = record.pdvNumber;
+        LOGGER.info("Exiting method findStoredValue");
+        return dto;
+    }
+
+    /**
+     * Keeps here an instrument the central node knew and this shop did not
+     * (BO-03-06-48), under the shop that printed it.
+     *
+     * @param dto the instrument as the central node holds it
+     */
+    private void adopt(SyncPayloads.StoredValueDto dto) {
+        com.intermarche.edge.domain.barcode.StoredValueRecord record =
+                new com.intermarche.edge.domain.barcode.StoredValueRecord();
+        record.pdvNumber = dto.pdvNumber;
+        record.issuingTerminalId = dto.issuingTerminalId;
+        record.number = dto.number;
+        record.kind = dto.kind;
+        record.initialAmount = dto.initialAmount;
+        record.balance = dto.balance;
+        record.status = dto.status;
+        record.issuedAt = parse(dto.issuedAt);
+        record.validUntil = parse(dto.validUntil);
+        record.exhaustedAt = parse(dto.exhaustedAt);
+        record.issuingDocumentNumber = dto.issuingDocumentNumber;
+        record.reportedBy = dto.terminalId;
+        record.updatedAt = LocalDateTime.now();
+        record.persist();
+    }
+
     private LocalDateTime parse(String value) {
         return value != null ? LocalDateTime.parse(value, DateTimeFormatter.ISO_LOCAL_DATE_TIME) : null;
     }

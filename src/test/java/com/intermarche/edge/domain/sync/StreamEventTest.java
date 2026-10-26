@@ -112,10 +112,11 @@ class StreamEventTest {
         Assertions.assertEquals(LocalDateTime.of(2026, 3, 17, 18, 31), event.deliveredAt);
     }
 
-    /** The three kinds exist and are spelled as the identity uses them. */
+    /** The four kinds exist and are spelled as the identity uses them. */
     @Test
-    void theThreeKindsAreNamed() {
-        Assertions.assertEquals(3, StreamEvent.Kind.values().length);
+    void theFourKindsAreNamed() {
+        Assertions.assertEquals(4, StreamEvent.Kind.values().length);
+        Assertions.assertEquals("ECOMMERCE", StreamEvent.Kind.ECOMMERCE.name());
         Assertions.assertEquals("TICKET", StreamEvent.Kind.TICKET.name());
         Assertions.assertEquals("REFUND", StreamEvent.Kind.REFUND.name());
         Assertions.assertEquals("MONETICS", StreamEvent.Kind.MONETICS.name());

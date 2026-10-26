@@ -184,4 +184,13 @@ class PeriodScheduleServiceTest {
     void thePeriodEnumHasFourConstants() {
         assertEquals(4, PeriodScheduleService.PeriodEnd.values().length);
     }
+    /** BO-09-03: the year-end month alone does not end the year and month zero falls back to December. */
+    @Test
+    void yearEndRequiresTheExactDayAndAValidMonth() {
+        PeriodScheduleService service = service();
+        assertFalse(service.endingOn(LocalDate.of(2026, 12, 1)).contains(PeriodScheduleService.PeriodEnd.YEAR));
+        when(service.posSettingsService.periodYearEndDate()).thenReturn("31/0");
+        assertEquals(12, service.yearEndDate()[1]);
+    }
+
 }

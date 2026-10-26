@@ -212,4 +212,86 @@ class AdminImageResourceTest {
         assertNull(resource.resized("illisible"));
         assertEquals("data:image/png;base64,AAA", resource.resized("data:image/png;base64,AAA"));
     }
+    /** BO-03-03-15: image creation persists the resized file and updates keep the file when none is posted. */
+    @Test
+    void createAndUpdateImageLegs() {
+        AdminImageResource resource = resource();
+        try (var images = mockStatic(StoreImage.class);
+             var base = mockStatic(PanacheEntityBase.class);
+             var created = org.mockito.Mockito.mockConstruction(StoreImage.class)) {
+            assertTrue(notice(resource.save(validForm())).contains("importée"));
+            StoreImage image = created.constructed().getFirst();
+            assertEquals("LOGO-FR", image.code);
+            assertEquals("data:image/png;base64,AAA", image.imageData);
+            org.mockito.Mockito.verify(image).persist();
+            image.id = 7L;
+            images.when(() -> StoreImage.findByCode("LOGO-FR")).thenReturn(image);
+            base.when(() -> PanacheEntityBase.findById(7L)).thenReturn(image);
+            var form = validForm();
+            form.putSingle("id", "7");
+            form.remove("imgData");
+            form.putSingle("level", "PDV");
+            form.putSingle("echelonCode", "100");
+            form.putSingle("usage", "LOYALTY_ADVANTAGE");
+            form.putSingle("advantageCode", "RULE");
+            assertTrue(notice(resource.save(form)).contains("enregistrée"));
+            assertEquals("data:image/png;base64,AAA", image.imageData);
+            assertEquals("100", image.echelonCode);
+            assertEquals("RULE", image.advantageCode);
+            form.putSingle("id", "8");
+            assertTrue(notice(resource.save(form)).contains("déjà pris"));
+        }
+    }
+
+    /** BO-03-03-15: deleting with no id is rejected while a known image is actually deleted. */
+    @Test
+    void deletionMissingAndKnownIdentity() {
+        var resource = resource();
+        var form = new MultivaluedHashMap<String, String>();
+        assertTrue(notice(resource.delete(form)).contains("inconnue"));
+        StoreImage image = mock(StoreImage.class);
+        try (var base = mockStatic(PanacheEntityBase.class)) {
+            form.putSingle("id", "7");
+            base.when(() -> PanacheEntityBase.findById(7L)).thenReturn(image);
+            assertTrue(notice(resource.delete(form)).contains("supprimée"));
+            org.mockito.Mockito.verify(image).delete();
+        }
+    }
+
+    /** BO-03-03-15: nullable and populated fields are projected and the resolved image is marked explicitly. */
+    @Test
+    void listProjectsAllNullableImageFields() {
+        var resource = resource();
+        resource.storeImageService = mock(com.intermarche.edge.service.StoreImageService.class);
+        resource.adminImages = mock(io.quarkus.qute.Template.class);
+        var view = mock(io.quarkus.qute.TemplateInstance.class);
+        when(resource.adminImages.data(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any())).thenReturn(view);
+        when(view.data(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any())).thenReturn(view);
+        StoreImage first = new StoreImage();
+        first.id = 1L;
+        first.usage = null;
+        StoreImage second = new StoreImage();
+        second.id = 2L;
+        second.usage = StoreImage.Usage.RECEIPT_LOGO;
+        second.level = EchelonLevel.PDV;
+        second.echelonCode = "100";
+        second.advantageCode = "RULE";
+        second.imageData = "DATA";
+        when(resource.storeImageService.resolvedImages()).thenReturn(java.util.List.of(second));
+        var query = mock(io.quarkus.hibernate.orm.panache.PanacheQuery.class);
+        when(query.list()).thenReturn(java.util.List.of(first, second));
+        try (var base = mockStatic(PanacheEntityBase.class)) {
+            base.when(() -> PanacheEntityBase.find("order by usage, code")).thenReturn(query);
+            assertEquals(view, resource.list(null, true));
+        }
+        var capture = org.mockito.ArgumentCaptor.forClass(Object.class);
+        org.mockito.Mockito.verify(resource.adminImages).data(org.mockito.ArgumentMatchers.eq("images"), capture.capture());
+        var rows = (java.util.List<AdminImageResource.ImageRow>) capture.getValue();
+        assertEquals("", rows.getFirst().usage);
+        assertEquals("", rows.getFirst().imageData);
+        org.junit.jupiter.api.Assertions.assertFalse(rows.getFirst().resolved);
+        assertTrue(rows.getLast().resolved);
+        assertEquals("DATA", rows.getLast().imageData);
+    }
+
 }

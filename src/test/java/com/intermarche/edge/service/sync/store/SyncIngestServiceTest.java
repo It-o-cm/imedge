@@ -101,6 +101,8 @@ class SyncIngestServiceTest {
     private SyncIngestService serviceWith(TicketPayment.Factory... factories) {
         SyncIngestService service = new SyncIngestService();
         service.ticketStreamService = mock(TicketStreamService.class);
+        service.coinMachineService = mock(com.intermarche.edge.service.CoinMachineService.class);
+        service.saftStreamService = mock(com.intermarche.edge.service.fiscal.SaftStreamService.class);
         Instance<TicketPayment.Factory> instance = mock(Instance.class);
         when(instance.iterator()).thenReturn(List.of(factories).iterator());
         service.factoryInstances = instance;
@@ -108,6 +110,7 @@ class SyncIngestServiceTest {
         // register, so the collaborator belongs to the fixture. What it does with
         // the figure is proved on CoinMachineService itself.
         service.coinMachineService = mock(com.intermarche.edge.service.CoinMachineService.class);
+        service.saftStreamService = mock(com.intermarche.edge.service.fiscal.SaftStreamService.class);
         service.safeService = mock(com.intermarche.edge.service.SafeService.class);
         // BO-11-02-02/03: every consolidated ticket is enqueued for the
         // at-the-flow subscribers, so the collaborator belongs to the fixture.
@@ -131,6 +134,8 @@ class SyncIngestServiceTest {
     void ingestSessionCreatesWithClosingCashier() {
         SyncIngestService service = new SyncIngestService();
         service.ticketStreamService = mock(TicketStreamService.class);
+        service.coinMachineService = mock(com.intermarche.edge.service.CoinMachineService.class);
+        service.saftStreamService = mock(com.intermarche.edge.service.fiscal.SaftStreamService.class);
         SyncPayloads.SessionDto dto = new SyncPayloads.SessionDto();
         dto.sessionNumber = "S1";
         dto.terminalId = "T1";
@@ -180,6 +185,8 @@ class SyncIngestServiceTest {
     void ingestSessionUpdatesWithoutClosingCashier() {
         SyncIngestService service = new SyncIngestService();
         service.ticketStreamService = mock(TicketStreamService.class);
+        service.coinMachineService = mock(com.intermarche.edge.service.CoinMachineService.class);
+        service.saftStreamService = mock(com.intermarche.edge.service.fiscal.SaftStreamService.class);
         SyncPayloads.SessionDto dto = new SyncPayloads.SessionDto();
         dto.sessionNumber = "S2";
         dto.terminalId = "T2";
@@ -215,6 +222,8 @@ class SyncIngestServiceTest {
     void ingestSessionThrowsOnUnknownEmployee() {
         SyncIngestService service = new SyncIngestService();
         service.ticketStreamService = mock(TicketStreamService.class);
+        service.coinMachineService = mock(com.intermarche.edge.service.CoinMachineService.class);
+        service.saftStreamService = mock(com.intermarche.edge.service.fiscal.SaftStreamService.class);
         SyncPayloads.SessionDto dto = new SyncPayloads.SessionDto();
         dto.sessionNumber = "S3";
         dto.status = "OPEN";
@@ -261,10 +270,12 @@ class SyncIngestServiceTest {
         dto.cashierLogin = "alice";
         dto.sessionNumber = "S1";
         dto.fidelityCard = "F1";
+        dto.customerTaxId = "123456789";
         // BO-03-03-25/-29/-31: the loyalty zone the selling register froze.
         dto.fidelityEarnTotal = new BigDecimal("1.03");
         dto.fidelityAvailableBalance = new BigDecimal("42.30");
         dto.fidelityUnavailable = true;
+        dto.fidelityPotBalances = "Cagnotte\t12.50";
         // BO-03-03-28/31: the projected/after balances and the anonymous flag an
         // up-to-date register pushes.
         dto.fidelityProjectedAfterEarn = new BigDecimal("43.33");
@@ -296,6 +307,9 @@ class SyncIngestServiceTest {
         dto.valuationStatus = "NOT_VALUATED";
         SyncPayloads.LineDto byPlu = new SyncPayloads.LineDto();
         byPlu.lineNumber = 1;
+        byPlu.linkedParentUid = "BOTTLE";
+        byPlu.linkedArticleEan = "DEPOSIT";
+        byPlu.linkedRecordedQuantity = new BigDecimal("3");
         byPlu.plu = "100";
         byPlu.quantity = new BigDecimal("1");
         byPlu.familyCode = "FRUITS";
@@ -305,6 +319,9 @@ class SyncIngestServiceTest {
         byPlu.cancelledBy = "12341234";
         byPlu.moneyProduct = true;
         byPlu.cancelledLast = true;
+        byPlu.appliedTareKg = new java.math.BigDecimal("0.050");
+        byPlu.returnLine = true;
+        byPlu.service = true;
         SyncPayloads.LineDto byEan = new SyncPayloads.LineDto();
         byEan.lineNumber = 2;
         byEan.plu = null;
@@ -362,9 +379,11 @@ class SyncIngestServiceTest {
             assertSame(session, ticket.session);
             assertEquals(Ticket.ValuationStatus.NOT_VALUATED, ticket.valuationStatus);
             assertEquals("F1", ticket.fidelityCard);
+            assertEquals("123456789", ticket.customerTaxId);
             assertEquals(new BigDecimal("1.03"), ticket.fidelityEarnTotal);
             assertEquals(new BigDecimal("42.30"), ticket.fidelityAvailableBalance);
             assertTrue(ticket.fidelityUnavailable);
+            assertEquals("Cagnotte\t12.50", ticket.fidelityPotBalances);
             assertEquals(new BigDecimal("43.33"), ticket.fidelityProjectedAfterEarn);
             assertEquals(new BigDecimal("39.30"), ticket.fidelityBalanceAfter);
             assertTrue(ticket.fidelityAnonymousProjection);
@@ -381,6 +400,9 @@ class SyncIngestServiceTest {
             assertNull(ticket.fidelityLines.get(1).advantageTypeOrder);
             assertEquals(3, createdLines.constructed().size());
             assertSame(plaster, createdLines.constructed().get(0).product);
+            assertEquals("BOTTLE", createdLines.constructed().get(0).linkedParentUid);
+            assertEquals("DEPOSIT", createdLines.constructed().get(0).linkedArticleEan);
+            assertEquals(new BigDecimal("3"), createdLines.constructed().get(0).linkedRecordedQuantity);
             assertSame(apple, createdLines.constructed().get(1).product);
             assertNull(createdLines.constructed().get(2).product);
             // The nomenclature snapshot is stored verbatim from the payload,
@@ -400,10 +422,16 @@ class SyncIngestServiceTest {
             // verbatim from the payload; an untouched line reads both back false.
             assertTrue(createdLines.constructed().get(0).moneyProduct);
             assertTrue(createdLines.constructed().get(0).cancelledLast);
+            assertEquals(new java.math.BigDecimal("0.050"), createdLines.constructed().get(0).appliedTareKg);
             assertFalse(createdLines.constructed().get(1).cancelled);
             assertNull(createdLines.constructed().get(1).cancellationDate);
             assertFalse(createdLines.constructed().get(1).moneyProduct);
             assertFalse(createdLines.constructed().get(1).cancelledLast);
+            // BO-03-13-11/-12: the return-line flag is stored verbatim.
+            assertTrue(createdLines.constructed().get(0).returnLine);
+            assertFalse(createdLines.constructed().get(1).returnLine);
+            assertTrue(createdLines.constructed().get(0).service);
+            assertFalse(createdLines.constructed().get(1).service);
             verify(ticket, times(3)).addLine(any());
             assertEquals("Bon", voucherPayment.voucherLabel);
             assertEquals("V9", voucherPayment.voucherNumber);
@@ -449,6 +477,7 @@ class SyncIngestServiceTest {
         cardDto.amount = new BigDecimal("12.00");
         cardDto.voucherLabel = null;
         cardDto.authorizationNumber = "654321";
+        cardDto.moneticServer = "2";
         cardDto.degradedMode = true;
         dto.payments.add(cardDto);
         Store store = mock(Store.class);
@@ -464,6 +493,7 @@ class SyncIngestServiceTest {
             mocked.when(() -> Employee.find("loginName", "alice")).thenReturn(cashierQuery);
             service.ingestTicket(dto);
             assertEquals("654321", cardPayment.authorizationNumber);
+            assertEquals("2", cardPayment.moneticServer);
             assertTrue(cardPayment.degradedMode);
             assertEquals(1, cardPayment.paymentIndex);
             Ticket ticket = createdTicket.constructed().get(0);
@@ -572,6 +602,36 @@ class SyncIngestServiceTest {
             assertNull(existing.session);
             assertEquals(Ticket.ValuationStatus.DEGRADED, existing.valuationStatus);
             verify(existing, times(1)).persist();
+        }
+    }
+
+    /**
+     * A payload naming no valuation status reads as a ticket never valued,
+     * rather than failing the ingestion.
+     */
+    @Test
+    void ingestTicketWithoutValuationStatusReadsNotValued() {
+        SyncIngestService service = serviceWith();
+        SyncPayloads.TicketDto dto = new SyncPayloads.TicketDto();
+        dto.ticketNumber = "K3";
+        dto.terminalId = "T3";
+        dto.status = "CLOSED";
+        dto.creationDate = "2026-02-02T11:00:00";
+        dto.cashierLogin = "bob";
+        dto.totalIncludingTax = BigDecimal.ONE;
+        Ticket existing = mock(Ticket.class);
+        existing.lines = new ArrayList<>();
+        existing.payments = new ArrayList<>();
+        existing.valuationStatus = Ticket.ValuationStatus.DEGRADED;
+        PanacheQuery<Ticket> ticketQuery = queryReturning(existing);
+        PanacheQuery<Store> storeQuery = queryReturning(mock(Store.class));
+        PanacheQuery<Employee> cashierQuery = queryReturning(mock(Employee.class));
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> Ticket.find("ticketNumber", "K3")).thenReturn(ticketQuery);
+            mocked.when(Store::findAll).thenReturn(storeQuery);
+            mocked.when(() -> Employee.find("loginName", "bob")).thenReturn(cashierQuery);
+            service.ingestTicket(dto);
+            assertEquals(Ticket.ValuationStatus.NOT_VALUATED, existing.valuationStatus);
         }
     }
 
@@ -710,6 +770,8 @@ class SyncIngestServiceTest {
     void ingestRefundCreatesWithResolvedLine() {
         SyncIngestService service = new SyncIngestService();
         service.ticketStreamService = mock(TicketStreamService.class);
+        service.coinMachineService = mock(com.intermarche.edge.service.CoinMachineService.class);
+        service.saftStreamService = mock(com.intermarche.edge.service.fiscal.SaftStreamService.class);
         SyncPayloads.RefundDto dto = new SyncPayloads.RefundDto();
         dto.refundNumber = "R1";
         dto.terminalId = "T1";
@@ -773,11 +835,14 @@ class SyncIngestServiceTest {
     void ingestRefundUpdatesExisting() {
         SyncIngestService service = new SyncIngestService();
         service.ticketStreamService = mock(TicketStreamService.class);
+        service.coinMachineService = mock(com.intermarche.edge.service.CoinMachineService.class);
+        service.saftStreamService = mock(com.intermarche.edge.service.fiscal.SaftStreamService.class);
         SyncPayloads.RefundDto dto = new SyncPayloads.RefundDto();
         dto.refundNumber = "R2";
         dto.terminalId = "T2";
         dto.status = "CLOSED";
         dto.refundMethod = "CARD";
+        dto.moneticServer = "2";
         dto.originalTicketNumber = "K2";
         dto.sessionNumber = "S2";
         dto.creationDate = "2026-02-02T15:00:00";
@@ -797,9 +862,12 @@ class SyncIngestServiceTest {
             service.ingestRefund(dto);
             assertEquals("T2", existing.terminalId);
             assertEquals(Refund.RefundMethod.CARD, existing.refundMethod);
+            assertEquals("2", existing.moneticServer);
             assertEquals(8L, existing.originalTicketId);
             assertSame(session, existing.session);
             verify(existing, times(1)).persist();
+            verify(service.coinMachineService).refundCashOf(existing);
+            verify(service.coinMachineService).collectRefund(existing, null);
         }
     }
 
@@ -811,6 +879,8 @@ class SyncIngestServiceTest {
     void ingestRefundThrowsWhenOriginalTicketMissing() {
         SyncIngestService service = new SyncIngestService();
         service.ticketStreamService = mock(TicketStreamService.class);
+        service.coinMachineService = mock(com.intermarche.edge.service.CoinMachineService.class);
+        service.saftStreamService = mock(com.intermarche.edge.service.fiscal.SaftStreamService.class);
         SyncPayloads.RefundDto dto = new SyncPayloads.RefundDto();
         dto.refundNumber = "R3";
         dto.originalTicketNumber = "K9";
@@ -832,6 +902,8 @@ class SyncIngestServiceTest {
     void ingestRefundThrowsWhenOriginalLineMissing() {
         SyncIngestService service = new SyncIngestService();
         service.ticketStreamService = mock(TicketStreamService.class);
+        service.coinMachineService = mock(com.intermarche.edge.service.CoinMachineService.class);
+        service.saftStreamService = mock(com.intermarche.edge.service.fiscal.SaftStreamService.class);
         SyncPayloads.RefundDto dto = new SyncPayloads.RefundDto();
         dto.refundNumber = "R4";
         dto.terminalId = "T4";
@@ -874,6 +946,8 @@ class SyncIngestServiceTest {
     void ingestMovementCreatesWithResolvedSessionAndCashier() {
         SyncIngestService service = new SyncIngestService();
         service.ticketStreamService = mock(TicketStreamService.class);
+        service.coinMachineService = mock(com.intermarche.edge.service.CoinMachineService.class);
+        service.saftStreamService = mock(com.intermarche.edge.service.fiscal.SaftStreamService.class);
         service.safeService = mock(com.intermarche.edge.service.SafeService.class);
         SyncPayloads.MovementDto dto = new SyncPayloads.MovementDto();
         dto.movementUid = "M1";
@@ -887,6 +961,9 @@ class SyncIngestServiceTest {
         dto.endorsedBy = "11111111";
         dto.safeDeposit = true;
         dto.orderReference = "CMD-9";
+        dto.paymentMethod = "CHEQUE";
+        dto.transferTo = "CARD";
+        dto.denominationDetail = "20x2";
         CashSession session = mock(CashSession.class);
         Employee cashier = mock(Employee.class);
         PanacheQuery<CashMovement> movementQuery = queryReturning(null);
@@ -910,7 +987,11 @@ class SyncIngestServiceTest {
             assertEquals("11111111", movement.endorsedBy);
             assertTrue(movement.safeDeposit);
             assertEquals("CMD-9", movement.orderReference);
+            assertEquals("CHEQUE", movement.paymentMethod);
+            assertEquals("CARD", movement.transferTo);
+            assertEquals("20x2", movement.denominationDetail);
             verify(movement, times(1)).persist();
+            verify(service.coinMachineService).collectMovement(movement, BigDecimal.ZERO);
             // EXP-87 raccord: a created SAFE-flagged movement feeds the safe as a POUCH credit.
             verify(service.safeService, times(1)).record(
                     org.mockito.ArgumentMatchers.eq(com.intermarche.edge.domain.safe.SafeMovementType.POUCH),
@@ -935,6 +1016,8 @@ class SyncIngestServiceTest {
     void ingestMovementFeedsTheSafeOnlyForACreatedSafeDeposit() {
         SyncIngestService service = new SyncIngestService();
         service.ticketStreamService = mock(TicketStreamService.class);
+        service.coinMachineService = mock(com.intermarche.edge.service.CoinMachineService.class);
+        service.saftStreamService = mock(com.intermarche.edge.service.fiscal.SaftStreamService.class);
         service.safeService = mock(com.intermarche.edge.service.SafeService.class);
         SyncPayloads.MovementDto deposit = new SyncPayloads.MovementDto();
         deposit.movementUid = "M3";
@@ -974,6 +1057,8 @@ class SyncIngestServiceTest {
     void ingestMovementUpdatesExistingWithNullSessionAndCashier() {
         SyncIngestService service = new SyncIngestService();
         service.ticketStreamService = mock(TicketStreamService.class);
+        service.coinMachineService = mock(com.intermarche.edge.service.CoinMachineService.class);
+        service.saftStreamService = mock(com.intermarche.edge.service.fiscal.SaftStreamService.class);
         SyncPayloads.MovementDto dto = new SyncPayloads.MovementDto();
         dto.movementUid = "M2";
         dto.terminalId = "C04";
@@ -985,6 +1070,8 @@ class SyncIngestServiceTest {
         dto.movementDate = "2026-09-01T20:00:00";
         dto.endorsedBy = null;
         CashMovement existing = mock(CashMovement.class);
+        existing.endorsedBy = "22222222";
+        when(service.coinMachineService.impactOf(existing)).thenReturn(new BigDecimal("-5.00"));
         PanacheQuery<CashMovement> movementQuery = queryReturning(existing);
         try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class);
                 MockedConstruction<CashMovement> created = mockConstruction(CashMovement.class)) {
@@ -998,8 +1085,9 @@ class SyncIngestServiceTest {
             assertEquals(new BigDecimal("250.00"), existing.amount);
             assertNull(existing.reason);
             assertEquals(LocalDateTime.of(2026, 9, 1, 20, 0, 0), existing.movementDate);
-            assertNull(existing.endorsedBy);
+            assertEquals("22222222", existing.endorsedBy);
             verify(existing, times(1)).persist();
+            verify(service.coinMachineService).collectMovement(existing, new BigDecimal("-5.00"));
         }
     }
 
@@ -1015,6 +1103,8 @@ class SyncIngestServiceTest {
     void ingestEventCreatesWhenAbsent() {
         SyncIngestService service = new SyncIngestService();
         service.ticketStreamService = mock(TicketStreamService.class);
+        service.coinMachineService = mock(com.intermarche.edge.service.CoinMachineService.class);
+        service.saftStreamService = mock(com.intermarche.edge.service.fiscal.SaftStreamService.class);
         SyncPayloads.EventDto dto = new SyncPayloads.EventDto();
         dto.eventUid = "EV1";
         dto.terminalId = "T1";
@@ -1046,6 +1136,8 @@ class SyncIngestServiceTest {
     void ingestEventUpdatesWhenPresent() {
         SyncIngestService service = new SyncIngestService();
         service.ticketStreamService = mock(TicketStreamService.class);
+        service.coinMachineService = mock(com.intermarche.edge.service.CoinMachineService.class);
+        service.saftStreamService = mock(com.intermarche.edge.service.fiscal.SaftStreamService.class);
         SyncPayloads.EventDto dto = new SyncPayloads.EventDto();
         dto.eventUid = "EV2";
         dto.terminalId = "T2";
@@ -1101,6 +1193,8 @@ class SyncIngestServiceTest {
     void ingestBalanceTicketCreatesWhenAbsent() {
         SyncIngestService service = new SyncIngestService();
         service.ticketStreamService = mock(TicketStreamService.class);
+        service.coinMachineService = mock(com.intermarche.edge.service.CoinMachineService.class);
+        service.saftStreamService = mock(com.intermarche.edge.service.fiscal.SaftStreamService.class);
         PanacheQuery<BalanceTicket> query = queryReturning(null);
         try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class);
                 MockedConstruction<BalanceTicket> created = mockConstruction(BalanceTicket.class,
@@ -1131,6 +1225,8 @@ class SyncIngestServiceTest {
     void ingestBalanceTicketStampsWhenEmissionIsMissing() {
         SyncIngestService service = new SyncIngestService();
         service.ticketStreamService = mock(TicketStreamService.class);
+        service.coinMachineService = mock(com.intermarche.edge.service.CoinMachineService.class);
+        service.saftStreamService = mock(com.intermarche.edge.service.fiscal.SaftStreamService.class);
         PanacheQuery<BalanceTicket> query = queryReturning(null);
         LocalDateTime before = LocalDateTime.now().minusSeconds(1);
         try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class);
@@ -1153,6 +1249,8 @@ class SyncIngestServiceTest {
     void ingestBalanceTicketAcceptsAPayloadWithoutLines() {
         SyncIngestService service = new SyncIngestService();
         service.ticketStreamService = mock(TicketStreamService.class);
+        service.coinMachineService = mock(com.intermarche.edge.service.CoinMachineService.class);
+        service.saftStreamService = mock(com.intermarche.edge.service.fiscal.SaftStreamService.class);
         SyncPayloads.BalanceTicketDto dto = balanceDto("B3", "2026-09-10T10:00:00");
         dto.lines = null;
         PanacheQuery<BalanceTicket> query = queryReturning(null);
@@ -1176,6 +1274,8 @@ class SyncIngestServiceTest {
     void ingestBalanceTicketUpdatesWhenStillAvailable() {
         SyncIngestService service = new SyncIngestService();
         service.ticketStreamService = mock(TicketStreamService.class);
+        service.coinMachineService = mock(com.intermarche.edge.service.CoinMachineService.class);
+        service.saftStreamService = mock(com.intermarche.edge.service.fiscal.SaftStreamService.class);
         BalanceTicket existing = mock(BalanceTicket.class);
         existing.lines = new ArrayList<>();
         existing.lines.add(new BalanceTicketLine());
@@ -1200,6 +1300,8 @@ class SyncIngestServiceTest {
     void ingestBalanceTicketIgnoresAConsumedTicket() {
         SyncIngestService service = new SyncIngestService();
         service.ticketStreamService = mock(TicketStreamService.class);
+        service.coinMachineService = mock(com.intermarche.edge.service.CoinMachineService.class);
+        service.saftStreamService = mock(com.intermarche.edge.service.fiscal.SaftStreamService.class);
         BalanceTicket existing = mock(BalanceTicket.class);
         existing.lines = new ArrayList<>();
         when(existing.isConsumed()).thenReturn(true);
@@ -1220,6 +1322,8 @@ class SyncIngestServiceTest {
     void consumeBalanceTicketRefusesAnUnknownReference() {
         SyncIngestService service = new SyncIngestService();
         service.ticketStreamService = mock(TicketStreamService.class);
+        service.coinMachineService = mock(com.intermarche.edge.service.CoinMachineService.class);
+        service.saftStreamService = mock(com.intermarche.edge.service.fiscal.SaftStreamService.class);
         PanacheQuery<BalanceTicket> query = queryReturning(null);
         try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
             mocked.when(() -> BalanceTicket.find("reference", "B6")).thenReturn(query);
@@ -1235,6 +1339,8 @@ class SyncIngestServiceTest {
     void consumeBalanceTicketRefusesASecondPickUp() {
         SyncIngestService service = new SyncIngestService();
         service.ticketStreamService = mock(TicketStreamService.class);
+        service.coinMachineService = mock(com.intermarche.edge.service.CoinMachineService.class);
+        service.saftStreamService = mock(com.intermarche.edge.service.fiscal.SaftStreamService.class);
         BalanceTicket existing = mock(BalanceTicket.class);
         when(existing.isConsumed()).thenReturn(true);
         PanacheQuery<BalanceTicket> query = queryReturning(existing);
@@ -1254,6 +1360,8 @@ class SyncIngestServiceTest {
     void consumeBalanceTicketServesAndStamps() {
         SyncIngestService service = new SyncIngestService();
         service.ticketStreamService = mock(TicketStreamService.class);
+        service.coinMachineService = mock(com.intermarche.edge.service.CoinMachineService.class);
+        service.saftStreamService = mock(com.intermarche.edge.service.fiscal.SaftStreamService.class);
         BalanceTicket existing = mock(BalanceTicket.class);
         when(existing.isConsumed()).thenReturn(false);
         existing.reference = "B8";
@@ -1293,6 +1401,8 @@ class SyncIngestServiceTest {
     void consumeBalanceTicketServesATicketWithNoEmissionDate() {
         SyncIngestService service = new SyncIngestService();
         service.ticketStreamService = mock(TicketStreamService.class);
+        service.coinMachineService = mock(com.intermarche.edge.service.CoinMachineService.class);
+        service.saftStreamService = mock(com.intermarche.edge.service.fiscal.SaftStreamService.class);
         BalanceTicket existing = mock(BalanceTicket.class);
         when(existing.isConsumed()).thenReturn(false);
         existing.reference = "B9";
@@ -1515,6 +1625,8 @@ class SyncIngestServiceTest {
     void renderTicketDuplicateReturnsNullOnNullNumber() {
         SyncIngestService service = new SyncIngestService();
         service.ticketStreamService = mock(TicketStreamService.class);
+        service.coinMachineService = mock(com.intermarche.edge.service.CoinMachineService.class);
+        service.saftStreamService = mock(com.intermarche.edge.service.fiscal.SaftStreamService.class);
         assertNull(service.renderTicketDuplicate(null));
     }
 
@@ -1527,6 +1639,8 @@ class SyncIngestServiceTest {
     void renderTicketDuplicateReturnsNullOnBlankNumber() {
         SyncIngestService service = new SyncIngestService();
         service.ticketStreamService = mock(TicketStreamService.class);
+        service.coinMachineService = mock(com.intermarche.edge.service.CoinMachineService.class);
+        service.saftStreamService = mock(com.intermarche.edge.service.fiscal.SaftStreamService.class);
         assertNull(service.renderTicketDuplicate("   "));
     }
 
@@ -1540,6 +1654,8 @@ class SyncIngestServiceTest {
     void renderTicketDuplicateReturnsNullWhenTicketAbsent() {
         SyncIngestService service = new SyncIngestService();
         service.ticketStreamService = mock(TicketStreamService.class);
+        service.coinMachineService = mock(com.intermarche.edge.service.CoinMachineService.class);
+        service.saftStreamService = mock(com.intermarche.edge.service.fiscal.SaftStreamService.class);
         PanacheQuery<Ticket> ticketQuery = queryReturning(null);
         try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
             mocked.when(() -> Ticket.find("ticketNumber", "K1")).thenReturn(ticketQuery);
@@ -1556,6 +1672,8 @@ class SyncIngestServiceTest {
     void renderTicketDuplicateRendersHeldTicket() {
         SyncIngestService service = new SyncIngestService();
         service.ticketStreamService = mock(TicketStreamService.class);
+        service.coinMachineService = mock(com.intermarche.edge.service.CoinMachineService.class);
+        service.saftStreamService = mock(com.intermarche.edge.service.fiscal.SaftStreamService.class);
         com.intermarche.edge.service.TicketRenderService renderer =
                 mock(com.intermarche.edge.service.TicketRenderService.class);
         service.ticketRenderService = renderer;
@@ -1584,6 +1702,8 @@ class SyncIngestServiceTest {
     void ingestCustomerCreatesWhenAbsent() {
         SyncIngestService service = new SyncIngestService();
         service.ticketStreamService = mock(TicketStreamService.class);
+        service.coinMachineService = mock(com.intermarche.edge.service.CoinMachineService.class);
+        service.saftStreamService = mock(com.intermarche.edge.service.fiscal.SaftStreamService.class);
         SyncPayloads.CustomerDto dto = new SyncPayloads.CustomerDto();
         dto.accountNumber = "AC1";
         dto.companyName = "ACME";
@@ -1596,6 +1716,7 @@ class SyncIngestServiceTest {
         dto.vatNumber = "FR00123456789";
         dto.phone = "0102030405";
         dto.email = "paul@acme.fr";
+        dto.origin = "VOLATILE";
         PanacheQuery<com.intermarche.edge.domain.payment.AccountCustomer> query = queryReturning(null);
         try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class);
                 MockedConstruction<com.intermarche.edge.domain.payment.AccountCustomer> created =
@@ -1618,8 +1739,77 @@ class SyncIngestServiceTest {
             assertEquals("Paris", address.city);
             assertEquals("12345678900011", customer.siret);
             assertEquals("paul@acme.fr", customer.email);
+            assertEquals(com.intermarche.edge.domain.payment.AccountCustomer.Origin.VOLATILE, customer.origin);
             verify(customer, times(1)).persist();
         }
+    }
+
+    /**
+     * BO-06-03-04: the origin a register states is read by name; none, a blank
+     * one or an unknown one keeps the origin held here.
+     */
+    @Test
+    void customerOriginIsReadByName() {
+        assertEquals(com.intermarche.edge.domain.payment.AccountCustomer.Origin.VOLATILE,
+                SyncIngestService.customerOrigin(" VOLATILE "));
+        assertNull(SyncIngestService.customerOrigin(null));
+        assertNull(SyncIngestService.customerOrigin(" "));
+        assertNull(SyncIngestService.customerOrigin("MARTIAN"));
+    }
+
+    /**
+     * BO-02-04-13: a file consolidated from a register carries its NIF over and
+     * is filed for the commercial management, tagged as coming from the
+     * register.
+     */
+    @Test
+    void ingestCustomerCarriesTheNifAndGoesUp() {
+        SyncIngestService service = new SyncIngestService();
+        service.ticketStreamService = mock(TicketStreamService.class);
+        service.coinMachineService = mock(com.intermarche.edge.service.CoinMachineService.class);
+        service.saftStreamService = mock(com.intermarche.edge.service.fiscal.SaftStreamService.class);
+        service.customerUplinkService = mock(com.intermarche.edge.service.sync.CustomerUplinkService.class);
+        SyncPayloads.CustomerDto dto = new SyncPayloads.CustomerDto();
+        dto.accountNumber = "AC3";
+        dto.companyName = "INITECH";
+        dto.taxId = "PT123456789";
+        com.intermarche.edge.domain.payment.AccountCustomer existing =
+                mock(com.intermarche.edge.domain.payment.AccountCustomer.class);
+        existing.taxId = "PT000000000";
+        existing.address = new com.intermarche.edge.domain.store.Address();
+        PanacheQuery<com.intermarche.edge.domain.payment.AccountCustomer> query = queryReturning(existing);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> com.intermarche.edge.domain.payment.AccountCustomer
+                    .find("accountNumber", "AC3")).thenReturn(query);
+            service.ingestCustomer(dto);
+        }
+        assertEquals("PT123456789", existing.taxId);
+        verify(service.customerUplinkService).enqueue(existing,
+                com.intermarche.edge.domain.sync.CustomerUplink.Source.REGISTER);
+    }
+
+    /**
+     * A register of an older version states no NIF, which leaves the one held.
+     */
+    @Test
+    void ingestCustomerKeepsTheNifANullOneDoesNotState() {
+        SyncIngestService service = new SyncIngestService();
+        service.ticketStreamService = mock(TicketStreamService.class);
+        service.coinMachineService = mock(com.intermarche.edge.service.CoinMachineService.class);
+        service.saftStreamService = mock(com.intermarche.edge.service.fiscal.SaftStreamService.class);
+        SyncPayloads.CustomerDto dto = new SyncPayloads.CustomerDto();
+        dto.accountNumber = "AC4";
+        com.intermarche.edge.domain.payment.AccountCustomer existing =
+                mock(com.intermarche.edge.domain.payment.AccountCustomer.class);
+        existing.taxId = "PT000000000";
+        existing.address = new com.intermarche.edge.domain.store.Address();
+        PanacheQuery<com.intermarche.edge.domain.payment.AccountCustomer> query = queryReturning(existing);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> com.intermarche.edge.domain.payment.AccountCustomer
+                    .find("accountNumber", "AC4")).thenReturn(query);
+            service.ingestCustomer(dto);
+        }
+        assertEquals("PT000000000", existing.taxId);
     }
 
     /**
@@ -1633,6 +1823,8 @@ class SyncIngestServiceTest {
     void ingestCustomerUpdatesExistingWithAddress() {
         SyncIngestService service = new SyncIngestService();
         service.ticketStreamService = mock(TicketStreamService.class);
+        service.coinMachineService = mock(com.intermarche.edge.service.CoinMachineService.class);
+        service.saftStreamService = mock(com.intermarche.edge.service.fiscal.SaftStreamService.class);
         SyncPayloads.CustomerDto dto = new SyncPayloads.CustomerDto();
         dto.accountNumber = "AC2";
         dto.companyName = "GLOBEX";
@@ -1699,6 +1891,8 @@ class SyncIngestServiceTest {
     void ingestDocumentStoresTheEcoTaxWhenTheRegisterSendsIt() {
         SyncIngestService service = new SyncIngestService();
         service.ticketStreamService = mock(TicketStreamService.class);
+        service.coinMachineService = mock(com.intermarche.edge.service.CoinMachineService.class);
+        service.saftStreamService = mock(com.intermarche.edge.service.fiscal.SaftStreamService.class);
         SyncPayloads.DocumentDto dto = documentDto();
         dto.totalEcoTax = new BigDecimal("1.50");
         com.intermarche.edge.domain.sale.Invoice existing =
@@ -1723,6 +1917,8 @@ class SyncIngestServiceTest {
     void ingestDocumentStoresZeroWhenTheRegisterWithholdsTheEcoTax() {
         SyncIngestService service = new SyncIngestService();
         service.ticketStreamService = mock(TicketStreamService.class);
+        service.coinMachineService = mock(com.intermarche.edge.service.CoinMachineService.class);
+        service.saftStreamService = mock(com.intermarche.edge.service.fiscal.SaftStreamService.class);
         SyncPayloads.DocumentDto dto = documentDto();
         dto.totalEcoTax = null;
         dto.customerDueDate = null;
@@ -1754,6 +1950,8 @@ class SyncIngestServiceTest {
     void ingestDocumentCreatesResolvingTicketAndCustomerWithZeroTotals() {
         SyncIngestService service = new SyncIngestService();
         service.ticketStreamService = mock(TicketStreamService.class);
+        service.coinMachineService = mock(com.intermarche.edge.service.CoinMachineService.class);
+        service.saftStreamService = mock(com.intermarche.edge.service.fiscal.SaftStreamService.class);
         SyncPayloads.DocumentDto dto = new SyncPayloads.DocumentDto();
         dto.documentNumber = "C04-F000999";
         dto.documentType = null;
@@ -1824,6 +2022,8 @@ class SyncIngestServiceTest {
     void ingestDocumentReusesAddressAndTreatsBlankDueDateAsNone() {
         SyncIngestService service = new SyncIngestService();
         service.ticketStreamService = mock(TicketStreamService.class);
+        service.coinMachineService = mock(com.intermarche.edge.service.CoinMachineService.class);
+        service.saftStreamService = mock(com.intermarche.edge.service.fiscal.SaftStreamService.class);
         SyncPayloads.DocumentDto dto = documentDto();
         dto.customerDueDate = "   ";
         dto.customerStreet = "9 quai neuf";
@@ -1849,6 +2049,604 @@ class SyncIngestServiceTest {
             assertEquals("ACME", existing.customerName);
             assertNull(existing.customerDueDate);
             verify(existing, times(1)).persist();
+        }
+    }
+    /** GB-01-07-05/06: a pushed ticket replaces its previous offer messages with the register's frozen wording. */
+    @Test
+    void pushedTicketReplacesItsOfferMessages() {
+        SyncIngestService service = serviceWith();
+        SyncPayloads.TicketDto dto = new SyncPayloads.TicketDto();
+        dto.ticketNumber = "MESSAGES";
+        dto.status = "CANCELLED";
+        dto.valuationStatus = "NOT_VALUATED";
+        dto.cashierLogin = "OP";
+        dto.totalIncludingTax = BigDecimal.ZERO;
+        dto.totalExcludingTax = BigDecimal.ZERO;
+        dto.totalVat = BigDecimal.ZERO;
+        var message = new SyncPayloads.MessageDto();
+        message.code = "OFFER";
+        message.text = "FROZEN MESSAGE";
+        message.printMode = "FOOTER";
+        dto.messages.add(message);
+        Ticket existing = mock(Ticket.class);
+        existing.lines = new ArrayList<>();
+        existing.payments = new ArrayList<>();
+        existing.messages = new ArrayList<>();
+        existing.messages.add(new com.intermarche.edge.domain.sale.TicketMessage("OLD", "OLD MESSAGE", "LINE"));
+        var ticketQuery = queryReturning(existing);
+        var storeQuery = queryReturning(mock(Store.class));
+        var cashierQuery = queryReturning(mock(Employee.class));
+        try (var base = mockStatic(PanacheEntityBase.class)) {
+            base.when(() -> PanacheEntityBase.find("ticketNumber", "MESSAGES")).thenReturn(ticketQuery);
+            base.when(PanacheEntityBase::findAll).thenReturn(storeQuery);
+            base.when(() -> PanacheEntityBase.find("loginName", "op")).thenReturn(cashierQuery);
+            service.ingestTicket(dto);
+        }
+        assertEquals(1, existing.messages.size());
+        assertEquals("OFFER", existing.messages.get(0).code);
+        assertEquals("FROZEN MESSAGE", existing.messages.get(0).text);
+        assertEquals("FOOTER", existing.messages.get(0).printMode);
+    }
+
+    /** BO-04-01: an undated technical event receives an arrival timestamp rather than a null persisted date. */
+    @Test
+    void undatedTechnicalEventIsStampedOnArrival() {
+        SyncIngestService service = serviceWith();
+        var dto = new SyncPayloads.EventDto();
+        dto.eventUid = "UNDATED";
+        dto.type = "SESSION_CLOSED";
+        TechnicalEvent existing = mock(TechnicalEvent.class);
+        var query = queryReturning(existing);
+        var before = LocalDateTime.now();
+        try (var base = mockStatic(PanacheEntityBase.class)) {
+            base.when(() -> PanacheEntityBase.find("eventUid", "UNDATED")).thenReturn(query);
+            service.ingestEvent(dto);
+        }
+        assertFalse(existing.eventDate.isBefore(before));
+        assertFalse(existing.eventDate.isAfter(LocalDateTime.now()));
+        verify(existing).persist();
+    }
+
+    /** EXP-87: blank withdrawal reasons use the till label and absent movement dates remain absent at the safe. */
+    @Test
+    void safeFeedHandlesBlankReasonAndMissingDate() throws Exception {
+        SyncIngestService service = serviceWith();
+        CashMovement movement = new CashMovement();
+        movement.safeDeposit = true;
+        movement.reason = " ";
+        movement.terminalId = "C04";
+        movement.amount = BigDecimal.TEN;
+        movement.movementUid = "M1";
+        movement.movementDate = null;
+        var method = SyncIngestService.class.getDeclaredMethod("feedSafe", boolean.class, CashMovement.class);
+        method.setAccessible(true);
+        method.invoke(service, true, movement);
+        movement.reason = null;
+        method.invoke(service, true, movement);
+        verify(service.safeService, times(2)).record(com.intermarche.edge.domain.safe.SafeMovementType.POUCH, BigDecimal.TEN, "Prélèvement caisse C04", null, null, null, "M1", null);
+    }
+
+
+    /**
+     * LC-08-02-02: a printed ticket is stored once per register row — created on
+     * the first push with its audience, refreshed by a repeated push — and one
+     * pushed without audience reads as the customer's.
+     */
+    @Test
+    void ingestPrintoutUpsertsByRegisterRow() {
+        SyncIngestService service = new SyncIngestService();
+        SyncPayloads.PrintoutDto dto = new SyncPayloads.PrintoutDto();
+        dto.sourceId = 7L;
+        dto.terminalId = "C04";
+        dto.source = "TicketPrinterService.printSessionReport";
+        dto.audience = "STORE";
+        dto.issuedAt = "2026-10-24T09:00:00";
+        dto.content = "RAPPORT Z";
+        com.intermarche.edge.domain.sale.PrintedTicket existing =
+                mock(com.intermarche.edge.domain.sale.PrintedTicket.class);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class);
+             org.mockito.MockedConstruction<com.intermarche.edge.domain.sale.PrintedTicket> created =
+                     org.mockito.Mockito.mockConstruction(com.intermarche.edge.domain.sale.PrintedTicket.class)) {
+            PanacheQuery<com.intermarche.edge.domain.sale.PrintedTicket> none = queryReturning(null);
+            mocked.when(() -> com.intermarche.edge.domain.sale.PrintedTicket.find(
+                    "terminalId = ?1 and sourceId = ?2", "C04", 7L)).thenReturn(none);
+            service.ingestPrintout(dto);
+            com.intermarche.edge.domain.sale.PrintedTicket row = created.constructed().get(0);
+            assertEquals("C04", row.terminalId);
+            assertEquals(7L, row.sourceId);
+            assertEquals(com.intermarche.edge.domain.sale.PrintedTicket.Audience.STORE, row.audience);
+            assertEquals("RAPPORT Z", row.content);
+            assertEquals(java.time.LocalDateTime.of(2026, 10, 24, 9, 0), row.issuedAt);
+            verify(row).persist();
+            PanacheQuery<com.intermarche.edge.domain.sale.PrintedTicket> found = queryReturning(existing);
+            mocked.when(() -> com.intermarche.edge.domain.sale.PrintedTicket.find(
+                    "terminalId = ?1 and sourceId = ?2", "C04", 7L)).thenReturn(found);
+            dto.audience = null;
+            service.ingestPrintout(dto);
+            assertEquals(com.intermarche.edge.domain.sale.PrintedTicket.Audience.CUSTOMER, existing.audience);
+            verify(existing).persist();
+            assertEquals(1, created.constructed().size());
+        }
+    }
+
+    /**
+     * LC-13-05-06: a training sale is stored once per register row in the
+     * training table — created on the first push, refreshed by a repeated push.
+     */
+    @Test
+    void ingestTrainingTicketUpsertsByRegisterRow() {
+        SyncIngestService service = new SyncIngestService();
+        SyncPayloads.TrainingTicketDto dto = new SyncPayloads.TrainingTicketDto();
+        dto.sourceId = 8L;
+        dto.terminalId = "C04";
+        dto.cashierLogin = "jdupont";
+        dto.issuedAt = "2026-10-24T09:30:00";
+        dto.itemCount = 2;
+        dto.totalIncludingTax = new BigDecimal("3.72");
+        dto.content = "MODE FORMATION";
+        com.intermarche.edge.domain.sale.TrainingTicket existing =
+                mock(com.intermarche.edge.domain.sale.TrainingTicket.class);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class);
+             org.mockito.MockedConstruction<com.intermarche.edge.domain.sale.TrainingTicket> created =
+                     org.mockito.Mockito.mockConstruction(com.intermarche.edge.domain.sale.TrainingTicket.class)) {
+            PanacheQuery<com.intermarche.edge.domain.sale.TrainingTicket> none = queryReturning(null);
+            mocked.when(() -> com.intermarche.edge.domain.sale.TrainingTicket.find(
+                    "terminalId = ?1 and sourceId = ?2", "C04", 8L)).thenReturn(none);
+            service.ingestTrainingTicket(dto);
+            com.intermarche.edge.domain.sale.TrainingTicket row = created.constructed().get(0);
+            assertEquals("C04", row.terminalId);
+            assertEquals(8L, row.sourceId);
+            assertEquals("jdupont", row.cashierLogin);
+            assertEquals(2, row.itemCount);
+            assertEquals(new BigDecimal("3.72"), row.totalIncludingTax);
+            assertEquals("MODE FORMATION", row.content);
+            verify(row).persist();
+            PanacheQuery<com.intermarche.edge.domain.sale.TrainingTicket> found = queryReturning(existing);
+            mocked.when(() -> com.intermarche.edge.domain.sale.TrainingTicket.find(
+                    "terminalId = ?1 and sourceId = ?2", "C04", 8L)).thenReturn(found);
+            service.ingestTrainingTicket(dto);
+            verify(existing).persist();
+            assertEquals(1, created.constructed().size());
+        }
+    }
+
+    /**
+     * LC-04-01-03: the signed trace of a ticket on hold is kept once per register
+     * row exactly as signed — created on the first push, refreshed by a repeated
+     * push; a trace without event travels without it.
+     */
+    @Test
+    void ingestParkedTicketUpsertsByRegisterRow() {
+        SyncIngestService service = new SyncIngestService();
+        SyncPayloads.ParkedTicketDto dto = new SyncPayloads.ParkedTicketDto();
+        dto.sourceId = 9L;
+        dto.terminalId = "C04";
+        dto.ticketNumber = "C04-00000004";
+        dto.event = "RESUMED";
+        dto.eventDate = "2026-10-24T09:30:15";
+        dto.operator = "12341234";
+        dto.itemCount = 2;
+        dto.totalAmount = new BigDecimal("5.30");
+        dto.content = "1 x LAIT @ 1.15 = 1.15\n";
+        dto.previousSignature = "GENESIS";
+        dto.signature = "abc";
+        com.intermarche.edge.domain.sale.ParkedTicketRecord existing =
+                mock(com.intermarche.edge.domain.sale.ParkedTicketRecord.class);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class);
+             org.mockito.MockedConstruction<com.intermarche.edge.domain.sale.ParkedTicketRecord> created =
+                     org.mockito.Mockito.mockConstruction(com.intermarche.edge.domain.sale.ParkedTicketRecord.class)) {
+            PanacheQuery<com.intermarche.edge.domain.sale.ParkedTicketRecord> none = queryReturning(null);
+            mocked.when(() -> com.intermarche.edge.domain.sale.ParkedTicketRecord.find(
+                    "terminalId = ?1 and sourceId = ?2", "C04", 9L)).thenReturn(none);
+            service.ingestParkedTicket(dto);
+            com.intermarche.edge.domain.sale.ParkedTicketRecord row = created.constructed().get(0);
+            assertEquals("C04", row.terminalId);
+            assertEquals(9L, row.sourceId);
+            assertEquals("C04-00000004", row.ticketNumber);
+            assertEquals(com.intermarche.edge.domain.sale.ParkedTicketRecord.Event.RESUMED, row.event);
+            assertEquals(java.time.LocalDateTime.of(2026, 10, 24, 9, 30, 15), row.eventDate);
+            assertEquals("12341234", row.operator);
+            assertEquals(2, row.itemCount);
+            assertEquals(new BigDecimal("5.30"), row.totalAmount);
+            assertEquals("1 x LAIT @ 1.15 = 1.15\n", row.content);
+            assertEquals("GENESIS", row.previousSignature);
+            assertEquals("abc", row.signature);
+            verify(row).persist();
+            PanacheQuery<com.intermarche.edge.domain.sale.ParkedTicketRecord> found = queryReturning(existing);
+            mocked.when(() -> com.intermarche.edge.domain.sale.ParkedTicketRecord.find(
+                    "terminalId = ?1 and sourceId = ?2", "C04", 9L)).thenReturn(found);
+            dto.event = null;
+            service.ingestParkedTicket(dto);
+            verify(existing).persist();
+            org.junit.jupiter.api.Assertions.assertNull(existing.event);
+            assertEquals(1, created.constructed().size());
+        }
+    }
+
+    /**
+     * BO-03-06-62: an instrument is upserted by the register that printed it
+     * and its number — created on the first report, updated on the next, the
+     * reporting register and the date of the report kept; a report without
+     * dates leaves them empty.
+     */
+    @Test
+    void ingestStoredValueUpsertsByIssuerAndNumber() {
+        SyncIngestService service = new SyncIngestService();
+        service.centralInstrumentRelay = mock(CentralInstrumentRelay.class);
+        service.nodeEchelonService = mock(com.intermarche.edge.service.NodeEchelonService.class);
+        when(service.nodeEchelonService.currentPdv()).thenReturn("1234");
+        SyncPayloads.StoredValueDto dto = new SyncPayloads.StoredValueDto();
+        dto.issuingTerminalId = "C02";
+        dto.terminalId = "C04";
+        dto.number = "297000000000400";
+        dto.kind = "CREDIT_NOTE";
+        dto.initialAmount = new BigDecimal("12.40");
+        dto.balance = new BigDecimal("2.40");
+        dto.status = "ACTIVE";
+        dto.issuedAt = "2026-10-24T09:30:15";
+        dto.validUntil = "2027-10-24T00:00";
+        dto.exhaustedAt = "2026-10-25T08:00";
+        dto.issuingDocumentNumber = "C02-00000009";
+        com.intermarche.edge.domain.barcode.StoredValueRecord existing =
+                mock(com.intermarche.edge.domain.barcode.StoredValueRecord.class);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class);
+             org.mockito.MockedConstruction<com.intermarche.edge.domain.barcode.StoredValueRecord> created =
+                     org.mockito.Mockito.mockConstruction(com.intermarche.edge.domain.barcode.StoredValueRecord.class)) {
+            PanacheQuery<com.intermarche.edge.domain.barcode.StoredValueRecord> none = queryReturning(null);
+            mocked.when(() -> com.intermarche.edge.domain.barcode.StoredValueRecord.find(
+                    "issuingTerminalId = ?1 and number = ?2", "C02", "297000000000400")).thenReturn(none);
+            service.ingestStoredValue(dto);
+            com.intermarche.edge.domain.barcode.StoredValueRecord row = created.constructed().get(0);
+            assertEquals("C02", row.issuingTerminalId);
+            assertEquals("297000000000400", row.number);
+            assertEquals("CREDIT_NOTE", row.kind);
+            assertEquals(new BigDecimal("12.40"), row.initialAmount);
+            assertEquals(new BigDecimal("2.40"), row.balance);
+            assertEquals("ACTIVE", row.status);
+            assertEquals(java.time.LocalDateTime.of(2026, 10, 24, 9, 30, 15), row.issuedAt);
+            assertEquals(java.time.LocalDateTime.of(2027, 10, 24, 0, 0), row.validUntil);
+            assertEquals(java.time.LocalDateTime.of(2026, 10, 25, 8, 0), row.exhaustedAt);
+            assertEquals("C02-00000009", row.issuingDocumentNumber);
+            assertEquals("C04", row.reportedBy);
+            assertEquals("1234", row.pdvNumber);
+            org.junit.jupiter.api.Assertions.assertNotNull(row.updatedAt);
+            verify(row).persist();
+            // BO-03-06-48: passed on to the central node under this shop.
+            assertEquals("1234", dto.pdvNumber);
+            verify(service.centralInstrumentRelay).forward(dto);
+            dto.pdvNumber = null;
+            PanacheQuery<com.intermarche.edge.domain.barcode.StoredValueRecord> found = queryReturning(existing);
+            mocked.when(() -> com.intermarche.edge.domain.barcode.StoredValueRecord.find(
+                    "issuingTerminalId = ?1 and number = ?2", "C02", "297000000000400")).thenReturn(found);
+            dto.issuedAt = null;
+            dto.validUntil = null;
+            dto.exhaustedAt = null;
+            service.ingestStoredValue(dto);
+            verify(existing).persist();
+            org.junit.jupiter.api.Assertions.assertNull(existing.issuedAt);
+            assertEquals(1, created.constructed().size());
+        }
+    }
+
+    /**
+     * BO-03-06-48: on the central node an instrument a shop passed on is keyed
+     * by that shop too — created under it the first time, updated after — and
+     * is never passed on again.
+     */
+    @Test
+    void ingestStoredValueKeysAShopsInstrumentByItsShop() {
+        SyncIngestService service = new SyncIngestService();
+        service.centralInstrumentRelay = mock(CentralInstrumentRelay.class);
+        service.nodeEchelonService = mock(com.intermarche.edge.service.NodeEchelonService.class);
+        SyncPayloads.StoredValueDto dto = new SyncPayloads.StoredValueDto();
+        dto.pdvNumber = "5678";
+        dto.issuingTerminalId = "POS01";
+        dto.terminalId = "POS02";
+        dto.number = "297000000000401";
+        com.intermarche.edge.domain.barcode.StoredValueRecord existing =
+                mock(com.intermarche.edge.domain.barcode.StoredValueRecord.class);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class);
+             org.mockito.MockedConstruction<com.intermarche.edge.domain.barcode.StoredValueRecord> created =
+                     org.mockito.Mockito.mockConstruction(com.intermarche.edge.domain.barcode.StoredValueRecord.class)) {
+            PanacheQuery<com.intermarche.edge.domain.barcode.StoredValueRecord> none = queryReturning(null);
+            mocked.when(() -> com.intermarche.edge.domain.barcode.StoredValueRecord.find(
+                    "pdvNumber = ?1 and issuingTerminalId = ?2 and number = ?3", "5678", "POS01",
+                    "297000000000401")).thenReturn(none);
+            service.ingestStoredValue(dto);
+            assertEquals("5678", created.constructed().get(0).pdvNumber);
+            PanacheQuery<com.intermarche.edge.domain.barcode.StoredValueRecord> found = queryReturning(existing);
+            mocked.when(() -> com.intermarche.edge.domain.barcode.StoredValueRecord.find(
+                    "pdvNumber = ?1 and issuingTerminalId = ?2 and number = ?3", "5678", "POS01",
+                    "297000000000401")).thenReturn(found);
+            service.ingestStoredValue(dto);
+            verify(existing).persist();
+            assertEquals(1, created.constructed().size());
+        }
+        org.mockito.Mockito.verifyNoInteractions(service.centralInstrumentRelay, service.nodeEchelonService);
+    }
+
+    /**
+     * BO-03-06-48: a number this shop never printed is asked of the central
+     * node; an instrument found there is kept here under the shop that
+     * printed it and answered; one the central node does not know either
+     * answers nothing.
+     */
+    @Test
+    void findStoredValueAsksTheCentralBaseForAnUnknownNumber() {
+        SyncIngestService service = new SyncIngestService();
+        service.centralInstrumentRelay = mock(CentralInstrumentRelay.class);
+        SyncPayloads.StoredValueDto central = new SyncPayloads.StoredValueDto();
+        central.pdvNumber = "5678";
+        central.issuingTerminalId = "POS01";
+        central.terminalId = "POS01";
+        central.number = "297000000000402";
+        central.kind = "CREDIT_NOTE";
+        central.initialAmount = new BigDecimal("8.00");
+        central.balance = new BigDecimal("8.00");
+        central.status = "ACTIVE";
+        central.issuedAt = "2026-10-20T10:00";
+        central.issuingDocumentNumber = "POS01-00000003";
+        when(service.centralInstrumentRelay.lookup("297000000000402")).thenReturn(central);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class);
+             org.mockito.MockedConstruction<com.intermarche.edge.domain.barcode.StoredValueRecord> created =
+                     org.mockito.Mockito.mockConstruction(com.intermarche.edge.domain.barcode.StoredValueRecord.class)) {
+            PanacheQuery<com.intermarche.edge.domain.barcode.StoredValueRecord> none = queryReturning(null);
+            mocked.when(() -> com.intermarche.edge.domain.barcode.StoredValueRecord.find(
+                    org.mockito.ArgumentMatchers.eq("number = ?1 order by updatedAt desc, id desc"),
+                    org.mockito.ArgumentMatchers.<Object[]>any())).thenReturn(none);
+            org.junit.jupiter.api.Assertions.assertSame(central, service.findStoredValue("297000000000402"));
+            com.intermarche.edge.domain.barcode.StoredValueRecord kept = created.constructed().get(0);
+            assertEquals("5678", kept.pdvNumber);
+            assertEquals("POS01", kept.issuingTerminalId);
+            assertEquals("297000000000402", kept.number);
+            assertEquals("CREDIT_NOTE", kept.kind);
+            assertEquals(new BigDecimal("8.00"), kept.balance);
+            assertEquals(java.time.LocalDateTime.of(2026, 10, 20, 10, 0), kept.issuedAt);
+            assertEquals("POS01-00000003", kept.issuingDocumentNumber);
+            verify(kept).persist();
+            org.junit.jupiter.api.Assertions.assertNull(service.findStoredValue("297000000000499"));
+            assertEquals(1, created.constructed().size());
+        }
+    }
+
+    /**
+     * BO-03-06-63: a payment barcode reading is upserted by its register and
+     * the register's row.
+     */
+    @Test
+    void ingestScannedBarcodeUpsertsByRegisterRow() {
+        SyncIngestService service = new SyncIngestService();
+        SyncPayloads.ScannedBarcodeDto dto = new SyncPayloads.ScannedBarcodeDto();
+        dto.sourceId = 5L;
+        dto.terminalId = "C04";
+        dto.code = "297000000000400";
+        dto.typeCode = "AVOIR";
+        dto.typeLabel = "Avoir magasin";
+        dto.ticketNumber = "C04-00000010";
+        dto.amount = new BigDecimal("2.40");
+        dto.validUntil = "2027-10-24T00:00";
+        dto.scannedAt = "2026-10-26T11:00:05";
+        dto.found = true;
+        dto.gs1 = true;
+        com.intermarche.edge.domain.barcode.ScannedBarcode existing =
+                mock(com.intermarche.edge.domain.barcode.ScannedBarcode.class);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class);
+             org.mockito.MockedConstruction<com.intermarche.edge.domain.barcode.ScannedBarcode> created =
+                     org.mockito.Mockito.mockConstruction(com.intermarche.edge.domain.barcode.ScannedBarcode.class)) {
+            PanacheQuery<com.intermarche.edge.domain.barcode.ScannedBarcode> none = queryReturning(null);
+            mocked.when(() -> com.intermarche.edge.domain.barcode.ScannedBarcode.find(
+                    "terminalId = ?1 and sourceId = ?2", "C04", 5L)).thenReturn(none);
+            service.ingestScannedBarcode(dto);
+            com.intermarche.edge.domain.barcode.ScannedBarcode row = created.constructed().get(0);
+            assertEquals("C04", row.terminalId);
+            assertEquals(5L, row.sourceId);
+            assertEquals("297000000000400", row.code);
+            assertEquals("AVOIR", row.typeCode);
+            assertEquals("Avoir magasin", row.typeLabel);
+            assertEquals("C04-00000010", row.ticketNumber);
+            assertEquals(new BigDecimal("2.40"), row.amount);
+            assertEquals(java.time.LocalDateTime.of(2027, 10, 24, 0, 0), row.validUntil);
+            assertEquals(java.time.LocalDateTime.of(2026, 10, 26, 11, 0, 5), row.scannedAt);
+            org.junit.jupiter.api.Assertions.assertTrue(row.found);
+            org.junit.jupiter.api.Assertions.assertTrue(row.gs1);
+            verify(row).persist();
+            PanacheQuery<com.intermarche.edge.domain.barcode.ScannedBarcode> found = queryReturning(existing);
+            mocked.when(() -> com.intermarche.edge.domain.barcode.ScannedBarcode.find(
+                    "terminalId = ?1 and sourceId = ?2", "C04", 5L)).thenReturn(found);
+            service.ingestScannedBarcode(dto);
+            verify(existing).persist();
+            assertEquals(1, created.constructed().size());
+        }
+    }
+
+    /**
+     * BO-03-06-48: an instrument a register of the shop printed is answered
+     * with its last reported state; one without dates answers none; an
+     * unknown number answers nothing.
+     */
+    @Test
+    void findStoredValueAnswersTheLastReport() {
+        SyncIngestService service = new SyncIngestService();
+        service.centralInstrumentRelay = mock(CentralInstrumentRelay.class);
+        com.intermarche.edge.domain.barcode.StoredValueRecord record =
+                new com.intermarche.edge.domain.barcode.StoredValueRecord();
+        record.issuingTerminalId = "C02";
+        record.reportedBy = "C04";
+        record.number = "297000000000400";
+        record.kind = "GIFT_CARD";
+        record.initialAmount = new BigDecimal("30.00");
+        record.balance = new BigDecimal("12.00");
+        record.status = "ACTIVE";
+        record.issuedAt = java.time.LocalDateTime.of(2026, 10, 24, 9, 30, 15);
+        record.validUntil = java.time.LocalDateTime.of(2027, 10, 24, 0, 0);
+        record.exhaustedAt = java.time.LocalDateTime.of(2026, 10, 25, 8, 0);
+        record.issuingDocumentNumber = "C02-00000009";
+        record.pdvNumber = "1234";
+        com.intermarche.edge.domain.barcode.StoredValueRecord bare =
+                new com.intermarche.edge.domain.barcode.StoredValueRecord();
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            PanacheQuery<com.intermarche.edge.domain.barcode.StoredValueRecord> one = queryReturning(record);
+            mocked.when(() -> com.intermarche.edge.domain.barcode.StoredValueRecord.find(
+                    "number = ?1 order by updatedAt desc, id desc", "297000000000400")).thenReturn(one);
+            PanacheQuery<com.intermarche.edge.domain.barcode.StoredValueRecord> other = queryReturning(bare);
+            mocked.when(() -> com.intermarche.edge.domain.barcode.StoredValueRecord.find(
+                    "number = ?1 order by updatedAt desc, id desc", "B")).thenReturn(other);
+            PanacheQuery<com.intermarche.edge.domain.barcode.StoredValueRecord> none = queryReturning(null);
+            mocked.when(() -> com.intermarche.edge.domain.barcode.StoredValueRecord.find(
+                    "number = ?1 order by updatedAt desc, id desc", "X")).thenReturn(none);
+            SyncPayloads.StoredValueDto dto = service.findStoredValue("297000000000400");
+            assertEquals("C02", dto.issuingTerminalId);
+            assertEquals("C04", dto.terminalId);
+            assertEquals("297000000000400", dto.number);
+            assertEquals("GIFT_CARD", dto.kind);
+            assertEquals(new BigDecimal("30.00"), dto.initialAmount);
+            assertEquals(new BigDecimal("12.00"), dto.balance);
+            assertEquals("ACTIVE", dto.status);
+            assertEquals("2026-10-24T09:30:15", dto.issuedAt);
+            assertEquals("2027-10-24T00:00", dto.validUntil);
+            assertEquals("2026-10-25T08:00", dto.exhaustedAt);
+            assertEquals("C02-00000009", dto.issuingDocumentNumber);
+            assertEquals("1234", dto.pdvNumber);
+            SyncPayloads.StoredValueDto empty = service.findStoredValue("B");
+            org.junit.jupiter.api.Assertions.assertNull(empty.issuedAt);
+            org.junit.jupiter.api.Assertions.assertNull(empty.validUntil);
+            org.junit.jupiter.api.Assertions.assertNull(empty.exhaustedAt);
+            org.junit.jupiter.api.Assertions.assertNull(service.findStoredValue("X"));
+        }
+    }
+
+    /**
+     * Builds a pushed fiscal document.
+     *
+     * @param number the document number
+     * @return the payload
+     */
+    private SyncPayloads.FiscalDocumentDto fiscalDto(String number) {
+        SyncPayloads.FiscalDocumentDto dto = new SyncPayloads.FiscalDocumentDto();
+        dto.documentType = "FS";
+        dto.series = "C04/2026";
+        dto.rank = 1;
+        dto.number = number;
+        dto.atcud = "AAA-1";
+        dto.saftDocumentId = 1;
+        dto.terminalId = "C04";
+        dto.issuedAt = "2026-10-24T10:30:00";
+        dto.part = 2;
+        dto.lineUids = "U1";
+        dto.sourceNumber = "SRC";
+        dto.customerTaxId = "123456789";
+        dto.customerName = "ACME";
+        dto.customerAddress = "Rua 1";
+        dto.grossTotal = new BigDecimal("12.30");
+        dto.taxTotal = new BigDecimal("2.30");
+        dto.hash = "HASH";
+        dto.previousHash = "PREV";
+        dto.qrPayload = "QR";
+        dto.cancelled = true;
+        return dto;
+    }
+
+    /**
+     * BO-10-06-03: a pushed fiscal document is created when the node holds
+     * none of that number and rewritten when it does, every field copied and
+     * attached to the node's sale or return.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void storeFiscalDocumentsUpsertsByNumber() {
+        SyncIngestService service = serviceWith();
+        com.intermarche.edge.domain.sale.FiscalDocument existing =
+                mock(com.intermarche.edge.domain.sale.FiscalDocument.class);
+        PanacheQuery<Object> known = mock(PanacheQuery.class);
+        when(known.firstResult()).thenReturn(existing);
+        PanacheQuery<Object> unknown = mock(PanacheQuery.class);
+        when(unknown.firstResult()).thenReturn(null);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
+             MockedConstruction<com.intermarche.edge.domain.sale.FiscalDocument> created =
+                     mockConstruction(com.intermarche.edge.domain.sale.FiscalDocument.class)) {
+            panache.when(() -> PanacheEntityBase.find("number", "FS-OLD")).thenReturn(known);
+            panache.when(() -> PanacheEntityBase.find("number", "FS-NEW")).thenReturn(unknown);
+            service.storeFiscalDocuments(List.of(fiscalDto("FS-OLD"), fiscalDto("FS-NEW")), 5L, null);
+            service.storeFiscalDocuments(List.of(), null, 6L);
+            assertEquals(1, created.constructed().size());
+            com.intermarche.edge.domain.sale.FiscalDocument fresh = created.constructed().get(0);
+            assertEquals("FS-NEW", fresh.number);
+            verify(service.saftStreamService).onDocument(fresh);
+            verify(service.saftStreamService).onDocument(existing);
+            assertEquals(com.intermarche.edge.domain.sale.FiscalDocument.Type.FS, fresh.documentType);
+            assertEquals("C04/2026", fresh.series);
+            assertEquals(1, fresh.rank);
+            assertEquals("AAA-1", fresh.atcud);
+            assertEquals(1, fresh.saftDocumentId);
+            assertEquals("C04", fresh.terminalId);
+            assertEquals(LocalDateTime.of(2026, 10, 24, 10, 30), fresh.issuedAt);
+            assertEquals(5L, fresh.ticketId);
+            assertNull(fresh.refundId);
+            assertEquals(2, fresh.part);
+            assertEquals("U1", fresh.lineUids);
+            assertEquals("SRC", fresh.sourceNumber);
+            assertEquals("123456789", fresh.customerTaxId);
+            assertEquals("ACME", fresh.customerName);
+            assertEquals("Rua 1", fresh.customerAddress);
+            assertEquals(new BigDecimal("12.30"), fresh.grossTotal);
+            assertEquals(new BigDecimal("2.30"), fresh.taxTotal);
+            assertEquals("HASH", fresh.hash);
+            assertEquals("PREV", fresh.previousHash);
+            assertEquals("QR", fresh.qrPayload);
+            assertTrue(fresh.cancelled);
+            verify(fresh).persist();
+            assertEquals("AAA-1", existing.atcud);
+            verify(existing).persist();
+        }
+    }
+
+    /**
+     * BO-06-08-02: the valuation trace pushed with a ticket replaces the one
+     * kept, a trace without line skipped, missing totals read zero; nothing is
+     * touched for an older register pushing none, nor for an unsaved ticket.
+     */
+    @Test
+    void theValuationTraceReplacesTheKeptOne() {
+        SyncIngestService service = new SyncIngestService();
+        Ticket ticket = new Ticket();
+        ticket.id = 9L;
+        SyncPayloads.ValuationDto full = new SyncPayloads.ValuationDto();
+        full.lineUid = "L1";
+        full.localTotal = new BigDecimal("2.40");
+        full.valuedTotal = new BigDecimal("2.00");
+        full.offerLabel = "OFF1";
+        full.advantageLabel = "Lot de 3";
+        full.advantageAmount = new BigDecimal("-0.40");
+        full.advantagePrintMode = "LINE";
+        full.correctionLabel = "Arrondi";
+        full.correctionAmount = new BigDecimal("0.01");
+        SyncPayloads.ValuationDto bare = new SyncPayloads.ValuationDto();
+        bare.lineUid = "L2";
+        SyncPayloads.ValuationDto lineless = new SyncPayloads.ValuationDto();
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
+             MockedConstruction<com.intermarche.edge.domain.sale.TicketLineValuation> built =
+                     mockConstruction(com.intermarche.edge.domain.sale.TicketLineValuation.class)) {
+            service.storeValuations(null, ticket);
+            service.storeValuations(List.of(full), new Ticket());
+            panache.verifyNoInteractions();
+            service.storeValuations(List.of(full, bare, lineless), ticket);
+            panache.verify(() -> PanacheEntityBase.delete("ticket.id", 9L));
+            assertEquals(2, built.constructed().size());
+            com.intermarche.edge.domain.sale.TicketLineValuation first = built.constructed().get(0);
+            assertSame(ticket, first.ticket);
+            assertEquals("L1", first.lineUid);
+            assertEquals(new BigDecimal("2.40"), first.localTotal);
+            assertEquals(new BigDecimal("2.00"), first.valuedTotal);
+            assertEquals("OFF1", first.offerLabel);
+            assertEquals("Lot de 3", first.advantageLabel);
+            assertEquals(new BigDecimal("-0.40"), first.advantageAmount);
+            assertEquals("LINE", first.advantagePrintMode);
+            assertEquals("Arrondi", first.correctionLabel);
+            assertEquals(new BigDecimal("0.01"), first.correctionAmount);
+            verify(first).persist();
+            com.intermarche.edge.domain.sale.TicketLineValuation second = built.constructed().get(1);
+            assertEquals(BigDecimal.ZERO, second.localTotal);
+            assertEquals(BigDecimal.ZERO, second.valuedTotal);
         }
     }
 }

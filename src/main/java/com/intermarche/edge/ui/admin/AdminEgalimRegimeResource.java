@@ -1,10 +1,13 @@
 package com.intermarche.edge.ui.admin;
 
+import io.quarkus.security.Authenticated;
+import com.intermarche.edge.security.FeatureAccess;
+import com.intermarche.edge.domain.setting.Feature;
+import com.intermarche.edge.domain.people.CrudOption;
 import com.intermarche.edge.domain.catalog.EgalimRegime;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
@@ -46,7 +49,7 @@ import org.jboss.logging.Logger;
  * correspondence with the files that name the old one — so the screen says so.
  *
  * <p>Same admin cycle as the other back-office pages: POST &rarr; 303 &rarr; a
- * one-shot notice, {@code @RolesAllowed("ADMIN")} throughout.
+ * one-shot notice, {@code @FeatureAccess} throughout (BO-01-04-01).
  */
 @Path("/admin/egalim-regimes")
 public class AdminEgalimRegimeResource {
@@ -77,7 +80,8 @@ public class AdminEgalimRegimeResource {
      * @return the page
      */
     @GET
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.EGALIM_REGIME)
     @Transactional
     public TemplateInstance egalimRegimesPage(@QueryParam("notice") String notice,
                                               @QueryParam("noticeOk") @DefaultValue("true") boolean noticeOk) {
@@ -101,7 +105,8 @@ public class AdminEgalimRegimeResource {
      */
     @POST
     @Path("/save")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.EGALIM_REGIME, option = CrudOption.CREATE, updateKey = "id")
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response saveRegime(MultivaluedMap<String, String> form) {
@@ -160,7 +165,8 @@ public class AdminEgalimRegimeResource {
      */
     @POST
     @Path("/delete")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.EGALIM_REGIME, option = CrudOption.DELETE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response deleteRegime(MultivaluedMap<String, String> form) {

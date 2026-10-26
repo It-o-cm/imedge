@@ -1,5 +1,9 @@
 package com.intermarche.edge.ui.admin;
 
+import io.quarkus.security.Authenticated;
+import com.intermarche.edge.security.FeatureAccess;
+import com.intermarche.edge.domain.setting.Feature;
+import com.intermarche.edge.domain.people.CrudOption;
 import com.intermarche.edge.domain.sale.CustomerOrder;
 import com.intermarche.edge.domain.sale.OrderKind;
 import com.intermarche.edge.domain.sale.OrderStatus;
@@ -7,7 +11,6 @@ import com.intermarche.edge.service.CustomerOrderService;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
@@ -61,7 +64,8 @@ public class AdminSalesOrderResource {
      * @return the page
      */
     @GET
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.CUSTOMER_ORDER)
     @Transactional
     public TemplateInstance ordersPage(@QueryParam("notice") String notice,
                                        @QueryParam("noticeOk") @DefaultValue("true") boolean noticeOk) {
@@ -82,7 +86,8 @@ public class AdminSalesOrderResource {
      */
     @POST
     @Path("/create")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.CUSTOMER_ORDER, option = CrudOption.CREATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response createOrder(MultivaluedMap<String, String> form) {
@@ -131,7 +136,8 @@ public class AdminSalesOrderResource {
      */
     @POST
     @Path("/deposit")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.CUSTOMER_ORDER, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response recordDeposit(MultivaluedMap<String, String> form) {
@@ -158,7 +164,8 @@ public class AdminSalesOrderResource {
      */
     @POST
     @Path("/cancel")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.CUSTOMER_ORDER, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response cancelOrder(MultivaluedMap<String, String> form) {

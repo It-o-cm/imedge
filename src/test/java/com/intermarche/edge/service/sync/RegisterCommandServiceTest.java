@@ -216,4 +216,18 @@ class RegisterCommandServiceTest {
             assertEquals(0L, service.pendingCount("POS02"));
         }
     }
+
+    /**
+     * Whether an order of one kind is pending for a register: one counted is
+     * pending, none is not.
+     */
+    @Test
+    void isPendingCountsTheOrdersOfAKind() {
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> RegisterCommand.count(PENDING_OF_KIND, "POS07",
+                    RegisterCommand.CommandType.VERIFY_SYNC)).thenReturn(1L);
+            assertTrue(service.isPending("POS07", RegisterCommand.CommandType.VERIFY_SYNC));
+            assertFalse(service.isPending("POS07", RegisterCommand.CommandType.PURGE_PARKED_TICKETS));
+        }
+    }
 }

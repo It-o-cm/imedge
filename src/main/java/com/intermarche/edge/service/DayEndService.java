@@ -1,7 +1,6 @@
 package com.intermarche.edge.service;
 
 import com.intermarche.edge.domain.people.Employee;
-import com.intermarche.edge.domain.sale.Ticket;
 import com.intermarche.edge.domain.session.CashSession;
 import com.intermarche.edge.domain.session.TechnicalEvent;
 import com.intermarche.edge.service.sync.RegisterCommandService;
@@ -65,14 +64,19 @@ public class DayEndService {
     @Inject
     PeriodCloseService periodCloseService;
 
+    /** The tickets still on hold (BO-09-01-05, -08). */
+    @Inject
+    ParkedTicketCloseService parkedTicketCloseService;
+
     /**
      * One register still open at the moment the picture was taken.
      *
      * @param terminalId the register's identifier
      * @param sessionNumber the open session's number
      * @param cashier who opened it, or an empty string
+     * @param session the open session, for the close order it takes
      */
-    public record OpenRegister(String terminalId, String sessionNumber, String cashier) {
+    public record OpenRegister(String terminalId, String sessionNumber, String cashier, CashSession session) {
     }
 
     /**
@@ -126,19 +130,23 @@ public class DayEndService {
         List<OpenRegister> open = new ArrayList<>();
         for (CashSession session
                 : CashSession.<CashSession>list("status", CashSession.SessionStatus.OPEN)) {
+            // BO-03-09-01: a deactivated register is left out of the closure control.
+            if (com.intermarche.edge.domain.store.CheckoutPoint.isDeactivated(session.terminalId)) {
+                continue;
+            }
             open.add(new OpenRegister(
                     session.terminalId == null ? "" : session.terminalId,
                     session.sessionNumber == null ? "" : session.sessionNumber,
-                    displayed(session.openingCashier)));
+                    displayed(session.openingCashier), session));
         }
+        // BO-09-01-05, -08: the carts on hold as the node knows them — the
+        // parked rows and the tickets whose chain record puts them on hold.
         List<ParkedCart> parked = new ArrayList<>();
-        for (Ticket ticket
-                : Ticket.<Ticket>list("status", Ticket.TicketStatus.PARKED)) {
-            parked.add(new ParkedCart(
-                    ticket.terminalId == null ? "" : ticket.terminalId,
-                    ticket.ticketNumber == null ? "" : ticket.ticketNumber,
-                    displayed(ticket.cashier),
-                    ticket.totalIncludingTax == null ? "" : ticket.totalIncludingTax.toPlainString()));
+        for (ParkedTicketCloseService.Pending ticket : parkedTicketCloseService.pending(null)) {
+            parked.add(new ParkedCart(ticket.terminalId(),
+                    ticket.ticketNumber() == null ? "" : ticket.ticketNumber(),
+                    ticket.cashier(),
+                    ticket.amount() == null ? "" : ticket.amount().toPlainString()));
         }
         long countdown = periodCloseService.countdownMinutes();
         DayEndState state = new DayEndState(
@@ -194,7 +202,7 @@ public class DayEndService {
                         + state.offlineRegisters().size() + " déconnectée(s), "
                         + state.parkedCarts().size() + " ticket(s) en attente");
         for (OpenRegister register : state.openRegisters()) {
-            order(register.terminalId(), who);
+            order(register, who);
         }
         for (RegisterPresenceService.Presence silent : state.offlineRegisters()) {
             technicalEventService.log(TechnicalEvent.EventType.SESSION_CLOSED,
@@ -211,21 +219,19 @@ public class DayEndService {
     }
 
     /**
-     * Leaves the close-if-idle order for one register, unless it already
-     * carries one.
+     * Leaves the end-of-day close order for one register — the close-if-idle
+     * one, or the automatic declaration of a self-service island's host
+     * (BO-09-03-01) — unless it already carries a close order.
      *
-     * @param terminalId the register still open
+     * @param register the register still open
      * @param operator who asked for it
      */
-    private void order(String terminalId, String operator) {
-        if (terminalId == null || terminalId.isBlank()) {
+    private void order(OpenRegister register, String operator) {
+        String terminalId = register.terminalId();
+        if (terminalId.isBlank() || periodCloseService.closePending(terminalId)) {
             return;
         }
-        if (registerCommandService.pendingCount(terminalId) > 0) {
-            return;
-        }
-        registerCommandService.issue(terminalId,
-                com.intermarche.edge.domain.sync.RegisterCommand.CommandType.CLOSE_SESSION_IF_IDLE,
+        registerCommandService.issue(terminalId, periodCloseService.closeOrderType(register.session()),
                 operator, "Fin de journée lancée depuis le back-office");
         technicalEventService.log(TechnicalEvent.EventType.SESSION_CLOSED,
                 "Fin de journée : fermeture demandée à la caisse " + terminalId);

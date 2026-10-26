@@ -1,10 +1,13 @@
 package com.intermarche.edge.ui.admin;
 
+import io.quarkus.security.Authenticated;
+import com.intermarche.edge.security.FeatureAccess;
+import com.intermarche.edge.domain.setting.Feature;
+import com.intermarche.edge.domain.people.CrudOption;
 import com.intermarche.edge.domain.payment.Currency;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
@@ -65,7 +68,8 @@ public class AdminCurrencyResource {
      * @return the page
      */
     @GET
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.CURRENCY)
     @Transactional
     public TemplateInstance currenciesPage(@QueryParam("notice") String notice,
                                            @QueryParam("noticeOk") @DefaultValue("true") boolean noticeOk) {
@@ -95,7 +99,8 @@ public class AdminCurrencyResource {
      */
     @POST
     @Path("/save")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.CURRENCY, option = CrudOption.CREATE, updateKey = "code", entity = com.intermarche.edge.domain.payment.Currency.class)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response saveCurrency(MultivaluedMap<String, String> form) {
@@ -116,7 +121,6 @@ public class AdminCurrencyResource {
         if (currency == null) {
             currency = new Currency();
             currency.code = isoCode;
-            currency.persist();
         }
         currency.label = AdminForms.text(form, "label");
         currency.symbol = AdminForms.text(form, "symbol");
@@ -130,6 +134,11 @@ public class AdminCurrencyResource {
         currency.changeTenderCode = AdminForms.text(form, "changeTenderCode");
         currency.displayOrder = AdminForms.integer(AdminForms.text(form, "displayOrder"), 0);
         currency.active = AdminForms.checkbox(form, "active");
+        // Persisted once described: the insert carries the NOT NULL label and
+        // rate, which a row persisted before them would flush as null.
+        if (existing == null) {
+            currency.persist();
+        }
         LOGGER.info("Exiting method saveCurrency");
         return AdminForms.redirect(PAGE, existing == null ? "Devise créée." : "Devise enregistrée.", true);
     }
@@ -142,7 +151,8 @@ public class AdminCurrencyResource {
      */
     @POST
     @Path("/delete")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.CURRENCY, option = CrudOption.DELETE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response deleteCurrency(MultivaluedMap<String, String> form) {

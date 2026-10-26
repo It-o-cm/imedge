@@ -51,6 +51,7 @@ class AdminCheckoutPointResourceTest {
     private AdminCheckoutPointResource newResource() {
         AdminCheckoutPointResource resource = new AdminCheckoutPointResource();
         resource.adminCheckoutPoints = mock(Template.class);
+        resource.echelonSettings = mock(com.intermarche.edge.service.EchelonSettingService.class);
         return resource;
     }
 
@@ -298,6 +299,7 @@ class AdminCheckoutPointResourceTest {
         Pdv pdv = new Pdv();
         pdv.pdvNumber = "12345";
         Employee hostess = new Employee();
+        hostess.role = Employee.EmployeeRole.TECHNICAL_HOSTESS;
         PanacheQuery<CheckoutIsland> foundIsland = query(island);
         PanacheQuery<Pdv> foundPdv = query(pdv);
         PanacheQuery<Employee> foundHostess = query(hostess);
@@ -309,7 +311,7 @@ class AdminCheckoutPointResourceTest {
             panache.when(() -> Employee.find("badgeId", "BADGE1")).thenReturn(foundHostess);
             panache.when(() -> CheckoutPoint.find("terminalId", "POS02")).thenReturn(absent);
             Response response = resource.savePoint(form("terminalId", "POS02", "islandCode", "AVANT",
-                    "pdvNumber", "12345", "technicalHostessBadge", "BADGE1"));
+                    "pdvNumber", "12345", "technicalHostessBadge", "BADGE1", "tpvType", "SELF_CHECKOUT_NCR"));
             assertTrue(response.getLocation().toString().contains("noticeOk=true"));
             CheckoutPoint point = created.constructed().get(0);
             assertEquals("AVANT", point.islandCode);
@@ -328,8 +330,11 @@ class AdminCheckoutPointResourceTest {
         CheckoutPoint stored = new CheckoutPoint();
         stored.terminalId = "POS01";
         PanacheQuery<CheckoutPoint> present = query(stored);
+        PanacheQuery<com.intermarche.edge.domain.store.CashMenu> menu =
+                query(new com.intermarche.edge.domain.store.CashMenu());
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
             panache.when(() -> CheckoutPoint.find("terminalId", "POS01")).thenReturn(present);
+            panache.when(() -> com.intermarche.edge.domain.store.CashMenu.find("code", "MENU9")).thenReturn(menu);
             Response response = resource.savePoint(form("terminalId", "POS01", "label", "Comptoir",
                     "tpvType", "NOPE", "menuTemplateCode", "MENU9"));
             assertTrue(response.getLocation().toString().contains("noticeOk=true"));
@@ -367,6 +372,76 @@ class AdminCheckoutPointResourceTest {
             assertTrue(response.getLocation().toString().contains("noticeOk=true"));
             verify(stored, times(1)).delete();
             verify(stored, never()).persist();
+        }
+    }
+    /** BO-03: an absent optional form value retains the documented empty/default interpretation. */
+    @Test
+    void absentOptionalFormValueKeepsItsFallback() throws Exception {
+        var method = AdminCheckoutPointResource.class.getDeclaredMethod("port", String.class);
+        method.setAccessible(true);
+        org.junit.jupiter.api.Assertions.assertEquals(null, method.invoke(new AdminCheckoutPointResource(), (Object) " "));
+    }
+
+    /**
+     * BO-03-09-08: a badge that is not a technical hostess's is refused, and so
+     * is a hostess on a point that is not self-service — then the type unread.
+     */
+    @Test
+    void saveRefusesAHostessOutOfTheListOrOnAMannedTill() {
+        AdminCheckoutPointResource resource = newResource();
+        Employee cashier = mock(Employee.class);
+        cashier.role = Employee.EmployeeRole.CASHIER;
+        Employee hostess = mock(Employee.class);
+        hostess.role = Employee.EmployeeRole.TECHNICAL_HOSTESS;
+        PanacheQuery<Employee> cashierQuery = query(cashier);
+        PanacheQuery<Employee> hostessQuery = query(hostess);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> Employee.find("badgeId", "CASH1")).thenReturn(cashierQuery);
+            panache.when(() -> Employee.find("badgeId", "HOST1")).thenReturn(hostessQuery);
+            assertTrue(resource.savePoint(form("terminalId", "POS01", "technicalHostessBadge", "CASH1",
+                    "tpvType", "SELF_CHECKOUT_NCR")).getLocation().toString().contains("noticeOk=false"));
+            assertTrue(resource.savePoint(form("terminalId", "POS01", "technicalHostessBadge", "HOST1",
+                    "tpvType", "CASH_REGISTER")).getLocation().toString().contains("noticeOk=false"));
+            assertTrue(resource.savePoint(form("terminalId", "POS01", "technicalHostessBadge", "HOST1"))
+                    .getLocation().toString().contains("noticeOk=false"));
+        }
+    }
+
+    /**
+     * BO-03-09-08 / BO-03-10-09: a technical hostess is attached to a
+     * self-service point, and the chosen menu is mirrored at the point's echelon;
+     * an unknown menu is refused.
+     */
+    @Test
+    void saveAttachesTheHostessAndMirrorsTheMenu() {
+        AdminCheckoutPointResource resource = newResource();
+        Employee hostess = mock(Employee.class);
+        hostess.role = Employee.EmployeeRole.TECHNICAL_HOSTESS;
+        CheckoutPoint stored = new CheckoutPoint();
+        stored.terminalId = "POS01";
+        com.intermarche.edge.domain.store.CashMenu menu = new com.intermarche.edge.domain.store.CashMenu();
+        PanacheQuery<Employee> hostessQuery = query(hostess);
+        PanacheQuery<CheckoutPoint> present = query(stored);
+        PanacheQuery<com.intermarche.edge.domain.store.CashMenu> menuQuery = query(menu);
+        PanacheQuery<com.intermarche.edge.domain.store.CashMenu> noMenu = query(null);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> Employee.find("badgeId", "HOST1")).thenReturn(hostessQuery);
+            panache.when(() -> CheckoutPoint.find("terminalId", "POS01")).thenReturn(present);
+            panache.when(() -> com.intermarche.edge.domain.store.CashMenu.find("code", "SLS")).thenReturn(menuQuery);
+            panache.when(() -> com.intermarche.edge.domain.store.CashMenu.find("code", "GHOST")).thenReturn(noMenu);
+            assertTrue(resource.savePoint(form("terminalId", "POS01", "technicalHostessBadge", "HOST1",
+                    "tpvType", "SELF_CHECKOUT_NCR", "menuTemplateCode", "SLS"))
+                    .getLocation().toString().contains("noticeOk=true"));
+            assertEquals("HOST1", stored.technicalHostessBadge);
+            assertEquals("SLS", stored.menuTemplateCode);
+            verify(resource.echelonSettings).set(com.intermarche.edge.domain.setting.EchelonLevel.CHECKOUT_POINT,
+                    "POS01", "menu.code", "SLS");
+            assertTrue(resource.savePoint(form("terminalId", "POS01", "menuTemplateCode", "GHOST"))
+                    .getLocation().toString().contains("noticeOk=false"));
+            assertTrue(resource.savePoint(form("terminalId", "POS01"))
+                    .getLocation().toString().contains("noticeOk=true"));
+            verify(resource.echelonSettings).clear(com.intermarche.edge.domain.setting.EchelonLevel.CHECKOUT_POINT,
+                    "POS01", "menu.code");
         }
     }
 }

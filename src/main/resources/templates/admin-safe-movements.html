@@ -6,82 +6,82 @@
 !}
 {#include admin-layout}
 
-{#title}Mouvements du coffre{/title}
+{#title}{inject:i18n.get('t.mouvements-du-coffre')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Mouvements du coffre</h1>
-        <p class="page-sub">Dépenses et recettes hors encaissement, pointées puis validées avant la clôture.</p>
+        <h1>{inject:i18n.get('t.mouvements-du-coffre')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.depenses-et-recettes-hors-encaissement-pointees')}</p>
     </div>
     <div class="page-actions">
-        <a class="btn btn-ghost" href="/admin/safe/journal">Journal du coffre</a>
-        <a class="btn btn-ghost" href="/admin/safe/periods">Clôture</a>
+        <a class="btn btn-ghost" href="/admin/safe/journal">{inject:i18n.get('t.journal-du-coffre')}</a>
+        <a class="btn btn-ghost" href="/admin/safe/periods">{inject:i18n.get('t.cloture')}</a>
     </div>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 {#if !period}
 <div class="card">
     <div class="empty-state">
-        <p>Aucune période comptable ouverte.</p>
-        <p class="empty-hint">Ouvrez-en une depuis l'écran <a class="link-strong" href="/admin/safe/periods">Clôture du coffre</a> : rien ne peut entrer dans le coffre tant qu'aucune période ne le compte.</p>
+        <p>{inject:i18n.get('t.aucune-periode-comptable-ouverte')}</p>
+        <p class="empty-hint">{inject:i18n.get('t.ouvrez-en-une-depuis-l-ecran')} <a class="link-strong" href="/admin/safe/periods">{inject:i18n.get('t.cloture-du-coffre')}</a> {inject:i18n.get('t.rien-ne-peut-entrer-dans-le-coffre')}</p>
     </div>
 </div>
 {#else}
 
 <div class="card">
-    <h2 class="card-title">Période {period.label}</h2>
-    <p class="card-sub">Solde du coffre : <strong>{balance} €</strong> · mouvements non validés : <strong>{pending}</strong></p>
+    <h2 class="card-title">{inject:i18n.get('t.periode')} {inject:i18n.text(period.label)}</h2>
+    <p class="card-sub">{inject:i18n.get('t.solde-du-coffre')} <strong>{inject:i18n.money(balance)} €</strong> {inject:i18n.get('t.mouvements-non-valides')} <strong>{pending}</strong></p>
 </div>
 
 <div class="card">
-    <h2 class="card-title">Saisir un mouvement</h2>
-    <p class="card-sub">La nature décide du sens : une dépense sort du coffre, une recette y entre.</p>
+    <h2 class="card-title">{inject:i18n.get('t.saisir-un-mouvement')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.la-nature-decide-du-sens-une-depense')}</p>
     <form method="post" action="/admin/safe/movements">
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="m-type">Nature</label>
+                <label class="field-label" for="m-type">{inject:i18n.get('t.nature')}</label>
                 <select class="input-control" id="m-type" name="type">
                     {#for type in types}
-                    <option value="{type.name}">{type.label}</option>
+                    <option value="{type.name}">{inject:i18n.text(type.label)}</option>
                     {/for}
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="m-label">Libellé</label>
+                <label class="field-label" for="m-label">{inject:i18n.get('t.libelle')}</label>
                 <input class="input-control" id="m-label" type="text" name="label" maxlength="160" required>
             </div>
             <div class="field">
-                <label class="field-label" for="m-amount">Montant €</label>
+                <label class="field-label" for="m-amount">{inject:i18n.get('t.montant')}</label>
                 <input class="input-control" id="m-amount" type="text" name="amount" inputmode="decimal" required>
             </div>
             <div class="field">
-                <label class="field-label" for="m-date">Date</label>
+                <label class="field-label" for="m-date">{inject:i18n.get('t.date')}</label>
                 <input class="input-control" id="m-date" type="date" name="movementDate" value="{today}">
             </div>
             <div class="field">
-                <label class="field-label" for="m-reference">Référence</label>
+                <label class="field-label" for="m-reference">{inject:i18n.get('t.reference')}</label>
                 <input class="input-control" id="m-reference" type="text" name="reference" maxlength="60">
             </div>
             <div class="field">
-                <label class="field-label" for="m-employee">Salarié concerné</label>
+                <label class="field-label" for="m-employee">{inject:i18n.get('t.salarie-concerne')}</label>
                 <select class="input-control" id="m-employee" name="employeeId">
                     <option value="">—</option>
                     {#for employee in employees}
-                    <option value="{employee.id}">{employee.fullName}</option>
+                    <option value="{employee.id}">{#if employee.legalEntity}{employee.lastName}{#else}{employee.fullName}{/if}</option>
                     {/for}
                 </select>
             </div>
         </div>
         {! BO-05-02-01/-02 : aucune TVA, une seule ou plusieurs. !}
-        <h3 class="card-title" style="margin-top: 10px;">Ventilation de TVA</h3>
+        <h3 class="card-title" style="margin-top: 10px;">{inject:i18n.get('t.ventilation-de-tva')}</h3>
         <table class="data-table">
             <thead>
-            <tr><th>Taux %</th><th>Base HT €</th><th>TVA €</th></tr>
+            <tr><th>{inject:i18n.get('t.taux')}</th><th>{inject:i18n.get('t.base-ht')}</th><th>{inject:i18n.get('t.tva-2')}</th></tr>
             </thead>
             <tbody>
             <tr>
@@ -102,16 +102,16 @@
             </tbody>
         </table>
         <div class="page-actions" style="margin-top: 6px;">
-            <button class="btn btn-primary" type="submit">Enregistrer le mouvement</button>
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer-le-mouvement')}</button>
         </div>
     </form>
 </div>
 
 <div class="card">
-    <h2 class="card-title">Mouvements de la période</h2>
+    <h2 class="card-title">{inject:i18n.get('t.mouvements-de-la-periode')}</h2>
     {#if movements.isEmpty()}
     <div class="empty-state">
-        <p>Aucun mouvement sur cette période.</p>
+        <p>{inject:i18n.get('t.aucun-mouvement-sur-cette-periode')}</p>
     </div>
     {#else}
     {! Les formulaires sont déclarés hors du tableau ; les boutons les visent par
@@ -121,73 +121,75 @@
         <input type="hidden" name="id" value="{movement.id}">
     </form>
     {/for}
+    <div class="table-scroll">
     <table class="data-table">
         <thead>
         <tr>
-            <th>Date</th><th>Nature</th><th>Libellé</th><th>Référence</th>
-            <th>Montant €</th><th>TVA €</th><th>État</th><th></th>
+            <th>{inject:i18n.get('t.date')}</th><th>{inject:i18n.get('t.nature')}</th><th>{inject:i18n.get('t.libelle')}</th><th>{inject:i18n.get('t.reference')}</th>
+            <th>{inject:i18n.get('t.montant')}</th><th>{inject:i18n.get('t.tva-2')}</th><th>{inject:i18n.get('t.etat')}</th><th></th>
         </tr>
         </thead>
         <tbody>
         {#for movement in movements}
         <tr>
-            <td>{movement.movementDate}</td>
-            <td>{movement.typeLabel}</td>
-            <td>{movement.label}</td>
-            <td>{movement.reference ?: '—'}</td>
-            <td>{movement.signedAmountFormatted}</td>
-            <td>{#if movement.vatLines.isEmpty()}—{#else}{movement.vatTotal()}{/if}</td>
+            <td class="cell-keep">{movement.movementDate.format('dd/MM/yyyy')}</td>
+            <td>{inject:i18n.text(movement.typeLabel)}</td>
+            <td>{inject:i18n.text(movement.label)}</td>
+            <td class="cell-keep">{movement.reference ?: '—'}</td>
+            <td class="cell-keep">{inject:i18n.money(movement.signedAmountFormatted)}</td>
+            <td class="cell-keep">{#if movement.vatLines.isEmpty()}—{#else}{inject:i18n.money(movement.vatAmount())}{/if}</td>
             <td>
-                {#if movement.validated}<span class="badge badge-ok">Validé</span>
-                {#else}<span class="badge badge-off">À pointer</span>{/if}
+                {#if movement.validated}<span class="badge badge-ok">{inject:i18n.get('t.valide')}</span>
+                {#else}<span class="badge badge-off">{inject:i18n.get('t.a-pointer')}</span>{/if}
             </td>
             <td>
                 {#if !movement.validated}
-                <button class="btn btn-small btn-primary" type="submit" form="val-{movement.id}">Valider</button>
+                <button class="btn btn-small btn-primary" type="submit" form="val-{movement.id}">{inject:i18n.get('t.valider')}</button>
                 {/if}
             </td>
         </tr>
         {/for}
         </tbody>
     </table>
+    </div>
     <form method="post" action="/admin/safe/movements/validate-all">
         <div class="page-actions" style="margin-top: 6px;">
-            <button class="btn btn-primary" type="submit">Valider tous les mouvements pointés</button>
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.valider-tous-les-mouvements-pointes')}</button>
         </div>
     </form>
     {/if}
 </div>
 
 <div class="card">
-    <h2 class="card-title">Corriger un mouvement</h2>
-    <p class="card-sub">Une correction n'est possible que tant que le mouvement n'est pas validé et que sa période est ouverte.</p>
+    <h2 class="card-title">{inject:i18n.get('t.corriger-un-mouvement')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.une-correction-n-est-possible-que-tant')}</p>
     <form method="post" action="/admin/safe/movements/correct">
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="c-id">Mouvement</label>
+                <label class="field-label" for="c-id">{inject:i18n.get('t.mouvement')}</label>
                 <select class="input-control" id="c-id" name="id">
                     {#for movement in movements}
                     {#if movement.correctable}
-                    <option value="{movement.id}">{movement.movementDate} · {movement.label}</option>
+                    <option value="{movement.id}">{movement.movementDate.format('dd/MM/yyyy')} · {inject:i18n.text(movement.label)}</option>
                     {/if}
                     {/for}
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="c-label">Nouveau libellé</label>
+                <label class="field-label" for="c-label">{inject:i18n.get('t.nouveau-libelle')}</label>
                 <input class="input-control" id="c-label" type="text" name="label" maxlength="160">
             </div>
             <div class="field">
-                <label class="field-label" for="c-amount">Nouveau montant €</label>
+                <label class="field-label" for="c-amount">{inject:i18n.get('t.nouveau-montant')}</label>
                 <input class="input-control" id="c-amount" type="text" name="amount" inputmode="decimal">
             </div>
             <div class="field">
-                <label class="field-label" for="c-date">Nouvelle date</label>
+                <label class="field-label" for="c-date">{inject:i18n.get('t.nouvelle-date')}</label>
                 <input class="input-control" id="c-date" type="date" name="movementDate">
             </div>
         </div>
         <div class="page-actions" style="margin-top: 6px;">
-            <button class="btn btn-primary" type="submit">Corriger</button>
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.corriger')}</button>
         </div>
     </form>
 </div>

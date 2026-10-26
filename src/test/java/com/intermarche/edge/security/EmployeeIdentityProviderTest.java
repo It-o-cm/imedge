@@ -362,4 +362,135 @@ class EmployeeIdentityProviderTest {
         verify(managedContext).activate();
         verify(managedContext).terminate();
     }
+    /** BO-01-01: transactional failure counters cover a vanished row, a first failure and the lockout threshold. */
+    @Test
+    void coverageFailureCountersAndLockout() throws Exception {
+        provider.posSettingsService = mock(com.intermarche.edge.service.PosSettingsService.class);
+        when(provider.posSettingsService.backOfficeMaxFailures()).thenReturn(2);
+        when(provider.posSettingsService.backOfficeLockoutMinutes()).thenReturn(15);
+        Employee account = new Employee();
+        account.id = 9L;
+        var count = EmployeeIdentityProvider.class.getDeclaredMethod("countFailure", Long.class);
+        count.setAccessible(true);
+        try (var base = mockStatic(PanacheEntityBase.class);
+             var tx = mockStatic(QuarkusTransaction.class, Answers.RETURNS_DEEP_STUBS)) {
+            var runner = QuarkusTransaction.requiringNew();
+            org.mockito.Mockito.doAnswer(call -> { call.getArgument(0, Runnable.class).run(); return null; })
+                    .when(runner).run(any(Runnable.class));
+            count.invoke(provider, 9L);
+            base.when(() -> PanacheEntityBase.findById(9L)).thenReturn(account);
+            count.invoke(provider, 9L);
+            assertEquals(1, account.failedAttempts);
+            count.invoke(provider, 9L);
+            assertEquals(0, account.failedAttempts);
+            org.junit.jupiter.api.Assertions.assertNotNull(account.lockedUntil);
+            when(provider.posSettingsService.backOfficeLockoutMinutes()).thenThrow(new IllegalStateException("settings unavailable"));
+            account.failedAttempts = 1;
+            count.invoke(provider, 9L);
+            assertEquals(0, account.failedAttempts);
+            org.junit.jupiter.api.Assertions.assertTrue(account.lockedUntil.isAfter(java.time.LocalDateTime.now().plusMinutes(14)));
+        }
+    }
+
+    /** BO-01-01: successful authentication clears only positive counters of an account that still exists. */
+    @Test
+    void coverageClearFailureCounterNullAndZeroLegs() throws Exception {
+        Employee account = new Employee();
+        var clear = EmployeeIdentityProvider.class.getDeclaredMethod("clearFailures", Long.class);
+        clear.setAccessible(true);
+        try (var base = mockStatic(PanacheEntityBase.class);
+             var tx = mockStatic(QuarkusTransaction.class, Answers.RETURNS_DEEP_STUBS)) {
+            var runner = QuarkusTransaction.requiringNew();
+            org.mockito.Mockito.doAnswer(call -> { call.getArgument(0, Runnable.class).run(); return null; })
+                    .when(runner).run(any(Runnable.class));
+            clear.invoke(provider, 9L);
+            base.when(() -> PanacheEntityBase.findById(9L)).thenReturn(account);
+            clear.invoke(provider, 9L);
+            assertEquals(0, account.failedAttempts);
+            account.failedAttempts = 2;
+            clear.invoke(provider, 9L);
+            assertEquals(0, account.failedAttempts);
+        }
+    }
+
+    /** BO-01-02-12: an expired secret independently raises the password-change flag when no forced change was set. */
+    @Test
+    void coverageExpiredSecretRequiresChange() {
+        provider.posSettingsService = mock(com.intermarche.edge.service.PosSettingsService.class);
+        when(provider.posSettingsService.passwordExpiryDays()).thenReturn(1);
+        Employee employee = backOfficeEmployee(Employee.EmployeeRole.MANAGER);
+        employee.mustChangePassword = false;
+        employee.passwordChangedAt = java.time.LocalDateTime.now().minusDays(2);
+        assertEquals(true, identityOfWithLookup(employee, null).getAttribute("mustChangePassword"));
+    }
+
+    /** BO-01-01-01: unavailable counter transactions are contained, retaining the original password decision. */
+    @Test
+    void counterStorageFailuresDoNotEscapeAuthenticationHelpers() throws Exception {
+        provider.posSettingsService = mock(com.intermarche.edge.service.PosSettingsService.class);
+        when(provider.posSettingsService.backOfficeMaxFailures()).thenReturn(2);
+        try (var transactions = mockStatic(QuarkusTransaction.class)) {
+            transactions.when(QuarkusTransaction::requiringNew).thenThrow(new IllegalStateException("database unavailable"));
+            var count = EmployeeIdentityProvider.class.getDeclaredMethod("countFailure", Long.class);
+            count.setAccessible(true);
+            var clear = EmployeeIdentityProvider.class.getDeclaredMethod("clearFailures", Long.class);
+            clear.setAccessible(true);
+            org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> count.invoke(provider, 9L));
+            org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> clear.invoke(provider, 9L));
+            transactions.verify(QuarkusTransaction::requiringNew, org.mockito.Mockito.times(2));
+        }
+    }
+
+
+    /**
+     * BO-01-02-09: an account administered as SSO only, or a node whose
+     * echelon is SSO only, opens no password door; an unreadable echelon
+     * parameter keeps it open.
+     */
+    @Test
+    void aPasswordDoorClosedBySsoIsRefused() {
+        Employee ssoOnly = backOfficeEmployee(Employee.EmployeeRole.CASHIER);
+        ssoOnly.authMode = Employee.AuthMode.SSO;
+        assertThrows(AuthenticationFailedException.class, () -> identityOfWithLookup(ssoOnly, "correct-horse"));
+        provider.posSettingsService = mock(com.intermarche.edge.service.PosSettingsService.class);
+        when(provider.posSettingsService.backOfficeSignIn()).thenReturn(Employee.AuthMode.SSO);
+        Employee any = backOfficeEmployee(Employee.EmployeeRole.CASHIER);
+        assertThrows(AuthenticationFailedException.class, () -> identityOfWithLookup(any, "correct-horse"));
+        when(provider.posSettingsService.backOfficeSignIn()).thenThrow(new IllegalStateException("unreadable"));
+        assertEquals("jdupont", identityOfWithLookup(any, "correct-horse").getPrincipal().getName());
+    }
+
+    /**
+     * BO-01-02-01: a session opened through the SSO is restored without a
+     * local password for an account admitting the SSO, never for a
+     * password-only one.
+     */
+    @Test
+    void anSsoSessionIsRestoredWithoutLocalPassword() {
+        Employee sso = new Employee();
+        sso.loginName = "jdupont";
+        sso.firstName = "Jean";
+        sso.lastName = "Dupont";
+        sso.active = true;
+        sso.role = Employee.EmployeeRole.CASHIER;
+        sso.authMode = Employee.AuthMode.SSO;
+        sso.mustChangePassword = true;
+        SecurityIdentity identity = identityOfWithLookup(sso, null);
+        assertFalse(identity.<Boolean>getAttribute("mustChangePassword"));
+        sso.authMode = Employee.AuthMode.PASSWORD;
+        assertThrows(AuthenticationFailedException.class, () -> identityOfWithLookup(sso, null));
+    }
+
+    /**
+     * The forced change is demanded of a local account, never on a store of
+     * an account the central node owns (BO-01-01-03).
+     */
+    @Test
+    void theForcedChangeSparesCentralAccounts() {
+        Employee local = backOfficeEmployee(Employee.EmployeeRole.CASHIER);
+        local.mustChangePassword = true;
+        assertTrue(identityOfWithLookup(local, "correct-horse").<Boolean>getAttribute("mustChangePassword"));
+        local.centralManaged = true;
+        assertFalse(identityOfWithLookup(local, "correct-horse").<Boolean>getAttribute("mustChangePassword"));
+    }
 }

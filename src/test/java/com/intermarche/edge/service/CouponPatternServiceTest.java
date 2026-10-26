@@ -863,4 +863,32 @@ class CouponPatternServiceTest {
     private String joined(List<String> problems) {
         return String.join(" | ", problems);
     }
+
+    /** BO-03: a capturing group starting beyond the rendered segment leaves that segment uncaptured. */
+    @Test
+    void groupAfterTheSegmentDoesNotCaptureIt() throws Exception {
+        var method = CouponPatternService.class.getDeclaredMethod("appendRuns", StringBuilder.class,
+                CouponField.Kind[].class, int.class, int.class, int.class, int.class);
+        method.setAccessible(true);
+        var slots = new CouponField.Kind[]{CouponField.Kind.NUMERIC, CouponField.Kind.NUMERIC};
+        var pattern = new StringBuilder();
+        method.invoke(new CouponPatternService(), pattern, slots, 0, 2, 2, 3);
+        Assertions.assertFalse(pattern.toString().contains("("));
+        Assertions.assertTrue(Pattern.matches(pattern.toString(), "12"));
+    }
+
+
+    /**
+     * BO-03-06-59: a function range names a function the register knows, in
+     * any case, or none; an unknown one is refused by name.
+     */
+    @Test
+    void validateRangeChecksTheNamedFunction() {
+        CouponPatternService service = new CouponPatternService();
+        ArticleBarcodeRange range = articleRange();
+        range.functionCode = "survey";
+        Assertions.assertTrue(service.validateRange(range).isEmpty());
+        range.functionCode = "LOTTERY";
+        Assertions.assertTrue(joined(service.validateRange(range)).contains("Fonction caisse inconnue : LOTTERY."));
+    }
 }

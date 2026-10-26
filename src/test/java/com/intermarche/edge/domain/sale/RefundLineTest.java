@@ -1,9 +1,10 @@
 package com.intermarche.edge.domain.sale;
 
-import java.math.BigDecimal;
-import java.util.Objects;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+
+import java.math.BigDecimal;
+import java.util.Objects;
 
 /**
  * Unit tests for {@link RefundLine}, targeting 100% branch coverage.

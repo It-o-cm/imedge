@@ -1,10 +1,13 @@
 package com.intermarche.edge.ui.admin;
 
+import io.quarkus.security.Authenticated;
+import com.intermarche.edge.security.FeatureAccess;
+import com.intermarche.edge.domain.setting.Feature;
+import com.intermarche.edge.domain.people.CrudOption;
 import com.intermarche.edge.domain.catalog.ArticleAttributeDefinition;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
@@ -52,7 +55,8 @@ public class AdminArticleAttributeResource {
      * @return the list page
      */
     @GET
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.ARTICLE_ATTRIBUTE)
     public TemplateInstance list(@QueryParam("notice") String notice,
                                  @QueryParam("noticeOk") @DefaultValue("true") boolean noticeOk) {
         LOGGER.info("Entering method list with notice: " + notice + ", noticeOk: " + noticeOk);
@@ -69,7 +73,8 @@ public class AdminArticleAttributeResource {
      * @return a 303 redirect carrying the outcome notice
      */
     @POST
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.ARTICLE_ATTRIBUTE, option = CrudOption.CREATE, updateKey = "id")
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response save(MultivaluedMap<String, String> form) {
@@ -113,7 +118,8 @@ public class AdminArticleAttributeResource {
      */
     @POST
     @Path("/delete")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.ARTICLE_ATTRIBUTE, option = CrudOption.DELETE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response delete(MultivaluedMap<String, String> form) {

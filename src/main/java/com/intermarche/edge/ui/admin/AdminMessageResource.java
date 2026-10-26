@@ -1,11 +1,14 @@
 package com.intermarche.edge.ui.admin;
 
+import io.quarkus.security.Authenticated;
+import com.intermarche.edge.security.FeatureAccess;
+import com.intermarche.edge.domain.setting.Feature;
+import com.intermarche.edge.domain.people.CrudOption;
 import com.intermarche.edge.domain.setting.StoreMessage;
 import com.intermarche.edge.domain.setting.StoreMessageAck;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
@@ -39,7 +42,7 @@ import java.util.List;
  * count would answer the wrong question.
  *
  * <p>Same admin cycle as the other back-office pages: POST &rarr; 303 &rarr; a
- * one-shot notice, {@code @RolesAllowed("ADMIN")} throughout.
+ * one-shot notice, {@code @FeatureAccess} throughout (BO-01-04-01).
  */
 @Path("/admin/messages")
 public class AdminMessageResource {
@@ -68,7 +71,8 @@ public class AdminMessageResource {
      * @return the page
      */
     @GET
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.STORE_MESSAGE)
     @Produces(MediaType.TEXT_HTML)
     public TemplateInstance messagesPage(@QueryParam("notice") String notice,
             @QueryParam("noticeOk") String noticeOk) {
@@ -84,6 +88,7 @@ public class AdminMessageResource {
                 .data("triggers", StoreMessage.Trigger.values())
                 .data("confirmations", StoreMessage.Confirmation.values())
                 .data("responseTypes", StoreMessage.ResponseType.values())
+                .data("dayNumbers", List.of(1, 2, 3, 4, 5, 6, 7))
                 .data("notice", notice)
                 .data("noticeOk", !"false".equals(noticeOk));
     }
@@ -102,7 +107,8 @@ public class AdminMessageResource {
      */
     @POST
     @Path("/save")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.STORE_MESSAGE, option = CrudOption.CREATE, updateKey = "id")
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response saveMessage(MultivaluedMap<String, String> form) {
@@ -179,6 +185,10 @@ public class AdminMessageResource {
         message.trigger = trigger;
         message.confirmation = confirmation;
         message.active = AdminForms.checkbox(form, "active");
+        // BO-06-03-01: the days of the week and the daily hours of the survey.
+        message.activeDays = days(form.get("day"));
+        message.dailyFrom = timeOf(AdminForms.text(form, "dailyFrom"));
+        message.dailyTo = timeOf(AdminForms.text(form, "dailyTo"));
         if (id == null) {
             message.persist();
         }
@@ -186,6 +196,108 @@ public class AdminMessageResource {
                 message.trigger, message.confirmation);
         LOGGER.info("Exiting method saveMessage");
         return AdminForms.redirect(PAGE, "Message enregistré.", true);
+    }
+
+    /**
+     * The postal-code list form: the survey, and the spreadsheet or text file
+     * of the codes it is based on (BO-06-03-03).
+     */
+    public static class PostalCodeForm {
+
+        /** The survey's identifier. */
+        @jakarta.ws.rs.FormParam("id")
+        @org.jboss.resteasy.annotations.providers.multipart.PartType(MediaType.TEXT_PLAIN)
+        public String id;
+
+        /** The uploaded file: a workbook or a list of codes. */
+        @jakarta.ws.rs.FormParam("file")
+        @org.jboss.resteasy.annotations.providers.multipart.PartType(MediaType.APPLICATION_OCTET_STREAM)
+        public java.io.InputStream file;
+
+        /**
+         * Builds an empty form, as the multipart reader requires.
+         */
+        public PostalCodeForm() {
+        }
+    }
+
+    /**
+     * Bases a postal-code survey on an existing list of codes, imported from an
+     * Excel workbook or a CSV / text file (BO-06-03-03): every code is put into
+     * the survey's mask — a Portuguese {@code 4100300} becomes {@code 4100-300}
+     * — and the list replaces the survey's, duplicates removed, in the file's
+     * order. The register then refuses a keyed code the list does not hold.
+     *
+     * @param form the survey and the file
+     * @return a 303 redirect with the notice
+     */
+    @POST
+    @Path("/postal-codes")
+    @Authenticated
+    @FeatureAccess(value = Feature.STORE_MESSAGE, option = CrudOption.UPDATE)
+    @Consumes(MediaType.MULTIPART_FORM_DATA)
+    @Transactional
+    public Response importPostalCodes(@org.jboss.resteasy.annotations.providers.multipart.MultipartForm PostalCodeForm form) {
+        LOGGER.info("Entering method importPostalCodes");
+        Long id = form == null ? null : longOrNull(form.id);
+        StoreMessage message = id == null ? null : StoreMessage.findById(id);
+        if (message == null) {
+            LOGGER.info("Exiting method importPostalCodes");
+            return AdminForms.redirect(PAGE, "Message inconnu.", false);
+        }
+        java.util.Set<String> codes = new java.util.LinkedHashSet<>();
+        try {
+            for (String code : ArticleListReader.read(form.file)) {
+                codes.add(com.intermarche.edge.domain.store.PostalCodeMask.normalize(code, message.postalFormat));
+            }
+        } catch (java.io.IOException unreadable) {
+            LOGGER.info("Exiting method importPostalCodes");
+            return AdminForms.redirect(PAGE, "Fichier de codes postaux illisible.", false);
+        }
+        if (codes.isEmpty()) {
+            LOGGER.info("Exiting method importPostalCodes");
+            return AdminForms.redirect(PAGE, "Fichier sans aucun code postal.", false);
+        }
+        message.postalCodes = String.join(";", codes);
+        LOGGER.infof("%d code(s) postal(aux) importé(s) pour le message %d", codes.size(), message.id);
+        LOGGER.info("Exiting method importPostalCodes");
+        return AdminForms.redirect(PAGE, codes.size() + " code(s) postal(aux) importé(s).", true);
+    }
+
+    /**
+     * Joins the days of the week ticked on the form.
+     *
+     * @param days the ticked ISO day numbers, possibly null
+     * @return the days separated by semicolons, or null for every day
+     */
+    static String days(java.util.List<String> days) {
+        if (days == null) {
+            return null;
+        }
+        java.util.List<String> kept = new java.util.ArrayList<>();
+        for (String day : days) {
+            if (day != null && day.trim().matches("[1-7]")) {
+                kept.add(day.trim());
+            }
+        }
+        return kept.isEmpty() ? null : String.join(";", kept);
+    }
+
+    /**
+     * Reads a time of day typed on the form.
+     *
+     * @param value the text, {@code HH:mm}, possibly null
+     * @return the time, or null when absent or malformed
+     */
+    static java.time.LocalTime timeOf(String value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return java.time.LocalTime.parse(value.trim());
+        } catch (DateTimeParseException malformed) {
+            return null;
+        }
     }
 
     /**
@@ -199,7 +311,8 @@ public class AdminMessageResource {
      */
     @POST
     @Path("/delete")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.STORE_MESSAGE, option = CrudOption.DELETE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response deleteMessage(MultivaluedMap<String, String> form) {

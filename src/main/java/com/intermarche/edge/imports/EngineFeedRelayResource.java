@@ -1,11 +1,14 @@
 package com.intermarche.edge.imports;
 
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.intermarche.edge.service.sync.EngineFeedService;
 import java.util.Map;
 import java.util.function.Function;
 import io.smallrye.common.annotation.RunOnVirtualThread;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.context.control.ActivateRequestContext;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
@@ -17,9 +20,11 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Locale;
 import java.util.stream.Collectors;
 import org.jboss.logging.Logger;
@@ -56,6 +61,13 @@ public class EngineFeedRelayResource {
     /** The feed keeper storing the sealed parcels. */
     @Inject
     EngineFeedService engineFeedService;
+
+    /** The referential fingerprints a relayed article file is stamped with (BO-02-03-33). */
+    @Inject
+    com.intermarche.edge.service.sync.store.RefExportService refExportService;
+
+    /** The feeds the registers apply from the file itself, hence stamped. */
+    static final List<String> STAMPED_FEEDS = List.of("PRODUCTS", "FAMILIES", "PRICES");
 
     /** The dedicated store importer (STORES delegation). */
     @Inject
@@ -101,13 +113,35 @@ public class EngineFeedRelayResource {
     @Inject
     NomenclatureCsvResource nomenclatureCsvResource;
 
+    /** The dedicated point-of-sale importer (PDVS delegation, BO-02-05-03). */
+    @Inject
+    PdvCsvResource pdvCsvResource;
+
+    /** The dedicated recalled-lots importer (RECALL_LOTS delegation, BO-02-03-44). */
+    @Inject
+    RecallLotCsvResource recallLotCsvResource;
+
+    /** Records every deposit and replays the failed ones (BO-08-04-01 to -13). */
+    @Inject
+    com.intermarche.edge.service.sync.IntegrationRetryService integrationRetryService;
+
     /**
      * Imports one feed under the unified grammar: a code owned by a
      * dedicated importer is delegated to it (its own response shape —
      * created/updated counts — comes back), any other catalog code is
      * stored verbatim for the engine.
      *
+     * <p>Every deposit of a known code is RECORDED with its outcome
+     * (BO-08-01-17, BO-08-04-01 to -13): a file that failed or left rejected
+     * lines keeps its content, and the integration replay puts it in later,
+     * automatically or from the integration console. The file is therefore
+     * read once, here, and handed to the delegate as a fresh stream.
+     *
      * @param code the feed code (case-insensitive)
+     * @param mode the customer import mode
+     * @param scheme the nomenclature scheme
+     * @param label the nomenclature scheme label
+     * @param enseigne the nomenclature enseigne
      * @param inputStream the raw CSV stream
      * @return the delegated importer's response, or 200 with the stored
      *         version, or 400 on an unknown code or an empty body
@@ -126,13 +160,8 @@ public class EngineFeedRelayResource {
         LOGGER.info("Entering method importFeed with code: " + code + ", mode: " + mode
                 + ", scheme: " + scheme);
         String normalized = code == null ? "" : code.trim().toUpperCase(Locale.ROOT);
-        Function<InputStream, Response> delegate =
-                delegates(mode, scheme, label, enseigne).get(normalized);
-        if (delegate != null) {
-            LOGGER.info("Exiting method importFeed");
-            return delegate.apply(inputStream);
-        }
-        if (EngineFeedService.catalogEntry(normalized).isEmpty()) {
+        if (!delegates(mode, scheme, label, enseigne).containsKey(normalized)
+                && EngineFeedService.catalogEntry(normalized).isEmpty()) {
             String known = String.join(", ",
                     delegates(mode, scheme, label, enseigne).keySet().stream().sorted().toList())
                     + ", " + EngineFeedService.CATALOG.stream()
@@ -141,8 +170,8 @@ public class EngineFeedRelayResource {
                     .collect(Collectors.joining(", "));
             LOGGER.info("Exiting method importFeed");
             return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("{\"error\":\"Unknown feed code '" + normalized
-                            + "' - known codes: " + known + "\"}")
+                    .entity(ImporterCsvResource.errorAnswer("Unknown feed code '" + normalized
+                            + "' - known codes: " + known))
                     .build();
         }
         String content;
@@ -150,17 +179,67 @@ public class EngineFeedRelayResource {
             content = new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {
             LOGGER.info("Exiting method importFeed");
-            return Response.serverError().entity("Error reading file: " + e.getMessage()).build();
+            return Response.serverError()
+                    .entity(ImporterCsvResource.errorAnswer("Error reading file: " + e.getMessage())).build();
+        }
+        Response response = integrate(normalized, mode, scheme, label, enseigne, content);
+        integrationRetryService.record(normalized, mode, scheme, label, enseigne, content, response);
+        LOGGER.info("Exiting method importFeed");
+        return response;
+    }
+
+    /**
+     * Renders the fingerprint of an empty referential as an empty string, the
+     * mark of a file integrated over nothing: a register that never applied
+     * the domain starts from there too.
+     *
+     * @param fingerprint the fingerprint
+     * @return the fingerprint, or empty for the empty referential
+     */
+    private String emptyAsBlank(String fingerprint) {
+        return fingerprint.equals(refExportService.fingerprintOf(List.of())) ? "" : fingerprint;
+    }
+
+    /**
+     * Integrates one file of a known code: the deposit itself, and every
+     * replay of a kept deposit (BO-08-04-01 to -13). The automatic replay
+     * runs on a plain scheduler thread, without the HTTP request's context:
+     * the importers read Panache entities outside their chunk transactions,
+     * so the request context is activated here when none is active.
+     *
+     * @param code the normalized feed code
+     * @param mode the customer import mode
+     * @param scheme the nomenclature scheme
+     * @param label the nomenclature scheme label
+     * @param enseigne the nomenclature enseigne
+     * @param content the file
+     * @return the delegated importer's response, or 200 with the stored
+     *         version, or 400 on an empty body
+     */
+    @ActivateRequestContext
+    public Response integrate(String code, String mode, String scheme, String label, String enseigne,
+                              String content) {
+        Function<InputStream, Response> delegate = delegates(mode, scheme, label, enseigne).get(code);
+        if (delegate != null) {
+            // BO-02-03-33: a file the registers apply as such is stamped with the
+            // state it was integrated over and the state it left, so a register
+            // that missed a file or a back-office change takes the pages instead.
+            boolean stamped = STAMPED_FEEDS.contains(code);
+            String base = stamped ? emptyAsBlank(refExportService.publishedFingerprint(code)) : null;
+            Response answer = delegate.apply(new ByteArrayInputStream(content.getBytes(StandardCharsets.UTF_8)));
+            if (stamped) {
+                engineFeedService.stamp(code, base, refExportService.publishedFingerprint(code));
+            }
+            return answer;
         }
         if (content.isBlank()) {
-            LOGGER.info("Exiting method importFeed");
             return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("{\"error\":\"Empty feed body\"}")
+                    .entity(ImporterCsvResource.errorAnswer("Empty feed body"))
                     .build();
         }
-        String version = engineFeedService.store(normalized, content);
-        LOGGER.info("Exiting method importFeed");
-        return Response.ok("{\"code\":\"" + normalized + "\", \"version\":\"" + version + "\"}").build();
+        String version = engineFeedService.store(code, content);
+        return Response.ok(JsonNodeFactory.instance.objectNode().put("code", code)
+                .put("version", version).toString()).build();
     }
 
     /**
@@ -208,9 +287,11 @@ public class EngineFeedRelayResource {
                 Map.entry("CUSTOMERS",
                         stream -> accountCustomerCsvResource.importCustomers(stream, mode)),
                 Map.entry("POSTAL_CODES", postalCodeCsvResource::importPostalCodes),
-                Map.entry("SAFE_RECEIPTS", safeReceiptCsvResource::importReceipts),
+                Map.entry("SAFE_RECEIPTS", stream -> safeReceiptCsvResource.importReceipts(stream, mode)),
+                Map.entry("PDVS", pdvCsvResource::importPdvs),
                 Map.entry("NOMENCLATURE", stream -> nomenclatureCsvResource
-                        .importNomenclature(scheme, label, enseigne, stream)));
+                        .importNomenclature(scheme, label, enseigne, stream)),
+                Map.entry("RECALL_LOTS", stream -> recallLotCsvResource.importRecallLots(stream, mode)));
     }
 
     /**
@@ -228,25 +309,18 @@ public class EngineFeedRelayResource {
     @RolesAllowed("ADMIN")
     public Response status() {
         LOGGER.info("Entering method status");
-        StringBuilder sb = new StringBuilder("[");
-        boolean first = true;
+        ArrayNode states = JsonNodeFactory.instance.arrayNode();
         for (EngineFeedService.FeedDef def : EngineFeedService.CATALOG) {
             com.intermarche.edge.domain.sync.EngineFeed feed =
                     com.intermarche.edge.domain.sync.EngineFeed.findByCode(def.code());
             if (feed == null) continue;
-            if (!first) sb.append(',');
-            first = false;
-            sb.append("{\"code\":\"").append(feed.code)
-                    .append("\",\"version\":\"").append(feed.version)
-                    .append("\",\"appliedVersion\":").append(
-                            feed.appliedVersion == null ? "null" : "\"" + feed.appliedVersion + "\"")
-                    .append(",\"applied\":").append(feed.version.equals(feed.appliedVersion))
-                    .append(",\"lastError\":").append(
-                            feed.lastError == null ? "null"
-                                    : "\"" + feed.lastError.replace("\\", "\\\\").replace("\"", "'") + "\"")
-                    .append('}');
+            states.addObject().put("code", feed.code)
+                    .put("version", feed.version)
+                    .put("appliedVersion", feed.appliedVersion)
+                    .put("applied", feed.version.equals(feed.appliedVersion))
+                    .put("lastError", feed.lastError);
         }
         LOGGER.info("Exiting method status");
-        return Response.ok(sb.append(']').toString()).build();
+        return Response.ok(states.toString()).build();
     }
 }

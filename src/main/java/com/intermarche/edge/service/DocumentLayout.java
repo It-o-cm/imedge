@@ -166,6 +166,44 @@ public final class DocumentLayout {
     }
 
     /**
+     * Draws a QR CODE carrying a payload ({@code BO-03-05-08}).
+     *
+     * <p>A DIRECTIVE, like {@link #bold(String)} and like the bar code the
+     * register already emits: the layout stays text and the hardware bridge
+     * turns {@code [[QR …]]} into the printer's own QR command. A thermal
+     * head encodes the symbol itself, far smaller and far cleaner than a
+     * raster a layout would have to compute.
+     *
+     * <p>It takes a WHOLE LINE and is not centred by this method: a QR is not
+     * characters, so padding it on the paper width would move it by a count
+     * the printer never sees. A layout that wants it elsewhere places the
+     * directive where it wants it.
+     *
+     * @param payload what the code carries, possibly null
+     * @return the directive, empty for a null or blank payload
+     */
+    public String qr(String payload) {
+        if (payload == null || payload.isBlank()) {
+            return "";
+        }
+        return "[[QR " + payload.trim() + "]]";
+    }
+
+    /**
+     * Draws a BAR CODE carrying a value ({@code BO-03-05-08}), the twin of
+     * {@link #qr(String)} for the shops whose readers are linear.
+     *
+     * @param value what the code carries, possibly null
+     * @return the directive, empty for a null or blank value
+     */
+    public String barcode(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        return "[[BARCODE " + value.trim() + "]]";
+    }
+
+    /**
      * Wraps a text onto lines no wider than the paper, breaking on spaces.
      *
      * <p>A word longer than the whole width is CUT, because the alternative is

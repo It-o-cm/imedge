@@ -1,5 +1,6 @@
 package com.intermarche.edge.domain.store;
 
+import com.intermarche.edge.domain.BaseEntity;
 import jakarta.persistence.AttributeOverride;
 import jakarta.persistence.AttributeOverrides;
 import jakarta.persistence.Cacheable;
@@ -11,7 +12,6 @@ import jakarta.persistence.Table;
 import jakarta.validation.constraints.NotBlank;
 
 import java.util.Objects;
-import com.intermarche.edge.domain.BaseEntity;
 
 /**
  * Entity representing a physical Store (Supermarket/Hypermarket).

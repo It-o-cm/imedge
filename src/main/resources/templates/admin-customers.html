@@ -8,59 +8,59 @@
 !}
 {#include admin-layout}
 
-{#title}Clients en compte{/title}
+{#title}{inject:i18n.get('t.clients-en-compte')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Clients en compte</h1>
-        <p class="page-sub">Clients intégrés de la gestion commerciale et clients créés en caisse.</p>
+        <h1>{inject:i18n.get('t.clients-en-compte')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.clients-integres-de-la-gestion-commerciale-et')}</p>
     </div>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 <div class="card">
-    <h2 class="card-title">Recherche</h2>
+    <h2 class="card-title">{inject:i18n.get('t.recherche')}</h2>
     <form method="get" action="/admin/customers">
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="s-text">Texte (numéro, raison sociale, contact)</label>
+                <label class="field-label" for="s-text">{inject:i18n.get('t.texte-numero-raison-sociale-contact')}</label>
                 <input class="input-control" id="s-text" type="text" name="text" value="{text}">
             </div>
             <div class="field">
-                <label class="field-label" for="s-nif">Numéro fiscal (NIF)</label>
+                <label class="field-label" for="s-nif">{inject:i18n.get('t.numero-fiscal-nif')}</label>
                 <input class="input-control" id="s-nif" type="text" name="taxId" value="{taxId}">
             </div>
             <div class="field">
-                <label class="field-label" for="s-origin">Origine</label>
+                <label class="field-label" for="s-origin">{inject:i18n.get('t.origine')}</label>
                 <select class="input-control" id="s-origin" name="origin">
-                    <option value="">Toutes</option>
-                    <option value="INTEGRATED" {#if origin == 'INTEGRATED'}selected{/if}>Gestion commerciale</option>
-                    <option value="REGISTER" {#if origin == 'REGISTER'}selected{/if}>Créés en caisse</option>
-                    <option value="VOLATILE" {#if origin == 'VOLATILE'}selected{/if}>Clients de passage</option>
-                    <option value="BACK_OFFICE" {#if origin == 'BACK_OFFICE'}selected{/if}>Ouverts au back-office</option>
+                    <option value="">{inject:i18n.get('t.toutes')}</option>
+                    <option value="INTEGRATED" {#if origin == 'INTEGRATED'}selected{/if}>{inject:i18n.get('t.gestion-commerciale')}</option>
+                    <option value="REGISTER" {#if origin == 'REGISTER'}selected{/if}>{inject:i18n.get('t.crees-en-caisse')}</option>
+                    <option value="VOLATILE" {#if origin == 'VOLATILE'}selected{/if}>{inject:i18n.get('t.clients-de-passage')}</option>
+                    <option value="BACK_OFFICE" {#if origin == 'BACK_OFFICE'}selected{/if}>{inject:i18n.get('t.ouverts-au-back-office')}</option>
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="s-blocked">Blocage</label>
+                <label class="field-label" for="s-blocked">{inject:i18n.get('t.blocage')}</label>
                 <select class="input-control" id="s-blocked" name="blocked">
-                    <option value="">Tous</option>
-                    <option value="yes" {#if blocked == 'yes'}selected{/if}>Bloqués</option>
-                    <option value="no" {#if blocked == 'no'}selected{/if}>Non bloqués</option>
+                    <option value="">{inject:i18n.get('t.tous')}</option>
+                    <option value="yes" {#if blocked == 'yes'}selected{/if}>{inject:i18n.get('t.bloques')}</option>
+                    <option value="no" {#if blocked == 'no'}selected{/if}>{inject:i18n.get('t.non-bloques')}</option>
                 </select>
             </div>
         </div>
         <div class="page-actions" style="margin-top: 6px;">
-            <button class="btn btn-primary" type="submit">Rechercher</button>
-            <a class="btn btn-ghost" href="/admin/customers">Réinitialiser</a>
-            <a class="btn btn-ghost" href="/admin/customers/export?text={text}&taxId={taxId}&origin={origin}&blocked={blocked}">Extraire (CSV)</a>
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.rechercher')}</button>
+            <a class="btn btn-ghost" href="/admin/customers">{inject:i18n.get('t.reinitialiser-2')}</a>
+            <a class="btn btn-ghost" href="/admin/customers/export?text={text}&taxId={taxId}&origin={origin}&blocked={blocked}">{inject:i18n.get('t.extraire-csv')}</a>
             {! BO-10-04-05 : le bouton disparaît quand le magasin s'interdit
              ! d'ouvrir des comptes ; le POST est refusé de toute façon. !}
             {#if !creationBlocked}
-            <a class="btn btn-ghost" href="/admin/customers/new">Nouveau compte</a>
+            <a class="btn btn-ghost" href="/admin/customers/new">{inject:i18n.get('t.nouveau-compte')}</a>
             {/if}
         </div>
     </form>
@@ -69,22 +69,22 @@
 <div class="card">
     {#if page.empty}
     <div class="empty-state">
-        <p>Aucun client ne correspond.</p>
-        <p class="empty-hint">Élargissez la recherche, ou intégrez les clients en compte via <code>/feeds/import/CUSTOMERS</code>.</p>
+        <p>{inject:i18n.get('t.aucun-client-ne-correspond')}</p>
+        <p class="empty-hint">{inject:i18n.get('t.elargissez-la-recherche-ou-integrez-les-clients')} <code>{inject:i18n.get('t.feeds-import-customers')}</code>.</p>
     </div>
     {#else}
     <table class="data-table">
         <thead>
             <tr>
-                <th>Numéro</th>
-                <th>Raison sociale</th>
-                <th>Contact</th>
-                <th>Ville</th>
-                <th>NIF</th>
-                <th>Encours</th>
-                <th>Origine</th>
-                <th>État</th>
-                <th class="col-actions">Actions</th>
+                <th>{inject:i18n.get('t.numero')}</th>
+                <th>{inject:i18n.get('t.raison-sociale')}</th>
+                <th>{inject:i18n.get('t.contact')}</th>
+                <th>{inject:i18n.get('t.ville')}</th>
+                <th>{inject:i18n.get('t.nif')}</th>
+                <th>{inject:i18n.get('t.encours')}</th>
+                <th>{inject:i18n.get('t.origine')}</th>
+                <th>{inject:i18n.get('t.etat')}</th>
+                <th class="col-actions">{inject:i18n.get('t.actions')}</th>
             </tr>
         </thead>
         <tbody>
@@ -95,11 +95,11 @@
                 <td class="col-muted">{customer.contactName ?: '—'}</td>
                 <td class="col-muted">{customer.address.city ?: '—'}</td>
                 <td class="col-muted">{customer.taxId ?: '—'}</td>
-                <td class="col-muted">{customer.creditBalance} / {customer.creditLimit ?: '—'}</td>
-                <td>{#if customer.origin.name == 'INTEGRATED'}<span class="badge badge-ok">Gestion commerciale</span>{#else if customer.origin.name == 'BACK_OFFICE'}<span class="badge badge-off">Back-office</span>{#else if customer.origin.name == 'VOLATILE'}<span class="badge badge-off">Passage</span>{#else}<span class="badge badge-off">Caisse</span>{/if}</td>
-                <td>{#if customer.blocked}<span class="badge badge-off">Bloqué</span>{#else}<span class="badge badge-ok">Actif</span>{/if}</td>
+                <td class="col-muted">{inject:i18n.money(customer.creditBalance)} / {#if customer.creditLimit != null}{inject:i18n.money(customer.creditLimit)}{#else}—{/if}</td>
+                <td>{#if customer.origin.name == 'INTEGRATED'}<span class="badge badge-ok">{inject:i18n.get('t.gestion-commerciale')}</span>{#else if customer.origin.name == 'BACK_OFFICE'}<span class="badge badge-off">{inject:i18n.get('t.back-office')}</span>{#else if customer.origin.name == 'VOLATILE'}<span class="badge badge-off">{inject:i18n.get('t.passage')}</span>{#else}<span class="badge badge-off">{inject:i18n.get('t.caisse')}</span>{/if}</td>
+                <td>{#if customer.blocked}<span class="badge badge-off">{inject:i18n.get('t.bloque')}</span>{#else}<span class="badge badge-ok">{inject:i18n.get('t.actif')}</span>{/if}</td>
                 <td class="col-actions">
-                    <a class="btn btn-small btn-ghost" href="/admin/customers/edit?id={customer.id}">Ouvrir</a>
+                    <a class="btn btn-small btn-ghost" href="/admin/customers/edit?id={customer.id}">{inject:i18n.get('t.ouvrir')}</a>
                 </td>
             </tr>
             {/for}
@@ -108,18 +108,18 @@
     {! La liste dit quelle tranche du résultat elle montre plutôt que de
      ! tronquer en silence. !}
     <div class="pager">
-        <span class="pager-status">Comptes {page.firstIndex} à {page.lastIndex} sur {page.total}</span>
+        <span class="pager-status">{inject:i18n.get('t.comptes')} {page.firstIndex} {inject:i18n.get('t.x21-a')} {page.lastIndex} {inject:i18n.get('t.sur')} {page.total}</span>
         {#if page.pageCount > 1}
         {#if page.first}
-        <span class="btn btn-small btn-muted is-hidden">Précédent</span>
+        <span class="btn btn-small btn-muted is-hidden">{inject:i18n.get('t.precedent')}</span>
         {#else}
-        <a class="btn btn-small btn-muted" href="/admin/customers?{baseQuery}page={page.previous}">Précédent</a>
+        <a class="btn btn-small btn-muted" href="/admin/customers?{baseQuery}page={page.previous}">{inject:i18n.get('t.precedent')}</a>
         {/if}
-        <span class="pager-status">Page {page.number} / {page.pageCount}</span>
+        <span class="pager-status">{inject:i18n.get('t.page')} {page.number} / {page.pageCount}</span>
         {#if page.last}
-        <span class="btn btn-small btn-muted is-hidden">Suivant</span>
+        <span class="btn btn-small btn-muted is-hidden">{inject:i18n.get('t.suivant')}</span>
         {#else}
-        <a class="btn btn-small btn-muted" href="/admin/customers?{baseQuery}page={page.next}">Suivant</a>
+        <a class="btn btn-small btn-muted" href="/admin/customers?{baseQuery}page={page.next}">{inject:i18n.get('t.suivant')}</a>
         {/if}
         {/if}
     </div>
@@ -127,4 +127,4 @@
 </div>
 {/body}
 
-{#footer}La gestion commerciale réécrit ces fiches à chaque intégration : une correction faite ici tient jusqu'à la prochaine.{/footer}
+{#footer}{inject:i18n.get('t.la-gestion-commerciale-reecrit-ces-fiches-a')}{/footer}

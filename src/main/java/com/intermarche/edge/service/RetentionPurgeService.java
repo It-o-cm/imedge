@@ -157,7 +157,10 @@ public class RetentionPurgeService {
                 "retention.customers-days", null, Mode.AGE_DAYS),
         new Policy("BO-09-03-02", "\u00e9ditions automatiques de fin de p\u00e9riode",
                 "ScheduledReportRun", "generatedAt", false, null, List.of(),
-                "retention.scheduled-reports-days", null, Mode.AGE_DAYS));
+                "retention.scheduled-reports-days", null, Mode.AGE_DAYS),
+        new Policy("BO-10-01-11", "commandes e-commerce archivées", "EcommerceOrder",
+                "receivedAt", false, null, List.of(),
+                "channel.ecommerce.archive-days", null, Mode.AGE_DAYS));
 
     /** Reads the administered retention values. */
     @Inject PosSettingsService posSettingsService;
@@ -178,7 +181,7 @@ public class RetentionPurgeService {
         int total = 0;
         for (Policy policy : CATALOG) {
             try {
-                int value = posSettingsService.retentionSetting(policy.paramKey());
+                int value = fiscalFloor(policy, posSettingsService.retentionSetting(policy.paramKey()));
                 int deleted = policy.mode() == Mode.KEEP_LATEST
                         ? applyKeepLatest(policy, value)
                         : applyAgeDays(policy, value);
@@ -189,6 +192,33 @@ public class RetentionPurgeService {
         }
         LOGGER.info("Exiting method sweep with total " + total);
         return total;
+    }
+
+    /**
+     * The policies that delete what the point of sale must keep online for the
+     * fiscal years ({@code BO-05-01-06}): the sales and the invoices.
+     */
+    static final java.util.Set<String> FISCAL_POLICIES = java.util.Set.of("BO-10-08-03", "BO-10-08-16");
+
+    /**
+     * Raises the delay of a fiscal policy to the years kept online
+     * ({@code BO-05-01-06}): a ticket or an invoice younger than
+     * {@code fiscal.online-retention-years} is never purged, whatever delay the
+     * retention parameter states. An unlimited retention (zero) stays unlimited,
+     * and the other policies are left as administered.
+     *
+     * @param policy the policy
+     * @param days the administered delay, in days
+     * @return the delay the sweep applies
+     */
+    int fiscalFloor(Policy policy, int days) {
+        if (days <= 0 || !FISCAL_POLICIES.contains(policy.requirement())) {
+            return days;
+        }
+        java.time.LocalDate today = DateTimeProvider.now().toLocalDate();
+        int floor = (int) java.time.temporal.ChronoUnit.DAYS.between(
+                today.minusYears(posSettingsService.fiscalOnlineRetentionYears()), today);
+        return Math.max(days, floor);
     }
 
     /**

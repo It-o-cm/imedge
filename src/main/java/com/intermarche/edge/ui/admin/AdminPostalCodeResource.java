@@ -1,10 +1,13 @@
 package com.intermarche.edge.ui.admin;
 
+import io.quarkus.security.Authenticated;
+import com.intermarche.edge.security.FeatureAccess;
+import com.intermarche.edge.domain.setting.Feature;
+import com.intermarche.edge.domain.people.CrudOption;
 import com.intermarche.edge.domain.store.PostalCode;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
@@ -74,7 +77,8 @@ public class AdminPostalCodeResource {
      * @return the list page
      */
     @GET
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.POSTAL_CODE)
     @Transactional
     public TemplateInstance list(@QueryParam("text") String text,
                                  @QueryParam("page") @DefaultValue("1") int page,
@@ -131,7 +135,8 @@ public class AdminPostalCodeResource {
      * @return a 303 back to the list with the notice
      */
     @POST
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.POSTAL_CODE, option = CrudOption.CREATE, updateKey = "id")
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response save(MultivaluedMap<String, String> form) {
@@ -169,7 +174,8 @@ public class AdminPostalCodeResource {
      */
     @POST
     @Path("/delete")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.POSTAL_CODE, option = CrudOption.DELETE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response delete(MultivaluedMap<String, String> form) {

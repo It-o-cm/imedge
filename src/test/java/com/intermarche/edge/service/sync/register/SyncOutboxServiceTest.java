@@ -24,12 +24,10 @@ import org.mockito.MockedStatic;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -66,7 +64,8 @@ import com.intermarche.edge.service.sync.SyncPayloads;
  * cases each with entity-present/entity-gone arms, and the serialization
  * catch); {@code markFailure} (row-null arm, error-null and error-non-null
  * arms of the {@code &&}, and the length &gt; 255 ternary both arms);
- * {@code markSuccess}/{@code markGone}/{@code nextBatchIds} (no decision);
+ * {@code markSuccess}/{@code markGone} (no decision); {@code nextBatchIds}
+ * (an entity queued twice in a batch kept once, its last row);
  * and the private mappers reached through {@code prepare} — {@code toDto}
  * cashier/store/session/refund-method/original-ticket/original-line ternaries
  * both arms, line and payment loops empty and non-empty, the
@@ -192,8 +191,12 @@ class SyncOutboxServiceTest {
         SyncOutboxService service = new SyncOutboxService();
         SyncOutbox first = new SyncOutbox();
         first.id = 3L;
+        first.entityType = SyncOutbox.EntityType.TICKET;
+        first.entityId = 1L;
         SyncOutbox second = new SyncOutbox();
         second.id = 7L;
+        second.entityType = SyncOutbox.EntityType.TICKET;
+        second.entityId = 2L;
         PanacheQuery<SyncOutbox> query = mock(PanacheQuery.class);
         when(query.page(0, 10)).thenReturn(query);
         when(query.list()).thenReturn(List.of(first, second));
@@ -202,6 +205,39 @@ class SyncOutboxServiceTest {
             List<Long> ids = service.nextBatchIds(10);
             assertEquals(List.of(3L, 7L), ids);
         }
+    }
+
+    /**
+     * An entity queued twice in the batch travels once (BO-05-01-05,
+     * BO-11-04-02): its last row is kept in drain order and the earlier one
+     * dropped; the same id of another kind is another entity and stays.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void nextBatchIdsShipsAnEntityQueuedTwiceOnce() {
+        SyncOutboxService service = new SyncOutboxService();
+        SyncOutbox closing = mock(SyncOutbox.class);
+        closing.id = 3L;
+        closing.entityType = SyncOutbox.EntityType.TICKET;
+        closing.entityId = 1L;
+        SyncOutbox other = mock(SyncOutbox.class);
+        other.id = 4L;
+        other.entityType = SyncOutbox.EntityType.REFUND;
+        other.entityId = 1L;
+        SyncOutbox sealed = mock(SyncOutbox.class);
+        sealed.id = 5L;
+        sealed.entityType = SyncOutbox.EntityType.TICKET;
+        sealed.entityId = 1L;
+        PanacheQuery<SyncOutbox> query = mock(PanacheQuery.class);
+        when(query.page(0, 10)).thenReturn(query);
+        when(query.list()).thenReturn(List.of(closing, other, sealed));
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> SyncOutbox.find("order by entityType, id")).thenReturn(query);
+            assertEquals(List.of(4L, 5L), service.nextBatchIds(10));
+        }
+        org.mockito.Mockito.verify(closing).delete();
+        org.mockito.Mockito.verify(other, org.mockito.Mockito.never()).delete();
+        org.mockito.Mockito.verify(sealed, org.mockito.Mockito.never()).delete();
     }
 
     // --------------------------------------------------
@@ -342,12 +378,15 @@ class SyncOutboxServiceTest {
         ticket.totalExcludingTax = new BigDecimal("10.00");
         ticket.totalIncludingTax = new BigDecimal("12.00");
         ticket.totalVat = new BigDecimal("2.00");
+        ticket.customerLanguage = "nl";
         // BO-03-03-25/-29/-31: the loyalty zone the register froze at closing
         // travels with the sale, so the node can reissue the same paper.
         ticket.fidelityCard = "2990000000019";
+        ticket.customerTaxId = "123456789";
         ticket.fidelityEarnTotal = new BigDecimal("1.03");
         ticket.fidelityAvailableBalance = new BigDecimal("42.30");
         ticket.fidelityUnavailable = true;
+        ticket.fidelityPotBalances = "Cagnotte\t12.50";
         ticket.fidelityProjectedAfterEarn = new BigDecimal("43.33");
         ticket.fidelityBalanceAfter = new BigDecimal("39.30");
         ticket.fidelityAnonymousProjection = true;
@@ -357,6 +396,9 @@ class SyncOutboxServiceTest {
         TicketLine line = new TicketLine();
         line.lineNumber = 1;
         line.lineUid = "U1";
+        line.linkedParentUid = "BOTTLE";
+        line.linkedArticleEan = "DEPOSIT";
+        line.linkedRecordedQuantity = new BigDecimal("3");
         line.ean = "E1";
         line.productLabel = "Pomme";
         line.quantity = new BigDecimal("1");
@@ -369,6 +411,9 @@ class SyncOutboxServiceTest {
         line.cancelledBy = "12341234";
         line.moneyProduct = true;
         line.cancelledLast = true;
+        line.appliedTareKg = new java.math.BigDecimal("0.050");
+        line.returnLine = true;
+        line.service = true;
         ticket.lines.add(line);
         CashPayment cash = mock(CashPayment.class);
         when(cash.getMethodKey()).thenReturn("CASH");
@@ -389,6 +434,7 @@ class SyncOutboxServiceTest {
             SyncOutboxService.PreparedItem item = service.prepare(1L);
             assertEquals("ticket", item.pathSuffix);
             SyncPayloads.TicketDto out = new ObjectMapper().readValue(item.json, SyncPayloads.TicketDto.class);
+            assertEquals("nl", out.customerLanguage);
             assertEquals("K1", out.ticketNumber);
             assertEquals("VALUATED", out.valuationStatus);
             assertEquals("2026-01-01T10:00:00", out.creationDate);
@@ -397,9 +443,11 @@ class SyncOutboxServiceTest {
             assertEquals("alice", out.cashierLogin);
             assertEquals("S1", out.sessionNumber);
             assertEquals("2990000000019", out.fidelityCard);
+            assertEquals("123456789", out.customerTaxId);
             assertEquals(new BigDecimal("1.03"), out.fidelityEarnTotal);
             assertEquals(new BigDecimal("42.30"), out.fidelityAvailableBalance);
             assertTrue(out.fidelityUnavailable);
+            assertEquals("Cagnotte\t12.50", out.fidelityPotBalances);
             assertEquals(new BigDecimal("43.33"), out.fidelityProjectedAfterEarn);
             assertEquals(new BigDecimal("39.30"), out.fidelityBalanceAfter);
             assertTrue(out.fidelityAnonymousProjection);
@@ -414,6 +462,9 @@ class SyncOutboxServiceTest {
             assertEquals("Categorie", out.fidelityLines.get(0).advantageCategoryLabel);
             assertEquals(1, out.lines.size());
             assertEquals("U1", out.lines.get(0).lineUid);
+            assertEquals("BOTTLE", out.lines.get(0).linkedParentUid);
+            assertEquals("DEPOSIT", out.lines.get(0).linkedArticleEan);
+            assertEquals(new BigDecimal("3"), out.lines.get(0).linkedRecordedQuantity);
             assertEquals("FRUITS", out.lines.get(0).familyCode);
             assertEquals("Rayon Fruits", out.lines.get(0).familyLabel);
             // Article-cancellation witness survives the JSON round-trip
@@ -425,6 +476,11 @@ class SyncOutboxServiceTest {
             // the JSON round-trip, feeding the store node's financial states.
             assertTrue(out.lines.get(0).moneyProduct);
             assertTrue(out.lines.get(0).cancelledLast);
+            assertEquals(new java.math.BigDecimal("0.050"), out.lines.get(0).appliedTareKg);
+            // BO-03-13-11/-12: the return-line flag survives the round-trip.
+            assertTrue(out.lines.get(0).returnLine);
+            // BO-05-01-03: the service nature survives the round-trip.
+            assertTrue(out.lines.get(0).service);
             assertEquals(2, out.payments.size());
             assertEquals("CASH", out.payments.get(0).methodKey);
             assertEquals(new BigDecimal("10.00"), out.payments.get(0).tenderedAmount);
@@ -463,6 +519,7 @@ class SyncOutboxServiceTest {
         card.paymentIndex = 1;
         card.amount = new BigDecimal("12.00");
         card.authorizationNumber = "654321";
+        card.moneticServer = "2";
         card.degradedMode = true;
         ticket.payments.add(card);
         try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
@@ -473,6 +530,7 @@ class SyncOutboxServiceTest {
             assertEquals(1, out.payments.size());
             assertEquals("CARD", out.payments.get(0).methodKey);
             assertEquals("654321", out.payments.get(0).authorizationNumber);
+            assertEquals("2", out.payments.get(0).moneticServer);
             assertTrue(out.payments.get(0).degradedMode);
             assertNull(out.payments.get(0).tenderedAmount);
             assertNull(out.payments.get(0).voucherLabel);
@@ -809,6 +867,7 @@ class SyncOutboxServiceTest {
         customer.vatNumber = "FR12345678900";
         customer.phone = "0102030405";
         customer.email = "contact@acme.example";
+        customer.origin = com.intermarche.edge.domain.payment.AccountCustomer.Origin.VOLATILE;
         try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
             mocked.when(() -> SyncOutbox.findById(1L)).thenReturn(row);
             mocked.when(() -> com.intermarche.edge.domain.payment.AccountCustomer.findById(400L)).thenReturn(customer);
@@ -827,6 +886,7 @@ class SyncOutboxServiceTest {
             assertEquals("FR12345678900", out.vatNumber);
             assertEquals("0102030405", out.phone);
             assertEquals("contact@acme.example", out.email);
+            assertEquals("VOLATILE", out.origin);
         }
     }
 
@@ -846,6 +906,7 @@ class SyncOutboxServiceTest {
         customer.accountNumber = "AC2";
         customer.companyName = "SOLO SARL";
         customer.address = null;
+        customer.origin = null;
         try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
             mocked.when(() -> SyncOutbox.findById(1L)).thenReturn(row);
             mocked.when(() -> com.intermarche.edge.domain.payment.AccountCustomer.findById(400L)).thenReturn(customer);
@@ -857,6 +918,7 @@ class SyncOutboxServiceTest {
             assertNull(out.street);
             assertNull(out.postalCode);
             assertNull(out.city);
+            assertNull(out.origin);
         }
     }
 
@@ -927,6 +989,9 @@ class SyncOutboxServiceTest {
         movement.endorsedBy = "11111111";
         movement.safeDeposit = true;
         movement.orderReference = "CMD-9";
+        movement.paymentMethod = "CHEQUE";
+        movement.transferTo = "CARD";
+        movement.denominationDetail = "20x2";
         CashSession session = new CashSession();
         session.sessionNumber = "C04-S00001";
         movement.session = session;
@@ -951,6 +1016,9 @@ class SyncOutboxServiceTest {
             assertEquals("11111111", out.endorsedBy);
             assertTrue(out.safeDeposit);
             assertEquals("CMD-9", out.orderReference);
+            assertEquals("CHEQUE", out.paymentMethod);
+            assertEquals("CARD", out.transferTo);
+            assertEquals("20x2", out.denominationDetail);
         }
     }
 
@@ -990,6 +1058,9 @@ class SyncOutboxServiceTest {
             assertNull(out.endorsedBy);
             assertFalse(out.safeDeposit);
             assertNull(out.orderReference);
+            assertNull(out.paymentMethod);
+            assertNull(out.transferTo);
+            assertNull(out.denominationDetail);
         }
     }
 
@@ -1322,7 +1393,7 @@ class SyncOutboxServiceTest {
     /**
      * Covers the non-null arm of the ticket line's {@code modifierType} ternary:
      * a line bearing a price modifier carries the modifier word into the payload,
-     * which round-trips to the enum name.
+     * which round-trips to the enum name, with the typed modifier value.
      */
     @Test
     void prepareTicketSerializesLineModifierType() throws Exception {
@@ -1346,8 +1417,10 @@ class SyncOutboxServiceTest {
         line.productLabel = "Pomme";
         line.quantity = new BigDecimal("1");
         line.unitPrice = new BigDecimal("12.00");
-        line.totalPrice = new BigDecimal("12.00");
+        line.totalPrice = new BigDecimal("10.00");
         line.modifierType = com.intermarche.edge.ui.PriceModType.REMISE;
+        line.modifierValue = new BigDecimal("2.00");
+        line.modifierLabel = "SAISIE REMISE (€)";
         ticket.lines.add(line);
         try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
             mocked.when(() -> SyncOutbox.findById(1L)).thenReturn(row);
@@ -1356,6 +1429,7 @@ class SyncOutboxServiceTest {
             SyncPayloads.TicketDto out = new ObjectMapper().readValue(item.json, SyncPayloads.TicketDto.class);
             assertEquals(1, out.lines.size());
             assertEquals("REMISE", out.lines.get(0).modifierType);
+            assertEquals(new BigDecimal("2.00"), out.lines.get(0).modifierValue);
         }
     }
 
@@ -1382,5 +1456,460 @@ class SyncOutboxServiceTest {
             assertNull(out.customerPostalCode);
             assertNull(out.customerCity);
         }
+    }
+
+    /**
+     * Covers the null arms of the DOCUMENT mapping the {@link #billedDocument()}
+     * fixture never reaches, all at once: the {@code documentType == null} true
+     * arm, the {@code issueDate == null} true arm and the
+     * {@code customerAddress != null} false arm. All three payload fields stay
+     * null after the round-trip.
+     */
+    @Test
+    void prepareDocumentSerializesWithNullTypeDateAndAddress() throws Exception {
+        SyncOutboxService service = enabledService("http://store");
+        SyncOutbox row = new SyncOutbox();
+        row.entityType = SyncOutbox.EntityType.DOCUMENT;
+        row.entityId = 100L;
+        com.intermarche.edge.domain.sale.Invoice document = billedDocument();
+        document.documentType = null;
+        document.issueDate = null;
+        document.customerAddress = null;
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> SyncOutbox.findById(1L)).thenReturn(row);
+            mocked.when(() -> com.intermarche.edge.domain.sale.Invoice.findById(100L))
+                    .thenReturn(document);
+            SyncOutboxService.PreparedItem item = service.prepare(1L);
+            SyncPayloads.DocumentDto out =
+                    new ObjectMapper().readValue(item.json, SyncPayloads.DocumentDto.class);
+            assertNull(out.documentType);
+            assertNull(out.issueDate);
+            assertNull(out.customerStreet);
+            assertNull(out.customerPostalCode);
+            assertNull(out.customerCity);
+        }
+    }
+
+    /** GB-01-07/LC-06-03-08: ticket messages and recovered order deposits retain their original wording, placement and VAT metadata. */
+    @Test
+    void ticketPayloadRetainsMessagesAndDepositMetadata() throws Exception {
+        var service = enabledService("http://store");
+        var ticket = new Ticket();
+        ticket.status = Ticket.TicketStatus.CLOSED;
+        ticket.messages.add(new com.intermarche.edge.domain.sale.TicketMessage("OFFER", "MESSAGE", "FOOTER"));
+        var deposit = new com.intermarche.edge.domain.payment.DepositPayment(new BigDecimal("10.00"));
+        deposit.orderCode = "ORDER";
+        deposit.vatDetail = "20:10";
+        ticket.payments.add(deposit);
+        var method = SyncOutboxService.class.getDeclaredMethod("toDto", Ticket.class);
+        method.setAccessible(true);
+        SyncPayloads.TicketDto dto;
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            dto = (SyncPayloads.TicketDto) method.invoke(service, ticket);
+        }
+        assertEquals(1, dto.messages.size());
+        assertEquals("OFFER", dto.messages.getFirst().code);
+        assertEquals("MESSAGE", dto.messages.getFirst().text);
+        assertEquals("FOOTER", dto.messages.getFirst().printMode);
+        assertEquals("ORDER", dto.payments.getFirst().depositOrderCode);
+        assertEquals("20:10", dto.payments.getFirst().depositVatDetail);
+    }
+
+    /**
+     * LC-08-02-02: the PRINTOUT case serializes a printed ticket to the
+     * {@code printout} path, keyed by the register's id; a printed ticket
+     * without audience or time travels without them, and a vanished one yields
+     * null.
+     *
+     * @throws Exception never
+     */
+    @Test
+    void preparePrintoutSerializes() throws Exception {
+        SyncOutboxService service = enabledService("http://store");
+        SyncOutbox row = new SyncOutbox();
+        row.entityType = SyncOutbox.EntityType.PRINTOUT;
+        row.entityId = 100L;
+        com.intermarche.edge.domain.sale.PrintedTicket printout = new com.intermarche.edge.domain.sale.PrintedTicket();
+        printout.id = 100L;
+        printout.terminalId = "C04";
+        printout.source = "TicketPrinterService.printSessionReport";
+        printout.audience = com.intermarche.edge.domain.sale.PrintedTicket.Audience.STORE;
+        printout.content = "RAPPORT Z";
+        printout.issuedAt = LocalDateTime.of(2026, 10, 24, 9, 0, 0);
+        com.intermarche.edge.domain.sale.PrintedTicket bare = new com.intermarche.edge.domain.sale.PrintedTicket();
+        bare.id = 101L;
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> SyncOutbox.findById(1L)).thenReturn(row);
+            mocked.when(() -> com.intermarche.edge.domain.sale.PrintedTicket.findById(100L)).thenReturn(printout);
+            SyncOutboxService.PreparedItem item = service.prepare(1L);
+            assertEquals("printout", item.pathSuffix);
+            SyncPayloads.PrintoutDto out = new ObjectMapper().readValue(item.json, SyncPayloads.PrintoutDto.class);
+            assertEquals(100L, out.sourceId);
+            assertEquals("C04", out.terminalId);
+            assertEquals("TicketPrinterService.printSessionReport", out.source);
+            assertEquals("STORE", out.audience);
+            assertEquals("RAPPORT Z", out.content);
+            assertEquals("2026-10-24T09:00", out.issuedAt);
+            row.entityId = 101L;
+            mocked.when(() -> com.intermarche.edge.domain.sale.PrintedTicket.findById(101L)).thenReturn(bare);
+            SyncPayloads.PrintoutDto lean = new ObjectMapper().readValue(service.prepare(1L).json,
+                    SyncPayloads.PrintoutDto.class);
+            assertNull(lean.audience);
+            assertNull(lean.issuedAt);
+            row.entityId = 102L;
+            mocked.when(() -> com.intermarche.edge.domain.sale.PrintedTicket.findById(102L)).thenReturn(null);
+            assertNull(service.prepare(1L));
+        }
+    }
+
+    /**
+     * LC-13-05-06: the TRAINING case serializes a training sale to the
+     * {@code training} path, keyed by the register's id; one without time
+     * travels without it, and a vanished one yields null.
+     *
+     * @throws Exception never
+     */
+    @Test
+    void prepareTrainingSerializes() throws Exception {
+        SyncOutboxService service = enabledService("http://store");
+        SyncOutbox row = new SyncOutbox();
+        row.entityType = SyncOutbox.EntityType.TRAINING;
+        row.entityId = 200L;
+        com.intermarche.edge.domain.sale.TrainingTicket training = new com.intermarche.edge.domain.sale.TrainingTicket();
+        training.id = 200L;
+        training.terminalId = "C04";
+        training.cashierLogin = "jdupont";
+        training.issuedAt = LocalDateTime.of(2026, 10, 24, 9, 30, 0);
+        training.itemCount = 2;
+        training.totalIncludingTax = new java.math.BigDecimal("3.72");
+        training.content = "MODE FORMATION";
+        training.parkedAt = LocalDateTime.of(2026, 10, 24, 9, 0, 0);
+        training.parkedBy = "111";
+        training.resumedAt = LocalDateTime.of(2026, 10, 24, 9, 10, 0);
+        training.resumedTerminalId = "C05";
+        training.resumedBy = "222";
+        com.intermarche.edge.domain.sale.TrainingTicket bare = new com.intermarche.edge.domain.sale.TrainingTicket();
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> SyncOutbox.findById(1L)).thenReturn(row);
+            mocked.when(() -> com.intermarche.edge.domain.sale.TrainingTicket.findById(200L)).thenReturn(training);
+            SyncOutboxService.PreparedItem item = service.prepare(1L);
+            assertEquals("training", item.pathSuffix);
+            SyncPayloads.TrainingTicketDto out = new ObjectMapper().readValue(item.json,
+                    SyncPayloads.TrainingTicketDto.class);
+            assertEquals(200L, out.sourceId);
+            assertEquals("C04", out.terminalId);
+            assertEquals("jdupont", out.cashierLogin);
+            assertEquals("2026-10-24T09:30", out.issuedAt);
+            assertEquals(2, out.itemCount);
+            assertEquals(0, new java.math.BigDecimal("3.72").compareTo(out.totalIncludingTax));
+            assertEquals("MODE FORMATION", out.content);
+            assertEquals("2026-10-24T09:00", out.parkedAt);
+            assertEquals("111", out.parkedBy);
+            assertEquals("2026-10-24T09:10", out.resumedAt);
+            assertEquals("C05", out.resumedTerminalId);
+            assertEquals("222", out.resumedBy);
+            row.entityId = 201L;
+            mocked.when(() -> com.intermarche.edge.domain.sale.TrainingTicket.findById(201L)).thenReturn(bare);
+            assertNull(new ObjectMapper().readValue(service.prepare(1L).json,
+                    SyncPayloads.TrainingTicketDto.class).issuedAt);
+            row.entityId = 202L;
+            mocked.when(() -> com.intermarche.edge.domain.sale.TrainingTicket.findById(202L)).thenReturn(null);
+            assertNull(service.prepare(1L));
+        }
+    }
+
+    /**
+     * BO-06-06-02, BO-06-08-02: a ticket travels with the moment its payment
+     * started and the valuation trace of its lines, each promotion the line
+     * took and what it took off.
+     *
+     * @throws Exception never
+     */
+    @Test
+    void prepareTicketCarriesItsPaymentStartAndValuationTrace() throws Exception {
+        SyncOutboxService service = enabledService("http://store");
+        SyncOutbox row = new SyncOutbox();
+        row.entityType = SyncOutbox.EntityType.TICKET;
+        row.entityId = 100L;
+        Ticket ticket = new Ticket();
+        ticket.id = 100L;
+        ticket.status = Ticket.TicketStatus.CLOSED;
+        ticket.paymentStartedAt = LocalDateTime.of(2026, 10, 24, 9, 31, 0);
+        com.intermarche.edge.domain.sale.TicketLineValuation trace = new com.intermarche.edge.domain.sale.TicketLineValuation();
+        trace.lineUid = "L1";
+        trace.localTotal = new BigDecimal("2.40");
+        trace.valuedTotal = new BigDecimal("2.00");
+        trace.offerLabel = "OFF1";
+        trace.advantageLabel = "Lot de 3";
+        trace.advantageAmount = new BigDecimal("-0.40");
+        trace.advantagePrintMode = "LINE";
+        trace.correctionLabel = "Arrondi";
+        trace.correctionAmount = new BigDecimal("0.01");
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> SyncOutbox.findById(1L)).thenReturn(row);
+            mocked.when(() -> Ticket.findById(100L)).thenReturn(ticket);
+            mocked.when(() -> com.intermarche.edge.domain.sale.TicketLineValuation.list("ticket.id", 100L))
+                    .thenReturn(List.of(trace));
+            SyncPayloads.TicketDto out = new ObjectMapper().readValue(service.prepare(1L).json,
+                    SyncPayloads.TicketDto.class);
+            assertEquals("2026-10-24T09:31:00", out.paymentStartedAt);
+            assertEquals(1, out.valuations.size());
+            SyncPayloads.ValuationDto dto = out.valuations.get(0);
+            assertEquals("L1", dto.lineUid);
+            assertEquals(new BigDecimal("2.40"), dto.localTotal);
+            assertEquals(new BigDecimal("2.00"), dto.valuedTotal);
+            assertEquals("OFF1", dto.offerLabel);
+            assertEquals("Lot de 3", dto.advantageLabel);
+            assertEquals(new BigDecimal("-0.40"), dto.advantageAmount);
+            assertEquals("LINE", dto.advantagePrintMode);
+            assertEquals("Arrondi", dto.correctionLabel);
+            assertEquals(new BigDecimal("0.01"), dto.correctionAmount);
+        }
+    }
+
+    /**
+     * LC-04-01-03: the PARKING case serializes the signed trace of a ticket on
+     * hold to the {@code parking} path, keyed by the register's id; one without
+     * event nor date travels without them, and a vanished one yields null.
+     *
+     * @throws Exception never
+     */
+    @Test
+    void prepareParkingSerializes() throws Exception {
+        SyncOutboxService service = enabledService("http://store");
+        SyncOutbox row = new SyncOutbox();
+        row.entityType = SyncOutbox.EntityType.PARKING;
+        row.entityId = 300L;
+        com.intermarche.edge.domain.sale.ParkedTicketRecord record = new com.intermarche.edge.domain.sale.ParkedTicketRecord();
+        record.id = 300L;
+        record.terminalId = "C04";
+        record.ticketNumber = "C04-00000004";
+        record.event = com.intermarche.edge.domain.sale.ParkedTicketRecord.Event.PARKED;
+        record.eventDate = LocalDateTime.of(2026, 10, 24, 9, 30, 15);
+        record.operator = "12341234";
+        record.itemCount = 2;
+        record.totalAmount = new java.math.BigDecimal("5.30");
+        record.content = "1 x LAIT @ 1.15 = 1.15\n";
+        record.previousSignature = "GENESIS";
+        record.signature = "abc";
+        com.intermarche.edge.domain.sale.ParkedTicketRecord bare = new com.intermarche.edge.domain.sale.ParkedTicketRecord();
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> SyncOutbox.findById(1L)).thenReturn(row);
+            mocked.when(() -> com.intermarche.edge.domain.sale.ParkedTicketRecord.findById(300L)).thenReturn(record);
+            SyncOutboxService.PreparedItem item = service.prepare(1L);
+            assertEquals("parking", item.pathSuffix);
+            SyncPayloads.ParkedTicketDto out = new ObjectMapper().readValue(item.json,
+                    SyncPayloads.ParkedTicketDto.class);
+            assertEquals(300L, out.sourceId);
+            assertEquals("C04", out.terminalId);
+            assertEquals("C04-00000004", out.ticketNumber);
+            assertEquals("PARKED", out.event);
+            assertEquals("2026-10-24T09:30:15", out.eventDate);
+            assertEquals("12341234", out.operator);
+            assertEquals(2, out.itemCount);
+            assertEquals(0, new java.math.BigDecimal("5.30").compareTo(out.totalAmount));
+            assertEquals("1 x LAIT @ 1.15 = 1.15\n", out.content);
+            assertEquals("GENESIS", out.previousSignature);
+            assertEquals("abc", out.signature);
+            row.entityId = 301L;
+            mocked.when(() -> com.intermarche.edge.domain.sale.ParkedTicketRecord.findById(301L)).thenReturn(bare);
+            SyncPayloads.ParkedTicketDto empty = new ObjectMapper().readValue(service.prepare(1L).json,
+                    SyncPayloads.ParkedTicketDto.class);
+            assertNull(empty.event);
+            assertNull(empty.eventDate);
+            row.entityId = 302L;
+            mocked.when(() -> com.intermarche.edge.domain.sale.ParkedTicketRecord.findById(302L)).thenReturn(null);
+            assertNull(service.prepare(1L));
+        }
+    }
+
+    /**
+     * BO-03-06-48/62: the STORED_VALUE case serializes an instrument to the
+     * {@code stored-value} path under its issuing register and this register's
+     * id; one that names no issuer is this register's own, and travels without
+     * kind, status nor dates; a vanished one yields null.
+     *
+     * @throws Exception never
+     */
+    @Test
+    void prepareStoredValueSerializes() throws Exception {
+        SyncOutboxService service = enabledService("http://store");
+        service.terminalId = "C04";
+        SyncOutbox row = new SyncOutbox();
+        row.entityType = SyncOutbox.EntityType.STORED_VALUE;
+        row.entityId = 400L;
+        com.intermarche.edge.domain.payment.StoredValue note = new com.intermarche.edge.domain.payment.StoredValue();
+        note.number = "297000000000400";
+        note.kind = com.intermarche.edge.domain.payment.StoredValue.Kind.CREDIT_NOTE;
+        note.initialAmount = new java.math.BigDecimal("12.40");
+        note.balance = new java.math.BigDecimal("2.40");
+        note.status = com.intermarche.edge.domain.payment.StoredValue.Status.ACTIVE;
+        note.issuedAt = LocalDateTime.of(2026, 10, 24, 9, 30, 15);
+        note.validUntil = LocalDateTime.of(2027, 10, 24, 0, 0);
+        note.exhaustedAt = LocalDateTime.of(2026, 10, 25, 8, 0);
+        note.issuingTerminalId = "C02";
+        note.issuingDocumentNumber = "C02-00000009";
+        com.intermarche.edge.domain.payment.StoredValue bare = new com.intermarche.edge.domain.payment.StoredValue();
+        bare.status = null;
+        bare.issuedAt = null;
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> SyncOutbox.findById(1L)).thenReturn(row);
+            mocked.when(() -> com.intermarche.edge.domain.payment.StoredValue.findById(400L)).thenReturn(note);
+            SyncOutboxService.PreparedItem item = service.prepare(1L);
+            assertEquals("stored-value", item.pathSuffix);
+            SyncPayloads.StoredValueDto out = new ObjectMapper().readValue(item.json, SyncPayloads.StoredValueDto.class);
+            assertEquals("C04", out.terminalId);
+            assertEquals("C02", out.issuingTerminalId);
+            assertEquals("297000000000400", out.number);
+            assertEquals("CREDIT_NOTE", out.kind);
+            assertEquals(0, new java.math.BigDecimal("12.40").compareTo(out.initialAmount));
+            assertEquals(0, new java.math.BigDecimal("2.40").compareTo(out.balance));
+            assertEquals("ACTIVE", out.status);
+            assertEquals("2026-10-24T09:30:15", out.issuedAt);
+            assertEquals("2027-10-24T00:00", out.validUntil);
+            assertEquals("2026-10-25T08:00", out.exhaustedAt);
+            assertEquals("C02-00000009", out.issuingDocumentNumber);
+            row.entityId = 401L;
+            mocked.when(() -> com.intermarche.edge.domain.payment.StoredValue.findById(401L)).thenReturn(bare);
+            SyncPayloads.StoredValueDto own = new ObjectMapper().readValue(service.prepare(1L).json,
+                    SyncPayloads.StoredValueDto.class);
+            assertEquals("C04", own.issuingTerminalId);
+            assertNull(own.kind);
+            assertNull(own.status);
+            assertNull(own.issuedAt);
+            assertNull(own.validUntil);
+            assertNull(own.exhaustedAt);
+            row.entityId = 402L;
+            mocked.when(() -> com.intermarche.edge.domain.payment.StoredValue.findById(402L)).thenReturn(null);
+            assertNull(service.prepare(1L));
+        }
+    }
+
+    /**
+     * BO-03-06-63: the SCANNED_BARCODE case serializes a payment barcode read
+     * at this till to the {@code scanned-barcode} path, keyed by its row; one
+     * without dates travels without them; a vanished one yields null.
+     *
+     * @throws Exception never
+     */
+    @Test
+    void prepareScannedBarcodeSerializes() throws Exception {
+        SyncOutboxService service = enabledService("http://store");
+        SyncOutbox row = new SyncOutbox();
+        row.entityType = SyncOutbox.EntityType.SCANNED_BARCODE;
+        row.entityId = 500L;
+        com.intermarche.edge.domain.barcode.ScannedBarcode reading = new com.intermarche.edge.domain.barcode.ScannedBarcode();
+        reading.id = 500L;
+        reading.terminalId = "C04";
+        reading.code = "297000000000400";
+        reading.typeCode = "AVOIR";
+        reading.typeLabel = "Avoir magasin";
+        reading.ticketNumber = "C04-00000010";
+        reading.amount = new java.math.BigDecimal("2.40");
+        reading.validUntil = LocalDateTime.of(2027, 10, 24, 0, 0);
+        reading.scannedAt = LocalDateTime.of(2026, 10, 26, 11, 0, 5);
+        reading.found = true;
+        reading.gs1 = true;
+        com.intermarche.edge.domain.barcode.ScannedBarcode bare = new com.intermarche.edge.domain.barcode.ScannedBarcode();
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> SyncOutbox.findById(1L)).thenReturn(row);
+            mocked.when(() -> com.intermarche.edge.domain.barcode.ScannedBarcode.findById(500L)).thenReturn(reading);
+            SyncOutboxService.PreparedItem item = service.prepare(1L);
+            assertEquals("scanned-barcode", item.pathSuffix);
+            SyncPayloads.ScannedBarcodeDto out = new ObjectMapper().readValue(item.json,
+                    SyncPayloads.ScannedBarcodeDto.class);
+            assertEquals(500L, out.sourceId);
+            assertEquals("C04", out.terminalId);
+            assertEquals("297000000000400", out.code);
+            assertEquals("AVOIR", out.typeCode);
+            assertEquals("Avoir magasin", out.typeLabel);
+            assertEquals("C04-00000010", out.ticketNumber);
+            assertEquals(0, new java.math.BigDecimal("2.40").compareTo(out.amount));
+            assertEquals("2027-10-24T00:00", out.validUntil);
+            assertEquals("2026-10-26T11:00:05", out.scannedAt);
+            assertTrue(out.found);
+            assertTrue(out.gs1);
+            row.entityId = 501L;
+            mocked.when(() -> com.intermarche.edge.domain.barcode.ScannedBarcode.findById(501L)).thenReturn(bare);
+            SyncPayloads.ScannedBarcodeDto empty = new ObjectMapper().readValue(service.prepare(1L).json,
+                    SyncPayloads.ScannedBarcodeDto.class);
+            assertNull(empty.validUntil);
+            assertNull(empty.scannedAt);
+            row.entityId = 502L;
+            mocked.when(() -> com.intermarche.edge.domain.barcode.ScannedBarcode.findById(502L)).thenReturn(null);
+            assertNull(service.prepare(1L));
+        }
+    }
+
+    /**
+     * BO-10-06-03: the Portuguese documents of a sale and of a return travel
+     * with their payload, every field as the register issued it.
+     *
+     * @throws Exception when the mapping cannot be invoked
+     */
+    @Test
+    void fiscalDocumentsTravelWithTheirSaleAndReturn() throws Exception {
+        var service = enabledService("http://store");
+        var ticket = new Ticket();
+        ticket.id = 5L;
+        ticket.status = Ticket.TicketStatus.CLOSED;
+        var refund = new Refund();
+        refund.id = 6L;
+        refund.status = Refund.RefundStatus.OPEN;
+        var document = new com.intermarche.edge.domain.sale.FiscalDocument();
+        document.documentType = com.intermarche.edge.domain.sale.FiscalDocument.Type.NC;
+        document.series = "C04/2026";
+        document.rank = 3;
+        document.number = "NC C04/2026/00000003";
+        document.atcud = "AAA-3";
+        document.saftDocumentId = 2;
+        document.terminalId = "C04";
+        document.issuedAt = LocalDateTime.of(2026, 10, 24, 10, 30);
+        document.part = 1;
+        document.lineUids = "U1";
+        document.sourceNumber = "FS C04/2026/00000001";
+        document.customerTaxId = "PT123456789";
+        document.customerName = "ACME";
+        document.customerAddress = "Rua 1";
+        document.grossTotal = new BigDecimal("12.30");
+        document.taxTotal = new BigDecimal("2.30");
+        document.hash = "HASH";
+        document.previousHash = "PREV";
+        document.qrPayload = "QR";
+        document.cancelled = true;
+        var toTicket = SyncOutboxService.class.getDeclaredMethod("toDto", Ticket.class);
+        toTicket.setAccessible(true);
+        var toRefund = SyncOutboxService.class.getDeclaredMethod("toDto", Refund.class);
+        toRefund.setAccessible(true);
+        SyncPayloads.TicketDto sale;
+        SyncPayloads.RefundDto back;
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> PanacheEntityBase.list("ticketId", 5L)).thenReturn(List.of(document));
+            mocked.when(() -> PanacheEntityBase.list("refundId", 6L)).thenReturn(List.of(document));
+            sale = (SyncPayloads.TicketDto) toTicket.invoke(service, ticket);
+            back = (SyncPayloads.RefundDto) toRefund.invoke(service, refund);
+        }
+        SyncPayloads.FiscalDocumentDto dto = sale.fiscalDocuments.get(0);
+        assertEquals("NC", dto.documentType);
+        assertEquals("C04/2026", dto.series);
+        assertEquals(3, dto.rank);
+        assertEquals("NC C04/2026/00000003", dto.number);
+        assertEquals("AAA-3", dto.atcud);
+        assertEquals(2, dto.saftDocumentId);
+        assertEquals("C04", dto.terminalId);
+        assertEquals("2026-10-24T10:30:00", dto.issuedAt);
+        assertEquals(1, dto.part);
+        assertEquals("U1", dto.lineUids);
+        assertEquals("FS C04/2026/00000001", dto.sourceNumber);
+        assertEquals("PT123456789", dto.customerTaxId);
+        assertEquals("ACME", dto.customerName);
+        assertEquals("Rua 1", dto.customerAddress);
+        assertEquals(new BigDecimal("12.30"), dto.grossTotal);
+        assertEquals(new BigDecimal("2.30"), dto.taxTotal);
+        assertEquals("HASH", dto.hash);
+        assertEquals("PREV", dto.previousHash);
+        assertEquals("QR", dto.qrPayload);
+        assertTrue(dto.cancelled);
+        assertEquals("NC C04/2026/00000003", back.fiscalDocuments.get(0).number);
     }
 }

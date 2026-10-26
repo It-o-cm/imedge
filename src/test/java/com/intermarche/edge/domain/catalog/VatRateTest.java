@@ -236,7 +236,218 @@ class VatRateTest {
     @Test
     void getChecksumHashesEveryBusinessField() {
         VatRate rate = regime(1, "0.2000", "Taux normal");
+        rate.exempt = true;
+        rate.exemptionCode = "M07";
         assertEquals(Objects.hash(rate.number, rate.rate, rate.label,
-                rate.country, rate.legalMention), rate.getChecksum());
+                rate.country, rate.legalMention, true, "M07"), rate.getChecksum());
+    }
+
+    /**
+     * BO-03-03-04: a regime's code is its number in letters — zero is A, 25 is
+     * Z, 26 is AA, 27 AB — and a regime without a usable number has none.
+     */
+    @Test
+    void theCodeWritesTheNumberInLetters() {
+        VatRate rate = regime(0, "0.2000", "Taux normal");
+        for (java.util.Map.Entry<Integer, String> example
+                : java.util.Map.of(0, "A", 1, "B", 25, "Z", 26, "AA", 27, "AB").entrySet()) {
+            rate.number = example.getKey();
+            assertEquals(example.getValue(), rate.code());
+        }
+        rate.number = null;
+        assertNull(rate.code());
+        rate.number = -1;
+        assertNull(rate.code());
+    }
+
+    /**
+     * BO-03-03-04: {@code codeOf} names the code of the regime carrying a rate,
+     * and nothing for a rate no regime carries.
+     */
+    @Test
+    void codeOfNamesTheRegimeOfARate() {
+        BigDecimal rate = new BigDecimal("0.0550");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            @SuppressWarnings("unchecked")
+            PanacheQuery<VatRate> query = mock(PanacheQuery.class);
+            when(query.firstResult()).thenReturn(regime(1, "0.0550", "Taux réduit"));
+            panache.when(() -> VatRate.find("rate", rate)).thenReturn(query);
+            assertEquals("B", VatRate.codeOf(rate));
+            assertNull(VatRate.codeOf(null));
+        }
+    }
+
+    /**
+     * Stubs the regime a number names.
+     *
+     * @param panache the active static mock
+     * @param number the number
+     * @param regime the regime, or null
+     */
+    @SuppressWarnings("unchecked")
+    private void stubNumber(MockedStatic<PanacheEntityBase> panache, int number, VatRate regime) {
+        PanacheQuery<VatRate> query = mock(PanacheQuery.class);
+        when(query.firstResult()).thenReturn(regime);
+        panache.when(() -> VatRate.find("number", number)).thenReturn(query);
+    }
+
+    /**
+     * Stubs the first regime of a rate.
+     *
+     * @param panache the active static mock
+     * @param rate the rate
+     * @param regime the regime, or null
+     */
+    @SuppressWarnings("unchecked")
+    private void stubRate(MockedStatic<PanacheEntityBase> panache, BigDecimal rate, VatRate regime) {
+        PanacheQuery<VatRate> query = mock(PanacheQuery.class);
+        when(query.firstResult()).thenReturn(regime);
+        panache.when(() -> VatRate.find("rate", rate)).thenReturn(query);
+    }
+
+    /**
+     * BO-02-02-01: {@code resolve} trusts the number when its regime carries the
+     * rate, or when either side states no rate, and falls back on the rate
+     * otherwise — and without a number, or with an unknown one.
+     */
+    @Test
+    void resolveReadsTheNumberBeforeTheRate() {
+        BigDecimal zero = new BigDecimal("0.0000");
+        VatRate exemptNine = regime(10, "0.0000", "Isento art. 9");
+        VatRate exemptFiftyThree = regime(11, "0.0000", "Isento art. 53");
+        VatRate unrated = regime(12, "0.0000", "Sans taux");
+        unrated.rate = null;
+        VatRate rerated = regime(13, "0.0600", "Réduit");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            stubNumber(panache, 11, exemptFiftyThree);
+            stubNumber(panache, 12, unrated);
+            stubNumber(panache, 13, rerated);
+            stubNumber(panache, 99, null);
+            stubRate(panache, zero, exemptNine);
+            assertSame(exemptFiftyThree, VatRate.resolve(zero, 11));
+            assertSame(exemptFiftyThree, VatRate.resolve(null, 11));
+            assertSame(unrated, VatRate.resolve(zero, 12));
+            assertSame(exemptNine, VatRate.resolve(zero, 13));
+            assertSame(exemptNine, VatRate.resolve(zero, 99));
+            assertSame(exemptNine, VatRate.resolve(zero, null));
+        }
+    }
+
+    /**
+     * BO-02-02-01: {@code numberFor} answers the regime of the article's current
+     * price when it carries the line's rate, the first regime of the rate
+     * otherwise, and null without a rate or a regime.
+     */
+    @Test
+    void numberForReadsTheRegimeOfTheCurrentPrice() {
+        BigDecimal zero = new BigDecimal("0");
+        VatRate exemptNine = regime(10, "0.0000", "Isento art. 9");
+        VatRate exemptFiftyThree = regime(11, "0.0000", "Isento art. 53");
+        VatRate unrated = regime(12, "0.0000", "Sans taux");
+        unrated.rate = null;
+        assertNull(VatRate.numberFor("123", null));
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            stubRate(panache, zero, exemptNine);
+            Product donation = new Product();
+            donation.id = 1L;
+            Product unpriced = new Product();
+            unpriced.id = 2L;
+            Product bare = new Product();
+            bare.id = 3L;
+            Product oddly = new Product();
+            oddly.id = 4L;
+            Product taxed = new Product();
+            taxed.id = 5L;
+            Price exemptPrice = new Price();
+            exemptPrice.vat = exemptFiftyThree;
+            Price noVat = new Price();
+            Price unratedPrice = new Price();
+            unratedPrice.vat = unrated;
+            Price taxedPrice = new Price();
+            taxedPrice.vat = regime(1, "0.2000", "Normal");
+            stubProduct(panache, "EXEMPT", donation);
+            stubProduct(panache, "UNPRICED", unpriced);
+            stubProduct(panache, "BARE", bare);
+            stubProduct(panache, "ODD", oddly);
+            stubProduct(panache, "TAXED", taxed);
+            stubProduct(panache, "UNKNOWN", null);
+            stubPrice(panache, 1L, exemptPrice);
+            stubPrice(panache, 2L, null);
+            stubPrice(panache, 3L, noVat);
+            stubPrice(panache, 4L, unratedPrice);
+            stubPrice(panache, 5L, taxedPrice);
+            assertEquals(11, VatRate.numberFor("EXEMPT", zero));
+            assertEquals(10, VatRate.numberFor("UNPRICED", zero));
+            assertEquals(10, VatRate.numberFor("BARE", zero));
+            assertEquals(10, VatRate.numberFor("ODD", zero));
+            assertEquals(10, VatRate.numberFor("TAXED", zero));
+            assertEquals(10, VatRate.numberFor("UNKNOWN", zero));
+            assertEquals(10, VatRate.numberFor(null, zero));
+            BigDecimal unknownRate = new BigDecimal("0.3300");
+            stubRate(panache, unknownRate, null);
+            assertNull(VatRate.numberFor(null, unknownRate));
+        }
+    }
+
+    /**
+     * BO-02-02-01 with BO-02-03-27: {@code numberFor} answers first the regime
+     * the article itself names when it carries the line's rate, ahead of the
+     * price's regime, and passes over an own regime of another rate.
+     */
+    @Test
+    void numberForPrefersTheRegimeTheArticleNames() {
+        BigDecimal zero = new BigDecimal("0");
+        VatRate exemptFiftyThree = regime(11, "0.0000", "Isento art. 53");
+        VatRate reduced = regime(13, "0.0600", "Réduit");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            stubNumber(panache, 11, exemptFiftyThree);
+            stubNumber(panache, 13, reduced);
+            stubRate(panache, zero, regime(10, "0.0000", "Isento art. 9"));
+            Product own = new Product();
+            own.id = 1L;
+            own.attributes.put(com.intermarche.edge.domain.catalog.attribute.ProductAttributeCatalog.VAT_NUMBER, "11");
+            Product other = new Product();
+            other.id = 2L;
+            other.attributes.put(com.intermarche.edge.domain.catalog.attribute.ProductAttributeCatalog.VAT_NUMBER, "13");
+            Price taxedPrice = new Price();
+            taxedPrice.vat = regime(1, "0.2000", "Normal");
+            stubProduct(panache, "OWN", own);
+            stubProduct(panache, "OTHER", other);
+            stubPrice(panache, 1L, taxedPrice);
+            stubPrice(panache, 2L, taxedPrice);
+            assertEquals(11, VatRate.numberFor("OWN", zero));
+            assertEquals(10, VatRate.numberFor("OTHER", zero));
+        }
+    }
+
+    /**
+     * Stubs the product an EAN names.
+     *
+     * @param panache the active static mock
+     * @param ean the EAN
+     * @param product the product, or null
+     */
+    @SuppressWarnings("unchecked")
+    private void stubProduct(MockedStatic<PanacheEntityBase> panache, String ean, Product product) {
+        PanacheQuery<Product> query = mock(PanacheQuery.class);
+        when(query.firstResult()).thenReturn(product);
+        panache.when(() -> PanacheEntityBase.find(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.eq(ean))).thenReturn(query);
+    }
+
+    /**
+     * Stubs the current price of a product, whatever the instant.
+     *
+     * @param panache the active static mock
+     * @param productId the product id
+     * @param price the price, or null
+     */
+    @SuppressWarnings("unchecked")
+    private void stubPrice(MockedStatic<PanacheEntityBase> panache, Long productId, Price price) {
+        PanacheQuery<Price> query = mock(PanacheQuery.class);
+        when(query.firstResult()).thenReturn(price);
+        panache.when(() -> PanacheEntityBase.find(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.eq(productId),
+                org.mockito.ArgumentMatchers.any(java.time.LocalDateTime.class))).thenReturn(query);
     }
 }

@@ -1,7 +1,7 @@
 package com.intermarche.edge.service;
 
-import com.intermarche.edge.domain.session.DocumentCounter;
 import com.intermarche.edge.domain.sale.DocumentType;
+import com.intermarche.edge.domain.session.DocumentCounter;
 import com.intermarche.edge.domain.session.TicketCounter;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.persistence.LockModeType;
@@ -39,8 +39,56 @@ public class TicketNumberService {
     private static final Logger LOGGER = Logger.getLogger(TicketNumberService.class);
 
     /** The identifier of this register, unique within the store. */
+    /**
+     * The administered range of customer numbers reserved to this point of sale
+     * (BO-03-06-53). Nullable: a numbering service built outside CDI falls back
+     * to the per-register numbering.
+     */
+    @jakarta.inject.Inject
+    PosSettingsService posSettingsService;
+
+    /** The identifier of this register, unique within the store. */
     @ConfigProperty(name = "pos.terminal.id", defaultValue = "POS01")
     String terminalId;
+
+    /**
+     * Reserves and returns the next number of a FISCAL DOCUMENT
+     * (BO-03-04-19, -21, -22, -23 and -28).
+     *
+     * <p>Four keys and not one: the type, this register, the point of sale and
+     * the year. The counter starts again at one each January, which is what
+     * {@code chaque FS /FT / RC pour chaque caisse Point De Vente doit avoir
+     * son code unique par Année} asks for, and is exactly why it is not the
+     * ticket counter — that one anchors the fiscal chain and is perpetual.
+     *
+     * <p>The PREFIX is administered on the document's gabarit; a document type
+     * nobody gave one to is numbered under its own name, which keeps two
+     * series apart even before a paramétreur has been there.
+     *
+     * <p>The shape is {@code PREFIX TERMINAL/YEAR/NNNNNNNN}: the prefix names
+     * the series, the register and the year are the keys an administration
+     * reads the number by, and the rank is padded so the numbers of one year
+     * sort as text.
+     *
+     * @param type the fiscal document being issued
+     * @param pdvNumber the point of sale, empty when the shop is not configured
+     * @param year the year the document is issued in
+     * @return the reserved number
+     */
+    @Transactional
+    public String nextDocumentNumber(
+            com.intermarche.edge.domain.setting.DocumentTemplate.DocumentType type,
+            String pdvNumber, int year) {
+        LOGGER.info("Entering method nextDocumentNumber with type: " + type);
+        String administered =
+                com.intermarche.edge.domain.setting.DocumentTemplate.prefixFor(type);
+        String prefix = administered == null ? type.name() : administered;
+        String shop = pdvNumber == null ? "" : pdvNumber;
+        long rank = com.intermarche.edge.domain.session.DocumentSequence.next(
+                type.name(), terminalId, shop, year);
+        LOGGER.info("Exiting method nextDocumentNumber");
+        return String.format("%s %s/%d/%08d", prefix, terminalId, year, rank);
+    }
 
     /**
      * Reserves and returns the next ticket number for this terminal.
@@ -58,6 +106,26 @@ public class TicketNumberService {
         counter.lastNumber++;
         LOGGER.info("Exiting method nextTicketNumber");
         return String.format("%s-%08d", terminalId, counter.lastNumber);
+    }
+
+    /**
+     * Restarts the TICKET counter of this terminal at one (BO-09-03-04).
+     *
+     * <p>Only the ticket number: the session number, the refund number and the
+     * customer number keep counting, and the FISCAL numbering is not even on
+     * this row — a fiscal sequence that counted backwards would be a fiscal
+     * sequence no administration accepts.
+     *
+     * <p>The last number is set to zero and not to one: the next ticket is the
+     * first, and every caller of {@link #nextTicketNumber} increments before
+     * formatting.
+     */
+    @Transactional
+    public void resetTicketNumbers() {
+        LOGGER.info("Entering method resetTicketNumbers");
+        TicketCounter counter = lockCounter(terminalId);
+        counter.lastNumber = 0;
+        LOGGER.info("Exiting method resetTicketNumbers");
     }
 
     /**
@@ -101,8 +169,103 @@ public class TicketNumberService {
         LOGGER.info("Entering method nextCustomerNumber");
         TicketCounter counter = lockCounter(terminalId);
         counter.lastCustomerNumber++;
+        String administered = administeredCustomerNumber(counter.lastCustomerNumber);
+        if (administered != null) {
+            LOGGER.info("Exiting method nextCustomerNumber");
+            return administered;
+        }
         LOGGER.info("Exiting method nextCustomerNumber");
         return String.format("%s-CLI%06d", terminalId, counter.lastCustomerNumber);
+    }
+
+    /**
+     * Reserves and returns the next ORDER CODE of this terminal, e.g.
+     * {@code C04-CMD000001} (LC-06-03-01).
+     *
+     * <p>An order code is a RECALL KEY and not a fiscal number: it travels on
+     * the deposit slip's barcode, is keyed at any register of the store and
+     * names the order on the store node. The {@code -CMD} marker keeps it
+     * apart from every ticket ({@code -<digits>}), parked-ticket and refund
+     * number the register already knows, so a scan of the slip is recognized
+     * by its shape alone.
+     *
+     * <p>The sequence is a {@code DocumentSequence} under the {@code ORDER}
+     * key — a rank of its own, by terminal and year, without touching the
+     * fiscal counters of the ticket chain.
+     *
+     * @return the reserved order code
+     */
+    @Transactional
+    public String nextOrderCode() {
+        LOGGER.info("Entering method nextOrderCode");
+        long rank = com.intermarche.edge.domain.session.DocumentSequence.next(
+                "ORDER", terminalId, "", java.time.Year.now().getValue());
+        LOGGER.info("Exiting method nextOrderCode");
+        return String.format("%s-CMD%06d", terminalId, rank);
+    }
+
+    /**
+     * Reserves and returns the next number of a DEPOSIT INVOICE of this
+     * terminal, e.g. {@code C04-FA2026-000001} (LC-08-04-15).
+     *
+     * <p>A {@code DocumentSequence} of its own, by terminal and year: an invoice
+     * number is unique, sequential and without gap within its kind, and a
+     * deposit invoice is not an invoice of a closed ticket.
+     *
+     * @return the reserved deposit invoice number
+     */
+    @Transactional
+    public String nextDepositInvoiceNumber() {
+        LOGGER.info("Entering method nextDepositInvoiceNumber");
+        int year = java.time.Year.now().getValue();
+        long rank = com.intermarche.edge.domain.session.DocumentSequence.next(
+                "DEPOSIT_INVOICE", terminalId, "", year);
+        LOGGER.info("Exiting method nextDepositInvoiceNumber");
+        return String.format("%s-FA%d-%06d", terminalId, year, rank);
+    }
+
+    /**
+     * Numbers a customer created at the till inside the range the head office
+     * reserved for the point of sale (BO-03-06-53).
+     *
+     * <p>The range is stated as {@code PREFIX:FIRST-LAST}. The number is the
+     * first bound plus what this register has already created, so a customer
+     * opened at a till never collides with one the commercial management
+     * integrated — which is the whole reason a central range exists.
+     *
+     * <p>Answers NULL, and the per-register numbering takes over, when nothing
+     * is administered, when the range cannot be read, and when it is EXHAUSTED:
+     * a register that has run out of reserved numbers must still be able to
+     * print an invoice for the customer standing in front of it, and a number
+     * outside the reserved range is a referential problem the back office can
+     * see, not a sale to refuse.
+     *
+     * @param created how many customers this register has created, 1-based
+     * @return the administered number, or null to fall back
+     */
+    private String administeredCustomerNumber(long created) {
+        String range = posSettingsService == null
+                ? null : posSettingsService.customerLocalCodeRange();
+        if (range == null || range.isBlank()) {
+            return null;
+        }
+        int colon = range.indexOf(':');
+        int dash = range.indexOf('-', colon + 1);
+        if (colon <= 0 || dash <= colon + 1 || dash == range.length() - 1) {
+            return null;
+        }
+        String prefix = range.substring(0, colon).trim();
+        try {
+            long first = Long.parseLong(range.substring(colon + 1, dash).trim());
+            long last = Long.parseLong(range.substring(dash + 1).trim());
+            long number = first + created - 1;
+            if (prefix.isEmpty() || first > last || number > last) {
+                return null;
+            }
+            return prefix + number;
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     /**

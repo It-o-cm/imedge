@@ -3,19 +3,15 @@ package com.intermarche.edge.imports;
 import com.intermarche.edge.domain.store.Address;
 import com.intermarche.edge.domain.store.Store;
 import io.quarkus.hibernate.orm.panache.Panache;
-import io.smallrye.common.annotation.RunOnVirtualThread;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.POST;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
 
 import java.io.InputStream;
-import java.util.*;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * REST Endpoint for bulk importing or updating Stores from a CSV file stream.
@@ -53,7 +49,6 @@ import java.util.*;
 // document and to keep in step, and the permission policy had to name them
 // one by one — an importer forgotten there was a door left open.
 @ApplicationScoped
-@RunOnVirtualThread
 public class StoreCsvResource extends ImporterCsvResource {
 
     private static final Logger LOGGER = Logger.getLogger(StoreCsvResource.class);

@@ -40,6 +40,9 @@ import java.util.Set;
 @TemplateData
 public class BackOfficeMenu {
 
+    /** The label of the account's own menu of favorite features (BO-01-04-08). */
+    static final String FAVORITES = "Favoris";
+
     /** Who is asking. */
     @Inject
     CurrentUser currentUser;
@@ -137,7 +140,9 @@ public class BackOfficeMenu {
      * least one visible screen, in declaration order.
      * <p>
      * An empty menu is dropped rather than shown empty — a heading that opens
-     * on nothing is worse than no heading.
+     * on nothing is worse than no heading. The account's favorite features
+     * open the navigation in a "Favoris" menu of their own, and a menu the
+     * account hid is left out whole (BO-01-04-08).
      *
      * @return the visible groups, empty when nobody is signed in
      */
@@ -147,7 +152,19 @@ public class BackOfficeMenu {
             return groups;
         }
         Set<String> hidden = hiddenKeys();
+        List<Entry> favorites = new ArrayList<>();
+        for (Feature feature : Feature.values()) {
+            if (hidden.contains(UserFavorite.STAR + feature.getKey()) && mayOpen(feature)) {
+                favorites.add(new Entry(feature.getLabel(), feature.getPath()));
+            }
+        }
+        if (!favorites.isEmpty()) {
+            groups.add(new Group(FAVORITES, favorites));
+        }
         for (Menu menu : Menu.values()) {
+            if (hidden.contains(UserFavorite.MENU + menu.name())) {
+                continue;
+            }
             List<Entry> entries = new ArrayList<>();
             for (Feature feature : menu.features()) {
                 if (!hidden.contains(feature.getKey()) && mayOpen(feature)) {

@@ -36,6 +36,14 @@ class OrderKindTest {
         assertTrue(OrderKind.COMMANDE.isDepositAllowed());
         assertFalse(OrderKind.BON_VENTE.isDepositAllowed());
         assertFalse(OrderKind.CLICK_COLLECT.isDepositAllowed());
+        assertFalse(OrderKind.QBUSTING.isDepositAllowed());
+        assertEquals("Qbusting", OrderKind.QBUSTING.getLabel());
+        assertSame(OrderKind.QBUSTING, OrderKind.fromName("QBUSTING"));
+        // BO-10-01: the e-commerce basket and the mobility transaction are paid in full.
+        assertEquals("E-commerce", OrderKind.ECOMMERCE.getLabel());
+        assertFalse(OrderKind.ECOMMERCE.isDepositAllowed());
+        assertEquals("Mobilité", OrderKind.MOBILITY.getLabel());
+        assertFalse(OrderKind.MOBILITY.isDepositAllowed());
     }
 
     /**

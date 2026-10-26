@@ -1,11 +1,14 @@
 package com.intermarche.edge.ui.admin;
 
+import io.quarkus.security.Authenticated;
+import com.intermarche.edge.security.FeatureAccess;
+import com.intermarche.edge.domain.setting.Feature;
+import com.intermarche.edge.domain.people.CrudOption;
 import com.intermarche.edge.domain.people.Employee;
 import com.intermarche.edge.domain.safe.SafeMovement;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
@@ -47,6 +50,16 @@ public class AdminEmployeeResource {
     /** Technical log of this class. */
     private static final Logger LOGGER = Logger.getLogger(AdminEmployeeResource.class);
 
+    /**
+     * The scope of a payroll file created here: one point of contact no
+     * register is named after, so the file signs in at no register and the
+     * registers never receive it (BO-05-02-15).
+     */
+    static final String PAYROLL_SCOPE = "TPV:PAIE";
+
+    /** Draws the generated suffixes. */
+    static final java.security.SecureRandom RANDOM = new java.security.SecureRandom();
+
     /** The payroll template. */
     @Inject
     @Location("admin-employees")
@@ -61,7 +74,8 @@ public class AdminEmployeeResource {
      * @return the payroll page
      */
     @GET
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.EMPLOYEE)
     public TemplateInstance list(@QueryParam("text") String text,
                                  @QueryParam("page") @DefaultValue("1") int page,
                                  @QueryParam("notice") String notice,
@@ -87,7 +101,8 @@ public class AdminEmployeeResource {
      * @return a 303 back to the list with the notice
      */
     @POST
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.EMPLOYEE, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response save(MultivaluedMap<String, String> form) {
@@ -110,6 +125,77 @@ public class AdminEmployeeResource {
         LOGGER.infof("Fiche salarié %s enregistrée", employee.getFullName());
         LOGGER.info("Exiting method save");
         return back("Fiche salarié enregistrée.", true);
+    }
+
+    /**
+     * Creates a payroll file from this screen ({@code BO-05-02-15}): a person,
+     * or a company — a cleaning firm paid in cash — that the safe may pay.
+     *
+     * <p>A payroll file is NOT an account. It is created active, so the safe's
+     * screens offer it, but with no back-office password, a register PIN nobody
+     * knows and a scope naming no register ({@link #PAYROLL_SCOPE}): it signs in
+     * nowhere and the registers never receive it. Its login, badge and address
+     * are generated, unique, because the file of a person must not depend on a
+     * credential they will never use.
+     *
+     * @param form the posted form
+     * @return a 303 back to the list with the notice
+     */
+    @POST
+    @Path("/create")
+    @Authenticated
+    @FeatureAccess(value = Feature.EMPLOYEE, option = CrudOption.CREATE)
+    @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
+    @Transactional
+    public Response create(MultivaluedMap<String, String> form) {
+        LOGGER.info("Entering method create");
+        String name = AdminForms.text(form, "lastName");
+        if (name == null) {
+            LOGGER.info("Exiting method create: no name");
+            return back("Nom ou raison sociale obligatoire.", false);
+        }
+        BigDecimal limit = AdminForms.amount(form.getFirst("advanceLimit"));
+        if (limit != null && limit.signum() < 0) {
+            LOGGER.info("Exiting method create: negative ceiling");
+            return back("Le plafond d'acompte ne peut pas être négatif.", false);
+        }
+        boolean legalEntity = AdminForms.checkbox(form, "legalEntity");
+        String suffix = uniqueSuffix();
+        Employee employee = new Employee();
+        employee.lastName = name;
+        String first = AdminForms.text(form, "firstName");
+        employee.firstName = legalEntity || first == null ? "-" : first;
+        employee.loginName = "paie-" + suffix;
+        employee.email = "paie-" + suffix + "@paie.invalid";
+        employee.badgeId = "P" + suffix;
+        employee.password = org.mindrot.jbcrypt.BCrypt.hashpw(java.util.UUID.randomUUID().toString(),
+                org.mindrot.jbcrypt.BCrypt.gensalt());
+        employee.role = Employee.EmployeeRole.CASHIER;
+        employee.echelonScopes = PAYROLL_SCOPE;
+        employee.legalEntity = legalEntity;
+        employee.forcingLevel = Math.max(AdminForms.integer(form.getFirst("forcingLevel"), 0), 0);
+        employee.advanceLimit = limit;
+        employee.active = true;
+        employee.passwordChangedAt = java.time.LocalDateTime.now();
+        employee.persist();
+        LOGGER.infof("Fiche salarié %s créée", employee.loginName);
+        LOGGER.info("Exiting method create");
+        return back(legalEntity ? "Fiche de personne morale créée." : "Fiche salarié créée.", true);
+    }
+
+    /**
+     * A suffix no payroll file carries yet: nine digits drawn at random until
+     * neither the login nor the badge they make is taken.
+     *
+     * @return the suffix
+     */
+    String uniqueSuffix() {
+        while (true) {
+            String suffix = String.format("%09d", RANDOM.nextInt(1_000_000_000));
+            if (Employee.count("loginName = ?1 or badgeId = ?2", "paie-" + suffix, "P" + suffix) == 0) {
+                return suffix;
+            }
+        }
     }
 
     /**

@@ -92,6 +92,11 @@ class AdminCoinMachineResourceTest {
         PanacheQuery<CoinMachine> query = mock(PanacheQuery.class);
         when(query.list()).thenReturn(machines);
         panache.when(() -> CoinMachine.find("order by code")).thenReturn(query);
+        PanacheQuery<com.intermarche.edge.domain.safe.CoinMachineFlow> flows = mock(PanacheQuery.class);
+        when(flows.page(0, AdminCoinMachineResource.FLOW_LINES)).thenReturn(flows);
+        when(flows.list()).thenReturn(List.of());
+        panache.when(() -> com.intermarche.edge.domain.safe.CoinMachineFlow.find("order by recordedAt desc, id desc"))
+                .thenReturn(flows);
     }
 
     /**
@@ -124,6 +129,7 @@ class AdminCoinMachineResourceTest {
         }
         verify(resource.adminCoinMachines).data("machines", List.of(first, second));
         verify(view).data("total", "300.00");
+        verify(view).data("flows", List.of());
         assertEquals(BigDecimal.ZERO, resource.totalOf(List.of()));
     }
 
@@ -219,7 +225,7 @@ class AdminCoinMachineResourceTest {
             panache.when(() -> CoinMachine.findById(1L)).thenReturn(machine);
             String location = resource.count(form).getLocation().toString();
             assertTrue(location.contains("noticeOk=false"));
-            assertTrue(location.contains("-10.00"));
+            assertTrue(location.contains("-10%2C00"));
         }
         assertEquals(new BigDecimal("290.00"), machine.countedAmount);
         assertEquals(new BigDecimal("300.00"), machine.declaredAmount);
@@ -291,6 +297,27 @@ class AdminCoinMachineResourceTest {
         assertEquals(new BigDecimal("290.00"), machine.declaredAmount);
         assertNotNull(machine.updatedOn);
         verify(machine).persist();
+        verify(resource.coinMachineService).journal(machine,
+                com.intermarche.edge.domain.safe.CoinMachineFlow.Kind.REALIGN, new BigDecimal("-10.00"));
+    }
+
+    /**
+     * A machine never moved realigns from zero: the null arm of the running
+     * total read before the realignment (BO-05-02-16).
+     */
+    @Test
+    void therealignmentOfAnUnmovedMachineStartsFromZero() {
+        AdminCoinMachineResource resource = newResource();
+        CoinMachine machine = machine("MON-01", null);
+        machine.countedAmount = new BigDecimal("15.00");
+        MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
+        form.add("id", "1");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> CoinMachine.findById(1L)).thenReturn(machine);
+            resource.align(form);
+        }
+        verify(resource.coinMachineService).journal(machine,
+                com.intermarche.edge.domain.safe.CoinMachineFlow.Kind.REALIGN, new BigDecimal("15.00"));
     }
 
     /**

@@ -3,51 +3,52 @@
  ! recalls it and settles it in full or by a deposit. !}
 {#include admin-layout}
 
-{#title}Commandes & devis{/title}
+{#title}{inject:i18n.get('t.commandes-devis')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Commandes & devis</h1>
-        <p class="page-sub">Le back-office saisit un devis, une commande, un bon de vente ou un panier click and collect et remet un code au client ; la caisse rappelle le code et le fait payer, en totalité ou par acompte (EXP-90/91/92/85).</p>
+        <h1>{inject:i18n.get('t.commandes-devis')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.le-back-office-saisit-un-devis-une')}</p>
     </div>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 <div class="card">
-    <h2 class="card-title">Commandes</h2>
+    <h2 class="card-title">{inject:i18n.get('t.commandes')}</h2>
     {#if orders.isEmpty()}
-    <p class="page-sub">Aucune commande n'est enregistrée.</p>
+    <p class="page-sub">{inject:i18n.get('t.aucune-commande-n-est-enregistree')}</p>
     {#else}
+    <div style="overflow-x: auto;">
     <table class="data-table">
         <thead>
-            <tr><th>Code</th><th>Type</th><th>Libellé</th><th>Client</th><th>Total</th><th>Acompte</th><th>TVA acompte</th><th>Reste</th><th>Statut</th><th></th></tr>
+            <tr><th>{inject:i18n.get('t.code')}</th><th>{inject:i18n.get('t.type')}</th><th>{inject:i18n.get('t.libelle')}</th><th>{inject:i18n.get('t.client')}</th><th>{inject:i18n.get('t.total')}</th><th>{inject:i18n.get('t.acompte')}</th><th>{inject:i18n.get('t.tva-acompte')}</th><th>{inject:i18n.get('t.reste-3')}</th><th>{inject:i18n.get('t.statut')}</th><th></th></tr>
         </thead>
         <tbody>
             {#for order in orders}
             <tr>
                 <td>{order.code}</td>
-                <td>{order.kind.label}</td>
+                <td>{inject:i18n.text(order.kind.label)}</td>
                 <td>{order.label ?: ''}</td>
                 <td>{order.customerAccountNumber ?: ''}</td>
-                <td>{order.totalAmount}</td>
-                <td>{order.depositPaid}</td>
+                <td>{inject:i18n.money(order.totalAmount)}</td>
+                <td>{inject:i18n.money(order.depositPaid)}</td>
                 <td>{order.depositVatDisplay ?: '—'}</td>
-                <td>{order.remaining()}</td>
-                <td>{order.status.label}</td>
+                <td>{inject:i18n.money(order.remaining())}</td>
+                <td>{inject:i18n.text(order.status.label)}</td>
                 <td>
                     {#if order.recallable}
                     <form method="post" action="/admin/orders/deposit" class="inline-form">
                         <input type="hidden" name="code" value="{order.code}">
-                        <input class="input-control" type="text" name="amount" placeholder="Acompte" size="6">
-                        <button class="btn btn-muted" type="submit">Acompte</button>
+                        <input class="input-control" type="text" name="amount" placeholder="{inject:i18n.get('t.acompte')}" size="6">
+                        <button class="btn btn-muted" type="submit">{inject:i18n.get('t.acompte')}</button>
                     </form>
                     <form method="post" action="/admin/orders/cancel" class="inline-form">
                         <input type="hidden" name="code" value="{order.code}">
-                        <button class="btn btn-muted" type="submit">Annuler</button>
+                        <button class="btn btn-muted" type="submit">{inject:i18n.get('t.annuler')}</button>
                     </form>
                     {/if}
                 </td>
@@ -55,37 +56,38 @@
             {/for}
         </tbody>
     </table>
+    </div>
     {/if}
 </div>
 
 <div class="card">
-    <h2 class="card-title">Nouvelle commande</h2>
+    <h2 class="card-title">{inject:i18n.get('t.nouvelle-commande')}</h2>
     <form method="post" action="/admin/orders/create" class="field-grid">
         <div class="field">
-            <label class="field-label" for="new-code">Code</label>
+            <label class="field-label" for="new-code">{inject:i18n.get('t.code')}</label>
             <input class="input-control" id="new-code" type="text" name="code" maxlength="40" required>
         </div>
         <div class="field">
-            <label class="field-label" for="new-kind">Type</label>
+            <label class="field-label" for="new-kind">{inject:i18n.get('t.type')}</label>
             <select class="input-control" id="new-kind" name="kind">
                 {#for kind in kinds}
-                <option value="{kind}">{kind.label}</option>
+                <option value="{kind}">{inject:i18n.text(kind.label)}</option>
                 {/for}
             </select>
         </div>
         <div class="field">
-            <label class="field-label" for="new-label">Libellé</label>
+            <label class="field-label" for="new-label">{inject:i18n.get('t.libelle')}</label>
             <input class="input-control" id="new-label" type="text" name="label" maxlength="120">
         </div>
         <div class="field">
-            <label class="field-label" for="new-customer">Client (n° compte)</label>
+            <label class="field-label" for="new-customer">{inject:i18n.get('t.client-n-compte')}</label>
             <input class="input-control" id="new-customer" type="text" name="customerAccountNumber" maxlength="40">
         </div>
         <div class="field">
-            <label class="field-label" for="new-total">Montant total</label>
+            <label class="field-label" for="new-total">{inject:i18n.get('t.montant-total')}</label>
             <input class="input-control" id="new-total" type="text" name="totalAmount" required>
         </div>
-        <div class="page-actions"><button class="btn btn-primary" type="submit">Créer et remettre le code</button></div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.creer-et-remettre-le-code')}</button></div>
     </form>
 </div>
 {/body}

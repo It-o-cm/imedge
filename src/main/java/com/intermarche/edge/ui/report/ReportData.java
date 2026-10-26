@@ -18,7 +18,10 @@ public class ReportData {
     /** The report that produced these rows. */
     public final ReportDefinition definition;
 
-    /** The rows, in the order the report returned them. */
+    /**
+     * The rows, in the order the report returned them, each group of a broken
+     * report closed by its {@link Subtotal} row.
+     */
     public final List<List<Object>> rows;
 
     /** The total row: one cell per column, null where nothing is totalled. */
@@ -32,8 +35,114 @@ public class ReportData {
      */
     public ReportData(ReportDefinition definition, List<List<Object>> rows) {
         this.definition = definition;
-        this.rows = rows;
         this.totals = total(definition.columns(), rows);
+        int index = breakIndex(definition);
+        this.rows = index < 0 ? rows : broken(definition, rows, index);
+    }
+
+    /**
+     * A SUBTOTAL row of a broken report (« rupture »): the sums of the
+     * totalled columns over one group, named in the break column. A row like
+     * the others for the renderings — the CSV and the spreadsheet carry it as
+     * the paper does — and recognisable by its type, so the grand total and
+     * the chart never count it twice.
+     */
+    public static final class Subtotal extends ArrayList<Object> {
+
+        /** Serialization version, the list being serializable. */
+        private static final long serialVersionUID = 1L;
+    }
+
+    /**
+     * Whether a row is a subtotal the frame inserted.
+     *
+     * @param row the row
+     * @return true for a {@link Subtotal}
+     */
+    public static boolean isSubtotal(List<Object> row) {
+        return row instanceof Subtotal;
+    }
+
+    /**
+     * Returns the rows the report produced, without the subtotals.
+     *
+     * @return the data rows, in order
+     */
+    public List<List<Object>> dataRows() {
+        List<List<Object>> data = new ArrayList<>();
+        for (List<Object> row : rows) {
+            if (!isSubtotal(row)) {
+                data.add(row);
+            }
+        }
+        return data;
+    }
+
+    /**
+     * Closes every group of consecutive rows sharing the break column's value
+     * with its subtotal row.
+     *
+     * @param definition the report, read for its columns
+     * @param rows the rows, ordered by the break column
+     * @param index the break column index
+     * @return the rows with one subtotal after each group
+     */
+    private static List<List<Object>> broken(ReportDefinition definition, List<List<Object>> rows, int index) {
+        List<List<Object>> out = new ArrayList<>();
+        List<List<Object>> group = new ArrayList<>();
+        String current = null;
+        for (List<Object> row : rows) {
+            String key = index < row.size() ? String.valueOf(row.get(index)) : "";
+            if (!group.isEmpty() && !key.equals(current)) {
+                out.add(subtotal(definition, group, current, index));
+                group = new ArrayList<>();
+            }
+            current = key;
+            group.add(row);
+            out.add(row);
+        }
+        if (!group.isEmpty()) {
+            out.add(subtotal(definition, group, current, index));
+        }
+        return out;
+    }
+
+    /**
+     * Finds the index of the column a report breaks on.
+     *
+     * @param definition the report
+     * @return the index, or -1 when the report declares no break or names no column
+     */
+    private static int breakIndex(ReportDefinition definition) {
+        String key = definition.breakKey();
+        if (key == null) {
+            return -1;
+        }
+        List<ReportColumn> columns = definition.columns();
+        for (int i = 0; i < columns.size(); i++) {
+            if (key.equals(columns.get(i).key())) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * Builds the subtotal row of one group.
+     *
+     * @param definition the report
+     * @param group the group's rows
+     * @param key the group's break value
+     * @param index the break column index
+     * @return the subtotal row
+     */
+    private static Subtotal subtotal(ReportDefinition definition, List<List<Object>> group, String key, int index) {
+        Subtotal row = new Subtotal();
+        List<Object> sums = total(definition.columns(), group);
+        for (int i = 0; i < sums.size(); i++) {
+            row.add(i == index ? "Sous-total " + key : sums.get(i));
+        }
+        return row;
     }
 
     /**
@@ -92,6 +201,11 @@ public class ReportData {
             }
             BigDecimal sum = BigDecimal.ZERO;
             for (List<Object> row : rows) {
+                // A subtotal the report wrote itself — a mean, a recap — is no
+                // data: counting it would count its rows twice.
+                if (isSubtotal(row)) {
+                    continue;
+                }
                 // A row shorter than the column list, or carrying null where a
                 // number was expected, contributes nothing rather than breaking
                 // the whole total: a report with one hole still has a usable sum.

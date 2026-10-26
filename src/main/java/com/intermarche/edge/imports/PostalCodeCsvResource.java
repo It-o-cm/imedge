@@ -2,14 +2,7 @@ package com.intermarche.edge.imports;
 
 import com.intermarche.edge.domain.store.PostalCode;
 import io.quarkus.hibernate.orm.panache.Panache;
-import io.smallrye.common.annotation.RunOnVirtualThread;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.POST;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
 
@@ -43,7 +36,6 @@ import java.util.Set;
 // document and to keep in step, and the permission policy had to name them
 // one by one — an importer forgotten there was a door left open.
 @ApplicationScoped
-@RunOnVirtualThread
 public class PostalCodeCsvResource extends ImporterCsvResource {
 
     /** Technical log of this class. */

@@ -284,4 +284,57 @@ class DashboardIndicatorServiceTest {
         assertSame(DashboardIndicator.SUPERVISOR_CALLS.label(), row.get("label"));
         assertSame(DashboardIndicator.SUPERVISOR_CALLS.code(), row.get("code"));
     }
+
+    /**
+     * The open codes address any datum of the system (BO-04-03-03/-15): journal
+     * events of a type, settlements of a method, revenue of a branch, movements
+     * of a type; a duplicate is shown once and an unreadable code is ignored.
+     */
+    @Test
+    void indicatorsReadTheOpenCodes() {
+        when(settings.dashboardIndicators()).thenReturn(
+                "event:price_modified;event:PRICE_MODIFIED;payment:cheque;family:10;movement:withdrawal;"
+                        + "event:NOPE;payment:NOPE;movement:NOPE;other:1;:x;event:; ;endorsements");
+        stubEventCount(3L);
+        stubMovedCash(new BigDecimal("40"));
+        TypedQuery<BigDecimal> payments = typedQueryMock();
+        when(payments.setParameter(anyString(), any())).thenReturn(payments);
+        when(payments.getSingleResult()).thenReturn(new BigDecimal("12.5"));
+        when(entityManager.createQuery(contains("join t.payments p"), eq(BigDecimal.class))).thenReturn(payments);
+        TypedQuery<BigDecimal> family = typedQueryMock();
+        when(family.setParameter(anyString(), any())).thenReturn(family);
+        when(family.getSingleResult()).thenReturn(null);
+        when(entityManager.createQuery(contains("l.familyCode like :family"), eq(BigDecimal.class))).thenReturn(family);
+        List<Map<String, Object>> rows = service().indicators();
+        assertEquals(5, rows.size());
+        assertEquals("Événements PRICE_MODIFIED", rows.get(0).get("label"));
+        assertEquals("3", rows.get(0).get("value"));
+        assertEquals("", rows.get(0).get("unit"));
+        assertEquals("Règlements CHEQUE", rows.get(1).get("label"));
+        assertEquals("12,50", rows.get(1).get("value"));
+        assertEquals("€", rows.get(1).get("unit"));
+        assertEquals("CA famille 10", rows.get(2).get("label"));
+        assertEquals("0,00", rows.get(2).get("value"));
+        assertEquals("Mouvements WITHDRAWAL", rows.get(3).get("label"));
+        assertEquals("t.s21-ev-", rows.get(0).get("subjectPrefix"));
+        assertEquals("PRICE_MODIFIED", rows.get(0).get("subject"));
+        assertEquals("t.s21-pm-", rows.get(1).get("subjectPrefix"));
+        assertEquals("CHEQUE", rows.get(1).get("subject"));
+        assertEquals(null, rows.get(2).get("subject"));
+        assertEquals("t.s21-mv-", rows.get(3).get("subjectPrefix"));
+        assertEquals("WITHDRAWAL", rows.get(3).get("subject"));
+        assertEquals("40,00", rows.get(3).get("value"));
+        assertEquals("endorsements", rows.get(4).get("code"));
+    }
+
+    /**
+     * A list that cannot be read, or none, shows no indicator.
+     */
+    @Test
+    void indicatorsAreEmptyWhenTheListCannotBeRead() {
+        when(settings.dashboardIndicators()).thenThrow(new IllegalStateException("no db"));
+        assertTrue(service().indicators().isEmpty());
+        org.mockito.Mockito.doReturn(null).when(settings).dashboardIndicators();
+        assertTrue(service().tokens().isEmpty());
+    }
 }

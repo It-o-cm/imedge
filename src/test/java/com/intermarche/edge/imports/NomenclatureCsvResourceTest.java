@@ -123,8 +123,8 @@ class NomenclatureCsvResourceTest {
                 stream("SOURCE|FOO\nignored\n"));
         assertEquals(400, response.getStatus());
         String body = String.valueOf(response.getEntity());
-        assertEquals("{\"createdCount\":0, \"updatedCount\":0, \"levelCount\":0, "
-                + "\"errors\":[\"Colonne NIVEAU absente.\", \"Colonne NUMERO absente.\", "
+        assertEquals("{\"createdCount\":0,\"updatedCount\":0,\"levelCount\":0,"
+                + "\"errors\":[\"Colonne NIVEAU absente.\",\"Colonne NUMERO absente.\","
                 + "\"Colonne LIBELLE absente.\"]}", body);
         verifyNoInteractions(service);
     }
@@ -140,7 +140,7 @@ class NomenclatureCsvResourceTest {
         var response = resource.importNomenclature("ITM_FR", "Label", "ITM",
                 stream("SOURCE|NIVEAU|NUMERO|LIBELLE\nNATIONAL|0|01|Frais\n"));
         assertEquals(200, response.getStatus());
-        assertEquals("{\"createdCount\":2, \"updatedCount\":1, \"levelCount\":3, \"errors\":[]}",
+        assertEquals("{\"createdCount\":2,\"updatedCount\":1,\"levelCount\":3,\"errors\":[]}",
                 String.valueOf(response.getEntity()));
     }
 
@@ -156,7 +156,7 @@ class NomenclatureCsvResourceTest {
         var response = resource.importNomenclature("ITM_FR", null, null,
                 stream("NIVEAU|NUMERO|LIBELLE\n0|01|Frais\n"));
         assertEquals(409, response.getStatus());
-        assertEquals("{\"createdCount\":1, \"updatedCount\":0, \"levelCount\":2, "
+        assertEquals("{\"createdCount\":1,\"updatedCount\":0,\"levelCount\":2,"
                 + "\"errors\":[\"Niveau 0 : code vide.\"]}",
                 String.valueOf(response.getEntity()));
     }
@@ -369,20 +369,42 @@ class NomenclatureCsvResourceTest {
     @Test
     void jsonRendersAnEmptyErrorList() throws Exception {
         Method method = privateMethod("json", int.class, int.class, int.class, List.class);
-        assertEquals("{\"createdCount\":1, \"updatedCount\":2, \"levelCount\":3, \"errors\":[]}",
+        assertEquals("{\"createdCount\":1,\"updatedCount\":2,\"levelCount\":3,\"errors\":[]}",
                 method.invoke(resource, 1, 2, 3, List.of()));
     }
 
     /**
-     * {@code json} separates errors with a comma from the second on and escapes
-     * backslashes and quotes (first ternary arm on index zero, second after).
+     * {@code json} writes valid JSON through the JSON library: errors are
+     * separated and escaped (backslash, quote, line break), and a real parser
+     * reads every field back.
+     *
+     * @throws Exception never: the answer parses
      */
     @Test
     void jsonSeparatesAndEscapesErrors() throws Exception {
         Method method = privateMethod("json", int.class, int.class, int.class, List.class);
         List<String> errors = List.of("a\\b", "c\"d");
-        assertEquals("{\"createdCount\":0, \"updatedCount\":0, \"levelCount\":0, "
-                + "\"errors\":[\"a\\\\b\", \"c\\\"d\"]}",
+        assertEquals("{\"createdCount\":0,\"updatedCount\":0,\"levelCount\":0,"
+                + "\"errors\":[\"a\\\\b\",\"c\\\"d\"]}",
                 method.invoke(resource, 0, 0, 0, errors));
+        com.fasterxml.jackson.databind.JsonNode parsed = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readTree((String) method.invoke(resource, 1, 2, 3, List.of("x\ny")));
+        assertEquals(1, parsed.get("createdCount").asInt());
+        assertEquals(3, parsed.get("levelCount").asInt());
+        assertEquals("x\ny", parsed.get("errors").get(0).asText());
+    }
+
+    /**
+     * The refusal is built by the JSON library: a quote, a backslash or a line
+     * break in the complaint read back unchanged with a real parser.
+     *
+     * @throws Exception when the answer is not valid JSON
+     */
+    @Test
+    void theRefusalIsAValidDocument() throws Exception {
+        com.fasterxml.jackson.databind.JsonNode answer = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readTree(NomenclatureCsvResource.errorsAnswer("a\"b\\c\nd"));
+        assertEquals(1, answer.get("errors").size());
+        assertEquals("a\"b\\c\nd", answer.get("errors").get(0).asText());
     }
 }

@@ -1,9 +1,15 @@
 package com.intermarche.edge.domain.store;
 
+import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
+
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.mockito.Mockito.mockStatic;
 
 /**
  * Unit tests for {@link Enseigne}.
@@ -45,5 +51,18 @@ class EnseigneTest {
         enseigne.countryCode = countryCode;
         enseigne.defaultLanguage = language;
         return enseigne;
+    }
+
+    /**
+     * {@code listAllOrdered} delegates to Panache ordered by code and hands
+     * back what the store answers.
+     */
+    @Test
+    void listAllOrderedDelegatesToPanache() {
+        List<Enseigne> all = List.of(new Enseigne());
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> Enseigne.list("order by code")).thenReturn(all);
+            assertSame(all, Enseigne.listAllOrdered());
+        }
     }
 }

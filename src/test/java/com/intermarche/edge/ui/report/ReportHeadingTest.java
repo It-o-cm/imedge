@@ -87,4 +87,26 @@ class ReportHeadingTest {
         constructor.setAccessible(true);
         Assertions.assertNotNull(constructor.newInstance());
     }
+
+    /**
+     * In another language the period's label and the range words are
+     * translated and the dates kept as written (BO-06-01-02): a single day,
+     * and a range of days.
+     */
+    @Test
+    void periodIsWrittenInTheEditionLanguage() {
+        com.intermarche.edge.ui.admin.BackOfficeMessages dutch = com.intermarche.edge.ui.admin.BackOfficeMessages.in("nl");
+        ReportCriteria day = new ReportCriteria();
+        day.period = ReportPeriod.DAY;
+        day.reference = LocalDate.of(2025, 9, 1);
+        Assertions.assertEquals(dutch.text("Jour") + " : 01/09/2025", ReportHeading.period(day, dutch));
+        ReportCriteria range = new ReportCriteria();
+        range.period = ReportPeriod.RANGE;
+        range.rangeFrom = LocalDate.of(2025, 9, 1);
+        range.rangeTo = LocalDate.of(2025, 9, 3);
+        Assertions.assertEquals(dutch.text("Plage de dates") + " : van 01/09/2025 tot 03/09/2025",
+                ReportHeading.period(range, dutch));
+        Assertions.assertEquals("Plage de dates : du 01/09/2025 au 03/09/2025",
+                ReportHeading.period(range, com.intermarche.edge.ui.admin.BackOfficeMessages.in("fr")));
+    }
 }

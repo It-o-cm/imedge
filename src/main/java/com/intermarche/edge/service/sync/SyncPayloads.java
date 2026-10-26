@@ -119,6 +119,12 @@ public final class SyncPayloads {
          */
         public String formattedContent;
 
+        /**
+         * The customer language of the ticket (LC-13-06-09, -14), or null when
+         * the sale ran in the register's language.
+         */
+        public String customerLanguage;
+
         /** The ticket number (upsert key). */
         public String ticketNumber;
         /** The register identifier. */
@@ -149,6 +155,10 @@ public final class SyncPayloads {
         public boolean fidelityAnonymousProjection;
         /** Whether the loyalty service was unreachable during the sale. */
         public boolean fidelityUnavailable;
+        /** The pot balances frozen at closing (BO-10-02-33), or null. */
+        public String fidelityPotBalances;
+        /** The loyalty messages frozen on the ticket, or null (BO-03-03-26, BO-03-03-27). */
+        public String fidelityMessages;
         /** The advantage lines the sale displayed, empty when it displayed none. */
         public List<FidelityLineDto> fidelityLines = new ArrayList<>();
         /** The engine offer messages the sale displayed, empty when it displayed none (GB-01-07-05/06). */
@@ -157,6 +167,18 @@ public final class SyncPayloads {
         public String digitalKey;
         /** The customer email, or null. */
         public String customerEmail;
+        /** Fiscal identifier selected on the ordinary sale (LC-08-06-02/-03). */
+        public String customerTaxId;
+        /** The sales channel of an integrated transaction (BO-07-01-02), null for the store's lanes. */
+        public String salesChannel;
+        /** True on a self-scanning basket loaded at the till (BO-04-01-41). */
+        public boolean selfScanning;
+        /** True when the hostess decided the basket's control (BO-04-01-42). */
+        public boolean selfScanControlled;
+        /** True when the system decided the basket's control (BO-04-01-43). */
+        public boolean selfScanVerified;
+        /** True on a sale made while the store node was unreachable (BO-04-01-14). */
+        public boolean offline;
         /** The line count. */
         public int itemCount;
         /** The total excluding tax. */
@@ -180,9 +202,40 @@ public final class SyncPayloads {
         public String resumedAt;
         /** The register that recalled it (BO-06-06-01), or null while it waits. */
         public String resumedTerminalId;
+        /** When the cashier went to payment (BO-06-06-02), or null. */
+        public String paymentStartedAt;
+        /** The per-line valuation trace: the promotions each line took (BO-06-08-02). */
+        public List<ValuationDto> valuations = new ArrayList<>();
         public List<LineDto> lines = new ArrayList<>();
         /** The registered payments. */
         public List<PaymentDto> payments = new ArrayList<>();
+        /** The Portuguese documents stating the sale (BO-10-06-03), empty elsewhere. */
+        public List<FiscalDocumentDto> fiscalDocuments = new ArrayList<>();
+    }
+
+    /**
+     * One promotion trace of a ticket line (BO-06-08-02): which offer valued
+     * the line and what it took off, as the register's valuation recorded it.
+     */
+    public static class ValuationDto {
+        /** The line the trace belongs to. */
+        public String lineUid;
+        /** The register's own total of the line. */
+        public BigDecimal localTotal;
+        /** The total the engine valued the line at. */
+        public BigDecimal valuedTotal;
+        /** The offers the line took part in, by their identifiers. */
+        public String offerLabel;
+        /** The advantage the line received. */
+        public String advantageLabel;
+        /** The advantage's amount on the line. */
+        public BigDecimal advantageAmount;
+        /** How the advantage is printed. */
+        public String advantagePrintMode;
+        /** The correction applied to the line. */
+        public String correctionLabel;
+        /** The correction's amount on the line. */
+        public BigDecimal correctionAmount;
     }
 
     /**
@@ -237,6 +290,12 @@ public final class SyncPayloads {
         public int lineNumber;
         /** The stable line uid, or null on legacy rows. */
         public String lineUid;
+        /** LC-02-03-04: principal owning an automatically registered companion. */
+        public String linkedParentUid;
+        /** Companion EAN captured on the line. */
+        public String linkedArticleEan;
+        /** Last quantity whose companion chain was recorded. */
+        public BigDecimal linkedRecordedQuantity;
         /** The EAN snapshot, or null. */
         public String ean;
         /** The PLU snapshot, or null. */
@@ -249,14 +308,18 @@ public final class SyncPayloads {
         public BigDecimal unitPrice;
         /** The VAT rate. */
         public BigDecimal vatRate;
+        /** The number of the VAT regime of the line, or null (BO-02-02-01). */
+        public Integer vatNumber;
         /** The price-modification label, or null. */
         public String modifierLabel;
         /** Structured gesture type (REMISE, DISCOUNT, FORCE_PRICE), or null. */
         public String modifierType;
         /**
-         * Structured gesture value, or null. REMISE = UNIT discount in euros (line
-         * effect = modifierValue * quantity); DISCOUNT = percent; FORCE_PRICE = new
-         * unit price. The reliable line total stays unitPrice * quantity.
+         * Structured gesture value as typed, read by {@link #modifierType}, or
+         * null: REMISE = a UNIT discount in euros (line effect = value times
+         * quantity), DISCOUNT = a percentage, FORCE_PRICE = the new UNIT price. The
+         * reliable line total is always {@code unitPrice * quantity}
+         * ({@link #totalPrice}), never derived from this value.
          */
         public BigDecimal modifierValue;
         /** The catalog unit price before modification, or null. */
@@ -279,6 +342,12 @@ public final class SyncPayloads {
         public String cancellationReasonCode;
         /** Label of the justification given for the cancellation (BO-06-06-04), or null. */
         public String cancellationReasonLabel;
+        /** Code of the return type a return line was rung under (BO-03-13-12), or null. */
+        public String returnTypeCode;
+        /** Label of the return type a return line was rung under (BO-03-13-12), or null. */
+        public String returnTypeLabel;
+        /** True when the line is a return rung inside a sale (BO-03-13-11, BO-03-13-12). */
+        public boolean returnLine;
         /**
          * True when the line sold a money instrument (gift card) rather than goods
          * (R12): the store node keeps such a line out of the turnover and shows it
@@ -294,6 +363,20 @@ public final class SyncPayloads {
          * {@link #cancelled} is true.
          */
         public boolean cancelledLast;
+        /** True when the article was rung by a scan, false when keyed (BO-04-01-14, BO-06-04-05). */
+        public boolean scanned;
+        /** True when the line's price was keyed (BO-04-01-14). */
+        public boolean priceEntered;
+        /** True when the article is a bulky one carried out (BO-04-01-14). */
+        public boolean carriedOut;
+        /** The tare deducted from the weighing, in kilograms, or null (BO-04-01-14 « déduction »). */
+        public java.math.BigDecimal appliedTareKg;
+        /** True when the line is exempt of VAT, distinct from a zero rate (BO-02-03-26/27). */
+        public boolean vatExempt;
+        /** True when the article was sold on behalf of a third party (BO-02-03-41 to -43). */
+        public boolean thirdPartySale;
+        /** True when the article sold is a service and not goods (BO-05-01-03). */
+        public boolean service;
     }
 
     /**
@@ -318,8 +401,18 @@ public final class SyncPayloads {
         public boolean degradedMode;
         /** The real CB entry mode read off the terminal (SANS_CONTACT / CODE), or null (EXP-54). */
         public String cardEntryMode;
+        /** LC-07-07-03: selected server, independent of the resulting tender. */
+        public String moneticServer;
         /** The CMC7 magnetic line read off the cheque, or null. */
         public String magneticLine;
+        /** The account number keyed for the cheque (BO-03-02-24), or null. */
+        public String chequeAccountNumber;
+        /** The cheque-guarantee authorization number (BO-03-02-24), or null. */
+        public String chequeGuaranteeAuthorization;
+        /** The cheque-guarantee provider that authorized the cheque (BO-03-02-24), or null. */
+        public String chequeGuaranteeProvider;
+        /** The administered tender the settlement was taken as (BO-03-02-01/-44), or null. */
+        public String tenderCode;
         /** The account charged by a customer-credit settlement (LC-07-09), or null. */
         public String creditAccountNumber;
         /** The account name as it stood at sale time, or null. */
@@ -360,6 +453,8 @@ public final class SyncPayloads {
         /** The refund status name. */
         public String status;
         /** The refund method name, or null. */
+        /** LC-07-07-03: actual server used for card credit. */
+        public String moneticServer;
         public String refundMethod;
         /** The number of the refunded ticket. */
         public String originalTicketNumber;
@@ -387,6 +482,58 @@ public final class SyncPayloads {
         /** Badge of the supervisor who endorsed it (BO-06-06-05), or null. */
         public String supervisorBadgeId;
         public List<RefundLineDto> lines = new ArrayList<>();
+        /** The Portuguese credit notes stating the return (BO-10-06-03), empty elsewhere. */
+        public List<FiscalDocumentDto> fiscalDocuments = new ArrayList<>();
+    }
+
+    /**
+     * A Portuguese fiscal document as the register issued it (BO-10-06-03):
+     * carried with its sale or its return so the store node holds what its
+     * SAF-T export states. Upserted by number; never renumbered by the node.
+     */
+    public static class FiscalDocumentDto {
+        /** The document type name: FS, FT, NC or RC. */
+        public String documentType;
+        /** The series: the register and the year. */
+        public String series;
+        /** The rank in the series. */
+        public long rank;
+        /** The document number (upsert key). */
+        public String number;
+        /** The ATCUD. */
+        public String atcud;
+        /** The numeric SAF-T identifier of the type (BO-10-06-01/02), or null. */
+        public Integer saftDocumentId;
+        /** The issuing register. */
+        public String terminalId;
+        /** The issuing timestamp, ISO-8601. */
+        public String issuedAt;
+        /** The part of the sale stated, 0 for the whole sale. */
+        public int part;
+        /** The uids of the lines stated, or null for every line. */
+        public String lineUids;
+        /** The number of the document referred to, or null. */
+        public String sourceNumber;
+        /** The customer's tax number, or null. */
+        public String customerTaxId;
+        /** The customer's name, or null. */
+        public String customerName;
+        /** The customer's address, or null. */
+        public String customerAddress;
+        /** The gross total. */
+        public BigDecimal grossTotal;
+        /** The tax total. */
+        public BigDecimal taxTotal;
+        /** The chained signature. */
+        public String hash;
+        /** The previous document's signature. */
+        public String previousHash;
+        /** The QR payload. */
+        public String qrPayload;
+        /** Whether a credit note cancelled it. */
+        public boolean cancelled;
+        /** The SAF-T origin of the document (BO-07-01-06): null when the software produced it, I when integrated. */
+        public String sourceBilling;
     }
 
     /**
@@ -405,6 +552,12 @@ public final class SyncPayloads {
         public String operatorBadgeId;
         /** The event timestamp, ISO-8601. */
         public String eventDate;
+        /** The number of the ticket the event is about, or null (BO-04-01-19/34). */
+        public String ticketNumber;
+        /** The amount the event bears, or null (BO-04-01-19). */
+        public BigDecimal amount;
+        /** The searchable code the event carries, or null (BO-04-01-19/34). */
+        public String code;
     }
 
     /**
@@ -443,6 +596,18 @@ public final class SyncPayloads {
          * the order is recalled by code.
          */
         public String orderReference;
+        /**
+         * The tender the movement was made in, or null for cash (BO-05-02-09):
+         * the back office validates each cashier's movements tender by tender.
+         */
+        public String paymentMethod;
+        /**
+         * The tender a transfer moved the amount to, or null for any other
+         * movement (BO-05-02-09, LC-12-10).
+         */
+        public String transferTo;
+        /** The denominations counted, as the register froze them, or null (BO-05-02-09). */
+        public String denominationDetail;
     }
 
     /**
@@ -473,6 +638,160 @@ public final class SyncPayloads {
         public String phone;
         /** The electronic address, or null. */
         public String email;
+        /**
+         * The fiscal identifier (NIF) the hostess typed, or null when the
+         * register states none (BO-02-04-13).
+         */
+        public String taxId;
+        /**
+         * Where the customer came from ({@code AccountCustomer.Origin} name):
+         * a customer opened at a till to carry one document is VOLATILE
+         * (BO-06-03-04), or null from a register of an older version.
+         */
+        public String origin;
+    }
+
+    /**
+     * A ticket a register printed (LC-08-02-02), upsert by terminal and the
+     * register's id.
+     */
+    public static class PrintoutDto {
+        /** The register's id of the printed ticket (upsert key with the terminal). */
+        public Long sourceId;
+        /** The register that printed it. */
+        public String terminalId;
+        /** The register function that produced the paper. */
+        public String source;
+        /** CUSTOMER, STORE or TRAINING. */
+        public String audience;
+        /** When it was printed, ISO-8601. */
+        public String issuedAt;
+        /** The ticket as printed, 42-column text. */
+        public String content;
+    }
+
+    /**
+     * The signed trace of a ticket put on hold, resumed or purged (LC-04-01-03),
+     * upsert by terminal and the register's id.
+     */
+    public static class ParkedTicketDto {
+        /** The register's id of the record (upsert key with the terminal). */
+        public Long sourceId;
+        /** The register the record belongs to. */
+        public String terminalId;
+        /** The number of the ticket on hold. */
+        public String ticketNumber;
+        /** What happened to it: PARKED, RESUMED or PURGED. */
+        public String event;
+        /** When it happened, ISO-8601. */
+        public String eventDate;
+        /** Who did it. */
+        public String operator;
+        /** The number of articles the ticket carried. */
+        public int itemCount;
+        /** The total the ticket carried, TTC. */
+        public java.math.BigDecimal totalAmount;
+        /** The ticket's lines at that moment. */
+        public String content;
+        /** The signature of the previous record of the register. */
+        public String previousSignature;
+        /** The signature of the record. */
+        public String signature;
+    }
+
+    /**
+     * An instrument a register printed, as that register knows it
+     * (BO-03-06-62, -48), upsert by the issuing register and the number.
+     */
+    public static class StoredValueDto {
+        /** The register that printed the instrument (upsert key with the number). */
+        public String issuingTerminalId;
+        /** The register reporting. */
+        public String terminalId;
+        /** The printed number. */
+        public String number;
+        /** CREDIT_NOTE or GIFT_CARD. */
+        public String kind;
+        /** The amount it was issued with. */
+        public java.math.BigDecimal initialAmount;
+        /** Its balance. */
+        public java.math.BigDecimal balance;
+        /** ACTIVE or EXHAUSTED. */
+        public String status;
+        /** When it was printed, ISO-8601. */
+        public String issuedAt;
+        /** Its end of validity, ISO-8601, or null. */
+        public String validUntil;
+        /** When its balance reached zero, ISO-8601, or null. */
+        public String exhaustedAt;
+        /** The sale or refund that printed it. */
+        public String issuingDocumentNumber;
+        /**
+         * The point of sale the instrument was printed in, set by the store
+         * node that holds it and carried to the central node, where the
+         * instruments of every shop meet (BO-03-06-48); null from a register.
+         */
+        public String pdvNumber;
+    }
+
+    /**
+     * A payment barcode read at a till (BO-03-06-63), upsert by terminal and
+     * the register's id.
+     */
+    public static class ScannedBarcodeDto {
+        /** The register's id of the reading (upsert key with the terminal). */
+        public Long sourceId;
+        /** The register the code was read on. */
+        public String terminalId;
+        /** The code read. */
+        public String code;
+        /** The range that recognised it, or null. */
+        public String typeCode;
+        /** That range's label, or null. */
+        public String typeLabel;
+        /** The sale it was presented to, or null. */
+        public String ticketNumber;
+        /** What it was worth, or null. */
+        public java.math.BigDecimal amount;
+        /** Its end of validity, ISO-8601, or null. */
+        public String validUntil;
+        /** When it was read, ISO-8601. */
+        public String scannedAt;
+        /** Whether the system knew it. */
+        public boolean found;
+        /** Whether it was read as a GS1 payload (BO-11-01-18). */
+        public boolean gs1;
+    }
+
+    /**
+     * A sale made in training mode (LC-13-05-06), upsert by terminal and the
+     * register's id.
+     */
+    public static class TrainingTicketDto {
+        /** The register's id of the training sale (upsert key with the terminal). */
+        public Long sourceId;
+        /** The register the training sale was made on. */
+        public String terminalId;
+        /** The login of the operator who trained, or null. */
+        public String cashierLogin;
+        /** When the training sale ended, ISO-8601. */
+        public String issuedAt;
+        /** The number of articles sold. */
+        public int itemCount;
+        /** The total, TTC. */
+        public java.math.BigDecimal totalIncludingTax;
+        /** The training receipt as printed. */
+        public String content;
+        /** When the training cart was parked (BO-06-06-01), ISO-8601, or null. */
+        public String parkedAt;
+        /** Who parked it, or null. */
+        public String parkedBy;
+        /** When it was recalled, ISO-8601, or null. */
+        public String resumedAt;
+        /** The register that recalled it, or null. */
+        public String resumedTerminalId;
+        /** Who recalled it, or null. */
+        public String resumedBy;
     }
 
     /**
@@ -525,6 +844,12 @@ public final class SyncPayloads {
         public BigDecimal totalEcoTax;
         /** How many times it had been printed when it was pushed. */
         public int printCount;
+        /** The customer's order number the document states, or null (BO-03-03-02). */
+        public String orderNumber;
+        /** The administered document it was drawn as, or null (BO-03-04-09). */
+        public String documentCode;
+        /** The name printed at the top of the document, or null (BO-03-03-02). */
+        public String documentTitle;
     }
 
     /**

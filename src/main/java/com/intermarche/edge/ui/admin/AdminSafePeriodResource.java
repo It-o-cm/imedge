@@ -1,5 +1,9 @@
 package com.intermarche.edge.ui.admin;
 
+import io.quarkus.security.Authenticated;
+import com.intermarche.edge.security.FeatureAccess;
+import com.intermarche.edge.domain.setting.Feature;
+import com.intermarche.edge.domain.people.CrudOption;
 import com.intermarche.edge.domain.people.Employee;
 import com.intermarche.edge.domain.safe.AccountingPeriod;
 import com.intermarche.edge.security.CurrentUser;
@@ -7,7 +11,6 @@ import com.intermarche.edge.service.SafeService;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
@@ -65,7 +68,8 @@ public class AdminSafePeriodResource {
      * @return the periods page
      */
     @GET
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SAFE_PERIOD)
     public TemplateInstance list(@QueryParam("notice") String notice,
                                  @QueryParam("noticeOk") @DefaultValue("true") boolean noticeOk) {
         LOGGER.info("Entering method list");
@@ -89,7 +93,8 @@ public class AdminSafePeriodResource {
      * @return a 303 back to the list with the notice
      */
     @POST
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SAFE_PERIOD, option = CrudOption.CREATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response open(MultivaluedMap<String, String> form) {
@@ -116,7 +121,8 @@ public class AdminSafePeriodResource {
      */
     @POST
     @Path("/close")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SAFE_PERIOD, option = CrudOption.UPDATE)
     @Transactional
     public Response close() {
         LOGGER.info("Entering method close");

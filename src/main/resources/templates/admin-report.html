@@ -14,45 +14,49 @@
 !}
 {#include admin-layout}
 
-{#title}{definition.label}{/title}
+{#title}{inject:i18n.text(definition.label)}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>{definition.label}</h1>
-        <p class="page-sub">{heading} — exigence {definition.requirement}</p>
+        <h1>{inject:i18n.text(definition.label)}</h1>
+        <p class="page-sub">{heading} {inject:i18n.get('t.exigence')} {definition.requirement}</p>
     </div>
     <div class="page-actions">
-        <a class="btn btn-muted" href="/admin/reports">Tous les rapports</a>
+        <a class="btn btn-muted" href="/admin/reports">{inject:i18n.get('t.tous-les-rapports')}</a>
     </div>
 </div>
+
+{#if notice}
+<div class="alert alert-ok" role="status">{inject:i18n.text(notice)}</div>
+{/if}
 
 <form method="get" action="/admin/reports/{definition.code}" class="card report-form">
     <div class="field-grid">
         <div class="field">
-            <label class="field-label" for="r-period">Période</label>
+            <label class="field-label" for="r-period">{inject:i18n.get('t.periode')}</label>
             <select class="input-control" id="r-period" name="period">
                 {#for p in periods}
-                <option value="{p}" {#if criteria.period == p}selected{/if}>{p.label}</option>
+                <option value="{p}" {#if criteria.period == p}selected{/if}>{inject:i18n.text(p.label)}</option>
                 {/for}
             </select>
         </div>
         <div class="field">
-            <label class="field-label" for="r-reference">Date de référence</label>
+            <label class="field-label" for="r-reference">{inject:i18n.get('t.date-de-reference')}</label>
             <input class="input-control" id="r-reference" type="date" name="reference" value="{criteria.reference ?: ''}">
-            <span class="field-hint">Le jour, la semaine, le mois ou l'année qui contient cette date.</span>
+            <span class="field-hint">{inject:i18n.get('t.le-jour-la-semaine-le-mois-ou')}</span>
         </div>
         <div class="field">
-            <label class="field-label" for="r-from">Plage — du</label>
+            <label class="field-label" for="r-from">{inject:i18n.get('t.plage-du')}</label>
             <input class="input-control" id="r-from" type="date" name="from" value="{criteria.rangeFrom ?: ''}">
         </div>
         <div class="field">
-            <label class="field-label" for="r-to">Plage — au</label>
+            <label class="field-label" for="r-to">{inject:i18n.get('t.plage-au')}</label>
             <input class="input-control" id="r-to" type="date" name="to" value="{criteria.rangeTo ?: ''}">
         </div>
         {#if definition.optionLabel}
         <div class="field">
-            <label class="field-label" for="r-option">{definition.optionLabel}</label>
+            <label class="field-label" for="r-option">{inject:i18n.text(definition.optionLabel)}</label>
             {#if definition.optionChoices.isEmpty}
             {! No choices: the option is FREE TEXT — an article code, a family. A
              ! select over an empty list would show an empty menu and swallow the
@@ -61,50 +65,176 @@
             {#else}
             <select class="input-control" id="r-option" name="option">
                 {#for choice in definition.optionChoices}
-                <option value="{choice.split(':').0}" {#if criteria.option == choice.split(':').0}selected{/if}>{choice.split(':').1}</option>
+                <option value="{choice.split(':').0}" {#if criteria.option == choice.split(':').0}selected{/if}>{inject:i18n.text(choice.split(':').1)}</option>
                 {/for}
             </select>
             {/if}
         </div>
         {/if}
+        {#if definition.pickLabel}
+        <div class="field">
+            <label class="field-label" for="r-pick">{inject:i18n.text(definition.pickLabel)}</label>
+            <select class="input-control" id="r-pick" name="pick" multiple size="4">
+                {#for choice in definition.pickChoices}
+                <option value="{choice.split(':').0}" {#if criteria.picks.contains(choice.split(':').0)}selected{/if}>{inject:i18n.text(choice.split(':').1)}</option>
+                {/for}
+            </select>
+            <span class="field-hint">{inject:i18n.get('t.r21v-aucun-choix-tous')}</span>
+        </div>
+        {/if}
+        {#if definition.boundLabel}
+        <div class="field">
+            <label class="field-label" for="r-bound-from">{inject:i18n.text(definition.boundLabel)} — {inject:i18n.get('t.r21v-de')}</label>
+            <input class="input-control" id="r-bound-from" type="text" name="boundFrom" value="{criteria.boundFrom ?: ''}" maxlength="60">
+        </div>
+        <div class="field">
+            <label class="field-label" for="r-bound-to">{inject:i18n.text(definition.boundLabel)} — {inject:i18n.get('t.r21v-a')}</label>
+            <input class="input-control" id="r-bound-to" type="text" name="boundTo" value="{criteria.boundTo ?: ''}" maxlength="60">
+        </div>
+        {/if}
+        {#if showHours}
+        <div class="field">
+            <label class="field-label" for="r-hour-from">{inject:i18n.get('t.r21v-heure-de-debut')}</label>
+            <input class="input-control" id="r-hour-from" type="time" name="hourFrom" value="{criteria.hourFrom ?: ''}">
+        </div>
+        <div class="field">
+            <label class="field-label" for="r-hour-to">{inject:i18n.get('t.r21v-heure-de-fin')}</label>
+            <input class="input-control" id="r-hour-to" type="time" name="hourTo" value="{criteria.hourTo ?: ''}">
+        </div>
+        {/if}
+        {#if showTerminals && !terminalChoices.isEmpty()}
+        <div class="field">
+            <label class="field-label" for="r-terminal">{inject:i18n.get('t.r21v-caisses')}</label>
+            <select class="input-control" id="r-terminal" name="terminal" multiple size="4">
+                {#for point in terminalChoices}
+                <option value="{point.terminalId}" {#if criteria.terminals.contains(point.terminalId)}selected{/if}>{point.terminalId}</option>
+                {/for}
+            </select>
+            <span class="field-hint">{inject:i18n.get('t.r21v-aucun-choix-tous')}</span>
+        </div>
+        {/if}
+        {#if showIsland}
+        <div class="field">
+            <label class="field-label" for="r-island">{inject:i18n.get('t.r21v-ilot-de-caisse')}</label>
+            <select class="input-control" id="r-island" name="island">
+                <option value="">{inject:i18n.get('t.r21v-tous-les-ilots')}</option>
+                {#for isl in islands}
+                <option value="{isl.code}" {#if criteria.island == isl.code}selected{/if}>{isl.code} — {isl.label}</option>
+                {/for}
+            </select>
+        </div>
+        {/if}
+        {#if showCashiers}
+        <div class="field">
+            <label class="field-label" for="r-cashier">{inject:i18n.get('t.r21v-caissieres')}</label>
+            <select class="input-control" id="r-cashier" name="cashier" multiple size="4">
+                {#for emp in cashierChoices}
+                <option value="{emp.badgeId}" {#if criteria.cashiers.contains(emp.badgeId)}selected{/if}>{emp.badgeId} — {emp.fullName}</option>
+                {/for}
+            </select>
+            <span class="field-hint">{inject:i18n.get('t.r21v-aucun-choix-toutes')}</span>
+        </div>
+        {/if}
+        {#if showArticles}
+        <div class="field">
+            <label class="field-label" for="r-ean-from">{inject:i18n.get('t.r21v-ean-du')}</label>
+            <input class="input-control" id="r-ean-from" type="text" name="eanFrom" value="{criteria.eanFrom ?: ''}" maxlength="38">
+        </div>
+        <div class="field">
+            <label class="field-label" for="r-ean-to">{inject:i18n.get('t.r21v-ean-au')}</label>
+            <input class="input-control" id="r-ean-to" type="text" name="eanTo" value="{criteria.eanTo ?: ''}" maxlength="38">
+        </div>
+        <div class="field">
+            <label class="field-label" for="r-ean">{inject:i18n.get('t.r21v-codes-ean')}</label>
+            <input class="input-control" id="r-ean" type="text" name="ean" value="{eanText}" maxlength="1000">
+            <span class="field-hint">{inject:i18n.get('t.r21v-separes-par-des-points-virgules')}</span>
+        </div>
+        <div class="field">
+            <label class="field-label" for="r-family">{inject:i18n.get('t.r21v-familles')}</label>
+            <input class="input-control" id="r-family" type="text" name="family" value="{familyText}" maxlength="500">
+            <span class="field-hint">{inject:i18n.get('t.r21v-un-code-retient-ses-sous-familles')}</span>
+        </div>
+        {#if !selections.isEmpty()}
+        <div class="field">
+            <label class="field-label" for="r-selection">{inject:i18n.get('t.p20-liste-d-articles')}</label>
+            <select class="input-control" id="r-selection" name="selection">
+                <option value="">{inject:i18n.get('t.p20-tous-les-articles')}</option>
+                {#for sel in selections}
+                <option value="{sel.name}" {#if criteria.selection == sel.name}selected{/if}>{sel.name}</option>
+                {/for}
+            </select>
+        </div>
+        {/if}
+        {/if}
+        {#if hasChart}
+        <div class="field">
+            <label class="field-label" for="r-chart">{inject:i18n.get('t.r21v-graphique')}</label>
+            <select class="input-control" id="r-chart" name="chart">
+                {#for type in chartTypes}
+                <option value="{type}" {#if chartType == type}selected{/if}>{inject:i18n.text(type.label)}</option>
+                {/for}
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-label" for="r-series">{inject:i18n.get('t.r21v-series-representees')}</label>
+            <select class="input-control" id="r-series" name="series" multiple size="4">
+                {#for column in plottable}
+                <option value="{column.key}" {#if chartSeries.contains(column.key)}selected{/if}>{inject:i18n.text(column.label)}</option>
+                {/for}
+            </select>
+        </div>
+        {/if}
+        <div class="field">
+            <label class="field-label" for="r-inactive">{inject:i18n.get('t.k19-inclure-caisses-desactivees')}</label>
+            <input id="r-inactive" type="checkbox" name="inactive" value="true" {#if criteria.includeInactive}checked{/if}>
+        </div>
     </div>
     <div class="filter-actions">
-        <button class="btn btn-primary" type="submit">Éditer</button>
-        <a class="btn btn-muted" href="/admin/reports/{definition.code}">Journée en cours</a>
+        <button class="btn btn-primary" type="submit">{inject:i18n.get('t.editer')}</button>
+        <a class="btn btn-muted" href="/admin/reports/{definition.code}">{inject:i18n.get('t.journee-en-cours')}</a>
     </div>
 </form>
 
 <div class="card">
     <div class="card-title-row">
-        <h2 class="card-title">{data.size} ligne(s)</h2>
+        <h2 class="card-title">{data.size} {inject:i18n.get('t.ligne-s')}</h2>
         <div class="panel-actions">
-            <a class="btn btn-small btn-muted" href="/admin/reports/{definition.code}/export?{baseQuery}format=csv">CSV</a>
-            <a class="btn btn-small btn-muted" href="/admin/reports/{definition.code}/export?{baseQuery}format=xlsx">Tableur</a>
-            <a class="btn btn-small btn-muted" href="/admin/reports/{definition.code}/export?{baseQuery}format=pdf">PDF</a>
+            <a class="btn btn-small btn-muted" href="/admin/reports/{definition.code}/export?{baseQuery}format=csv">{inject:i18n.get('t.csv')}</a>
+            <a class="btn btn-small btn-muted" href="/admin/reports/{definition.code}/export?{baseQuery}format=xlsx">{inject:i18n.get('t.tableur')}</a>
+            <a class="btn btn-small btn-muted" href="/admin/reports/{definition.code}/export?{baseQuery}format=pdf">{inject:i18n.get('t.pdf')}</a>
         </div>
     </div>
+
+    {#for line in preamble}
+    <p class="report-preamble">{inject:i18n.text(line)}</p>
+    {/for}
 
     {#if hasChart}
     <div class="report-chart-box">{chart.raw}</div>
     {/if}
 
     {#if data.isEmpty}
-    <div class="empty-state">Aucune donnée sur la période demandée.</div>
+    <div class="empty-state">{inject:i18n.get('t.aucune-donnee-sur-la-periode-demandee')}</div>
     {#else}
+    <div class="report-table-box">
     <table class="data-table report-table">
         <thead>
         <tr>
             {#for column in columns}
-            <th {#if column.numeric}class="report-num"{/if}>{column.label}</th>
+            <th {#if column.numeric}class="report-num"{/if}>{inject:i18n.text(column.label)}</th>
             {/for}
+            {#if definition.rowLinkLabel}<th class="col-actions"></th>{/if}
         </tr>
         </thead>
         <tbody>
         {#for row in pageRows}
-        <tr>
+        <tr {#if pageMarks.get(row_index)}class="report-subtotal"{/if}>
             {#for cell in row}
-            <td {#if columns.get(cell_index).numeric}class="report-num"{/if}>{cell}</td>
+            {! The natures a report computes in French (consigne, retour en vente...)
+             ! read in the page's language; data the bundles do not know shows as is. !}
+            <td {#if columns.get(cell_index).numeric}class="report-num">{cell}{#else}>{inject:i18n.text(cell)}{/if}</td>
             {/for}
+            {#if definition.rowLinkLabel}<td class="col-actions">{#if pageLinks.get(row_index)}<a class="btn btn-small btn-muted" href="{pageLinks.get(row_index)}">{inject:i18n.text(definition.rowLinkLabel)}</a>{/if}</td>{/if}
         </tr>
         {/for}
         </tbody>
@@ -112,28 +242,80 @@
         <tfoot>
         <tr class="report-total">
             {#for cell in totalCells}
-            <td {#if columns.get(cell_index).numeric}class="report-num"{/if}>{#if cell_index == 0 && cell.isEmpty}TOTAL{#else}{cell}{/if}</td>
+            <td {#if columns.get(cell_index).numeric}class="report-num"{/if}>{#if cell_index == 0 && cell.isEmpty}{inject:i18n.get('t.total-2')}{#else}{cell}{/if}</td>
             {/for}
+            {#if definition.rowLinkLabel}<td></td>{/if}
         </tr>
         </tfoot>
         {/if}
     </table>
+    </div>
 
     {#if pageCount > 1}
     <div class="pager">
         {#if hasPrev}
-        <a class="btn btn-small btn-muted" href="/admin/reports/{definition.code}?{baseQuery}page={prevPage}">Précédent</a>
+        <a class="btn btn-small btn-muted" href="/admin/reports/{definition.code}?{baseQuery}page={prevPage}">{inject:i18n.get('t.precedent')}</a>
         {#else}
-        <span class="btn btn-small btn-muted is-hidden">Précédent</span>
+        <span class="btn btn-small btn-muted is-hidden">{inject:i18n.get('t.precedent')}</span>
         {/if}
-        <span class="pager-status">Page {page} / {pageCount}</span>
+        <span class="pager-status">{inject:i18n.get('t.page')} {page} / {pageCount}</span>
         {#if hasNext}
-        <a class="btn btn-small btn-muted" href="/admin/reports/{definition.code}?{baseQuery}page={nextPage}">Suivant</a>
+        <a class="btn btn-small btn-muted" href="/admin/reports/{definition.code}?{baseQuery}page={nextPage}">{inject:i18n.get('t.suivant')}</a>
         {#else}
-        <span class="btn btn-small btn-muted is-hidden">Suivant</span>
+        <span class="btn btn-small btn-muted is-hidden">{inject:i18n.get('t.suivant')}</span>
         {/if}
     </div>
     {/if}
+    {/if}
+    {#if definition.signature}
+    <p class="report-signature">{inject:i18n.text(definition.signature)} : ______________________________</p>
+    {/if}
+</div>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.r21v-planifier-l-extraction')}</h2>
+    <form method="post" action="/admin/reports/{definition.code}/schedule" class="field-grid">
+        <input type="hidden" name="query" value="{baseQuery}">
+        <div class="field">
+            <label class="field-label" for="s-run-at">{inject:i18n.get('t.r21v-extraire-le')}</label>
+            <input class="input-control" id="s-run-at" type="datetime-local" name="runAt" required>
+        </div>
+        <div class="field">
+            <label class="field-label" for="s-format">{inject:i18n.get('t.r21v-format')}</label>
+            <select class="input-control" id="s-format" name="format">
+                {#for f in formats}
+                <option value="{f}">{f}</option>
+                {/for}
+            </select>
+        </div>
+        <div class="field">
+            <span class="field-hint">{inject:i18n.get('t.r21v-les-parametres-de-l-ecran-sont-repris')}</span>
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.r21v-planifier')}</button>
+        </div>
+    </form>
+    {#if !schedules.isEmpty()}
+    <div class="report-table-box">
+    <table class="data-table">
+        <thead>
+        <tr>
+            <th>{inject:i18n.get('t.r21v-extraire-le')}</th>
+            <th>{inject:i18n.get('t.r21v-format')}</th>
+            <th>{inject:i18n.get('t.r21v-planifie-par')}</th>
+            <th>{inject:i18n.get('t.r21v-etat')}</th>
+        </tr>
+        </thead>
+        <tbody>
+        {#for sch in schedules}
+        <tr>
+            <td>{sch.runAtFormatted}</td>
+            <td>{sch.format}</td>
+            <td>{sch.plannedBy ?: ''}</td>
+            <td>{#if sch.done}{#if sch.failure}{inject:i18n.get('t.r21v-echec')} — {inject:i18n.text(sch.failure)}{#else if sch.runId}<a class="link-strong" href="/admin/reports/runs/{sch.runId}">{inject:i18n.get('t.r21v-telecharger')}</a>{/if}{#else}{inject:i18n.get('t.r21v-en-attente')}{/if}</td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+    </div>
     {/if}
 </div>
 {/body}

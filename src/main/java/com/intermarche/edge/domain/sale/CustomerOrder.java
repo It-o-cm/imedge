@@ -91,6 +91,39 @@ public class CustomerOrder extends BaseEntity {
     @Column(name = "deposit_vat_detail", length = 500)
     public String depositVatDetail;
 
+    /**
+     * Whether the till may take a deposit on the document (LC-06-02-04): NONE,
+     * OPTIONAL or MANDATORY, as the commercial management tool that issued it
+     * states; null reads as none, the rule of every order a till created.
+     */
+    @Column(name = "deposit_rule", length = 12)
+    public String depositRule;
+
+    /**
+     * The control a selfscanning device asks for on its basket (LC-06-05-04, -05):
+     * NONE, PARTIAL or TOTAL; null reads as none.
+     */
+    @Column(name = "control_request", length = 8)
+    public String controlRequest;
+
+    /**
+     * The reduction vouchers a selfscanning device recorded on its basket, applied
+     * automatically when the basket is paid at the till (LC-06-05-02).
+     */
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "customer_order_vouchers",
+            joinColumns = @JoinColumn(name = "order_id"))
+    public List<OrderVoucher> vouchers = new ArrayList<>();
+
+    /**
+     * The settlements a mobility device already collected on its transaction,
+     * restated at the till when the transaction is integrated (BO-10-01-39).
+     */
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "customer_order_payments",
+            joinColumns = @JoinColumn(name = "order_id"))
+    public List<OrderPayment> payments = new ArrayList<>();
+
     /** The order lines, frozen as administered. */
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "customer_order_lines",
@@ -153,6 +186,23 @@ public class CustomerOrder extends BaseEntity {
     }
 
     /**
+     * Finds the latest order of a kind issued for a customer and still
+     * recallable (BO-10-01-18): the self-scanning basket a customer built, named
+     * at the till by the customer number rather than by its own code.
+     *
+     * @param customerNumber the customer number, or null
+     * @param kind the kind looked for
+     * @return the order, or null when the customer has none recallable
+     */
+    public static CustomerOrder findLatestForCustomer(String customerNumber, OrderKind kind) {
+        if (customerNumber == null || customerNumber.isBlank()) {
+            return null;
+        }
+        return find("customerAccountNumber = ?1 and kind = ?2 and status in ?3 order by id desc",
+                customerNumber.trim(), kind, List.of(OrderStatus.OPEN, OrderStatus.PARTIALLY_PAID)).firstResult();
+    }
+
+    /**
      * Lists every order, most recent first, for the back-office screen.
      *
      * @return the orders, never null
@@ -170,6 +220,76 @@ public class CustomerOrder extends BaseEntity {
     public int getChecksum() {
         return Objects.hash(code, kind, status, customerAccountNumber, label,
                 totalAmount, depositPaid, depositVatDetail);
+    }
+
+    /**
+     * A reduction voucher recorded on a selfscanning basket (LC-06-05-02).
+     */
+    @Embeddable
+    public static class OrderVoucher {
+
+        /** The voucher's code, or null for a numberless voucher. */
+        @Column(name = "voucher_code", length = 64)
+        public String code;
+
+        /** The voucher's label. */
+        @Column(name = "voucher_label", length = 100)
+        public String label;
+
+        /** The voucher's amount, TTC. */
+        @Column(name = "voucher_amount", precision = 19, scale = 2)
+        public BigDecimal amount;
+
+        /**
+         * Builds an empty voucher (JPA).
+         */
+        public OrderVoucher() {
+        }
+
+        /**
+         * Builds a voucher.
+         *
+         * @param code the voucher's code, or null
+         * @param label the voucher's label
+         * @param amount the voucher's amount, TTC
+         */
+        public OrderVoucher(String code, String label, BigDecimal amount) {
+            this.code = code;
+            this.label = label;
+            this.amount = amount;
+        }
+    }
+
+    /**
+     * A settlement a mobility device collected on its transaction (BO-10-01-39).
+     */
+    @Embeddable
+    public static class OrderPayment {
+
+        /** The settlement key the device used (CASH, CARD...), or null. */
+        @Column(name = "payment_tender", length = 20)
+        public String tender;
+
+        /** The amount paid, TTC. */
+        @Column(name = "payment_amount", precision = 19, scale = 2)
+        public BigDecimal amount;
+
+        /**
+         * Builds an empty settlement (JPA).
+         */
+        public OrderPayment() {
+        }
+
+        /**
+         * Builds a settlement.
+         *
+         * @param tender the settlement key, or null
+         * @param amount the amount paid, TTC
+         */
+        public OrderPayment(String tender, BigDecimal amount) {
+            this.tender = tender;
+            this.amount = amount;
+        }
     }
 
     /**
@@ -195,8 +315,15 @@ public class CustomerOrder extends BaseEntity {
         public BigDecimal unitPrice;
 
         /** The VAT rate of the line. */
-        @Column(name = "vat_rate", precision = 6, scale = 2)
+        @Column(name = "vat_rate", precision = 6, scale = 4)
         public BigDecimal vatRate;
+
+        /**
+         * The quantity delivered, when the document states it beside the ordered
+         * one (LC-06-02-02, -12); null otherwise.
+         */
+        @Column(name = "delivered_quantity", precision = 12, scale = 3)
+        public BigDecimal deliveredQuantity;
 
         /** The line total, in euros — kept for the back-office display. */
         @Column(name = "total_price", precision = 19, scale = 2)

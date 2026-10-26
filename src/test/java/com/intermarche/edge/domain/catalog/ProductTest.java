@@ -3,7 +3,6 @@ package com.intermarche.edge.domain.catalog;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import io.quarkus.hibernate.orm.panache.PanacheQuery;
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.Objects;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -24,20 +23,6 @@ import static org.mockito.Mockito.when;
  * and asserts absolute expected values.
  */
 class ProductTest {
-
-    /**
-     * Builds a weight-sold product with the given reference weight, leaving
-     * other fields at their declared defaults.
-     *
-     * @param referenceWeight the per-unit reference weight, possibly null
-     * @return the configured product
-     */
-    private Product weightProduct(BigDecimal referenceWeight) {
-        Product product = new Product();
-        product.productType = ProductType.WEIGHT;
-        product.referenceWeight = referenceWeight;
-        return product;
-    }
 
     /**
      * A fresh product carries the declared status field defaults.
@@ -213,7 +198,7 @@ class ProductTest {
         product.productType = ProductType.WEIGHT;
         int expected = Objects.hash("3760001", "", "Melon", null, null, null, null,
                 ProductType.WEIGHT, null, true, false, null, null, false, null,
-                product.attributes);
+                product.attributes, product.saleCodes);
         Assertions.assertEquals(expected, product.getChecksum());
     }
 
@@ -241,7 +226,7 @@ class ProductTest {
         int expected = Objects.hash("3760001", "1234", "Melon", "Sweet", "Farm",
                 new BigDecimal("1.500"), new BigDecimal("0.750"), ProductType.UNIT,
                 "pcs", false, true, "MELON JAUNE", "INT-42", false, "FOOD_34",
-                product.attributes);
+                product.attributes, product.saleCodes);
         Assertions.assertEquals(expected, product.getChecksum());
     }
 
@@ -300,5 +285,55 @@ class ProductTest {
     @Test
     void aNewProductCarriesNoEgalimRegime() {
         Assertions.assertNull(new Product().egalimRegime);
+    }
+
+    /**
+     * Builds a single-result query mock.
+     *
+     * @param result the first result, possibly null
+     * @return the query
+     */
+    @SuppressWarnings("unchecked")
+    private PanacheQuery<Product> single(Product result) {
+        return mock(PanacheQuery.class, invocation ->
+                "firstResult".equals(invocation.getMethod().getName()) ? result : null);
+    }
+
+    /**
+     * findActiveBySaleCode reads the additional sale codes of the active
+     * articles (BO-02-03-03).
+     */
+    @Test
+    void findActiveBySaleCodeJoinsTheSaleCodes() {
+        Product expected = new Product();
+        PanacheQuery<Product> query = single(expected);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> Product.find("select p from Product p join p.saleCodes c where c = ?1 and p.active = true",
+                    "3000000000001")).thenReturn(query);
+            Assertions.assertSame(expected, Product.findActiveBySaleCode("3000000000001"));
+        }
+    }
+
+    /**
+     * findActiveByAlias answers null for a null or blank code, the sale-code
+     * holder first, and the internal-code holder otherwise (BO-02-03-03/04).
+     */
+    @Test
+    void findActiveByAliasTriesSaleCodesThenInternalCode() {
+        Assertions.assertNull(Product.findActiveByAlias(null));
+        Assertions.assertNull(Product.findActiveByAlias("  "));
+        Product bySale = new Product();
+        Product byInternal = new Product();
+        PanacheQuery<Product> sale = single(bySale);
+        PanacheQuery<Product> none = single(null);
+        PanacheQuery<Product> internal = single(byInternal);
+        String saleQuery = "select p from Product p join p.saleCodes c where c = ?1 and p.active = true";
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> Product.find(saleQuery, "S1")).thenReturn(sale);
+            panache.when(() -> Product.find(saleQuery, "ABC128")).thenReturn(none);
+            panache.when(() -> Product.find("internalCode = ?1 and active = true", "ABC128")).thenReturn(internal);
+            Assertions.assertSame(bySale, Product.findActiveByAlias("S1"));
+            Assertions.assertSame(byInternal, Product.findActiveByAlias("ABC128"));
+        }
     }
 }

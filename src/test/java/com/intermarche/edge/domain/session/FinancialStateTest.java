@@ -158,4 +158,16 @@ class FinancialStateTest {
         assertEquals(3, FinancialState.PeriodKind.values().length);
         assertTrue(FinancialState.StateType.valueOf("X") == FinancialState.StateType.X);
     }
+    /** BO-09: failure of the signature provider refuses an unsigned fiscal state and preserves its original cause. */
+    @org.junit.jupiter.api.Test
+    void signatureProviderFailureCannotReturnAFiscalSignature() {
+        var state = new FinancialState();
+        var cause = new java.security.NoSuchAlgorithmException("provider unavailable");
+        try (var digests = org.mockito.Mockito.mockStatic(java.security.MessageDigest.class)) {
+            digests.when(() -> java.security.MessageDigest.getInstance("SHA-256")).thenThrow(cause);
+            var failure = org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class, state::computeSignature);
+            org.junit.jupiter.api.Assertions.assertSame(cause, failure.getCause());
+        }
+    }
+
 }

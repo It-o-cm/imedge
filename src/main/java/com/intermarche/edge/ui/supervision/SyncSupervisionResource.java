@@ -1,5 +1,9 @@
 package com.intermarche.edge.ui.supervision;
 
+import io.quarkus.security.Authenticated;
+import com.intermarche.edge.security.FeatureAccess;
+import com.intermarche.edge.domain.setting.Feature;
+import com.intermarche.edge.domain.people.CrudOption;
 import com.intermarche.edge.domain.session.TechnicalEvent;
 import com.intermarche.edge.security.CurrentUser;
 import com.intermarche.edge.service.CashSessionService;
@@ -10,7 +14,6 @@ import com.intermarche.edge.service.sync.ScheduledDeliveryService;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.FormParam;
@@ -80,6 +83,10 @@ public class SyncSupervisionResource {
     @Inject
     com.intermarche.edge.service.sync.TicketStreamService ticketStreamService;
 
+    /** The pull of the commercial service's feeds (manual relaunch, BO-11-01-01). */
+    @Inject
+    com.intermarche.edge.service.sync.IntegrationPullService integrationPullService;
+
     /** The deferred deliveries keeper (booking, listing, cancellation). */
     @Inject
     ScheduledDeliveryService scheduledDeliveryService;
@@ -104,7 +111,8 @@ public class SyncSupervisionResource {
      * @return the supervision page
      */
     @GET
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SYNC)
     @Produces(MediaType.TEXT_HTML)
     public TemplateInstance page(@QueryParam("notice") String notice,
                                  @QueryParam("noticeOk") @DefaultValue("true") boolean noticeOk) {
@@ -124,7 +132,8 @@ public class SyncSupervisionResource {
      */
     @POST
     @Path("/pull")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SYNC, option = CrudOption.UPDATE)
     public Response relaunchPull() {
         LOGGER.info("Entering method relaunchPull");
         String error = refPullService.triggerPull();
@@ -161,7 +170,8 @@ public class SyncSupervisionResource {
      */
     @POST
     @Path("/export")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SYNC, option = CrudOption.UPDATE)
     public Response regenerateOutboundFlows(@jakarta.ws.rs.FormParam("day") String day) {
         LOGGER.info("Entering method regenerateOutboundFlows with day: " + day);
         java.time.LocalDate target;
@@ -173,24 +183,45 @@ public class SyncSupervisionResource {
             LOGGER.info("Exiting method regenerateOutboundFlows");
             return redirect("Date illisible : « " + day + " ». Attendu aaaa-mm-jj.", false);
         }
+        String shown = target.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"));
         try {
             java.util.List<java.nio.file.Path> written = outboundFlowService.produceAll(target);
             technicalEventService.log(TechnicalEvent.EventType.REFERENTIAL_PULL_FORCED,
-                    "Régénération des flux sortants du " + target + ": "
+                    "Régénération des flux sortants du " + shown + ": "
                             + written.size() + " fichier(s)");
             LOGGER.info("Exiting method regenerateOutboundFlows");
             if (written.isEmpty()) {
-                return redirect("Aucun flux produit pour le " + target
+                return redirect("Aucun flux produit pour le " + shown
                         + " : flux non activés, répertoire non administré,"
                         + " ou aucun ticket clôturé ce jour-là.", true);
             }
-            return redirect(written.size() + " flux produit(s) pour le " + target + ".", true);
+            return redirect(written.size() + " flux produit(s) pour le " + shown + ".", true);
         } catch (java.io.IOException e) {
             technicalEventService.log(TechnicalEvent.EventType.REFERENTIAL_PULL_FORCED,
-                    "Régénération des flux sortants du " + target + " en échec: " + e.getMessage());
+                    "Régénération des flux sortants du " + shown + " en échec: " + e.getMessage());
             LOGGER.info("Exiting method regenerateOutboundFlows");
             return redirect("Flux sortants en échec : " + e.getMessage(), false);
         }
+    }
+
+    /**
+     * Pulls the integration feeds of the commercial service now (BO-11-01-01)
+     * and redirects back with how many files went in.
+     *
+     * @return a 303 redirect to the page with the notice
+     */
+    @POST
+    @Path("/integration-pull")
+    @Authenticated
+    @FeatureAccess(value = Feature.SYNC, option = CrudOption.UPDATE)
+    public Response pullIntegrationFeeds() {
+        LOGGER.info("Entering method pullIntegrationFeeds");
+        com.intermarche.edge.service.sync.IntegrationPullService.Outcome outcome =
+                integrationPullService.pullNow(java.time.LocalDateTime.now());
+        LOGGER.info("Exiting method pullIntegrationFeeds");
+        return redirect("Flux d'intégration : " + outcome.integrated() + " intégré(s), "
+                + outcome.unchanged() + " inchangé(s), " + outcome.failed() + " en échec.",
+                outcome.failed() == 0);
     }
 
     /**
@@ -201,7 +232,8 @@ public class SyncSupervisionResource {
      */
     @POST
     @Path("/deliver")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SYNC, option = CrudOption.UPDATE)
     public Response relaunchDelivery() {
         LOGGER.info("Entering method relaunchDelivery");
         String error = engineFeedDeliveryService.triggerDelivery();
@@ -233,7 +265,8 @@ public class SyncSupervisionResource {
      */
     @POST
     @Path("/stream")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SYNC, option = CrudOption.UPDATE)
     public Response relaunchStream() {
         LOGGER.info("Entering method relaunchStream");
         if (!ticketStreamService.isEnabled()) {
@@ -267,7 +300,8 @@ public class SyncSupervisionResource {
      */
     @POST
     @Path("/deliver/{code}")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SYNC, option = CrudOption.UPDATE)
     public Response relaunchDeliveryFor(@PathParam("code") String code) {
         LOGGER.info("Entering method relaunchDeliveryFor with code: " + code);
         String error = engineFeedDeliveryService.triggerDelivery(code);
@@ -295,7 +329,8 @@ public class SyncSupervisionResource {
      */
     @POST
     @Path("/schedule")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SYNC, option = CrudOption.UPDATE)
     public Response schedule(@FormParam("feedCode") String feedCode,
                              @FormParam("scheduledAt") String scheduledAt) {
         LOGGER.info("Entering method schedule with feedCode: " + feedCode + ", scheduledAt: " + scheduledAt);
@@ -325,7 +360,8 @@ public class SyncSupervisionResource {
      */
     @POST
     @Path("/schedule/{id}/cancel")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SYNC, option = CrudOption.UPDATE)
     public Response cancelSchedule(@PathParam("id") Long id) {
         LOGGER.info("Entering method cancelSchedule with id: " + id);
         boolean cancelled = scheduledDeliveryService.cancel(id);
@@ -343,7 +379,8 @@ public class SyncSupervisionResource {
      */
     @GET
     @Path("/feeds")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SYNC)
     @Produces(MediaType.TEXT_HTML)
     public TemplateInstance feedsFragment() {
         LOGGER.info("Entering method feedsFragment");
@@ -358,7 +395,8 @@ public class SyncSupervisionResource {
      */
     @GET
     @Path("/pulls")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SYNC)
     @Produces(MediaType.TEXT_HTML)
     public TemplateInstance pullsFragment() {
         LOGGER.info("Entering method pullsFragment");
@@ -373,7 +411,8 @@ public class SyncSupervisionResource {
      */
     @GET
     @Path("/outbox")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SYNC)
     @Produces(MediaType.TEXT_HTML)
     public TemplateInstance outboxFragment() {
         LOGGER.info("Entering method outboxFragment");
@@ -392,7 +431,8 @@ public class SyncSupervisionResource {
      */
     @POST
     @Path("/force-close")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SYNC, option = CrudOption.UPDATE)
     public Response forceCloseSession() {
         LOGGER.info("Entering method forceCloseSession");
         CashSessionService.SessionReport report = cashSessionService.closeSession(

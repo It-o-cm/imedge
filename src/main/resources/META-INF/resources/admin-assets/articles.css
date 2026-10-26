@@ -110,7 +110,7 @@
    the alignment is structural and holds whatever the cells contain. */
 .vat-grid {
     display: grid;
-    grid-template-columns: 72px 72px auto minmax(0, 1fr) 56px minmax(0, 1.4fr) 100px 92px;
+    grid-template-columns: 72px 72px auto minmax(0, 1fr) 56px minmax(0, 1.4fr) 104px 100px 92px;
     align-items: center;
     column-gap: 8px;
     row-gap: 8px;
@@ -149,6 +149,19 @@
     justify-content: flex-end;
 }
 
+/* BO-02-02-01: the exemption cell, a box and its code side by side. */
+.vat-exempt {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+}
+
+.vat-exempt .input-control {
+    min-width: 0;
+    width: 100%;
+}
+
 /* The column captions, which are grid cells like the rest. */
 .vat-head {
     font-size: 12px;
@@ -168,7 +181,7 @@
    above, and its button under the save buttons. */
 .vat-new {
     display: grid;
-    grid-template-columns: 72px 72px auto minmax(0, 1fr) 56px minmax(0, 1.4fr) 100px 92px;
+    grid-template-columns: 72px 72px auto minmax(0, 1fr) 56px minmax(0, 1.4fr) 104px 100px 92px;
     align-items: center;
     column-gap: 8px;
 }

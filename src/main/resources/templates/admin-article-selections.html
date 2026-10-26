@@ -1,112 +1,100 @@
 {!
- ! Back-office ARTICLE SELECTIONS admin (BO-02-03-31): saves named, reusable
- ! article perimeters defined by the same multi-criteria engine as the fiche
- ! list. Top form creates one from its criteria; each row deletes one. POST ->
- ! 303 -> notice, the admin cycle.
+ ! Back-office ARTICLE SELECTIONS admin (BO-02-03-31): named, reusable article
+ ! lists of the point of sale, defined by the same multi-criteria engine as
+ ! the fiche list. Search a list by name, create one or modify the one named by
+ ! ?edit=, duplicate a list into a new distinct one, delete one. A list is the
+ ! perimeter of the article export and of the reports. POST -> 303 -> notice.
 !}
 {#include admin-layout}
 
-{#title}Sélections d'articles{/title}
+{#title}{inject:i18n.get('t.selections-d-articles')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Sélections d'articles</h1>
-        <p class="page-sub">Regroupements d'articles réutilisables pour restreindre le périmètre des rapports et exports.</p>
+        <h1>{inject:i18n.get('t.selections-d-articles')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.regroupements-d-articles-reutilisables-pour-rest')}</p>
     </div>
     <div class="page-actions">
-        <a class="btn btn-ghost" href="/admin/articles">Retour aux articles</a>
+        <a class="btn btn-ghost" href="/admin/articles">{inject:i18n.get('t.retour-aux-articles')}</a>
     </div>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 <div class="card">
-    <h2 class="card-title">Nouvelle sélection</h2>
+    <h2 class="card-title">{#if edited}{inject:i18n.get('t.p20-modifier-la-selection')}{#else}{inject:i18n.get('t.nouvelle-selection')}{/if}</h2>
     <form method="post" action="/admin/article-selections">
+        {#if edited}<input type="hidden" name="id" value="{edited.id}">{/if}
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="s-name">Nom</label>
-                <input class="input-control" id="s-name" type="text" name="name" maxlength="100" required>
-            </div>
-            <div class="field">
-                <label class="field-label" for="s-text">Texte (EAN, libellé, code interne)</label>
-                <input class="input-control" id="s-text" type="text" name="text">
-            </div>
-            <div class="field">
-                <label class="field-label" for="s-type">Type</label>
-                <select class="input-control" id="s-type" name="type">
-                    <option value="">Tous</option>
-                    {#for type in types}
-                    <option value="{type.name}">{type.name}</option>
-                    {/for}
-                </select>
-            </div>
-            <div class="field">
-                <label class="field-label" for="s-status">Statut</label>
-                <select class="input-control" id="s-status" name="status">
-                    <option value="ALL">Tous</option>
-                    <option value="ACTIVE">Actifs</option>
-                    <option value="INACTIVE">Désactivés</option>
-                </select>
-            </div>
-            <div class="field">
-                <label class="field-label" for="s-forbidden">Vente</label>
-                <select class="input-control" id="s-forbidden" name="forbidden">
-                    <option value="">Toutes</option>
-                    <option value="yes">Interdites</option>
-                    <option value="no">Autorisées</option>
-                </select>
+                <label class="field-label" for="s-name">{inject:i18n.get('t.nom')}</label>
+                <input class="input-control" id="s-name" type="text" name="name" maxlength="100" required value="{#if edited}{edited.name}{/if}">
+                <span class="field-hint">{inject:i18n.get('t.p20-point-de-vente')} : {pdv ?: '—'}</span>
             </div>
         </div>
-        <div class="field-grid">
-            {#for def in attributeDefs}
-            <div class="field field-check">
-                <label class="field-label"><input type="checkbox" name="attr" value="{def.code}"> {def.label}</label>
-            </div>
-            {/for}
-        </div>
+        {#include article-criteria /}
         <div class="page-actions" style="margin-top: 6px;">
-            <button class="btn btn-primary" type="submit">Créer</button>
+            <button class="btn btn-primary" type="submit">{#if edited}{inject:i18n.get('t.enregistrer')}{#else}{inject:i18n.get('t.creer-2')}{/if}</button>
+            {#if edited}<a class="btn btn-ghost" href="/admin/article-selections">{inject:i18n.get('t.annuler')}</a>{/if}
         </div>
     </form>
 </div>
 
 <div class="card">
+    <form method="get" action="/admin/article-selections" class="field-grid">
+        <div class="field">
+            <label class="field-label" for="s-q">{inject:i18n.get('t.p20-rechercher-une-liste')}</label>
+            <input class="input-control" id="s-q" type="search" name="q" value="{q}">
+        </div>
+        <div class="field">
+            <button class="btn btn-ghost" type="submit">{inject:i18n.get('t.rechercher')}</button>
+        </div>
+    </form>
     {#if selections.isEmpty()}
     <div class="empty-state">
-        <p>Aucune sélection enregistrée.</p>
-        <p class="empty-hint">Créez une sélection pour réutiliser un périmètre d'articles.</p>
+        <p>{inject:i18n.get('t.aucune-selection-enregistree')}</p>
+        <p class="empty-hint">{inject:i18n.get('t.creez-une-selection-pour-reutiliser-un-perimetre')}</p>
     </div>
     {#else}
+    <div style="overflow-x: auto;">
     <table class="data-table">
         <thead>
             <tr>
-                <th>Nom</th>
-                <th>Critères</th>
-                <th class="col-actions">Actions</th>
+                <th>{inject:i18n.get('t.nom')}</th>
+                <th>{inject:i18n.get('t.p20-point-de-vente')}</th>
+                <th>{inject:i18n.get('t.criteres')}</th>
+                <th class="col-actions">{inject:i18n.get('t.actions')}</th>
             </tr>
         </thead>
         <tbody>
             {#for sel in selections}
             <tr>
                 <td><a class="link-strong" href="/admin/articles?selection={sel.name}">{sel.name}</a></td>
-                <td class="col-muted">{sel.criteria ?: 'Tous les articles'}</td>
+                <td class="col-muted">{sel.pdvCode ?: '—'}</td>
+                <td class="col-muted cell-wrap">{#if sel.criteria}{#for c in criteriaViews.get(sel.id)}{#if c_index > 0} · {/if}{#if c.labelKey}{inject:i18n.get(c.labelKey)}{#else}{c.name}{/if} : {#if c.valueKey}{inject:i18n.get(c.valueKey)}{#else}{inject:i18n.text(c.value)}{/if}{/for}{#else}{inject:i18n.get('t.p20-tous-les-articles')}{/if}</td>
                 <td class="col-actions">
-                    <form method="post" action="/admin/article-selections/delete"
-                          onsubmit="return confirm('Supprimer cette sélection ?');">
+                    <a class="btn btn-small btn-ghost" href="/admin/article-selections?edit={sel.id}">{inject:i18n.get('t.modifier')}</a>
+                    <a class="btn btn-small btn-ghost" href="/admin/articles/export?selection={sel.name}">{inject:i18n.get('t.p20-exporter')}</a>
+                    <form method="post" action="/admin/article-selections/duplicate" style="display:inline">
                         <input type="hidden" name="id" value="{sel.id}">
-                        <button class="btn btn-small btn-danger" type="submit">Supprimer</button>
+                        <button class="btn btn-small btn-ghost" type="submit">{inject:i18n.get('t.p20-dupliquer')}</button>
+                    </form>
+                    <form method="post" action="/admin/article-selections/delete" style="display:inline"
+                          onsubmit="return confirm('{inject:i18n.js('t.supprimer-cette-selection')}');">
+                        <input type="hidden" name="id" value="{sel.id}">
+                        <button class="btn btn-small btn-danger" type="submit">{inject:i18n.get('t.supprimer')}</button>
                     </form>
                 </td>
             </tr>
             {/for}
         </tbody>
     </table>
+    </div>
     {/if}
 </div>
 {/body}
 
-{#footer}Une sélection enregistrée ici restreint le périmètre des rapports et exports d'articles.{/footer}
+{#footer}{inject:i18n.get('t.une-selection-enregistree-ici-restreint-le-perim')}{/footer}

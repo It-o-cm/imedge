@@ -199,16 +199,13 @@ describe('refresh', () => {
 
 describe('boot guard', () => {
   /**
-   * A second evaluation with no tagged body in the document exercises the early-return arm
-   * of the targets.length guard and asserts the boot does not throw. The cache-busted import
-   * is a SEPARATE instrumented instance whose counters Istanbul does not merge back into the
-   * primary bodies-present evaluation, so the early-return arm remains a justified residue
-   * rather than a bug: a no-body early return and the bodies-present sweep cannot both be
-   * instrumented in a single module evaluation.
+   * Re-evaluates the same source URL after resetting the module cache, so the no-target
+   * boot and the normal refresh share Istanbul's counters for the actual source path.
    */
   it('returns early when no table body is tagged', async () => {
     document.body.innerHTML = '';
-    const second = await loadScript(SOURCE, { bust: 'no-tbody' });
+    vi.resetModules();
+    const second = await loadScript(SOURCE);
     expect(second).toBeTruthy();
     installDom();
   });

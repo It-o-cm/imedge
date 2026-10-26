@@ -5,75 +5,75 @@
 !}
 {#include admin-layout}
 
-{#title}Demandes de monnaie{/title}
+{#title}{inject:i18n.get('t.demandes-de-monnaie')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Demandes de monnaie</h1>
-        <p class="page-sub">Commande de pièces et de billets, bordereau à transmettre, puis réception.</p>
+        <h1>{inject:i18n.get('t.demandes-de-monnaie')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.commande-de-pieces-et-de-billets-bordereau')}</p>
     </div>
     <div class="page-actions">
-        <a class="btn btn-ghost" href="/admin/safe/movements">Mouvements du coffre</a>
+        <a class="btn btn-ghost" href="/admin/safe/movements">{inject:i18n.get('t.mouvements-du-coffre')}</a>
     </div>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 <div class="card">
-    <h2 class="card-title">Nouvelle demande</h2>
-    <p class="card-sub">Seules les coupures dont la quantité est renseignée entrent dans la demande.</p>
+    <h2 class="card-title">{inject:i18n.get('t.nouvelle-demande')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.seules-les-coupures-dont-la-quantite-est')}</p>
     <form method="post" action="/admin/safe/coin-orders">
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="o-number">N° de demande</label>
+                <label class="field-label" for="o-number">{inject:i18n.get('t.n-de-demande')}</label>
                 <input class="input-control" id="o-number" type="text" name="orderNumber" maxlength="30" required>
             </div>
             <div class="field">
-                <label class="field-label" for="o-label">Objet</label>
+                <label class="field-label" for="o-label">{inject:i18n.get('t.objet')}</label>
                 <input class="input-control" id="o-label" type="text" name="label" maxlength="120">
             </div>
             <div class="field">
-                <label class="field-label" for="o-date">Date</label>
+                <label class="field-label" for="o-date">{inject:i18n.get('t.date')}</label>
                 <input class="input-control" id="o-date" type="date" name="requestedOn" value="{today}">
             </div>
         </div>
         <table class="data-table">
             <thead>
-            <tr><th>Coupure</th><th>Valeur €</th><th>Quantité demandée</th></tr>
+            <tr><th>{inject:i18n.get('t.coupure')}</th><th>{inject:i18n.get('t.valeur-2')}</th><th>{inject:i18n.get('t.quantite-demandee')}</th></tr>
             </thead>
             <tbody>
             {#for denomination in denominations}
             <tr>
-                <td>{denomination.label}</td>
-                <td>{denomination.value}</td>
+                <td>{inject:i18n.text(denomination.label)}</td>
+                <td>{inject:i18n.money(denomination.value)}</td>
                 <td><input class="input-control" type="number" min="0" step="1" name="qty{denomination.name}"></td>
             </tr>
             {/for}
             </tbody>
         </table>
         <div class="page-actions" style="margin-top: 6px;">
-            <button class="btn btn-primary" type="submit">Enregistrer la demande</button>
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer-la-demande')}</button>
         </div>
     </form>
 </div>
 
 {#for order in awaiting}
 <div class="card">
-    <h2 class="card-title">Réception de la demande {order.orderNumber}</h2>
-    <p class="card-sub">Demandée le {order.requestedOn} pour {order.requestedAmountFormatted} €.</p>
+    <h2 class="card-title">{inject:i18n.get('t.reception-de-la-demande')} {order.orderNumber}</h2>
+    <p class="card-sub">{inject:i18n.get('t.demandee-le')} {order.requestedOn.format('dd/MM/yyyy')} {inject:i18n.get('t.pour')} {inject:i18n.money(order.requestedAmountFormatted)} €.</p>
     <form method="post" action="/admin/safe/coin-orders/receive">
         <input type="hidden" name="id" value="{order.id}">
         <table class="data-table">
             <thead>
-            <tr><th>Coupure</th><th>Demandé</th><th>Reçu</th></tr>
+            <tr><th>{inject:i18n.get('t.coupure')}</th><th>{inject:i18n.get('t.demande')}</th><th>{inject:i18n.get('t.recu')}</th></tr>
             </thead>
             <tbody>
             {#for line in order.lines}
             <tr>
-                <td>{line.denominationLabel}</td>
+                <td>{inject:i18n.text(line.denominationLabel)}</td>
                 <td>{line.requestedQuantity}</td>
                 <td><input class="input-control" type="number" min="0" step="1" name="rcv{line.denomination.name}" value="{line.requestedQuantity}"></td>
             </tr>
@@ -81,44 +81,44 @@
             </tbody>
         </table>
         <div class="page-actions" style="margin-top: 6px;">
-            <a class="btn btn-ghost" href="/admin/safe/coin-orders/{order.id}/slip">Bordereau</a>
-            <button class="btn btn-primary" type="submit">Enregistrer la réception</button>
+            <a class="btn btn-ghost" href="/admin/safe/coin-orders/{order.id}/slip">{inject:i18n.get('t.bordereau')}</a>
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer-la-reception')}</button>
         </div>
     </form>
     <form method="post" action="/admin/safe/coin-orders/cancel">
         <input type="hidden" name="id" value="{order.id}">
-        <div class="page-actions"><button class="btn btn-muted" type="submit">Annuler la demande</button></div>
+        <div class="page-actions"><button class="btn btn-muted" type="submit">{inject:i18n.get('t.annuler-la-demande')}</button></div>
     </form>
 </div>
 {/for}
 
 <div class="card">
-    <h2 class="card-title">Historique</h2>
+    <h2 class="card-title">{inject:i18n.get('t.historique')}</h2>
     {#if orders.isEmpty()}
     <div class="empty-state">
-        <p>Aucune demande de monnaie.</p>
+        <p>{inject:i18n.get('t.aucune-demande-de-monnaie')}</p>
     </div>
     {#else}
     <table class="data-table">
         <thead>
-        <tr><th>N°</th><th>Date</th><th>Objet</th><th>Demandé €</th><th>Reçu €</th><th>État</th><th></th></tr>
+        <tr><th>N°</th><th>{inject:i18n.get('t.date')}</th><th>{inject:i18n.get('t.objet')}</th><th>{inject:i18n.get('t.demande-2')}</th><th>{inject:i18n.get('t.recu-2')}</th><th>{inject:i18n.get('t.etat')}</th><th></th></tr>
         </thead>
         <tbody>
         {#for order in orders}
         <tr>
             <td>{order.orderNumber}</td>
-            <td>{order.requestedOn}</td>
+            <td>{order.requestedOn.format('dd/MM/yyyy')}</td>
             <td>{order.label ?: '—'}</td>
-            <td>{order.requestedAmountFormatted}</td>
-            <td>{order.receivedAmountFormatted}</td>
+            <td>{inject:i18n.money(order.requestedAmountFormatted)}</td>
+            <td>{inject:i18n.money(order.receivedAmountFormatted)}</td>
             <td>
                 {#if order.status.name == 'RECEIVED'}
-                    {#if order.fullyFulfilled}<span class="badge badge-ok">Reçue</span>
-                    {#else}<span class="badge badge-off">Reçue (écart)</span>{/if}
-                {#else if order.status.name == 'CANCELLED'}<span class="badge badge-off">Annulée</span>
-                {#else}<span class="badge badge-off">En attente</span>{/if}
+                    {#if order.fullyFulfilled}<span class="badge badge-ok">{inject:i18n.get('t.recue')}</span>
+                    {#else}<span class="badge badge-off">{inject:i18n.get('t.recue-ecart')}</span>{/if}
+                {#else if order.status.name == 'CANCELLED'}<span class="badge badge-off">{inject:i18n.get('t.annulee')}</span>
+                {#else}<span class="badge badge-off">{inject:i18n.get('t.en-attente')}</span>{/if}
             </td>
-            <td><a class="btn btn-small btn-ghost" href="/admin/safe/coin-orders/{order.id}/slip">Bordereau</a></td>
+            <td><a class="btn btn-small btn-ghost" href="/admin/safe/coin-orders/{order.id}/slip">{inject:i18n.get('t.bordereau')}</a></td>
         </tr>
         {/for}
         </tbody>

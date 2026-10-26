@@ -190,7 +190,7 @@ class AdminTenderResourceTest {
         MultivaluedMap<String, String> posted = soundForm("CRYPTO", "099");
         Response response = resource.saveTender(posted);
         assertEquals(303, response.getStatus());
-        assertTrue(notice(response).contains("CRYPTO"));
+        assertTrue(notice(response).contains("Nature de règlement inconnue de la caisse"));
     }
 
     /**
@@ -543,7 +543,7 @@ class AdminTenderResourceTest {
         assertTrue(lines[2].startsWith("010;CASH;Espèces;Non;100;;;"));
         // BO-05-02-17 : les deux dernières colonnes sont les deux bouts du
         // transfert, ouvertes par défaut.
-        assertTrue(lines[2].endsWith("Non;Oui;Oui"));
+        assertTrue(lines[2].endsWith("Non;Oui;Oui;CASH;;;Non;Oui;Non;Non;Non"));
     }
 
     /**
@@ -554,7 +554,9 @@ class AdminTenderResourceTest {
         AdminTenderResource resource = newResource();
         String csv = resource.buildCsv(List.of());
         assertEquals(1, csv.split("\n").length);
-        assertTrue(csv.endsWith("Remontee fidelite;Transfert source;Transfert destination\n"));
+        assertTrue(csv.endsWith("Remontee fidelite;Transfert source;Transfert destination;Nature;"
+                + "Ilots superviseur;Correspondance monetique;Monnayeur;Lecture MICR;"
+                + "Autorisation cheque;Saisie compte;Impression auto cheque\n"));
     }
 
     /**
@@ -642,5 +644,128 @@ class AdminTenderResourceTest {
         String[] lines = csv.split("\n");
         assertEquals(2, lines.length);
         assertTrue(lines[1].startsWith(";;;Oui;100;"));
+    }
+
+    /** BO-03-02-06/07: neither moving a central identifier into the local range nor moving a local one out bypasses freezing. */
+    @Test
+    void crossingTheCentralBoundaryKeepsOnlyActivation() {
+        for (String stored : new String[]{"030", "500"}) {
+            var resource = newResource();
+            when(resource.posSettingsService.value("tender.local-range")).thenReturn("500-599");
+            var existing = new TenderDefinition();
+            existing.code = "TR";
+            existing.functionalId = stored;
+            existing.label = "ORIGINAL";
+            existing.maxAmount = new BigDecimal("19.00");
+            existing.active = true;
+            String submitted = stored.equals("030") ? "500" : "030";
+            var byId = queryOf((TenderDefinition) null);
+            var byCode = queryOf(existing);
+            try (var base = mockStatic(PanacheEntityBase.class)) {
+                base.when(() -> TenderDefinition.find("functionalId", submitted)).thenReturn(byId);
+                base.when(() -> TenderDefinition.find("code", "TR")).thenReturn(byCode);
+                var response = resource.saveTender(soundForm("TR", submitted));
+                assertTrue(notice(response).contains("central"));
+            }
+            assertEquals(stored, existing.functionalId);
+            assertEquals("ORIGINAL", existing.label);
+            assertEquals(new BigDecimal("19.00"), existing.maxAmount);
+            assertFalse(existing.active);
+        }
+    }
+
+
+    /** BO-03-02-06/31/32: local creations and an absent range retain full administration, including both receipt flags. */
+    @Test
+    void localCreationAndAbsentRangeKeepReceiptAdministration() {
+        for (String range : new String[]{"500-599", null}) {
+            var resource = newResource();
+            when(resource.posSettingsService.value("tender.local-range")).thenReturn(range);
+            var absent = queryOf((TenderDefinition) null);
+            var posted = soundForm("TR", "500");
+            posted.putSingle("printDuplicate", "on");
+            posted.putSingle("printForced", "on");
+            try (var base = mockStatic(PanacheEntityBase.class);
+                 var created = org.mockito.Mockito.mockConstruction(TenderDefinition.class)) {
+                base.when(() -> TenderDefinition.find("functionalId", "500")).thenReturn(absent);
+                base.when(() -> TenderDefinition.find("code", "TR")).thenReturn(absent);
+                assertTrue(resource.saveTender(posted).getLocation().toString().contains("noticeOk=true"));
+                assertEquals(1, created.constructed().size());
+                assertEquals("500", created.constructed().getFirst().functionalId);
+                assertTrue(created.constructed().getFirst().printDuplicate);
+                assertTrue(created.constructed().getFirst().printForced);
+            }
+        }
+    }
+
+
+    /**
+     * BO-03-02-01/-24/-29/-36/-44: a NEW code is a tender the store adds,
+     * carried out as the nature it names, its code upper-cased, with its
+     * islands, its monetics answers, its coin machine and its cheque options.
+     */
+    @Test
+    void anAddedTenderIsCreatedWithItsNatureAndOptions() {
+        AdminTenderResource resource = newResource();
+        MultivaluedMap<String, String> posted = soundForm(" amex ", "080");
+        posted.putSingle("nature", "CARD");
+        posted.putSingle("moneticCodes", " D16:43;;d46:1010 ");
+        posted.putSingle("supervisionIslands", " CLS ");
+        posted.putSingle("coinMachine", "on");
+        posted.putSingle("micrReading", "on");
+        posted.putSingle("chequeAuthorization", "on");
+        posted.putSingle("accountNumberEntry", "on");
+        posted.putSingle("chequeAutoPrint", "on");
+        PanacheQuery<TenderDefinition> absent = queryOf(null);
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class);
+                MockedConstruction<TenderDefinition> created =
+                        mockConstruction(TenderDefinition.class)) {
+            ms.when(() -> TenderDefinition.find("functionalId", "080")).thenReturn(absent);
+            ms.when(() -> TenderDefinition.find("code", "AMEX")).thenReturn(absent);
+            Response response = resource.saveTender(posted);
+            assertEquals("Moyen de règlement créé.", notice(response));
+            TenderDefinition inserted = created.constructed().get(0);
+            assertEquals("AMEX", inserted.code);
+            assertEquals("CARD", inserted.nature);
+            assertEquals("D16:43;;d46:1010", inserted.moneticCodes);
+            assertEquals("CLS", inserted.supervisionIslands);
+            assertTrue(inserted.coinMachine);
+            assertTrue(inserted.micrReading);
+            assertTrue(inserted.chequeAuthorization);
+            assertTrue(inserted.accountNumberEntry);
+            assertTrue(inserted.chequeAutoPrint);
+        }
+    }
+
+    /**
+     * BO-03-02-01/-44: a code the register cannot store, and a monetics answer
+     * that is not D16:code or D46:code, are refused before anything is written;
+     * a native code carries no nature and blank answers are none.
+     */
+    @Test
+    void aMalformedCodeOrMoneticsAnswerIsRefused() {
+        AdminTenderResource resource = newResource();
+        MultivaluedMap<String, String> spaced = soundForm("AM EX", "080");
+        spaced.putSingle("nature", "CARD");
+        assertTrue(notice(resource.saveTender(spaced)).contains("Code de moyen de règlement invalide : AM EX"));
+        MultivaluedMap<String, String> wrong = soundForm("TR", "030");
+        wrong.putSingle("moneticCodes", "D16:3F;D99:1");
+        assertEquals("Correspondance monétique invalide : D99:1", notice(resource.saveTender(wrong)));
+        assertNull(AdminTenderResource.moneticProblem(null));
+        assertNull(AdminTenderResource.moneticProblem(" ; "));
+        PanacheQuery<TenderDefinition> absent = queryOf(null);
+        MultivaluedMap<String, String> plain = soundForm("TR", "030");
+        plain.putSingle("nature", "CARD");
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class);
+                MockedConstruction<TenderDefinition> created =
+                        mockConstruction(TenderDefinition.class)) {
+            ms.when(() -> TenderDefinition.find("functionalId", "030")).thenReturn(absent);
+            ms.when(() -> TenderDefinition.find("code", "TR")).thenReturn(absent);
+            resource.saveTender(plain);
+            TenderDefinition inserted = created.constructed().get(0);
+            assertNull(inserted.nature);
+            assertNull(inserted.moneticCodes);
+            assertFalse(inserted.micrReading);
+        }
     }
 }

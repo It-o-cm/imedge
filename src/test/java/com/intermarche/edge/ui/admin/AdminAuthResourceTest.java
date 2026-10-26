@@ -107,8 +107,10 @@ class AdminAuthResourceTest {
         TemplateInstance withError = mock(TemplateInstance.class);
         TemplateInstance view = mock(TemplateInstance.class);
         when(login.data("error", null)).thenReturn(withError);
-        when(withError.data("notice", "Vous êtes déconnecté.")).thenReturn(view);
-        TemplateInstance result = resource.loginPage(null, "Vous êtes déconnecté.");
+        TemplateInstance withNotice = mock(TemplateInstance.class);
+        when(withError.data("notice", "Vous êtes déconnecté.")).thenReturn(withNotice);
+        when(withNotice.data("ssoEnabled", false)).thenReturn(view);
+        TemplateInstance result = resource.loginPage(null, "Vous êtes déconnecté.", null);
         assertSame(view, result);
         verify(login).data("error", null);
         verify(withError).data("notice", "Vous êtes déconnecté.");
@@ -129,8 +131,10 @@ class AdminAuthResourceTest {
         when(login.data("error",
                 "Identifiant ou code incorrect, ou compte désactivé ou verrouillé."))
                 .thenReturn(withError);
-        when(withError.data("notice", null)).thenReturn(view);
-        TemplateInstance result = resource.loginPage("1", null);
+        TemplateInstance withNotice = mock(TemplateInstance.class);
+        when(withError.data("notice", null)).thenReturn(withNotice);
+        when(withNotice.data("ssoEnabled", false)).thenReturn(view);
+        TemplateInstance result = resource.loginPage("1", null, null);
         assertSame(view, result);
         verify(login).data("error",
                 "Identifiant ou code incorrect, ou compte désactivé ou verrouillé.");
@@ -306,5 +310,55 @@ class AdminAuthResourceTest {
         assertEquals(Response.Status.SEE_OTHER.getStatusCode(), response.getStatus());
         assertTrue(response.getLocation().toString().startsWith("/admin/password"));
         verify(resource.technicalEventService, never()).log(any(), any());
+    }
+
+    /**
+     * BO-01-02-01: a refused single sign-on reads its reason, disabled or
+     * refused, on the sign-in page.
+     */
+    @Test
+    void loginPageTellsWhyTheSsoWasRefused() {
+        AdminAuthResource resource = new AdminAuthResource();
+        Template login = mock(Template.class);
+        resource.adminLogin = login;
+        TemplateInstance instance = mock(TemplateInstance.class, org.mockito.Mockito.RETURNS_SELF);
+        when(login.data(org.mockito.ArgumentMatchers.anyString(), any())).thenReturn(instance);
+        resource.loginPage(null, null, "disabled");
+        verify(login).data("error", "La connexion SSO n'est pas activée sur ce nœud.");
+        resource.loginPage(null, null, "refused");
+        verify(login).data("error", "Aucun compte actif n'admet la connexion SSO pour cette identité.");
+    }
+
+    /**
+     * BO-01-02-09: the SSO button is offered when the node enables it and the
+     * echelon does not close it; an unreadable parameter keeps it.
+     */
+    @Test
+    void theSsoIsOfferedUnlessClosed() {
+        AdminAuthResource resource = new AdminAuthResource();
+        assertEquals(false, resource.ssoOffered());
+        resource.ssoEnabled = true;
+        resource.posSettingsService = mock(com.intermarche.edge.service.PosSettingsService.class);
+        when(resource.posSettingsService.backOfficeSignIn()).thenReturn(Employee.AuthMode.ANY, Employee.AuthMode.PASSWORD)
+                .thenThrow(new IllegalStateException("unreadable"));
+        assertEquals(true, resource.ssoOffered());
+        assertEquals(false, resource.ssoOffered());
+        assertEquals(true, resource.ssoOffered());
+    }
+
+    /**
+     * BO-01-01-03: on a store, the password of an account the central node
+     * owns is not changed: the centre would undo it.
+     */
+    @Test
+    void changePasswordRefusesACentralAccount() {
+        AdminAuthResource resource = newResource("mkt");
+        Employee employee = mock(Employee.class);
+        employee.centralManaged = true;
+        when(employee.verifyBackOfficePassword("oldsecret")).thenReturn(true);
+        Response response = run(resource, "mkt", employee, "oldsecret", "newsecret", "newsecret");
+        assertTrue(java.net.URLDecoder.decode(response.getLocation().toString(), java.nio.charset.StandardCharsets.UTF_8)
+                .contains("nœud central"));
+        verify(employee, never()).setBackOfficePassword(any());
     }
 }

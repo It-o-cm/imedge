@@ -4,19 +4,11 @@ import com.intermarche.edge.domain.catalog.Price;
 import com.intermarche.edge.domain.catalog.Product;
 import com.intermarche.edge.domain.catalog.VatRate;
 import io.quarkus.hibernate.orm.panache.Panache;
-import io.smallrye.common.annotation.RunOnVirtualThread;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.POST;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
 
 import java.io.InputStream;
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
@@ -51,6 +43,11 @@ import java.util.Set;
  * which the scan paths already survive by falling back on the administered
  * default. This is why the VAT file has to be imported BEFORE the prices.
  * <p>
+ * ON A REGISTER the same importer also serves the referential pull: it is
+ * called by {@code RefApplyService} on the raw file the register pulled
+ * through ENGINE_FEEDS. The injection point stays the node — this class
+ * never listens on a port.
+ * <p>
  * Place in the POS architecture since the phase 6 centralized referentials:
  * these CSV endpoints exist on every node, but their proper home is the
  * STORE node — an import performed on a register is transient (the next
@@ -64,7 +61,6 @@ import java.util.Set;
 // document and to keep in step, and the permission policy had to name them
 // one by one — an importer forgotten there was a door left open.
 @ApplicationScoped
-@RunOnVirtualThread
 public class PriceCsvResource extends ImporterCsvResource {
 
     private static final Logger LOGGER = Logger.getLogger(PriceCsvResource.class);
@@ -303,11 +299,12 @@ public class PriceCsvResource extends ImporterCsvResource {
         @SuppressWarnings("unchecked")
         Map<String, Price> priceMap = (Map<String, Price>) entityMap.get(CTX_PRICES);
         if (priceMap == null) {
-            // 1-by-1 fallback: look for the specific price in DB
+            // 1-by-1 fallback: look for the specific price in DB, under the same
+            // composite key as the chunked lookup (Price carries no usage column).
             LocalDateTime start = safeParseDateTime(data, COL_START_DATE);
             Integer priority = safeParseInt(data, COL_PRIORITY);
             Price existing = Price.find(
-                    "product.ean = ?1 and priceUsage = ?2 and startDateTime = ?3 and priority = ?4",
+                    "product.ean = ?1 and startDateTime = ?2 and priority = ?3",
                     data.code, start, priority
             ).firstResult();
 

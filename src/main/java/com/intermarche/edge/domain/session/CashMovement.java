@@ -1,18 +1,12 @@
 package com.intermarche.edge.domain.session;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.FetchType;
-import jakarta.persistence.Index;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
-import jakarta.persistence.Table;
+import com.intermarche.edge.domain.BaseEntity;
+import com.intermarche.edge.domain.people.Employee;
+import jakarta.persistence.*;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Objects;
-import com.intermarche.edge.domain.people.Employee;
-import com.intermarche.edge.domain.BaseEntity;
 
 /**
  * A cash movement of one register: a first-class WITNESS of a drawer
@@ -72,6 +66,13 @@ public class CashMovement extends BaseEntity {
 
     /** The tender key of a payment method, as the register names it. */
     public static final String CASH = "CASH";
+
+    /**
+     * The reason of the automatic withdrawal a cash changer's takings are booked
+     * under (LC-07-15-04): the notes stay inside the machine, so the store node
+     * never lowers the machine's running total on it (BO-05-02-16).
+     */
+    public static final String CASH_CHANGER_REASON = "Prélèvement automatique monnayeur";
 
     /** Stable identity of the movement across nodes (store-sync upsert key). */
     @Column(name = "movement_uid", unique = true, length = 36)

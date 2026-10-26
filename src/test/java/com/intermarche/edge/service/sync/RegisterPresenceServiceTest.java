@@ -99,13 +99,19 @@ class RegisterPresenceServiceTest {
     void silenceIsMeasuredAgainstTheTolerance() {
         RegisterPresenceService service = service(3);
         LocalDateTime now = LocalDateTime.now();
-        try (MockedStatic<RegisterPresence> rows = mockStatic(RegisterPresence.class)) {
+        try (MockedStatic<RegisterPresence> rows = mockStatic(RegisterPresence.class);
+                MockedStatic<com.intermarche.edge.domain.store.CheckoutPoint> points =
+                        mockStatic(com.intermarche.edge.domain.store.CheckoutPoint.class)) {
             rows.when(RegisterPresence::allByAge).thenReturn(List.of(
                     presence("MUETTE", now.minusMinutes(30)),
                     presence("VIVANTE", now.minusMinutes(1)),
-                    presence("JAMAIS", null)));
+                    presence("JAMAIS", null),
+                    presence("ARRETEE", null)));
+            // BO-03-09-01: a deactivated register's silence is no alarm.
+            points.when(() -> com.intermarche.edge.domain.store.CheckoutPoint.isDeactivated("ARRETEE"))
+                    .thenReturn(true);
             List<RegisterPresenceService.Presence> all = service.all();
-            assertEquals(3, all.size());
+            assertEquals(4, all.size());
             assertFalse(all.get(0).online());
             assertEquals(30L, all.get(0).silentMinutes());
             assertTrue(all.get(1).online());
@@ -113,6 +119,7 @@ class RegisterPresenceServiceTest {
             List<RegisterPresenceService.Presence> offline = service.offline();
             assertEquals(2, offline.size());
             assertEquals("MUETTE", offline.get(0).terminalId());
+            assertEquals("JAMAIS", offline.get(1).terminalId());
         }
     }
 
@@ -140,4 +147,22 @@ class RegisterPresenceServiceTest {
             assertTrue(service.offline().isEmpty());
         }
     }
+
+    /** BO-04-03-05: the first signal of an unknown register creates a timestamped, trimmed presence row. */
+    @Test
+    void firstRegisterSignalCreatesItsPresence() {
+        var service = service(3);
+        var before = LocalDateTime.now();
+        try (var rows = mockStatic(RegisterPresence.class);
+             var created = org.mockito.Mockito.mockConstruction(RegisterPresence.class)) {
+            service.touch(" C04 ");
+            assertEquals(1, created.constructed().size());
+            var row = created.constructed().getFirst();
+            assertEquals("C04", row.terminalId);
+            assertFalse(row.lastSeenAt.isBefore(before));
+            assertFalse(row.lastSeenAt.isAfter(LocalDateTime.now()));
+            org.mockito.Mockito.verify(row).persist();
+        }
+    }
+
 }

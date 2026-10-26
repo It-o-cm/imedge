@@ -71,10 +71,11 @@ public interface ReportDefinition {
      * Returns the index of the column whose values the chart plots, or -1 when
      * this report has nothing worth drawing.
      *
-     * <p>The chart (BO-06-01-04) is a bar per row, so it only means something
-     * when the rows are a small, ordered set — hours of the day, settlement
-     * methods, cashiers. A list of tickets has no chart, and says so by
-     * returning -1 rather than by drawing four hundred bars one pixel wide.
+     * <p>The chart (BO-06-01-04) is drawn for every AGGREGATE report — hours of
+     * the day, settlement methods, cashiers, families — whatever its number of
+     * rows; this is the series drawn when the operator chose none, and the
+     * operator may add any other numeric column. A LIST of tickets or of events
+     * is not a measurement to draw, and says so by returning -1.
      *
      * @return the plotted column index, or -1 for no chart
      */
@@ -109,5 +110,104 @@ public interface ReportDefinition {
      */
     default List<String> optionChoices() {
         return List.of();
+    }
+
+    /**
+     * Returns the edition criteria this report honours beyond its period,
+     * which decides the fields its form shows.
+     *
+     * @return the honoured criteria, the registers by default
+     */
+    default java.util.Set<ReportFilter> filters() {
+        return java.util.EnumSet.of(ReportFilter.TERMINALS);
+    }
+
+    /**
+     * Returns the label of the report-specific MULTIPLE choice, or null when
+     * this report offers none.
+     *
+     * @return the choice's label, or null
+     */
+    default String pickLabel() {
+        return null;
+    }
+
+    /**
+     * Returns the values the multiple choice offers, as {@code value:label}
+     * pairs.
+     *
+     * @return the choices, empty when this report offers none
+     */
+    default List<String> pickChoices() {
+        return List.of();
+    }
+
+    /**
+     * Returns the label of the report-specific text range — a range of
+     * customer numbers, of names, of transactions — or null when this report
+     * offers none.
+     *
+     * @return the range's label, or null
+     */
+    default String boundLabel() {
+        return null;
+    }
+
+    /**
+     * Returns the lines the report states ABOVE its table: what a reader needs
+     * to know of the rows before reading them — the survey recalled with its
+     * question and period, the nomenclature level chosen.
+     *
+     * @param criteria the edition parameters
+     * @return the lines, in French, empty by default
+     */
+    default List<String> preamble(ReportCriteria criteria) {
+        return List.of();
+    }
+
+    /**
+     * Returns the key of the column the rows are BROKEN on (« rupture »), or
+     * null when the report has no break.
+     *
+     * <p>The report returns its rows ordered by that column; the frame closes
+     * each group with a subtotal row of the totalled columns, on the screen and
+     * in every export alike.
+     *
+     * @return the break column's key, or null
+     */
+    default String breakKey() {
+        return null;
+    }
+
+    /**
+     * Returns the address a row's ACTION opens on the screen — the duplicate
+     * of an invoice (BO-06-04-03) — or null when the row has none. The
+     * exports never carry it: an action is a gesture of the screen.
+     *
+     * @param row the row
+     * @return the address, or null
+     */
+    default String rowLink(List<Object> row) {
+        return null;
+    }
+
+    /**
+     * Returns the label of the row action, or null when the report has none.
+     *
+     * @return the French label, or null
+     */
+    default String rowLinkLabel() {
+        return null;
+    }
+
+    /**
+     * Returns the signature line printed at the foot of the document, or null:
+     * a document « à faire signer par la caissière » (BO-06-06-08) carries the
+     * place where she signs.
+     *
+     * @return the French signature caption, or null
+     */
+    default String signature() {
+        return null;
     }
 }

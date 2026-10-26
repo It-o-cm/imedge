@@ -7,130 +7,134 @@
 !}
 {#include admin-layout}
 
-{#title}Fournisseurs de service{/title}
+{#title}{inject:i18n.get('t.fournisseurs-de-service')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Fournisseurs de service</h1>
-        <p class="page-sub">Déclaration des tiers : produits dématérialisés, fidélité, monétique, étiquettes, borne de prix, décisionnel, fiscal. Déclarer un fournisseur ne crée pas le protocole : un protocole non porté par cette version n'est jamais appelé.</p>
+        <h1>{inject:i18n.get('t.fournisseurs-de-service')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.declaration-des-tiers-produits-dematerialises-fi')}</p>
     </div>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 <div class="card">
-    <h2 class="card-title">Déclarer ou modifier un fournisseur</h2>
-    <p class="card-sub">Le code identifie le fournisseur : le réutiliser met la déclaration à jour.</p>
+    <h2 class="card-title">{inject:i18n.get('t.declarer-ou-modifier-un-fournisseur')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.le-code-identifie-le-fournisseur-le-reutiliser')}</p>
     <form method="post" action="/admin/providers/save">
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="p-code">Code</label>
+                <label class="field-label" for="p-code">{inject:i18n.get('t.code')}</label>
                 <input class="input-control" id="p-code" type="text" name="code" maxlength="30" required>
             </div>
             <div class="field">
-                <label class="field-label" for="p-label">Libellé</label>
+                <label class="field-label" for="p-label">{inject:i18n.get('t.libelle')}</label>
                 <input class="input-control" id="p-label" type="text" name="label" maxlength="120">
             </div>
             <div class="field">
-                <label class="field-label" for="p-type">Type de service</label>
+                <label class="field-label" for="p-type">{inject:i18n.get('t.type-de-service')}</label>
                 <select class="input-control" id="p-type" name="providerType">
                     {#for type in types}
-                    <option value="{type.name}">{type.label}</option>
+                    <option value="{type.name}">{inject:i18n.text(type.label)}</option>
                     {/for}
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="p-protocol">Protocole</label>
+                <label class="field-label" for="p-protocol">{inject:i18n.get('t.protocole')}</label>
                 <select class="input-control" id="p-protocol" name="protocol">
                     {#for protocol in protocols}
-                    <option value="{protocol.name}">{protocol.label}</option>
+                    <option value="{protocol.name}">{inject:i18n.text(protocol.label)}</option>
                     {/for}
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="p-endpoint">Adresse (URL ou IP:port)</label>
+                <label class="field-label" for="p-endpoint">{inject:i18n.get('t.adresse-url-ou-ip-port')}</label>
                 <input class="input-control" id="p-endpoint" type="text" name="endpoint" maxlength="300">
             </div>
             <div class="field">
-                <label class="field-label" for="p-auth">Clé d'authentification</label>
+                <label class="field-label" for="p-auth">{inject:i18n.get('t.cle-d-authentification')}</label>
                 <input class="input-control" id="p-auth" type="password" name="authKey" maxlength="300" autocomplete="new-password">
-                <p class="field-hint">Laisser vide conserve la clé déjà enregistrée. Elle n'est jamais réaffichée.</p>
+                <p class="field-hint">{inject:i18n.get('t.laisser-vide-conserve-la-cle-deja-enregistree')}</p>
             </div>
             <div class="field">
-                <label class="field-label" for="p-phase">Phase d'appel en vente</label>
+                <label class="field-label" for="p-phase">{inject:i18n.get('t.phase-d-appel-en-vente')}</label>
                 <select class="input-control" id="p-phase" name="callPhase">
                     {#for phase in phases}
-                    <option value="{phase.name}">{phase.label}</option>
+                    <option value="{phase.name}">{inject:i18n.text(phase.label)}</option>
                     {/for}
                 </select>
-                <p class="field-hint">Au scan, la ligne attend la réponse du fournisseur. À la fin du paiement, le refus n'arrête plus la vente.</p>
+                <p class="field-hint">{inject:i18n.get('t.au-scan-la-ligne-attend-la-reponse')}</p>
             </div>
             <div class="field">
-                <label class="field-label" for="p-selection">Sélection d'articles servie</label>
+                <label class="field-label" for="p-selection">{inject:i18n.get('t.selection-d-articles-servie')}</label>
                 <input class="input-control" id="p-selection" type="text" name="articleSelection" maxlength="120">
             </div>
             <div class="field">
-                <label class="field-label" for="p-template">Gabarit d'impression</label>
+                <label class="field-label" for="p-template">{inject:i18n.get('t.gabarit-d-impression')}</label>
                 <input class="input-control" id="p-template" type="text" name="documentTemplateCode" maxlength="30">
             </div>
             <div class="field">
-                <label class="field-label" for="p-active">En service</label>
+                <label class="field-label" for="p-active">{inject:i18n.get('t.en-service')}</label>
                 <input id="p-active" type="checkbox" name="active" checked>
             </div>
         </div>
         <div class="page-actions" style="margin-top: 6px;">
-            <button class="btn btn-primary" type="submit">Enregistrer</button>
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer')}</button>
         </div>
     </form>
 </div>
 
 <div class="card">
-    <h2 class="card-title">Fournisseurs déclarés</h2>
+    <h2 class="card-title">{inject:i18n.get('t.fournisseurs-declares')}</h2>
     {#if providers.isEmpty()}
     <div class="empty-state">
-        <p>Aucun fournisseur déclaré.</p>
+        <p>{inject:i18n.get('t.aucun-fournisseur-declare')}</p>
     </div>
     {#else}
+    {! Ten columns and a free address: the table scrolls inside its card
+     ! rather than widening the page in Dutch or Portuguese (BO-03-11). !}
+    <div style="overflow-x: auto;">
     <table class="data-table">
         <thead>
-        <tr><th>Code</th><th>Libellé</th><th>Type</th><th>Protocole</th><th>Adresse</th><th>Appel</th><th>Articles</th><th>Gabarit</th><th>État</th><th></th></tr>
+        <tr><th>{inject:i18n.get('t.code')}</th><th>{inject:i18n.get('t.libelle')}</th><th>{inject:i18n.get('t.type')}</th><th>{inject:i18n.get('t.protocole')}</th><th>{inject:i18n.get('t.adresse')}</th><th>{inject:i18n.get('t.appel')}</th><th>{inject:i18n.get('t.articles')}</th><th>{inject:i18n.get('t.gabarit')}</th><th>{inject:i18n.get('t.etat')}</th><th></th></tr>
         </thead>
         <tbody>
         {#for provider in providers}
         <tr>
             <td>{provider.code}</td>
             <td>{provider.label ?: '—'}</td>
-            <td>{provider.providerType.label}</td>
-            <td>{provider.protocol.label}</td>
-            <td>{provider.endpoint ?: '—'}</td>
-            <td>{provider.callPhase.label}</td>
+            <td>{inject:i18n.text(provider.providerType.label)}</td>
+            <td>{inject:i18n.text(provider.protocol.label)}</td>
+            <td style="overflow-wrap: anywhere;">{provider.endpoint ?: '—'}</td>
+            <td>{inject:i18n.text(provider.callPhase.label)}</td>
             <td>{provider.articleSelection ?: '—'}</td>
             <td>{provider.documentTemplateCode ?: '—'}</td>
             <td>
-                {#if !provider.active}<span class="badge badge-off">Hors service</span>
-                {#else if provider.reachable}<span class="badge badge-ok">Joignable</span>
-                {#else if !provider.hasCredential()}<span class="badge badge-off">Sans clé</span>
-                {#else}<span class="badge badge-off">Sans adresse</span>{/if}
+                {#if !provider.active}<span class="badge badge-off">{inject:i18n.get('t.hors-service')}</span>
+                {#else if provider.reachable}<span class="badge badge-ok">{inject:i18n.get('t.joignable')}</span>
+                {#else if !provider.hasCredential()}<span class="badge badge-off">{inject:i18n.get('t.sans-cle')}</span>
+                {#else}<span class="badge badge-off">{inject:i18n.get('t.sans-adresse')}</span>{/if}
             </td>
             <td>
                 {#if provider.hasCredential()}
                 <form method="post" action="/admin/providers/clear-credential">
                     <input type="hidden" name="code" value="{provider.code}">
-                    <button class="btn btn-small btn-ghost" type="submit">Effacer la clé</button>
+                    <button class="btn btn-small btn-ghost" type="submit">{inject:i18n.get('t.effacer-la-cle')}</button>
                 </form>
                 {/if}
                 <form method="post" action="/admin/providers/delete">
                     <input type="hidden" name="code" value="{provider.code}">
-                    <button class="btn btn-small btn-ghost" type="submit">Supprimer</button>
+                    <button class="btn btn-small btn-ghost" type="submit">{inject:i18n.get('t.supprimer')}</button>
                 </form>
             </td>
         </tr>
         {/for}
         </tbody>
     </table>
+    </div>
     {/if}
 </div>
 
@@ -138,55 +142,55 @@
  ! magasin. Sur CETTE page et pas sur une a elle : le code 4 d'un emetteur
  ! n'est pas le code 4 d'un autre, la paire est la cle. !}
 <div class="card">
-    <h2 class="card-title">Messages des fournisseurs</h2>
-    <p class="card-sub">Ce qu'un fournisseur répond en langage technique, traduit pour l'écran du caissier et pour le ticket du client. Écran vide : le texte du fournisseur reste. Ticket vide : rien n'est imprimé.</p>
+    <h2 class="card-title">{inject:i18n.get('t.messages-des-fournisseurs')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.ce-qu-un-fournisseur-repond-en-langage')}</p>
     <form method="post" action="/admin/providers/message/save">
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="pm-provider">Fournisseur</label>
+                <label class="field-label" for="pm-provider">{inject:i18n.get('t.fournisseur')}</label>
                 <input class="input-control" id="pm-provider" type="text" name="providerCode" maxlength="30" required>
             </div>
             <div class="field">
-                <label class="field-label" for="pm-code">Code message</label>
+                <label class="field-label" for="pm-code">{inject:i18n.get('t.code-message')}</label>
                 <input class="input-control" id="pm-code" type="text" name="messageCode" maxlength="50" required>
             </div>
             <div class="field">
-                <label class="field-label" for="pm-screen">Texte écran caisse</label>
+                <label class="field-label" for="pm-screen">{inject:i18n.get('t.texte-ecran-caisse')}</label>
                 <input class="input-control" id="pm-screen" type="text" name="screenText" maxlength="200">
             </div>
             <div class="field">
-                <label class="field-label" for="pm-ticket">Texte ticket</label>
+                <label class="field-label" for="pm-ticket">{inject:i18n.get('t.texte-ticket')}</label>
                 <input class="input-control" id="pm-ticket" type="text" name="ticketText" maxlength="200">
             </div>
             <div class="field">
-                <label class="field-label" for="pm-active">Actif</label>
+                <label class="field-label" for="pm-active">{inject:i18n.get('t.actif')}</label>
                 <input id="pm-active" type="checkbox" name="messageActive" checked>
             </div>
         </div>
-        <div class="page-actions"><button class="btn btn-primary" type="submit">Enregistrer le message</button></div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer-le-message')}</button></div>
     </form>
     {#if messages.size() > 0}
     <table class="data-table">
-        <tr><th>Fournisseur</th><th>Code</th><th>Écran caisse</th><th>Ticket</th><th>Actif</th><th></th></tr>
+        <tr><th>{inject:i18n.get('t.fournisseur')}</th><th>{inject:i18n.get('t.code')}</th><th>{inject:i18n.get('t.ecran-caisse')}</th><th>{inject:i18n.get('t.ticket')}</th><th>{inject:i18n.get('t.actif')}</th><th></th></tr>
         {#for message in messages}
         <tr>
             <td>{message.providerCode}</td>
             <td>{message.messageCode}</td>
             <td>{message.screenText ?: '(texte du fournisseur)'}</td>
             <td>{message.ticketText ?: '(rien)'}</td>
-            <td>{#if message.active}oui{#else}non{/if}</td>
+            <td>{#if message.active}{inject:i18n.get('t.oui')}{#else}{inject:i18n.get('t.non')}{/if}</td>
             <td>
                 <form method="post" action="/admin/providers/message/delete">
                     <input type="hidden" name="providerCode" value="{message.providerCode}">
                     <input type="hidden" name="messageCode" value="{message.messageCode}">
-                    <button class="btn btn-danger" type="submit">Supprimer</button>
+                    <button class="btn btn-danger" type="submit">{inject:i18n.get('t.supprimer')}</button>
                 </form>
             </td>
         </tr>
         {/for}
     </table>
     {#else}
-    <p class="card-sub">Aucune traduction déclarée : les fournisseurs parlent leur propre langage en caisse.</p>
+    <p class="card-sub">{inject:i18n.get('t.aucune-traduction-declaree-les-fournisseurs-parl')}</p>
     {/if}
 </div>
 {/body}

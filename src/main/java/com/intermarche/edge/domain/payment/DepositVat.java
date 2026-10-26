@@ -98,8 +98,47 @@ public final class DepositVat {
                 || totalAmount == null || totalAmount.signum() <= 0) {
             return "";
         }
-        BigDecimal allocated = BigDecimal.ZERO;
         List<Row> rows = new ArrayList<>();
+        for (Share share : shares(buckets, deposit, totalAmount)) {
+            rows.add(new Row(share.rate(), share.vatAmount()));
+        }
+        return format(rows);
+    }
+
+    /**
+     * One rate's share of a deposit: the part of the deposit taken on that rate,
+     * TTC, and the VAT it carries (LC-08-04-15).
+     *
+     * @param rate the VAT rate
+     * @param includingTax the share of the deposit, TTC
+     * @param vatAmount the VAT of the share
+     */
+    public record Share(BigDecimal rate, BigDecimal includingTax, BigDecimal vatAmount) {
+
+        /**
+         * The share without its VAT.
+         *
+         * @return the share, HT
+         */
+        public BigDecimal excludingTax() {
+            return includingTax.subtract(vatAmount);
+        }
+    }
+
+    /**
+     * Shares a deposit over the VAT buckets of its order, the rule
+     * {@link #compute} states (LC-06-03-05, LC-08-04-15): each bucket its
+     * pro-rata share, the last one absorbing the rounding residue.
+     *
+     * @param buckets the order's VAT buckets, in rate order, never empty
+     * @param deposit the deposit amount, TTC, strictly positive
+     * @param totalAmount the order total, TTC, strictly positive
+     * @return the shares, one per bucket
+     */
+    public static List<Share> shares(List<VatBreakdown.Bucket> buckets,
+                                     BigDecimal deposit, BigDecimal totalAmount) {
+        BigDecimal allocated = BigDecimal.ZERO;
+        List<Share> shares = new ArrayList<>();
         for (int i = 0; i < buckets.size(); i++) {
             VatBreakdown.Bucket bucket = buckets.get(i);
             BigDecimal share;
@@ -110,9 +149,33 @@ public final class DepositVat {
                         .divide(totalAmount, SCALE, RoundingMode.HALF_UP);
             }
             allocated = allocated.add(share);
-            rows.add(new Row(bucket.rate, vatOf(share, bucket.rate)));
+            shares.add(new Share(bucket.rate, share, vatOf(share, bucket.rate)));
         }
-        return format(rows);
+        return shares;
+    }
+
+    /**
+     * Adds two deposit ventilations rate by rate (LC-06-02-04, -07): several
+     * deposits may be taken on one document, and the VAT already collected on it
+     * is the sum of theirs.
+     *
+     * @param first a compact detail string, possibly null or blank
+     * @param second another compact detail string, possibly null or blank
+     * @return the summed detail, in rate order, empty when both are empty
+     */
+    public static String merge(String first, String second) {
+        java.util.Map<BigDecimal, BigDecimal> byRate = new java.util.TreeMap<>();
+        for (Row row : rows(first)) {
+            byRate.merge(row.rate.stripTrailingZeros(), row.vatAmount, BigDecimal::add);
+        }
+        for (Row row : rows(second)) {
+            byRate.merge(row.rate.stripTrailingZeros(), row.vatAmount, BigDecimal::add);
+        }
+        List<Row> merged = new ArrayList<>();
+        for (java.util.Map.Entry<BigDecimal, BigDecimal> entry : byRate.entrySet()) {
+            merged.add(new Row(entry.getKey(), entry.getValue()));
+        }
+        return format(merged);
     }
 
     /**
@@ -183,7 +246,7 @@ public final class DepositVat {
      * @return the VAT of the share
      */
     private static BigDecimal vatOf(BigDecimal shareIncludingTax, BigDecimal rate) {
-        BigDecimal divisor = BigDecimal.ONE.add(rate == null ? BigDecimal.ZERO : rate);
+        BigDecimal divisor = BigDecimal.ONE.add(rate);
         return shareIncludingTax.subtract(shareIncludingTax
                 .divide(divisor, SCALE + 2, RoundingMode.HALF_UP))
                 .setScale(SCALE, RoundingMode.HALF_UP);

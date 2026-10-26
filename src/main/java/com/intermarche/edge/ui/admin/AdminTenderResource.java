@@ -1,11 +1,14 @@
 package com.intermarche.edge.ui.admin;
 
+import io.quarkus.security.Authenticated;
+import com.intermarche.edge.security.FeatureAccess;
+import com.intermarche.edge.domain.setting.Feature;
+import com.intermarche.edge.domain.people.CrudOption;
 import com.intermarche.edge.domain.payment.TenderDefinition;
 import com.intermarche.edge.domain.payment.PaymentTypes;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
@@ -42,7 +45,7 @@ import java.util.List;
  * touched once it holds together.
  *
  * <p>Same admin cycle as the other back-office pages: POST &rarr; 303 &rarr; a
- * one-shot notice, {@code @RolesAllowed("ADMIN")} throughout.
+ * one-shot notice, {@code @FeatureAccess} throughout (BO-01-04-01).
  */
 @Path("/admin/tenders")
 public class AdminTenderResource {
@@ -52,6 +55,10 @@ public class AdminTenderResource {
 
     /** The separator of the exported list (BO-03-02-05). */
     private static final char CSV_SEPARATOR = ';';
+
+    /** The natures a tender the store adds may be carried out as, in a stable order (BO-03-02-01). */
+    static final List<String> ADDITIONAL_NATURES = List.of(
+            "CASH", "CARD", "CHEQUE", "CHEQUE_DEFERRED", "TR", "FIDELITY", "TRD");
 
     /** The tenders page template. */
     @Inject
@@ -74,7 +81,8 @@ public class AdminTenderResource {
      * @return the page
      */
     @GET
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.TENDER)
     @Produces(MediaType.TEXT_HTML)
     public TemplateInstance tendersPage(@QueryParam("notice") String notice,
             @QueryParam("noticeOk") String noticeOk) {
@@ -84,6 +92,7 @@ public class AdminTenderResource {
         return adminTenders
                 .data("tenders", tenders)
                 .data("settlementKeys", PaymentTypes.keys())
+                .data("additionalNatures", ADDITIONAL_NATURES)
                 .data("controls", TenderDefinition.ControlLevel.values())
                 .data("drawerMoments", TenderDefinition.DrawerOpening.values())
                 .data("notice", notice)
@@ -98,15 +107,35 @@ public class AdminTenderResource {
      */
     @POST
     @Path("/save")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.TENDER, option = CrudOption.CREATE, updateKey = "code", entity = com.intermarche.edge.domain.payment.TenderDefinition.class)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response saveTender(MultivaluedMap<String, String> form) {
         LOGGER.info("Entering method saveTender with form: " + form);
-        String code = trimmed(form, "code");
+        String code = trimmed(form, "code").toUpperCase(java.util.Locale.ROOT);
+        // BO-03-02-01: a code the register names is its own nature; any other
+        // code is a tender the store ADDS, carried out as one of the natures
+        // the payment screen settles on an amount — as many as the store wants.
+        String nature = null;
         if (!PaymentTypes.keys().contains(code)) {
+            if (!code.matches("[A-Z0-9_]{1,20}")) {
+                LOGGER.info("Exiting method saveTender");
+                return redirect("Code de moyen de règlement invalide : " + code, false);
+            }
+            nature = trimmed(form, "nature");
+            if (!TenderDefinition.ADDITIONAL_NATURES.contains(nature)) {
+                LOGGER.info("Exiting method saveTender");
+                return redirect("Nature de règlement inconnue de la caisse : " + nature, false);
+            }
+        }
+        // BO-03-02-44: the monetics answers are a closed syntax; a typo would
+        // silently record the wrong payment mean.
+        String moneticCodes = blankToNull(trimmed(form, "moneticCodes"));
+        String badMonetic = moneticProblem(moneticCodes);
+        if (badMonetic != null) {
             LOGGER.info("Exiting method saveTender");
-            return redirect("Moyen de règlement inconnu de la caisse : " + code, false);
+            return redirect("Correspondance monétique invalide : " + badMonetic, false);
         }
         String functionalId = trimmed(form, "functionalId");
         if (functionalId.length() < TenderDefinition.MIN_FUNCTIONAL_ID_LENGTH) {
@@ -126,15 +155,16 @@ public class AdminTenderResource {
         // POSTED identifier as well as the stored one, so an identifier cannot
         // be walked out of the central range by renaming it.
         String localRange = posSettingsService.value("tender.local-range");
-        boolean frozen = !TenderDefinition.inRange(functionalId, localRange)
-                && !(localRange == null || localRange.isBlank());
+        boolean frozen = localRange != null && !localRange.isBlank()
+                && (!TenderDefinition.inRange(functionalId, localRange)
+                    || existing != null && !existing.locallyModifiable(localRange));
         if (frozen && existing == null) {
             LOGGER.info("Exiting method saveTender");
             return redirect("L'identifiant " + functionalId
                     + " appartient à la plage centrale : ce mode de règlement ne se crée pas"
                     + " en magasin.", false);
         }
-        if (frozen && !existing.locallyModifiable(localRange)) {
+        if (frozen) {
             // The point de vente keeps the ACTIVATION and nothing else: the rest
             // of the posted description is dropped rather than half-applied.
             existing.active = form.getFirst("active") != null;
@@ -146,9 +176,15 @@ public class AdminTenderResource {
         if (tender == null) {
             tender = new TenderDefinition();
             tender.code = code;
-            tender.persist();
         }
         apply(tender, form, functionalId);
+        tender.nature = nature;
+        tender.moneticCodes = moneticCodes;
+        // Persisted once described: the insert carries the state the row had
+        // when it was persisted, and its NOT NULL columns are filled only here.
+        if (existing == null) {
+            tender.persist();
+        }
         LOGGER.info("Exiting method saveTender");
         return redirect(existing == null ? "Moyen de règlement créé." : "Moyen de règlement enregistré.",
                 true);
@@ -167,7 +203,8 @@ public class AdminTenderResource {
      */
     @POST
     @Path("/delete")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.TENDER, option = CrudOption.DELETE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response deleteTender(MultivaluedMap<String, String> form) {
@@ -197,7 +234,8 @@ public class AdminTenderResource {
      */
     @GET
     @Path("/export")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.TENDER)
     @Produces("text/csv")
     public Response export() {
         LOGGER.info("Entering method export");
@@ -222,7 +260,9 @@ public class AdminTenderResource {
                 + "Rendu monnaie;Rendu avec;Declaration auto;Prelevement auto;Tiroir;"
                 + "Apport/depense;Remise en banque;Fond de caisse;Total par defaut;"
                 + "Detail prelevement;Remontee fidelite;Transfert source;"
-                + "Transfert destination\n");
+                + "Transfert destination;Nature;Ilots superviseur;Correspondance monetique;"
+                + "Monnayeur;Lecture MICR;Autorisation cheque;Saisie compte;"
+                + "Impression auto cheque\n");
         for (TenderDefinition tender : tenders) {
             csv.append(cell(tender.functionalId))
                     .append(cell(tender.code))
@@ -252,7 +292,15 @@ public class AdminTenderResource {
                     .append(cell(yesNo(tender.withdrawalReportDetail)))
                     .append(cell(yesNo(tender.fidelityReported)))
                     .append(cell(yesNo(tender.transferSource)))
-                    .append(yesNo(tender.transferDestination))
+                    .append(cell(yesNo(tender.transferDestination)))
+                    .append(cell(tender.nature()))
+                    .append(cell(tender.supervisionIslands))
+                    .append(cell(tender.moneticCodes))
+                    .append(cell(yesNo(tender.coinMachine)))
+                    .append(cell(yesNo(tender.micrReading)))
+                    .append(cell(yesNo(tender.chequeAuthorization)))
+                    .append(cell(yesNo(tender.accountNumberEntry)))
+                    .append(yesNo(tender.chequeAutoPrint))
                     .append('\n');
         }
         return csv.toString();
@@ -318,6 +366,35 @@ public class AdminTenderResource {
         // l'inverse ait un sens.
         tender.transferSource = form.getFirst("transferSource") != null;
         tender.transferDestination = form.getFirst("transferDestination") != null;
+        // BO-03-02-29: the islands on which the tender calls a supervisor.
+        tender.supervisionIslands = blankToNull(trimmed(form, "supervisionIslands"));
+        // BO-03-02-36: cash taken through the coin machine of the register.
+        tender.coinMachine = form.getFirst("coinMachine") != null;
+        // BO-03-02-24: the automatic cheque.
+        tender.micrReading = form.getFirst("micrReading") != null;
+        tender.chequeAuthorization = form.getFirst("chequeAuthorization") != null;
+        tender.accountNumberEntry = form.getFirst("accountNumberEntry") != null;
+        tender.chequeAutoPrint = form.getFirst("chequeAutoPrint") != null;
+    }
+
+    /**
+     * Finds the first monetics answer that does not read {@code D16:code} or
+     * {@code D46:code} (BO-03-02-44).
+     *
+     * @param codes the posted answers, semicolon-separated, or null
+     * @return the first malformed answer, or null when all are well formed
+     */
+    static String moneticProblem(String codes) {
+        if (codes == null) {
+            return null;
+        }
+        for (String part : codes.split(";")) {
+            String answer = part.trim();
+            if (!answer.isEmpty() && !answer.matches("(?i)D(16|46):[A-Za-z0-9]+")) {
+                return answer;
+            }
+        }
+        return null;
     }
 
     /**

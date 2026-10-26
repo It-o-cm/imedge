@@ -27,8 +27,16 @@ import com.intermarche.edge.domain.BaseEntity;
  * the enseigne unless one overrides it, and a local override survives because
  * it lives in a different table the echelon distribution never touches.
  * <p>
- * The triplet (level, echelonCode, settingKey) is unique: one value per key per
+ * The triplet (level, echelonCode, settingKey) is unique: one row per key per
  * echelon. Absence of a row means "inherit from the level above".
+ * <p>
+ * A row carries up to TWO values (BO-03-12-03, BO-03-10): the CURRENT one
+ * ({@link #settingValue}, null when the echelon only programs a change) and a
+ * PENDING one programmed for a later day ({@link #pendingValue} from
+ * {@link #effectiveDate}). Until that day the current value keeps applying —
+ * or, without one, the inherited value — and from that day the pending value
+ * does: a programmed change never replaces the value in force before its date.
+ * A null pending value with a date programs the removal of the current value.
  * <p>
  * Fields are public to comply with Quarkus/Panache conventions.
  */
@@ -60,21 +68,56 @@ public class EchelonSetting extends BaseEntity {
     @Column(name = "setting_key", nullable = false, length = 64)
     public String settingKey;
 
-    /** The value, as text, typed by the catalog entry. */
-    @Column(name = "setting_value", nullable = false, length = 255)
+    /**
+     * The CURRENT value, as text, typed by the catalog entry: the one in force
+     * until a programmed change comes into effect. Null when the echelon only
+     * carries a programmed value, which then inherits until its date.
+     */
+    @Column(name = "setting_value", length = 4000)
     public String settingValue;
 
     /**
-     * The date the value takes effect (BO-03-12-03/04): a value dated in the
-     * future is distributed at once but ignored by the resolution until the day
-     * comes, so a scheduled change applies on its own on every node without a
-     * central scheduler. Null means immediate effect.
+     * The PENDING value programmed for {@link #effectiveDate} (BO-03-12-03/04),
+     * or null: with a date, a null pending value programs the removal of the
+     * current value (the echelon inherits again from that day).
+     */
+    @Column(name = "pending_value", length = 4000)
+    public String pendingValue;
+
+    /**
+     * The day the pending value takes effect (BO-03-12-03/04): a programmed
+     * change is distributed at once, but the resolution keeps the current value
+     * until the day comes, so it applies on its own on every node without a
+     * central scheduler. Null means nothing is programmed.
      * <p>
      * This is CENTRAL data, part of the ECHELON_SETTINGS pull — it is not a
      * piece of node-local operational state, so it travels with the value.
      */
     @Column(name = "effective_date")
     public java.time.LocalDate effectiveDate;
+
+    /**
+     * Tells whether a change is programmed on this row.
+     *
+     * @return true when a pending value (or removal) waits for its date
+     */
+    public boolean isProgrammed() {
+        return effectiveDate != null;
+    }
+
+    /**
+     * Returns the value in force on a given day: the pending value once its
+     * date has come, the current value before it.
+     *
+     * @param day the reference day
+     * @return the value in force that day, or null when the echelon inherits
+     */
+    public String valueAsOf(java.time.LocalDate day) {
+        if (effectiveDate != null && !effectiveDate.isAfter(day)) {
+            return pendingValue;
+        }
+        return settingValue;
+    }
 
     /**
      * Finds the value posed for a key at a precise echelon.
@@ -114,12 +157,34 @@ public class EchelonSetting extends BaseEntity {
     }
 
     /**
+     * Lists the rows whose programmed change has come into effect on a day —
+     * the ones to fold into their current value.
+     *
+     * @param day the reference day
+     * @return the due rows, never null
+     */
+    public static List<EchelonSetting> listDue(java.time.LocalDate day) {
+        return list("effectiveDate <= ?1", day);
+    }
+
+    /**
+     * Lists the rows carrying a change programmed after a day, the nearest
+     * date first (BO-03-12-03/04, the "Paramètres datés").
+     *
+     * @param day the reference day
+     * @return the programmed rows, never null
+     */
+    public static List<EchelonSetting> listProgrammed(java.time.LocalDate day) {
+        return list("effectiveDate > ?1 order by effectiveDate, echelonCode, settingKey", day);
+    }
+
+    /**
      * Hashes the business fields for change detection.
      *
      * @return the checksum of the echelon setting
      */
     @Override
     public int getChecksum() {
-        return Objects.hash(level, echelonCode, settingKey, settingValue, effectiveDate);
+        return Objects.hash(level, echelonCode, settingKey, settingValue, pendingValue, effectiveDate);
     }
 }

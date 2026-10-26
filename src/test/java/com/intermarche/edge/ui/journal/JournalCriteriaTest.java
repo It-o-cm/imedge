@@ -241,4 +241,35 @@ class JournalCriteriaTest {
         assertEquals("FRUITS,BOULANGERIE", criteria.familiesAsText());
         assertEquals("", new JournalCriteria().familiesAsText());
     }
+
+    /**
+     * The lot 21 criteria are read: the event and its amount range, the
+     * settlement cancellation, the unknown codes and the event code
+     * (BO-04-01-14/19/34); an unknown event reads as none.
+     */
+    @Test
+    void lot21CriteriaAreRead() {
+        MultivaluedMap<String, String> params = new MultivaluedHashMap<>();
+        params.putSingle("event", " FORCED_PRICE ");
+        params.putSingle("eventAmountMin", "1,5");
+        params.putSingle("eventAmountMax", "9");
+        params.putSingle("paymentCancelMin", "2");
+        params.putSingle("paymentCancelMax", "20");
+        params.putSingle("paymentCancelMethod", " CHEQUE ");
+        params.putSingle("unknownCodeMin", "200");
+        params.putSingle("unknownCodeMax", "299");
+        params.putSingle("eventCode", "CARD");
+        JournalCriteria criteria = JournalCriteria.fromParams(params);
+        assertEquals(JournalEvent.FORCED_PRICE, criteria.event);
+        assertEquals(new java.math.BigDecimal("1.5"), criteria.eventAmountMin);
+        assertEquals(new java.math.BigDecimal("9"), criteria.eventAmountMax);
+        assertEquals(new java.math.BigDecimal("2"), criteria.paymentCancelMin);
+        assertEquals(new java.math.BigDecimal("20"), criteria.paymentCancelMax);
+        assertEquals("CHEQUE", criteria.paymentCancelMethod);
+        assertEquals("200", criteria.unknownCodeMin);
+        assertEquals("299", criteria.unknownCodeMax);
+        assertEquals("CARD", criteria.eventCode);
+        params.putSingle("event", "NOPE");
+        assertEquals(null, JournalCriteria.fromParams(params).event);
+    }
 }

@@ -60,6 +60,13 @@ class ProductResourceTest {
     /** The resource under test; the trait default method is real, no collaborators are injected. */
     private final ProductResource resource = new ProductResource();
 
+    /** The stamp mover of the resource, a mock: every successful mutation calls it. */
+    private final ReferentialChangeNotifier referentialChange = org.mockito.Mockito.mock(ReferentialChangeNotifier.class);
+
+    {
+        resource.referentialChange = referentialChange;
+    }
+
     /**
      * Builds a real {@link Product} carrying the supplied ean and name.
      *
@@ -410,6 +417,7 @@ class ProductResourceTest {
             panache.when(() -> Product.deleteById(PRODUCT_ID)).thenReturn(true);
             boolean result = resource.deleteProduct(PRODUCT_ID);
             assertTrue(result);
+            verify(referentialChange).changed();
         }
     }
 
@@ -443,7 +451,53 @@ class ProductResourceTest {
         String expected = "ProductRecord [ean=" + EAN + ", name=" + NAME + ", description=d" +
                 ", brand=b, referenceWeight=1.000, referenceVolume=2.000" +
                 ", productType=UNIT, unitName=kg, active=true" +
-                ", checkoutLabel=CL, internalCode=IC";
+                ", checkoutLabel=CL, internalCode=IC, attributes=null, saleCodes=null, plu=null"
+                + ", forbiddenToSale=null";
         assertEquals(expected, input.toString());
+    }
+
+    /**
+     * {@code applyReferential} merges the attribute pairs, replaces the sale
+     * codes (blanks, nulls and the article's own EAN dropped), trims the PLU and
+     * carries the sale ban (BO-02-03-03, -18).
+     */
+    @Test
+    void applyReferentialCarriesTheReferentialData() {
+        Product product = new Product();
+        product.ean = EAN;
+        product.attributes.put("OLD", "x");
+        product.attributes.put("GONE", "y");
+        ProductResource.ProductRecord input = record(EAN, NAME, "UNIT", Boolean.TRUE);
+        input.attributes = "RECALL=true;GONE=";
+        input.saleCodes = java.util.Arrays.asList(" 3000000000099 ", null, " ", EAN);
+        input.plu = " 1234 ";
+        input.forbiddenToSale = Boolean.TRUE;
+        ProductResource.applyReferential(product, input);
+        assertEquals("true", product.attributes.get("RECALL"));
+        assertEquals("x", product.attributes.get("OLD"));
+        assertEquals(null, product.attributes.get("GONE"));
+        assertEquals(java.util.Set.of("3000000000099"), product.saleCodes);
+        assertEquals("1234", product.plu);
+        assertEquals(true, product.forbiddenToSale);
+    }
+
+    /**
+     * {@code applyReferential} leaves the article alone when nothing is sent,
+     * and a blank PLU removes it.
+     */
+    @Test
+    void applyReferentialLeavesUnsentDataAlone() {
+        Product product = new Product();
+        product.ean = EAN;
+        product.plu = "4321";
+        product.saleCodes.add("C1");
+        ProductResource.ProductRecord input = record(EAN, NAME, "UNIT", Boolean.TRUE);
+        ProductResource.applyReferential(product, input);
+        assertEquals("4321", product.plu);
+        assertEquals(java.util.Set.of("C1"), product.saleCodes);
+        assertEquals(false, product.forbiddenToSale);
+        input.plu = "  ";
+        ProductResource.applyReferential(product, input);
+        assertEquals(null, product.plu);
     }
 }

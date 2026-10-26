@@ -1,5 +1,8 @@
 package com.intermarche.edge.imports;
 
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.intermarche.edge.service.NomenclatureImportService;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -90,7 +93,7 @@ public class NomenclatureCsvResource {
         if (schemeCode == null || schemeCode.isBlank()) {
             LOGGER.info("Exiting method importNomenclature");
             return Response.status(Response.Status.BAD_REQUEST)
-                    .entity("{\"errors\":[\"Le paramètre scheme est obligatoire.\"]}").build();
+                    .entity(errorsAnswer("Le paramètre scheme est obligatoire.")).build();
         }
         List<String> complaints = new ArrayList<>();
         List<NomenclatureImportService.Row> rows = read(inputStream, complaints);
@@ -221,15 +224,24 @@ public class NomenclatureCsvResource {
      * @return the JSON body
      */
     private String json(int created, int updated, int levels, List<String> errors) {
-        StringBuilder body = new StringBuilder("{\"createdCount\":").append(created)
-                .append(", \"updatedCount\":").append(updated)
-                .append(", \"levelCount\":").append(levels)
-                .append(", \"errors\":[");
-        for (int i = 0; i < errors.size(); i++) {
-            body.append(i == 0 ? "\"" : ", \"")
-                    .append(errors.get(i).replace("\\", "\\\\").replace("\"", "\\\""))
-                    .append("\"");
-        }
-        return body.append("]}").toString();
+        ObjectNode body = JsonNodeFactory.instance.objectNode()
+                .put("createdCount", created)
+                .put("updatedCount", updated)
+                .put("levelCount", levels);
+        ArrayNode list = body.putArray("errors");
+        errors.forEach(list::add);
+        return body.toString();
+    }
+
+    /**
+     * Builds the JSON answer of a refused import, by the JSON library.
+     *
+     * @param complaint the reason of the refusal
+     * @return {@code {"errors":[complaint]}}
+     */
+    static String errorsAnswer(String complaint) {
+        ObjectNode answer = JsonNodeFactory.instance.objectNode();
+        answer.putArray("errors").add(complaint);
+        return answer.toString();
     }
 }

@@ -122,4 +122,19 @@ class CustomerOrderTest {
         blank.depositVatDetail = "   ";
         assertEquals("", blank.getDepositVatDisplay());
     }
+
+    /**
+     * BO-10-01-39: a mobility settlement is built empty for JPA, and with its
+     * tender and amount otherwise.
+     */
+    @Test
+    void aMobilitySettlementCarriesItsTenderAndAmount() {
+        CustomerOrder.OrderPayment empty = new CustomerOrder.OrderPayment();
+        org.junit.jupiter.api.Assertions.assertNull(empty.tender);
+        org.junit.jupiter.api.Assertions.assertNull(empty.amount);
+        CustomerOrder.OrderPayment paid = new CustomerOrder.OrderPayment("CARD", java.math.BigDecimal.TEN);
+        org.junit.jupiter.api.Assertions.assertEquals("CARD", paid.tender);
+        org.junit.jupiter.api.Assertions.assertEquals(java.math.BigDecimal.TEN, paid.amount);
+        org.junit.jupiter.api.Assertions.assertTrue(new CustomerOrder().payments.isEmpty());
+    }
 }

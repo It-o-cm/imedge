@@ -72,6 +72,6 @@ class MenuTest {
             }
         }
         assertEquals(List.of(Feature.PROFILE, Feature.USER, Feature.ACCOUNT,
-                Feature.POS_LIST, Feature.STORE_IMAGE), Menu.ADMINISTRATION.features());
+                Feature.POS_LIST, Feature.STORE_IMAGE, Feature.AUDIT), Menu.ADMINISTRATION.features());
     }
 }

@@ -1,8 +1,9 @@
 package com.intermarche.edge.domain.payment;
 
-import java.math.BigDecimal;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+
+import java.math.BigDecimal;
 
 /**
  * Unit tests for {@link ForeignCurrencyPayment} and its nested
@@ -145,7 +146,7 @@ class ForeignCurrencyPaymentTest {
         BigDecimal amount = new BigDecimal("52.6500");
         ForeignCurrencyPayment.Factory factory = new ForeignCurrencyPayment.Factory();
         TicketPayment payment = factory.create(amount, new BigDecimal("50.0000"));
-        Assertions.assertTrue(payment instanceof ForeignCurrencyPayment);
+        Assertions.assertInstanceOf(ForeignCurrencyPayment.class, payment);
         Assertions.assertSame(amount, payment.amount);
     }
 

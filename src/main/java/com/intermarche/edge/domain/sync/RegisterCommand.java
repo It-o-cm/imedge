@@ -94,7 +94,29 @@ public class RegisterCommand extends PanacheEntity {
          * ({@code LC-01-07-06}). Nothing is performed, nothing is authorised
          * — the lane is told its request was heard.
          */
-        SUPERVISOR_ACK
+        SUPERVISOR_ACK,
+
+        /**
+         * Close the session at rest on its THEORETICAL amount, the host being
+         * declared automatically ({@code BO-09-03-01}): the end-of-period close
+         * of a self-service island whose hosts the store declares
+         * automatically. Stands down mid-sale like {@link #CLOSE_SESSION_IF_IDLE}.
+         */
+        CLOSE_SESSION_AUTO_DECLARE,
+
+        /**
+         * Reset the tickets left on hold on the register ({@code BO-09-01-08}):
+         * each is cancelled and its purge traced, as the Z closing does.
+         */
+        PURGE_PARKED_TICKETS,
+
+        /**
+         * Check the register's data against the server's at the end of period
+         * ({@code BO-09-03-05}). The reason carries the server's figures for
+         * the day, {@code DAY;COUNT;TOTAL}; a register that differs pushes its
+         * sales again and re-pulls its referential.
+         */
+        VERIFY_SYNC
     }
 
     /** Stable identity of the order, the token the acknowledgement carries. */

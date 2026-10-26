@@ -1,5 +1,9 @@
 package com.intermarche.edge.ui.admin;
 
+import io.quarkus.security.Authenticated;
+import com.intermarche.edge.security.FeatureAccess;
+import com.intermarche.edge.domain.setting.Feature;
+import com.intermarche.edge.domain.people.CrudOption;
 import com.intermarche.edge.domain.barcode.AlertLevel;
 import com.intermarche.edge.domain.barcode.CouponControl;
 import com.intermarche.edge.domain.barcode.CouponField;
@@ -8,7 +12,6 @@ import com.intermarche.edge.service.CouponPatternService;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
@@ -45,13 +48,25 @@ import org.jboss.logging.Logger;
  * it holds together.
  *
  * <p>Same admin cycle as the other back-office pages: POST &rarr; 303 &rarr; a
- * one-shot notice, {@code @RolesAllowed("ADMIN")} throughout.
+ * one-shot notice, {@code @FeatureAccess} throughout (BO-01-04-01).
  */
 @Path("/admin/coupons")
 public class AdminCouponResource {
 
     /** Technical log of this class. */
     private static final Logger LOGGER = Logger.getLogger(AdminCouponResource.class);
+
+    /**
+     * The instruments a register issues under a range (BO-03-06-30 to -38): the
+     * kinds of its stored-value registry.
+     */
+    static final List<String> ISSUED_KINDS = List.of("CREDIT_NOTE", "GIFT_CARD");
+
+    /**
+     * The tenders a scanned code may be settled as (BO-03-06-08): the purchase
+     * voucher and the paper meal voucher, the two a barcode carries.
+     */
+    static final List<String> SCANNED_TENDERS = List.of("VOUCHER", "TR");
 
     /** The barcode ranges page template. */
     @Inject
@@ -71,7 +86,8 @@ public class AdminCouponResource {
      * @return the page
      */
     @GET
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.COUPON)
     public TemplateInstance couponsPage(@QueryParam("notice") String notice,
                                         @QueryParam("noticeOk") @DefaultValue("true") boolean noticeOk) {
         LOGGER.info("Entering method couponsPage with notice: " + notice + ", noticeOk: " + noticeOk);
@@ -82,6 +98,12 @@ public class AdminCouponResource {
                                 io.quarkus.panache.common.Sort.by("priority").and("code")))
                 .data("valueSources", com.intermarche.edge.domain.barcode.ArticleBarcodeRange.ValueSource.values())
                 .data("purposes", com.intermarche.edge.domain.barcode.ArticleBarcodeRange.Purpose.values())
+                .data("functions", com.intermarche.edge.domain.barcode.RegisterFunction.values())
+                .data("tenders", com.intermarche.edge.domain.payment.TenderDefinition
+                        .<com.intermarche.edge.domain.payment.TenderDefinition>find(
+                                "code in ?1 order by functionalId", SCANNED_TENDERS).list())
+                .data("issuedKinds", ISSUED_KINDS)
+                .data("cardProtocols", CouponType.CARD_PROTOCOLS)
                 .data("islands", com.intermarche.edge.domain.store.CheckoutIsland
                         .<com.intermarche.edge.domain.store.CheckoutIsland>find("order by code").list())
                 .data("roles", CouponField.Role.values())
@@ -99,12 +121,13 @@ public class AdminCouponResource {
      * Upserts a range by its code and regenerates its patterns.
      *
      * @param form the posted form (code, label, prefix, codeLength, codeKind,
-     *        amountSource, priority, active, depositLine)
+     *        amountSource, priority, active, depositLine, tenderCode, issuedKind)
      * @return a 303 redirect with the notice
      */
     @POST
     @Path("/type")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.COUPON, option = CrudOption.CREATE, updateKey = "code", entity = com.intermarche.edge.domain.barcode.CouponType.class)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response saveType(MultivaluedMap<String, String> form) {
@@ -126,6 +149,26 @@ public class AdminCouponResource {
         }
         Integer codeLength = positiveOrNull(trimmed(form, "codeLength"));
         String prefix = blankToNull(trimmed(form, "prefix"));
+        // BO-03-06-08: the tender the range is settled as, among the two a scan settles.
+        String tenderCode = blankToNull(trimmed(form, "tenderCode"));
+        if (tenderCode != null && !SCANNED_TENDERS.contains(tenderCode)) {
+            LOGGER.info("Exiting method saveType");
+            return redirect("Moyen de paiement inconnu pour une plage scannée.", false);
+        }
+        // BO-03-06-30 to -38: issuing an instrument under the range needs a registry
+        // range whose length is administered, the code being composed from it.
+        String issuedKind = blankToNull(trimmed(form, "issuedKind"));
+        if (issuedKind != null && (!ISSUED_KINDS.contains(issuedKind)
+                || source != CouponType.AmountSource.REGISTRY || codeLength == null)) {
+            LOGGER.info("Exiting method saveType");
+            return redirect("Seule une plage REGISTRY de longueur administrée émet des avoirs ou des cartes cadeau.", false);
+        }
+        // BO-03-02-37: the protocol of a prepaid card range, chosen from a list.
+        String cardProtocol = blankToNull(trimmed(form, "cardProtocol"));
+        if (cardProtocol != null && !CouponType.CARD_PROTOCOLS.contains(cardProtocol)) {
+            LOGGER.info("Exiting method saveType");
+            return redirect("Protocole de carte inconnu.", false);
+        }
         CouponType existing = CouponType.find("code", code).firstResult();
         List<CouponField> kept = existing == null || existing.fields == null
                 ? List.of()
@@ -139,7 +182,6 @@ public class AdminCouponResource {
         if (type == null) {
             type = new CouponType();
             type.code = code;
-            type.persist();
         }
         type.label = trimmed(form, "label");
         type.amountSource = source;
@@ -153,7 +195,15 @@ public class AdminCouponResource {
         type.manualAmountOnAllNines = form.getFirst("manualAmountOnAllNines") != null;
         // BO-03-06-07 : les îlots où la plage est acceptée, vide = partout.
         type.islandCodes = blankToNull(trimmed(form, "islandCodes"));
+        type.tenderCode = tenderCode;
+        type.issuedKind = issuedKind;
+        type.cardProtocol = cardProtocol;
         couponPatterns.regenerate(type);
+        // Persisted once described: the insert carries the state the row had
+        // when it was persisted, and its NOT NULL columns are filled only here.
+        if (existing == null) {
+            type.persist();
+        }
         LOGGER.info("Exiting method saveType");
         return redirect(existing == null ? "Plage créée." : "Plage enregistrée.", true);
     }
@@ -167,7 +217,8 @@ public class AdminCouponResource {
      */
     @POST
     @Path("/field")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.COUPON, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response saveField(MultivaluedMap<String, String> form) {
@@ -223,7 +274,8 @@ public class AdminCouponResource {
      */
     @POST
     @Path("/control")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.COUPON, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response saveControl(MultivaluedMap<String, String> form) {
@@ -260,7 +312,8 @@ public class AdminCouponResource {
      */
     @POST
     @Path("/control/delete")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.COUPON, option = CrudOption.DELETE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response deleteControl(MultivaluedMap<String, String> form) {
@@ -293,7 +346,8 @@ public class AdminCouponResource {
      */
     @POST
     @Path("/field/delete")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.COUPON, option = CrudOption.DELETE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response deleteField(MultivaluedMap<String, String> form) {
@@ -330,12 +384,13 @@ public class AdminCouponResource {
      * @param form the posted form (code, label, prefix, codeLength, codeKind,
      *        articlePosition, articleLength, valueSource, valuePosition,
      *        valueLength, valueDecimals, currency, checkDigit, priority, active,
-     *        promotionCode, lookupUrl)
+     *        promotionCode, lookupUrl, functionCode, promotionType, lookupField)
      * @return a 303 redirect with the notice
      */
     @POST
     @Path("/article-range")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.COUPON, option = CrudOption.CREATE, updateKey = "code", entity = com.intermarche.edge.domain.barcode.ArticleBarcodeRange.class)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response saveArticleRange(MultivaluedMap<String, String> form) {
@@ -362,6 +417,15 @@ public class AdminCouponResource {
             LOGGER.info("Exiting method saveArticleRange");
             return redirect("Destination de la plage inconnue.", false);
         }
+        // BO-03-06-43: what a defined promotion is worth — a percentage or an
+        // amount read on the code — or nothing for a promotion named only.
+        String promotionType = blankToNull(trimmed(form, "promotionType"));
+        if (promotionType != null
+                && !com.intermarche.edge.domain.barcode.ArticleBarcodeRange.PROMOTION_PERCENT.equals(promotionType)
+                && !com.intermarche.edge.domain.barcode.ArticleBarcodeRange.PROMOTION_AMOUNT.equals(promotionType)) {
+            LOGGER.info("Exiting method saveArticleRange");
+            return redirect("Type de promotion inconnu.", false);
+        }
         com.intermarche.edge.domain.barcode.ArticleBarcodeRange existing =
                 com.intermarche.edge.domain.barcode.ArticleBarcodeRange.find("code", code).firstResult();
         com.intermarche.edge.domain.barcode.ArticleBarcodeRange posted =
@@ -387,6 +451,12 @@ public class AdminCouponResource {
         posted.promotionCode = blankToNull(trimmed(form, "promotionCode"));
         // BO-03-06-41: the third-party service an EXTERNAL_LOOKUP range asks.
         posted.lookupUrl = blankToNull(trimmed(form, "lookupUrl"));
+        // BO-03-06-59: the register function a FUNCTION range calls; blank leaves
+        // the code to carry the function's number.
+        posted.functionCode = blankToNull(trimmed(form, "functionCode"));
+        posted.promotionType = promotionType;
+        // BO-03-06-41: the field of the partner's answer the register reads.
+        posted.lookupField = blankToNull(trimmed(form, "lookupField"));
         posted.priority = intOr(trimmed(form, "priority"), 100);
         posted.active = form.getFirst("active") != null;
 
@@ -398,7 +468,6 @@ public class AdminCouponResource {
         com.intermarche.edge.domain.barcode.ArticleBarcodeRange range = existing;
         if (range == null) {
             range = posted;
-            range.persist();
         } else {
             range.label = posted.label;
             range.prefix = posted.prefix;
@@ -415,10 +484,18 @@ public class AdminCouponResource {
             range.purpose = posted.purpose;
             range.promotionCode = posted.promotionCode;
             range.lookupUrl = posted.lookupUrl;
+            range.functionCode = posted.functionCode;
+            range.promotionType = posted.promotionType;
+            range.lookupField = posted.lookupField;
             range.priority = posted.priority;
             range.active = posted.active;
         }
         couponPatterns.regenerateRange(range);
+        // Persisted once described, its pattern included: the insert carries the
+        // state the row had when it was persisted.
+        if (existing == null) {
+            range.persist();
+        }
         LOGGER.info("Exiting method saveArticleRange");
         return redirect(existing == null ? "Plage article créée." : "Plage article enregistrée.", true);
     }
@@ -431,7 +508,8 @@ public class AdminCouponResource {
      */
     @POST
     @Path("/article-range/delete")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.COUPON, option = CrudOption.DELETE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response deleteArticleRange(MultivaluedMap<String, String> form) {

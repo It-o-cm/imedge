@@ -58,13 +58,15 @@ public class RefExportResource {
      *
      * @param presentedToken the shared token presented by the register
      * @param terminalId the asking register's identifier, or null
+     * @param pdv the asking store's point of sale, or null (BO-01-01-03)
      * @return the domain-to-fingerprint map, or 401/403 when gated
      */
     @GET
     @Path("/versions")
     @Produces(MediaType.APPLICATION_JSON)
     public Response versions(@HeaderParam("X-Sync-Token") String presentedToken,
-                             @HeaderParam("X-Pos-Terminal") String terminalId) {
+                             @HeaderParam("X-Pos-Terminal") String terminalId,
+                             @HeaderParam("X-Pos-Pdv") String pdv) {
         LOGGER.info("Entering method versions with presentedToken: ***, terminalId: " + terminalId);
         Response gate = gate(presentedToken);
         if (gate != null) { LOGGER.info("Exiting method versions"); return gate; }
@@ -72,7 +74,30 @@ public class RefExportResource {
                 ? RefPayloads.ECHELON_DOMAINS
                 : RefPayloads.DOMAINS;
         LOGGER.info("Exiting method versions");
-        return Response.ok(refExportService.getFingerprints(domains, terminalId)).build();
+        return Response.ok(refExportService.getFingerprints(domains, terminalId, pdv)).build();
+    }
+
+    /**
+     * Returns the CHANGE STAMP of the referential (BO-03-12-01): a number that
+     * moves on every back-office modification of this node, the cheapest
+     * question a register can ask every few seconds to learn that it must pull
+     * now rather than at its next cycle.
+     *
+     * @param presentedToken the shared token presented by the register
+     * @return the stamp as text, or 401/403 when gated
+     */
+    @GET
+    @Path("/stamp")
+    @Produces(MediaType.TEXT_PLAIN)
+    public Response stamp(@HeaderParam("X-Sync-Token") String presentedToken) {
+        LOGGER.info("Entering method stamp");
+        Response gate = gate(presentedToken);
+        if (gate != null) {
+            LOGGER.info("Exiting method stamp");
+            return gate;
+        }
+        LOGGER.info("Exiting method stamp");
+        return Response.ok(String.valueOf(refExportService.changeStamp())).build();
     }
 
     /**
@@ -86,6 +111,7 @@ public class RefExportResource {
      *
      * @param presentedToken the shared token presented by the register
      * @param terminalId the asking register's identifier, or null
+     * @param pdv the asking store's point of sale, or null (BO-01-01-03)
      * @param domain the referential domain
      * @param page the 0-based page index
      * @param size the page size (bounded to 5000)
@@ -96,6 +122,7 @@ public class RefExportResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response page(@HeaderParam("X-Sync-Token") String presentedToken,
                          @HeaderParam("X-Pos-Terminal") String terminalId,
+                         @HeaderParam("X-Pos-Pdv") String pdv,
                          @PathParam("domain") String domain,
                          @QueryParam("page") int page,
                          @QueryParam("size") int size) {
@@ -107,7 +134,7 @@ public class RefExportResource {
         try {
             LOGGER.info("Exiting method page");
             return Response.ok(refExportService.getPage(domain.toUpperCase(),
-                    Math.max(0, page), boundedSize, terminalId)).build();
+                    Math.max(0, page), boundedSize, terminalId, pdv)).build();
         } catch (IllegalArgumentException e) {
             LOGGER.info("Exiting method page");
             return Response.status(Response.Status.BAD_REQUEST).entity(e.getMessage()).build();

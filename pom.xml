@@ -124,6 +124,13 @@
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-security</artifactId>
         </dependency>
+        <!-- BO-01-02-01 : authentification deleguee OIDC au SSO du groupement.
+             Inactive tant que pos.sso.enabled et quarkus.oidc.auth-server-url
+             ne sont pas poses ; le form auth reste la porte par defaut. -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-oidc</artifactId>
+        </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-resteasy-jackson</artifactId>
@@ -158,6 +165,12 @@
             <groupId>org.mindrot</groupId>
             <artifactId>jbcrypt</artifactId>
             <version>0.4</version>
+        </dependency>
+        <!-- BO-03-06-56: the scales drop their counter tickets on an FTP server. -->
+        <dependency>
+            <groupId>commons-net</groupId>
+            <artifactId>commons-net</artifactId>
+            <version>3.1</version>
         </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>

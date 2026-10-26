@@ -267,4 +267,23 @@ class AdminCheckoutIslandResourceTest {
             verify(stored, times(1)).delete();
         }
     }
+
+    /**
+     * BO-03-10-06: an island is excluded from Planexa when the box is ticked;
+     * an island saved without a label is named by its code.
+     */
+    @Test
+    void saveExcludesFromPlanexaAndNamesAnUnlabelledIsland() {
+        AdminCheckoutIslandResource resource = newResource();
+        PanacheQuery<CheckoutIsland> absent = query(null);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
+                MockedConstruction<CheckoutIsland> created = mockConstruction(CheckoutIsland.class)) {
+            panache.when(() -> CheckoutIsland.find("code", "DRIVE")).thenReturn(absent);
+            assertTrue(resource.saveIsland(form("code", "DRIVE", "planexaExcluded", "on", "active", "on"))
+                    .getLocation().toString().contains("noticeOk=true"));
+            CheckoutIsland island = created.constructed().get(0);
+            assertTrue(island.planexaExcluded);
+            assertEquals("DRIVE", island.label);
+        }
+    }
 }

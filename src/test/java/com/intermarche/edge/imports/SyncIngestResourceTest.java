@@ -235,6 +235,24 @@ class SyncIngestResourceTest {
     }
 
     /**
+     * BO-10-05-01: a shop reading its baskets from the FTP server alone, or
+     * taking none, refuses a basket pushed on the API; a shop accepting the
+     * API ingests it.
+     */
+    @Test
+    void balanceTicketPushFollowsTheRetrievalMode() {
+        SyncIngestService service = mock(SyncIngestService.class);
+        SyncPayloads.BalanceTicketDto dto = new SyncPayloads.BalanceTicketDto();
+        SyncIngestResource resource = resource("store", Optional.empty(), service);
+        resource.posSettingsService = mock(com.intermarche.edge.service.PosSettingsService.class);
+        assertEquals(403, resource.ingestBalanceTicket(null, dto).getStatus());
+        org.mockito.Mockito.verifyNoInteractions(service);
+        when(resource.posSettingsService.balanceTicketApiAccepted()).thenReturn(true);
+        assertEquals(200, resource.ingestBalanceTicket(null, dto).getStatus());
+        verify(service).ingestBalanceTicket(dto);
+    }
+
+    /**
      * {@code ingestBalanceTicket} on a register is refused: only the shop holds
      * counter tickets (role-check true arm).
      */
@@ -391,5 +409,118 @@ class SyncIngestResourceTest {
                 .ticketDuplicate("jeton", "T3");
         assertEquals(404, response.getStatus());
         assertEquals("Ticket inconnu du magasin", response.getEntity());
+    }
+
+    /**
+     * LC-08-02-02 / LC-13-05-06: a printed ticket and a training sale are
+     * ingested under the same gates as every push.
+     */
+    @Test
+    void printoutAndTrainingAreIngested() {
+        SyncIngestService service = mock(SyncIngestService.class);
+        SyncIngestResource resource = resource("store", Optional.of("secret"), service);
+        SyncPayloads.PrintoutDto printout = new SyncPayloads.PrintoutDto();
+        assertEquals(200, resource.ingestPrintout("secret", printout).getStatus());
+        verify(service).ingestPrintout(printout);
+        SyncPayloads.TrainingTicketDto training = new SyncPayloads.TrainingTicketDto();
+        assertEquals(200, resource.ingestTraining("secret", training).getStatus());
+        verify(service).ingestTrainingTicket(training);
+        assertEquals(401, resource.ingestPrintout("wrong", printout).getStatus());
+    }
+
+    /**
+     * LC-04-01-03: the signed trace of a ticket on hold is ingested under the
+     * same gates as every push.
+     */
+    @Test
+    void parkedTicketTracesAreIngested() {
+        SyncIngestService service = mock(SyncIngestService.class);
+        SyncIngestResource resource = resource("store", Optional.of("secret"), service);
+        SyncPayloads.ParkedTicketDto parking = new SyncPayloads.ParkedTicketDto();
+        assertEquals(200, resource.ingestParking("secret", parking).getStatus());
+        verify(service).ingestParkedTicket(parking);
+        assertEquals(401, resource.ingestParking("wrong", parking).getStatus());
+    }
+
+    /**
+     * BO-03-06-62/63: the instruments and the payment barcodes a register
+     * pushes are ingested under the same gates as every push.
+     */
+    @Test
+    void instrumentsAndBarcodeReadingsAreIngested() {
+        SyncIngestService service = mock(SyncIngestService.class);
+        SyncIngestResource resource = resource("store", Optional.of("secret"), service);
+        SyncPayloads.StoredValueDto instrument = new SyncPayloads.StoredValueDto();
+        assertEquals(200, resource.ingestStoredValue("secret", instrument).getStatus());
+        verify(service).ingestStoredValue(instrument);
+        SyncPayloads.ScannedBarcodeDto reading = new SyncPayloads.ScannedBarcodeDto();
+        assertEquals(200, resource.ingestScannedBarcode("secret", reading).getStatus());
+        verify(service).ingestScannedBarcode(reading);
+        assertEquals(401, resource.ingestStoredValue("wrong", instrument).getStatus());
+    }
+
+    /**
+     * BO-03-06-48: a register asking about an instrument another register
+     * printed gets it, or a 404 when no register of the shop printed it; a
+     * node off its role refuses, a wrong token is refused, no token passes.
+     */
+    @Test
+    void anInstrumentIsAnsweredToTheRegisters() {
+        SyncIngestService service = mock(SyncIngestService.class);
+        SyncPayloads.StoredValueDto known = new SyncPayloads.StoredValueDto();
+        when(service.findStoredValue("297000000000001")).thenReturn(known);
+        SyncIngestResource resource = resource("store", Optional.of("secret"), service);
+        jakarta.ws.rs.core.Response found = resource.storedValue("secret", "297000000000001");
+        assertEquals(200, found.getStatus());
+        assertEquals(known, found.getEntity());
+        assertEquals(404, resource.storedValue("secret", "297000000000002").getStatus());
+        assertEquals(401, resource.storedValue("wrong", "297000000000001").getStatus());
+        assertEquals(403, resource("register", Optional.empty(), service)
+                .storedValue(null, "297000000000001").getStatus());
+        assertEquals(200, resource("central", Optional.empty(), service)
+                .storedValue(null, "297000000000001").getStatus());
+        assertEquals(200, resource("store", Optional.empty(), service)
+                .storedValue(null, "297000000000001").getStatus());
+        assertEquals(200, resource("store", Optional.of(" "), service)
+                .storedValue(null, "297000000000001").getStatus());
+    }
+
+    /**
+     * BO-03-06-48: the central node takes the instruments its shops pass on,
+     * under the token gate, while every other push stays a store node's.
+     */
+    @Test
+    void theCentralNodeTakesTheInstrumentsItsShopsPassOn() {
+        SyncIngestService service = mock(SyncIngestService.class);
+        SyncIngestResource resource = resource("central", Optional.of("secret"), service);
+        SyncPayloads.StoredValueDto instrument = new SyncPayloads.StoredValueDto();
+        assertEquals(200, resource.ingestStoredValue("secret", instrument).getStatus());
+        verify(service).ingestStoredValue(instrument);
+        assertEquals(401, resource.ingestStoredValue("wrong", instrument).getStatus());
+        assertEquals(403, resource.ingestScannedBarcode("secret", new SyncPayloads.ScannedBarcodeDto()).getStatus());
+    }
+
+    /**
+     * BO-11-01-18: the burn of a voucher is answered to a store's registers
+     * only, behind the token — 200 with where it was consumed, 404 when no
+     * closed sale settled it.
+     */
+    @Test
+    void theBurnOfAVoucherIsAnswered() {
+        SyncIngestResource resource = resource("store", Optional.of("secret"), mock(SyncIngestService.class));
+        resource.voucherBurnService = mock(com.intermarche.edge.service.sync.VoucherBurnService.class);
+        com.intermarche.edge.service.sync.VoucherBurnService.Burn burn =
+                new com.intermarche.edge.service.sync.VoucherBurnService.Burn("B1", "C04", "T1", null);
+        when(resource.voucherBurnService.findBurn("B1")).thenReturn(burn);
+        jakarta.ws.rs.core.Response found = resource.voucherBurn("secret", "B1");
+        assertEquals(200, found.getStatus());
+        assertEquals(burn, found.getEntity());
+        assertEquals(404, resource.voucherBurn("secret", "B2").getStatus());
+        assertEquals(401, resource.voucherBurn("wrong", "B1").getStatus());
+        assertEquals(403, resource("central", Optional.empty(), mock(SyncIngestService.class))
+                .voucherBurn(null, "B1").getStatus());
+        SyncIngestResource open = resource("store", Optional.empty(), mock(SyncIngestService.class));
+        open.voucherBurnService = resource.voucherBurnService;
+        assertEquals(200, open.voucherBurn(null, "B1").getStatus());
     }
 }

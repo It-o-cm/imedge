@@ -103,6 +103,23 @@ public class RegisterCommandService {
     }
 
     /**
+     * Whether an order of a kind is still waiting for a register — what the
+     * end of period asks before leaving its close order, so the other orders
+     * waiting for the register never hold the close back.
+     *
+     * @param terminalId the register
+     * @param type the kind of order
+     * @return true when one is pending
+     */
+    public boolean isPending(String terminalId, RegisterCommand.CommandType type) {
+        LOGGER.info("Entering method isPending with terminalId: " + terminalId + ", type: " + type);
+        boolean pending = RegisterCommand.count("terminalId = ?1 and commandType = ?2 and consumedAt is null",
+                terminalId, type) > 0;
+        LOGGER.info("Exiting method isPending with " + pending);
+        return pending;
+    }
+
+    /**
      * Counts the orders still waiting for a register, for the screen that
      * shows whether a forced close has been picked up.
      *

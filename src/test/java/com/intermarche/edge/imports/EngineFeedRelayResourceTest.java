@@ -14,6 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -49,6 +50,12 @@ class EngineFeedRelayResourceTest {
         resource.postalCodeCsvResource = mock(PostalCodeCsvResource.class);
         resource.safeReceiptCsvResource = mock(SafeReceiptCsvResource.class);
         resource.nomenclatureCsvResource = mock(NomenclatureCsvResource.class);
+        resource.pdvCsvResource = mock(PdvCsvResource.class);
+        resource.integrationRetryService = mock(com.intermarche.edge.service.sync.IntegrationRetryService.class);
+        // BO-02-03-33: the fingerprints an article file is stamped with.
+        resource.refExportService = mock(com.intermarche.edge.service.sync.store.RefExportService.class);
+        when(resource.refExportService.fingerprintOf(java.util.List.of())).thenReturn("EMPTY");
+        when(resource.refExportService.publishedFingerprint(any())).thenReturn("before", "after");
     }
 
     /**
@@ -75,15 +82,29 @@ class EngineFeedRelayResourceTest {
     }
 
     /**
+     * The refusal of a code carrying a quote and a backslash is still valid
+     * JSON: a real parser reads the code back in the error message.
+     *
+     * @throws Exception never: the answer parses
+     */
+    @Test
+    void unknownCodeAnswerIsValidJson() throws Exception {
+        Response response = resource.importFeed("NO\"PE\\", null, null, null, null, stream("CODE|X\n"));
+        String error = new com.fasterxml.jackson.databind.ObjectMapper()
+                .readTree(String.valueOf(response.getEntity())).get("error").asText();
+        assertTrue(error.startsWith("Unknown feed code 'NO\"PE\\' - known codes: "));
+    }
+
+    /**
      * A code owned by a dedicated importer is delegated to it under the
      * unified grammar — the importer's own response comes back verbatim,
      * nothing is sealed here (delegated arm).
      */
     @Test
     void delegatedCodeRoutesToItsImporter() {
-        Response delegated = Response.ok("{\"createdCount\":312, \"updatedCount\":0}").build();
+        Response delegated = Response.ok("{\"createdCount\":312,\"updatedCount\":0}").build();
         InputStream body = stream("EAN|NAME\n1|A\n");
-        when(resource.productCsvResource.importProducts(body)).thenReturn(delegated);
+        when(resource.productCsvResource.importProducts(any(InputStream.class))).thenReturn(delegated);
         Response response = resource.importFeed("products", null, null, null, null, body);
         assertSame(delegated, response);
         verify(resource.engineFeedService, never()).store(any(), any());
@@ -96,9 +117,9 @@ class EngineFeedRelayResourceTest {
      */
     @Test
     void employeesCodeDelegatesOutsideTheEngineCatalog() {
-        Response delegated = Response.ok("{\"createdCount\":4, \"updatedCount\":0}").build();
+        Response delegated = Response.ok("{\"createdCount\":4,\"updatedCount\":0}").build();
         InputStream body = stream("BADGE_ID|LOGIN\n1|a\n");
-        when(resource.employeeCsvResource.importEmployees(body)).thenReturn(delegated);
+        when(resource.employeeCsvResource.importEmployees(any(InputStream.class))).thenReturn(delegated);
         Response response = resource.importFeed("EMPLOYEES", null, null, null, null, body);
         assertSame(delegated, response);
         verify(resource.engineFeedService, never()).store(any(), any());
@@ -113,7 +134,7 @@ class EngineFeedRelayResourceTest {
     void customersCodeForwardsTheImportMode() {
         InputStream body = stream("ACCOUNT_NUMBER|COMPANY_NAME\n1|Acme\n");
         Response delegated = Response.ok("{\"createdCount\":1}").build();
-        when(resource.accountCustomerCsvResource.importCustomers(body, "full")).thenReturn(delegated);
+        when(resource.accountCustomerCsvResource.importCustomers(any(InputStream.class), eq("full"))).thenReturn(delegated);
         Response response = resource.importFeed("customers", "full", null, null, null, body);
         assertEquals(delegated, response);
         verify(resource.engineFeedService, never()).store(any(), any());
@@ -130,7 +151,7 @@ class EngineFeedRelayResourceTest {
         InputStream body = stream("SOURCE|NIVEAU|NUMERO|LIBELLE\nX|1|10|Frais\n");
         Response delegated = Response.ok("{\"createdCount\":1}").build();
         when(resource.nomenclatureCsvResource
-                .importNomenclature("ITM_FR", "Nomenclature ITM", "ITM", body))
+                .importNomenclature(eq("ITM_FR"), eq("Nomenclature ITM"), eq("ITM"), any(InputStream.class)))
                 .thenReturn(delegated);
         Response response = resource.importFeed(
                 "NOMENCLATURE", null, "ITM_FR", "Nomenclature ITM", "ITM", body);
@@ -146,8 +167,19 @@ class EngineFeedRelayResourceTest {
     void postalCodesCodeDelegatesToItsImporter() {
         InputStream body = stream("CODE|PLACE\n75001|Paris\n");
         Response delegated = Response.ok("{\"createdCount\":1}").build();
-        when(resource.postalCodeCsvResource.importPostalCodes(body)).thenReturn(delegated);
+        when(resource.postalCodeCsvResource.importPostalCodes(any(InputStream.class))).thenReturn(delegated);
         assertEquals(delegated, resource.importFeed("POSTAL_CODES", null, null, null, null, body));
+    }
+
+    /**
+     * The PDVS code delegates to the point-of-sale importer (BO-02-05-03).
+     */
+    @Test
+    void pdvsCodeDelegatesToItsImporter() {
+        InputStream body = stream("PDV_NUMBER|NAME\n07039|Lyon\n");
+        Response delegated = Response.ok("{\"createdCount\":1}").build();
+        when(resource.pdvCsvResource.importPdvs(any(InputStream.class))).thenReturn(delegated);
+        assertEquals(delegated, resource.importFeed("PDVS", null, null, null, null, body));
     }
 
     /**
@@ -157,7 +189,7 @@ class EngineFeedRelayResourceTest {
     void safeReceiptsCodeDelegatesToItsImporter() {
         InputStream body = stream("REFERENCE|AMOUNT\nR1|10\n");
         Response delegated = Response.ok("{\"createdCount\":1}").build();
-        when(resource.safeReceiptCsvResource.importReceipts(body)).thenReturn(delegated);
+        when(resource.safeReceiptCsvResource.importReceipts(any(InputStream.class), org.mockito.ArgumentMatchers.isNull())).thenReturn(delegated);
         assertEquals(delegated, resource.importFeed("SAFE_RECEIPTS", null, null, null, null, body));
     }
 
@@ -190,7 +222,7 @@ class EngineFeedRelayResourceTest {
         when(resource.engineFeedService.store("OFFERS", "CODE|TYPE\nA|X\n")).thenReturn("deadbeef");
         Response response = resource.importFeed("offers", null, null, null, null, stream("CODE|TYPE\nA|X\n"));
         assertEquals(200, response.getStatus());
-        assertEquals("{\"code\":\"OFFERS\", \"version\":\"deadbeef\"}", response.getEntity());
+        assertEquals("{\"code\":\"OFFERS\",\"version\":\"deadbeef\"}", response.getEntity());
     }
 
     /**
@@ -230,7 +262,7 @@ class EngineFeedRelayResourceTest {
             assertEquals(200, response.getStatus());
             String body = String.valueOf(response.getEntity());
             assertEquals("[{\"code\":\"PRODUCTS\",\"version\":\"v2\",\"appliedVersion\":\"v1\","
-                    + "\"applied\":false,\"lastError\":\"HTTP 503 'boom'\"},"
+                    + "\"applied\":false,\"lastError\":\"HTTP 503 \\\"boom\\\"\"},"
                     + "{\"code\":\"OFFERS\",\"version\":\"v7\",\"appliedVersion\":\"v7\","
                     + "\"applied\":true,\"lastError\":null}]", body);
         }
@@ -303,5 +335,39 @@ class EngineFeedRelayResourceTest {
         Response response = resource.importFeed("OFFERS", null, null, null, null, failing);
         assertEquals(500, response.getStatus());
         verify(resource.engineFeedService, never()).store(any(), any());
+    }
+
+    /**
+     * BO-08-04-01 to -13: every deposit of a known code is recorded with the
+     * integration's answer, and a replay integrates the kept file through the
+     * same delegate.
+     */
+    @Test
+    void depositsAreRecordedAndReplayable() {
+        Response delegated = Response.ok("{\"createdCount\":1}").build();
+        when(resource.productCsvResource.importProducts(any(InputStream.class))).thenReturn(delegated);
+        resource.importFeed("PRODUCTS", "m", "s", "l", "e", stream("EAN|NAME\n1|A\n"));
+        verify(resource.integrationRetryService).record("PRODUCTS", "m", "s", "l", "e", "EAN|NAME\n1|A\n", delegated);
+        assertSame(delegated, resource.integrate("PRODUCTS", null, null, null, null, "EAN|NAME\n1|A\n"));
+        assertEquals(400, resource.integrate("OFFERS", null, null, null, null, " ").getStatus());
+    }
+
+    /**
+     * BO-02-03-33: an article file is stamped with the state it was integrated
+     * over and the state it left; over an empty referential its base is empty;
+     * a code the registers do not apply from the file is not stamped.
+     */
+    @Test
+    void anArticleFileIsStampedAroundItsIntegration() {
+        when(resource.productCsvResource.importProducts(any(InputStream.class))).thenReturn(Response.ok().build());
+        when(resource.priceCsvResource.importPrices(any(InputStream.class))).thenReturn(Response.ok().build());
+        when(resource.employeeCsvResource.importEmployees(any(InputStream.class))).thenReturn(Response.ok().build());
+        resource.integrate("PRODUCTS", null, null, null, null, "EAN|NAME\n1|A\n");
+        verify(resource.engineFeedService).stamp("PRODUCTS", "before", "after");
+        when(resource.refExportService.publishedFingerprint("PRICES")).thenReturn("EMPTY", "priced");
+        resource.integrate("PRICES", null, null, null, null, "EAN|PRICE\n1|2\n");
+        verify(resource.engineFeedService).stamp("PRICES", "", "priced");
+        resource.integrate("EMPLOYEES", null, null, null, null, "ID|NAME\n1|A\n");
+        verify(resource.engineFeedService, never()).stamp(org.mockito.ArgumentMatchers.eq("EMPLOYEES"), any(), any());
     }
 }

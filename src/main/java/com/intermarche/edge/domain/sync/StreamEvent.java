@@ -64,7 +64,13 @@ public class StreamEvent extends PanacheEntity {
         REFUND,
 
         /** The monetics slip of a ticket settled by card (BO-11-02-03). */
-        MONETICS
+        MONETICS,
+
+        /**
+         * The integration report of one e-commerce order returned to its
+         * platform (BO-11-04-03), keyed by the order reference.
+         */
+        ECOMMERCE
     }
 
     /**

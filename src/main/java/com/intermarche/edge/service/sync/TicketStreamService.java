@@ -79,6 +79,18 @@ public class TicketStreamService {
     /** The settlement discriminator of a card payment. */
     private static final String CARD_METHOD = "CARD";
 
+    /**
+     * The protocols whose receivers get their own shape of the sale and never
+     * the house JSON stream: Catalina only the sales of its registers
+     * (BO-03-09-20), TFREMA, DS and Anaveo their protocol's rendering
+     * (BO-11-02-01/04), SAFT the fiscal documents, which the SAF-T at the
+     * flow sends on its own queue (BO-05-01-05, BO-11-04-02).
+     */
+    private static final java.util.Set<ServiceProvider.ProviderProtocol> OWN_PROTOCOLS = java.util.EnumSet.of(
+            ServiceProvider.ProviderProtocol.CATALINA, ServiceProvider.ProviderProtocol.TFREMA,
+            ServiceProvider.ProviderProtocol.DS_VENTES, ServiceProvider.ProviderProtocol.ANAVEO,
+            ServiceProvider.ProviderProtocol.SAFT);
+
     /** The administered activation, cadence and image choice. */
     @Inject
     PosSettingsService posSettingsService;
@@ -107,13 +119,121 @@ public class TicketStreamService {
      */
     public void onTicket(Ticket ticket) {
         LOGGER.info("Entering method onTicket");
-        if (!isEnabled() || ticket == null || ticket.ticketNumber == null) {
+        if (ticket == null || ticket.ticketNumber == null) {
+            LOGGER.info("Exiting method onTicket");
+            return;
+        }
+        enqueueCatalina(ticket);
+        if (!isEnabled()) {
             LOGGER.info("Exiting method onTicket");
             return;
         }
         enqueue(StreamEvent.Kind.TICKET, ticket.ticketNumber, ticketEvent(ticket));
         enqueueMonetics(ticket);
+        enqueueProtocols(ticket);
         LOGGER.info("Exiting method onTicket");
+    }
+
+    /**
+     * Enqueues a ticket for the receivers that speak a protocol of their own
+     * (BO-11-02-01, BO-11-02-04): the TFREMA and DS sales streams toward the
+     * gestion commerciale, for closed sales only, and the Anaveo video journal,
+     * for every state of the lane — of a lane only: a sale rung on no till
+     * shift (an e-commerce order) was filmed by no camera.
+     *
+     * @param ticket the consolidated ticket
+     */
+    private void enqueueProtocols(Ticket ticket) {
+        String pdv = posSettingsService.pdvNumber();
+        if (ticket.status == Ticket.TicketStatus.CLOSED) {
+            enqueue(StreamEvent.Kind.TICKET, ticket.ticketNumber, ThirdPartyFormats.tfrema(ticket, pdv),
+                    reachableOf(ServiceProvider.ProviderProtocol.TFREMA));
+            enqueueBody(StreamEvent.Kind.TICKET, ticket.ticketNumber, ThirdPartyFormats.dsRecords(ticket, pdv),
+                    reachableOf(ServiceProvider.ProviderProtocol.DS_VENTES));
+        }
+        if (ticket.session != null) {
+            enqueueBody(StreamEvent.Kind.TICKET, ticket.ticketNumber, ThirdPartyFormats.anaveo(ticket),
+                    reachableOf(ServiceProvider.ProviderProtocol.ANAVEO));
+        }
+    }
+
+    /**
+     * Returns the reachable providers in service that speak one protocol.
+     *
+     * @param protocol the protocol
+     * @return the providers, in code order
+     */
+    private List<ServiceProvider> reachableOf(ServiceProvider.ProviderProtocol protocol) {
+        List<ServiceProvider> reachable = new ArrayList<>();
+        for (ServiceProvider candidate : ServiceProvider.listActiveOfProtocol(protocol)) {
+            if (candidate.isReachable()) {
+                reachable.add(candidate);
+            }
+        }
+        return reachable;
+    }
+
+    /**
+     * Enqueues the integration report of an e-commerce order for the declared
+     * e-commerce platforms (BO-11-04-03), with the point of sale it was
+     * integrated at, when the store returns the status.
+     *
+     * @param report the integration report, possibly null
+     */
+    @Transactional
+    public void onEcommerceReport(com.intermarche.edge.service.EcommerceIntegrationService.Report report) {
+        LOGGER.info("Entering method onEcommerceReport");
+        if (report == null || report.reference == null || !posSettingsService.ecommerceStatusReturn()) {
+            LOGGER.info("Exiting method onEcommerceReport");
+            return;
+        }
+        StreamPayloads.EcommerceStatus status = new StreamPayloads.EcommerceStatus();
+        status.pdvNumber = posSettingsService.pdvNumber();
+        status.reference = report.reference;
+        status.status = report.status;
+        status.ticketNumber = report.ticketNumber;
+        status.total = report.total;
+        status.message = report.message;
+        status.unknownLines = report.unknownLines;
+        status.forbiddenLines = report.forbiddenLines;
+        List<ServiceProvider> platforms = new ArrayList<>();
+        for (ServiceProvider candidate
+                : ServiceProvider.listActiveOfType(ServiceProvider.ProviderType.ECOMMERCE)) {
+            if (candidate.isReachable()) {
+                platforms.add(candidate);
+            }
+        }
+        enqueue(StreamEvent.Kind.ECOMMERCE, report.reference, status, platforms);
+        LOGGER.info("Exiting method onEcommerceReport");
+    }
+
+    /**
+     * Enqueues a closed sale for the Catalina servers when the register that
+     * rang it has the Catalina flow on (BO-03-09-20).
+     *
+     * <p>Independent of the general stream switch: the activation is posed
+     * per register, island or echelon, and the subscribers are the declared
+     * providers speaking the Catalina protocol. Every point of contact the node
+     * consolidates is covered — lane, self-service, mobility, e-commerce —
+     * since they all reach the node as tickets; the payload carries the article
+     * lines and the settlements, delivered by the same loop as the stream.
+     *
+     * @param ticket the consolidated ticket
+     */
+    private void enqueueCatalina(Ticket ticket) {
+        if (ticket.status != Ticket.TicketStatus.CLOSED
+                || !posSettingsService.catalinaEnabledFor(ticket.terminalId)) {
+            return;
+        }
+        List<ServiceProvider> servers = new ArrayList<>();
+        for (ServiceProvider candidate
+                : ServiceProvider.listActiveOfProtocol(ServiceProvider.ProviderProtocol.CATALINA)) {
+            if (candidate.isReachable()) {
+                servers.add(candidate);
+            }
+        }
+        enqueue(StreamEvent.Kind.TICKET, ticket.ticketNumber,
+                ThirdPartyFormats.catalina(ticket, posSettingsService.pdvNumber()), servers);
     }
 
     /**
@@ -161,7 +281,19 @@ public class TicketStreamService {
      * @param payload the payload object to freeze
      */
     private void enqueue(StreamEvent.Kind kind, String reference, Object payload) {
-        List<ServiceProvider> subscribers = subscribers(kind);
+        enqueue(kind, reference, payload, subscribers(kind));
+    }
+
+    /**
+     * Freezes a payload and files it once per given subscriber.
+     *
+     * @param kind what the event carries
+     * @param reference the ticket or refund number
+     * @param payload the payload object to freeze
+     * @param subscribers the providers to file it for
+     */
+    private void enqueue(StreamEvent.Kind kind, String reference, Object payload,
+                         List<ServiceProvider> subscribers) {
         if (subscribers.isEmpty()) {
             return;
         }
@@ -169,6 +301,19 @@ public class TicketStreamService {
         if (body == null) {
             return;
         }
+        enqueueBody(kind, reference, body, subscribers);
+    }
+
+    /**
+     * Files an already rendered body once per given subscriber.
+     *
+     * @param kind what the event carries
+     * @param reference the ticket, refund or document number
+     * @param body the frozen body
+     * @param subscribers the providers to file it for
+     */
+    private void enqueueBody(StreamEvent.Kind kind, String reference, String body,
+                             List<ServiceProvider> subscribers) {
         for (ServiceProvider subscriber : subscribers) {
             String uid = StreamEvent.uidOf(subscriber.code, kind, reference);
             StreamEvent existing = StreamEvent.findByUid(uid);
@@ -211,7 +356,9 @@ public class TicketStreamService {
         List<ServiceProvider> subscribers = new ArrayList<>();
         for (ServiceProvider.ProviderType type : types) {
             for (ServiceProvider candidate : ServiceProvider.listActiveOfType(type)) {
-                if (candidate.isReachable()) {
+                // BO-03-09-20: a Catalina server receives only the sales of the
+                // registers whose Catalina flow is on, never the whole stream.
+                if (candidate.isReachable() && !OWN_PROTOCOLS.contains(candidate.protocol)) {
                     subscribers.add(candidate);
                 }
             }
@@ -247,12 +394,26 @@ public class TicketStreamService {
      */
     void tickSafely() {
         try {
-            if (isEnabled()) {
+            // The pending count is read through the proxy, in a transaction of
+            // its own: the scheduler thread has neither a transaction nor a
+            // request context, and a bare count failed on every pass.
+            if (isEnabled() || self().hasPending()) {
                 self().deliverPending();
             }
         } catch (Exception failure) {
             LOGGER.warnf("Diffusion au fil de l'eau impossible (%s)", failure.getMessage());
         }
+    }
+
+    /**
+     * Tells whether events await delivery (BO-03-09-20: the Catalina sales are
+     * queued even while the general stream is off).
+     *
+     * @return true when at least one event is pending
+     */
+    @Transactional
+    public boolean hasPending() {
+        return StreamEvent.countPending() > 0;
     }
 
     /**
@@ -278,9 +439,7 @@ public class TicketStreamService {
                 // attempt figure the operator reads as "the other side is failing".
                 continue;
             }
-            ExternalRelayService.RelayResult result = externalRelayService.relay(
-                    Optional.of(subscriber.endpoint), "POST", STREAM_PATH, event.payload,
-                    TIMEOUT_MILLIS, subscriber.authKey);
+            ExternalRelayService.RelayResult result = post(subscriber, event.payload);
             if (result.reached() && result.status() >= 200 && result.status() < 300) {
                 event.delete();
                 delivered++;
@@ -295,6 +454,29 @@ public class TicketStreamService {
                 delivered, StreamEvent.countPending());
         LOGGER.info("Exiting method deliverPending");
         return delivered;
+    }
+
+    /**
+     * Posts one frozen body to its subscriber, in the subscriber's protocol: the
+     * house JSON stream on {@code /events}, the third-party shapes on the very
+     * address the third party gave, with the media type their body is written in.
+     *
+     * @param subscriber the reachable subscriber
+     * @param payload the frozen body
+     * @return the relay outcome
+     */
+    private ExternalRelayService.RelayResult post(ServiceProvider subscriber, String payload) {
+        Optional<String> endpoint = Optional.of(subscriber.endpoint);
+        ServiceProvider.ProviderProtocol protocol = subscriber.protocol == null
+                ? ServiceProvider.ProviderProtocol.HTTP_JSON : subscriber.protocol;
+        return switch (protocol) {
+            case CATALINA, TFREMA -> externalRelayService.relay(endpoint, "POST", "", payload,
+                    TIMEOUT_MILLIS, subscriber.authKey);
+            case DS_VENTES, ANAVEO -> externalRelayService.relay(endpoint, "POST", "", payload,
+                    TIMEOUT_MILLIS, subscriber.authKey, "text/plain; charset=UTF-8");
+            default -> externalRelayService.relay(endpoint, "POST", STREAM_PATH, payload,
+                    TIMEOUT_MILLIS, subscriber.authKey);
+        };
     }
 
     /**
@@ -445,6 +627,7 @@ public class TicketStreamService {
         event.fidelityCard = ticket.fidelityCard;
         event.signature = ticket.signature;
         applyImage(event, ticket.formattedContent);
+        event.language = ticket.customerLanguage;
         for (TicketLine line : ticket.lines) {
             StreamPayloads.LineEvent lineEvent = new StreamPayloads.LineEvent();
             lineEvent.lineNumber = line.lineNumber;

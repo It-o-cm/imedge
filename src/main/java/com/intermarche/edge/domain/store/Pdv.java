@@ -77,6 +77,17 @@ public class Pdv extends BaseEntity {
     public boolean active = true;
 
     /**
+     * The checksum of the import line that last wrote this PDV (BO-02-05-03),
+     * or null when no import ever did.
+     *
+     * <p>A replay of the same file finds the same checksum and writes nothing,
+     * so a correction made on the screen since that import is never undone by
+     * the file coming round again; a NEW line for the PDV is applied.
+     */
+    @Column(name = "import_checksum")
+    public Integer importChecksum;
+
+    /**
      * Tells whether a candidate PDV number is well-formed: exactly
      * {@link #NUMBER_LENGTH} ASCII digits (BO-02-05-01). Null, wrong length or
      * any non-digit character fails.
@@ -114,6 +125,30 @@ public class Pdv extends BaseEntity {
      */
     public static List<Pdv> listByEnseigne(String enseigneCode) {
         return list("enseigneCode = ?1 order by pdvNumber", enseigneCode);
+    }
+
+    /**
+     * Lists the PDVs one adhérent operates, ordered by number (BO-02-05-05).
+     *
+     * @param adherentCode the adhérent code
+     * @return the PDVs of that adhérent, never null
+     */
+    public static List<Pdv> listByAdherent(String adherentCode) {
+        return list("adherentCode = ?1 order by pdvNumber", adherentCode);
+    }
+
+    /**
+     * Reads the adhérent operating a point of sale (BO-02-05-05).
+     *
+     * @param pdvNumber the point-of-sale number, possibly null
+     * @return the adhérent code, or null when the PDV is unknown or has none
+     */
+    public static String adherentOf(String pdvNumber) {
+        if (pdvNumber == null) {
+            return null;
+        }
+        Pdv pdv = findByNumber(pdvNumber);
+        return pdv == null ? null : pdv.adherentCode;
     }
 
 

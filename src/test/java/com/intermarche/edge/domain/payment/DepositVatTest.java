@@ -297,4 +297,35 @@ class DepositVatTest {
         DepositVat.Row row = new DepositVat.Row(new BigDecimal("0.055"), new BigDecimal("0.2600"));
         Assertions.assertEquals("0,26", row.getAmountFormatted());
     }
+
+    /**
+     * LC-06-02-04 / -07: two ventilations add up rate by rate, in rate order; an
+     * absent one adds nothing, and two absent ones make an empty detail.
+     */
+    @Test
+    void mergeAddsTheVentilationsRateByRate() {
+        org.junit.jupiter.api.Assertions.assertEquals("0.055:1;0.2:15",
+                DepositVat.merge("0.2:10", "0.2:5;0.055:1"));
+        org.junit.jupiter.api.Assertions.assertEquals("0.2:10", DepositVat.merge("0.2:10", null));
+        org.junit.jupiter.api.Assertions.assertEquals("", DepositVat.merge(null, " "));
+    }
+
+    /**
+     * LC-08-04-15: a deposit is shared over the order's rates, the last one
+     * absorbing the residue, each share stating its VAT and its amount HT.
+     */
+    @Test
+    void sharesStateEachRatePartTtcVatAndHt() {
+        com.intermarche.edge.domain.sale.VatBreakdown breakdown = new com.intermarche.edge.domain.sale.VatBreakdown();
+        breakdown.add(new java.math.BigDecimal("0.055"), new java.math.BigDecimal("10.55"));
+        breakdown.add(new java.math.BigDecimal("0.20"), new java.math.BigDecimal("20.00"));
+        java.util.List<DepositVat.Share> shares = DepositVat.shares(breakdown.getBuckets(),
+                new java.math.BigDecimal("10.00"), new java.math.BigDecimal("30.55"));
+        org.junit.jupiter.api.Assertions.assertEquals(2, shares.size());
+        org.junit.jupiter.api.Assertions.assertEquals(new java.math.BigDecimal("3.45"), shares.get(0).includingTax());
+        org.junit.jupiter.api.Assertions.assertEquals(new java.math.BigDecimal("0.18"), shares.get(0).vatAmount());
+        org.junit.jupiter.api.Assertions.assertEquals(new java.math.BigDecimal("3.27"), shares.get(0).excludingTax());
+        org.junit.jupiter.api.Assertions.assertEquals(new java.math.BigDecimal("6.55"), shares.get(1).includingTax());
+        org.junit.jupiter.api.Assertions.assertEquals(new java.math.BigDecimal("1.09"), shares.get(1).vatAmount());
+    }
 }

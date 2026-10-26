@@ -1,8 +1,9 @@
 package com.intermarche.edge.domain.session;
 
-import java.math.BigDecimal;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+
+import java.math.BigDecimal;
 
 /**
  * Unit tests for {@link TicketCounter}, targeting 100% branch coverage.

@@ -38,7 +38,9 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
@@ -287,6 +289,7 @@ class RefExportServiceTest {
         typed.internalCode = "IC2";
         typed.variableWeight = true;
         typed.attributes = new java.util.HashMap<>(java.util.Map.of("BULKY", "true"));
+        typed.saleCodes = new java.util.HashSet<>(java.util.Set.of("C2", "C1"));
         Product untyped = mock(Product.class);
         untyped.ean = "E2";
         untyped.name = "Poire";
@@ -312,12 +315,14 @@ class RefExportServiceTest {
             assertEquals("IC2", first.internalCode);
             assertTrue(first.variableWeight);
             assertEquals("true", first.attributes.get("BULKY"));
+            assertEquals(List.of("C1", "C2"), first.saleCodes);
             RefPayloads.ProductDto second = (RefPayloads.ProductDto) result.get(1);
             assertEquals("E2", second.ean);
             assertNull(second.productType);
             assertTrue(second.forbiddenToSale);
             assertFalse(second.variableWeight);
             assertTrue(second.attributes.isEmpty());
+            assertTrue(second.saleCodes.isEmpty());
         }
     }
 
@@ -336,9 +341,10 @@ class RefExportServiceTest {
         bare.number = 5;
         bare.rate = new BigDecimal("0.0000");
         bare.label = null;
-        PanacheQuery<VatRate> query = singlePage(0, 10, List.of(normal, bare));
+        bare.exempt = true;
+        bare.exemptionCode = "M07";
         try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
-            mocked.when(() -> VatRate.find("order by number")).thenReturn(query);
+            mocked.when(() -> VatRate.list("order by number")).thenReturn(List.of(normal, bare));
             List<?> result = service.getPage("VAT_RATES", 0, 10);
             assertEquals(2, result.size());
             RefPayloads.VatRateDto first = (RefPayloads.VatRateDto) result.get(0);
@@ -349,6 +355,9 @@ class RefExportServiceTest {
             assertEquals(5, second.number);
             assertEquals(new BigDecimal("0.0000"), second.rate);
             assertNull(second.label);
+            assertTrue(second.exempt);
+            assertFalse(first.exempt);
+            assertEquals("M07", second.exemptionCode);
         }
     }
 
@@ -426,7 +435,8 @@ class RefExportServiceTest {
         employee.badgeId = "B1";
         employee.theme = "dark";
         employee.active = true;
-        PanacheQuery<Employee> query = singlePage(0, 10, List.of(employee));
+        PanacheQuery<Employee> query = mock(PanacheQuery.class);
+        when(query.list()).thenReturn(List.of(employee));
         try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
             mocked.when(() -> Employee.find("order by loginName")).thenReturn(query);
             List<?> result = service.getPage("EMPLOYEES", 0, 10);
@@ -671,6 +681,7 @@ class RefExportServiceTest {
         dated.echelonCode = "ITM";
         dated.settingKey = "discount.enabled";
         dated.settingValue = "false";
+        dated.pendingValue = "true";
         dated.effectiveDate = LocalDate.of(2026, 3, 1);
         EchelonSetting bare = mock(EchelonSetting.class);
         bare.level = null;
@@ -690,9 +701,11 @@ class RefExportServiceTest {
             assertEquals("ITM", first.echelonCode);
             assertEquals("discount.enabled", first.settingKey);
             assertEquals("false", first.settingValue);
+            assertEquals("true", first.pendingValue);
             assertEquals("2026-03-01", first.effectiveDate);
             RefPayloads.EchelonSettingDto second = (RefPayloads.EchelonSettingDto) result.get(1);
             assertNull(second.level);
+            assertNull(second.pendingValue);
             assertNull(second.effectiveDate);
         }
     }
@@ -839,8 +852,8 @@ class RefExportServiceTest {
             // attributes all joined the export after this reference was
             // written, and a fingerprint that ignores a field is a field the
             // store node never learns has changed.
-            assertEquals(sha256hex("E1|100|Pomme|Desc|IC||BR|1.000|2.000|WEIGHT|kg|true|false||||false||"
-                    + "E2||Poire|||||||||false|true||||false||"), fingerprints.get("PRODUCTS"));
+            assertEquals(sha256hex("E1|100|Pomme|Desc|IC||BR|1.000|2.000|WEIGHT|kg|true|false||||false|||0|"
+                    + "E2||Poire|||||||||false|true||||false|||0|"), fingerprints.get("PRODUCTS"));
             assertEquals(EMPTY_SHA256, fingerprints.get("FAMILIES"));
             assertEquals(EMPTY_SHA256, fingerprints.get("PRICES"));
             assertEquals(EMPTY_SHA256, fingerprints.get("EMPLOYEES"));
@@ -1047,18 +1060,23 @@ class RefExportServiceTest {
         // BO-03-08-09: the article's own message rides the canonical string, so
         // a message posed at the back office reaches the register at the pull.
         product.infoMessage = "LIVRAISON 48H";
-        assertEquals("E1|100|Pomme|Desc|IC||BR|1.000|2.000|WEIGHT||true|false|18|CL|INT9|false|LIVRAISON 48H|BULKY=false,VAT_EXEMPT=true",
+        assertEquals("E1|100|Pomme|Desc|IC||BR|1.000|2.000|WEIGHT||true|false|18|CL|INT9|false|LIVRAISON 48H|BULKY=false,VAT_EXEMPT=true|0|",
                 canonical.invoke(service, product));
+        // BO-02-03-03: the additional sale codes close the product row.
+        product.saleCodes = List.of("3000000000001", "3000000000002");
+        assertEquals("E1|100|Pomme|Desc|IC||BR|1.000|2.000|WEIGHT||true|false|18|CL|INT9|false|LIVRAISON 48H|BULKY=false,VAT_EXEMPT=true|0|3000000000001,3000000000002",
+                canonical.invoke(service, product));
+        product.saleCodes = List.of();
         // A picture renders in its own field, between the icon and the brand.
         product.imageData = "IMG";
-        assertEquals("E1|100|Pomme|Desc|IC|IMG|BR|1.000|2.000|WEIGHT||true|false|18|CL|INT9|false|LIVRAISON 48H|BULKY=false,VAT_EXEMPT=true",
+        assertEquals("E1|100|Pomme|Desc|IC|IMG|BR|1.000|2.000|WEIGHT||true|false|18|CL|INT9|false|LIVRAISON 48H|BULKY=false,VAT_EXEMPT=true|0|",
                 canonical.invoke(service, product));
         product.imageData = null;
         // A null attribute map renders as the empty trailing field (null arm of
         // the canonical attributes helper).
         product.attributes = null;
         product.infoMessage = null;
-        assertEquals("E1|100|Pomme|Desc|IC||BR|1.000|2.000|WEIGHT||true|false|18|CL|INT9|false||",
+        assertEquals("E1|100|Pomme|Desc|IC||BR|1.000|2.000|WEIGHT||true|false|18|CL|INT9|false|||0|",
                 canonical.invoke(service, product));
         RefPayloads.PriceDto price = new RefPayloads.PriceDto();
         price.productEan = "E1";
@@ -1077,9 +1095,14 @@ class RefExportServiceTest {
         // The country and the legal mention ride the canonical string as well
         // (a country's regimes differ from its neighbour's, and the register
         // applies both in the same order in its applyVatRates).
-        assertEquals("1|0.2000|Taux normal||", canonical.invoke(service, vatRate));
+        assertEquals("1|0.2000|Taux normal|||false|", canonical.invoke(service, vatRate));
         vatRate.label = null;
-        assertEquals("1|0.2000|||", canonical.invoke(service, vatRate));
+        assertEquals("1|0.2000||||false|", canonical.invoke(service, vatRate));
+        // BO-02-02-01, BO-02-03-26/27: an exemption and its code ride the
+        // canonical string too.
+        vatRate.exempt = true;
+        vatRate.exemptionCode = "M07";
+        assertEquals("1|0.2000||||true|M07", canonical.invoke(service, vatRate));
         RefPayloads.EmployeeDto employee = new RefPayloads.EmployeeDto();
         employee.loginName = "alice";
         employee.firstName = "Alice";
@@ -1095,11 +1118,26 @@ class RefExportServiceTest {
         // BO-01-01-04 / BO-01-02-12: the language and the age of the secret are
         // part of the fingerprint — a register that did not learn of a changed
         // secret would never demand a new one.
-        assertEquals("alice|Alice|Martin|hash|a@x.fr|CASHIER||dark|nl|2026-10-15T09:00|true",
+        assertEquals("alice|Alice|Martin|hash|a@x.fr|CASHIER||dark|nl|2026-10-15T09:00|true|||",
                 canonical.invoke(service, employee));
+        // BO-03-06-55: issuing a supervisor card changes the row the registers pull.
+        employee.supervisorCard = true;
+        assertEquals("alice|Alice|Martin|hash|a@x.fr|CASHIER||dark|nl|2026-10-15T09:00|true|true||",
+                canonical.invoke(service, employee));
+        // BO-01-02-07: a Dallas key handed out changes the row as well.
+        employee.dallasKey = "01A2B3C4D5E6F708";
+        assertEquals("alice|Alice|Martin|hash|a@x.fr|CASHIER||dark|nl|2026-10-15T09:00|true|true|01A2B3C4D5E6F708|",
+                canonical.invoke(service, employee));
+        // BO-04-02-01: binding the holder to a profile changes the row too.
+        employee.profiles = "Chef de caisse";
+        assertEquals("alice|Alice|Martin|hash|a@x.fr|CASHIER||dark|nl|2026-10-15T09:00|true|true|01A2B3C4D5E6F708|Chef de caisse",
+                canonical.invoke(service, employee));
+        employee.profiles = null;
+        employee.dallasKey = null;
+        employee.supervisorCard = null;
         employee.language = null;
         employee.passwordChangedAt = null;
-        assertEquals("alice|Alice|Martin|hash|a@x.fr|CASHIER||dark|||true",
+        assertEquals("alice|Alice|Martin|hash|a@x.fr|CASHIER||dark|||true|||",
                 canonical.invoke(service, employee));
         RefPayloads.CouponTypeDto type = new RefPayloads.CouponTypeDto();
         type.code = "C1";
@@ -1110,7 +1148,7 @@ class RefExportServiceTest {
         type.priority = 10;
         type.active = true;
         type.depositLine = false;
-        assertEquals("C1|Bon|^9|ENCODED||10|true|false||||false|||", canonical.invoke(service, type));
+        assertEquals("C1|Bon|^9|ENCODED||10|true|false||||false||||||", canonical.invoke(service, type));
         RefPayloads.CouponTypeDto administered = new RefPayloads.CouponTypeDto();
         administered.code = "C2";
         administered.label = "Bon administré";
@@ -1145,7 +1183,7 @@ class RefExportServiceTest {
         duplicate.level = "INFO";
         administered.controls = new java.util.ArrayList<>(java.util.List.of(expiry, duplicate));
         assertEquals("C2|Bon administré|^298\\d{10}$|ENCODED|^298\\d{6}(\\d{4})$|5|true|true"
-                        + "|298|13|NUMERIC|false||PRICE:9:4:NUMERIC:2::EUR,TPV_NUMBER:3:2:NUMERIC:::"
+                        + "|298|13|NUMERIC|false|||||PRICE:9:4:NUMERIC:2::EUR,TPV_NUMBER:3:2:NUMERIC:::"
                         + "|DUPLICATE:INFO:,EXPIRED:BLOCK:BON PERIME",
                 canonical.invoke(service, administered));
         RefPayloads.SettingDto setting = new RefPayloads.SettingDto();
@@ -1156,7 +1194,13 @@ class RefExportServiceTest {
         feed.code = "VAL";
         feed.version = null;
         feed.content = "ignored-in-canonical";
-        assertEquals("VAL|", canonical.invoke(service, feed));
+        assertEquals("VAL|||", canonical.invoke(service, feed));
+        // BO-02-03-33: the stamps of a file ride its canonical row, so a
+        // register holding the file unstamped is told when they arrive.
+        feed.version = "v";
+        feed.baseFingerprint = "b";
+        feed.resultFingerprint = "r";
+        assertEquals("VAL|v|b|r", canonical.invoke(service, feed));
         RefPayloads.CountryDto country = new RefPayloads.CountryDto();
         country.code = "FR";
         country.name = "France";
@@ -1181,7 +1225,10 @@ class RefExportServiceTest {
         echelon.settingKey = "discount.enabled";
         echelon.settingValue = "false";
         echelon.effectiveDate = null;
-        assertEquals("ENSEIGNE|ITM|discount.enabled|false|", canonical.invoke(service, echelon));
+        assertEquals("ENSEIGNE|ITM|discount.enabled|false||", canonical.invoke(service, echelon));
+        echelon.pendingValue = "true";
+        echelon.effectiveDate = "2026-12-01";
+        assertEquals("ENSEIGNE|ITM|discount.enabled|false|true|2026-12-01", canonical.invoke(service, echelon));
         assertEquals("RAW", canonical.invoke(service, "RAW"));
     }
 
@@ -1467,6 +1514,8 @@ class RefExportServiceTest {
                 .Purpose.REFUND;
         range.promotionCode = "PROMO_RENTREE";
         range.lookupUrl = "https://partenaire.test/bons/{code}";
+        range.promotionType = "AMOUNT";
+        range.lookupField = "ean";
         range.matchPattern = "^21[A-Za-z0-9]{11}$";
         PanacheQuery<com.intermarche.edge.domain.barcode.ArticleBarcodeRange> query =
                 singlePage(0, 10, List.of(range));
@@ -1498,6 +1547,8 @@ class RefExportServiceTest {
             assertEquals("PROMO_RENTREE", dto.promotionCode);
             // BO-03-06-41: and the third-party service it asks.
             assertEquals("https://partenaire.test/bons/{code}", dto.lookupUrl);
+            assertEquals("AMOUNT", dto.promotionType);
+            assertEquals("ean", dto.lookupField);
             assertEquals("^21[A-Za-z0-9]{11}$", dto.matchPattern);
         }
     }
@@ -1563,31 +1614,41 @@ class RefExportServiceTest {
         dto.checkDigit = true;
         dto.purpose = "ARTICLE";
         dto.matchPattern = "^21\\d{11}$";
-        assertEquals("BALANCE_PRIX|Étiquette prix|true|10|21|13|NUMERIC|2|5|PRICE|7|5|2|EUR|true|^21\\d{11}$|ARTICLE||",
+        assertEquals("BALANCE_PRIX|Étiquette prix|true|10|21|13|NUMERIC|2|5|PRICE|7|5|2|EUR|true|^21\\d{11}$|ARTICLE|||||",
                 canonical.invoke(service, dto));
         // Moving the value segment by one position changes the canonical string:
         // that is what makes the tills pull a corrected plan.
         dto.valuePosition = 8;
-        assertEquals("BALANCE_PRIX|Étiquette prix|true|10|21|13|NUMERIC|2|5|PRICE|8|5|2|EUR|true|^21\\d{11}$|ARTICLE||",
+        assertEquals("BALANCE_PRIX|Étiquette prix|true|10|21|13|NUMERIC|2|5|PRICE|8|5|2|EUR|true|^21\\d{11}$|ARTICLE|||||",
                 canonical.invoke(service, dto));
         // Changing only the DESTINATION changes the fingerprint too: a plan read
         // the same way but acted on differently is not the same plan.
         dto.purpose = "REFUND";
-        assertEquals("BALANCE_PRIX|Étiquette prix|true|10|21|13|NUMERIC|2|5|PRICE|8|5|2|EUR|true|^21\\d{11}$|REFUND||",
+        assertEquals("BALANCE_PRIX|Étiquette prix|true|10|21|13|NUMERIC|2|5|PRICE|8|5|2|EUR|true|^21\\d{11}$|REFUND|||||",
                 canonical.invoke(service, dto));
         // BO-03-06-43: and naming a promotion changes it as well — a range that
         // triggers one is not the range that triggers none.
         dto.promotionCode = "PROMO_RENTREE";
-        assertEquals("BALANCE_PRIX|Étiquette prix|true|10|21|13|NUMERIC|2|5|PRICE|8|5|2|EUR|true|^21\\d{11}$|REFUND|PROMO_RENTREE|",
+        assertEquals("BALANCE_PRIX|Étiquette prix|true|10|21|13|NUMERIC|2|5|PRICE|8|5|2|EUR|true|^21\\d{11}$|REFUND|PROMO_RENTREE||||",
                 canonical.invoke(service, dto));
         // BO-03-06-41: and so does the third-party service the range asks — a
         // range pointed at another endpoint is not the same range.
         dto.lookupUrl = "https://partenaire.test/bons/{code}";
-        assertEquals("BALANCE_PRIX|Étiquette prix|true|10|21|13|NUMERIC|2|5|PRICE|8|5|2|EUR|true|^21\\d{11}$|REFUND|PROMO_RENTREE|https://partenaire.test/bons/{code}",
+        assertEquals("BALANCE_PRIX|Étiquette prix|true|10|21|13|NUMERIC|2|5|PRICE|8|5|2|EUR|true|^21\\d{11}$|REFUND|PROMO_RENTREE|https://partenaire.test/bons/{code}|||",
+                canonical.invoke(service, dto));
+        // BO-03-06-54: and so does the register function a range calls.
+        dto.functionCode = "SURVEY";
+        assertEquals("BALANCE_PRIX|Étiquette prix|true|10|21|13|NUMERIC|2|5|PRICE|8|5|2|EUR|true|^21\\d{11}$|REFUND|PROMO_RENTREE|https://partenaire.test/bons/{code}|SURVEY||",
+                canonical.invoke(service, dto));
+        // BO-03-06-43 / -41: and so do the promotion definition and the
+        // partner's response mapping.
+        dto.promotionType = "PERCENT";
+        dto.lookupField = "statut.message";
+        assertEquals("BALANCE_PRIX|Étiquette prix|true|10|21|13|NUMERIC|2|5|PRICE|8|5|2|EUR|true|^21\\d{11}$|REFUND|PROMO_RENTREE|https://partenaire.test/bons/{code}|SURVEY|PERCENT|statut.message",
                 canonical.invoke(service, dto));
         RefPayloads.ArticleBarcodeRangeDto bare = new RefPayloads.ArticleBarcodeRangeDto();
         bare.code = "R";
-        assertEquals("R||false|0||0||0|0||0|0|0||false||||", canonical.invoke(service, bare));
+        assertEquals("R||false|0||0||0|0||0|0|0||false|||||||", canonical.invoke(service, bare));
     }
 
     /**
@@ -1766,7 +1827,7 @@ class RefExportServiceTest {
         dto.printForced = true;
         assertEquals("TR|030|Titre restaurant|||true|30|25.00|BLOCKING|||||2|SUPERVISOR|||"
                         + "true|false|CASH|false|false|IF_CHANGE_DUE|false|false|false|false|"
-                        + "false|true|JUSTIF_TR|2|true|true||true|false",
+                        + "false|true|JUSTIF_TR|2|true|true||true|false||||false|true|false|false|false",
                 canonical.invoke(service, dto));
 
         // BO-03-09-30: the VIC product code of the multi-product card rides the
@@ -1775,14 +1836,14 @@ class RefExportServiceTest {
         dto.vicProductCode = "{DAJ}01";
         assertEquals("TR|030|Titre restaurant|||true|30|25.00|BLOCKING|||||2|SUPERVISOR|||"
                         + "true|false|CASH|false|false|IF_CHANGE_DUE|false|false|false|false|"
-                        + "false|true|JUSTIF_TR|2|true|true|{DAJ}01|true|false",
+                        + "false|true|JUSTIF_TR|2|true|true|{DAJ}01|true|false||||false|true|false|false|false",
                 canonical.invoke(service, dto));
         // BO-03-02-27/-29: and so do the two self-service rules.
         dto.selfServiceAllowed = false;
         dto.selfServiceSupervision = true;
         assertEquals("TR|030|Titre restaurant|||true|30|25.00|BLOCKING|||||2|SUPERVISOR|||"
                         + "true|false|CASH|false|false|IF_CHANGE_DUE|false|false|false|false|"
-                        + "false|true|JUSTIF_TR|2|true|true|{DAJ}01|false|true",
+                        + "false|true|JUSTIF_TR|2|true|true|{DAJ}01|false|true||||false|true|false|false|false",
                 canonical.invoke(service, dto));
         dto.selfServiceAllowed = true;
         dto.selfServiceSupervision = false;
@@ -1791,7 +1852,7 @@ class RefExportServiceTest {
         dto.maxAmount = "19.00";
         assertEquals("TR|030|Titre restaurant|||true|30|19.00|BLOCKING|||||2|SUPERVISOR|||"
                         + "true|false|CASH|false|false|IF_CHANGE_DUE|false|false|false|false|"
-                        + "false|true|JUSTIF_TR|2|true|true||true|false",
+                        + "false|true|JUSTIF_TR|2|true|true||true|false||||false|true|false|false|false",
                 canonical.invoke(service, dto));
 
         RefPayloads.TenderDefinitionDto bare = new RefPayloads.TenderDefinitionDto();
@@ -1801,7 +1862,7 @@ class RefExportServiceTest {
         // carries their two empty columns — and impos's RefApplyService reads
         // them at the same place in its applyTenders.
         assertEquals("VIDE|||||false|0|||||||||||false|false||false|false||false|false|false|"
-                        + "false|false|false||0|false|false||true|false",
+                        + "false|false|false||0|false|false||true|false||||false|true|false|false|false",
                 canonical.invoke(service, bare));
     }
 
@@ -1839,11 +1900,9 @@ class RefExportServiceTest {
         template.width = 42;
         template.copies = 2;
         template.source = "TOTAL {totals.includingTax}";
-        PanacheQuery<com.intermarche.edge.domain.setting.DocumentTemplate> query =
-                singlePage(0, 10, List.of(template));
         try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
             mocked.when(() -> com.intermarche.edge.domain.setting.DocumentTemplate
-                    .find("order by code")).thenReturn(query);
+                    .list("order by code")).thenReturn(List.of(template));
             RefPayloads.DocumentTemplateDto dto = (RefPayloads.DocumentTemplateDto)
                     service.getPage("DOCUMENT_TEMPLATES", 0, 10).get(0);
             assertEquals("TICKET_VENTE", dto.code);
@@ -1887,16 +1946,16 @@ class RefExportServiceTest {
         dto.copyTitles = "ORIGINAL;DUPLICATA";
         assertEquals("TICKET_VENTE|Ticket de vente|SALE_RECEIPT|true|100|42|2|"
                 + "TOTAL {totals.includingTax}|TICKET DE CAISSE|DUPLICATA|FS|"
-                + "ORIGINAL;DUPLICATA", canonical.invoke(service, dto));
+                + "ORIGINAL;DUPLICATA|", canonical.invoke(service, dto));
 
         dto.source = "TOTAL {totals.excludingTax}";
         assertEquals("TICKET_VENTE|Ticket de vente|SALE_RECEIPT|true|100|42|2|"
                 + "TOTAL {totals.excludingTax}|TICKET DE CAISSE|DUPLICATA|FS|"
-                + "ORIGINAL;DUPLICATA", canonical.invoke(service, dto));
+                + "ORIGINAL;DUPLICATA|", canonical.invoke(service, dto));
 
         RefPayloads.DocumentTemplateDto bare = new RefPayloads.DocumentTemplateDto();
         bare.code = "VIDE";
-        assertEquals("VIDE|||false|0|0|0|||||", canonical.invoke(service, bare));
+        assertEquals("VIDE|||false|0|0|0||||||", canonical.invoke(service, bare));
     }
 
     /**
@@ -1978,7 +2037,7 @@ class RefExportServiceTest {
         visual.active = false;
         com.intermarche.edge.service.StoreImageService images =
                 mock(com.intermarche.edge.service.StoreImageService.class);
-        when(images.resolvedImages()).thenReturn(List.of(logo, visual));
+        when(images.resolvedImages(null)).thenReturn(List.of(logo, visual));
         service.storeImageService = images;
         List<?> first = service.getPage("STORE_IMAGES", 0, 1);
         assertEquals(1, first.size());
@@ -2277,7 +2336,12 @@ class RefExportServiceTest {
         dto.amountSource = "MANUAL";
         dto.fields = null;
         dto.controls = null;
-        assertEquals("C5|||MANUAL||0|false|false||||false|||", canonical.invoke(service, dto));
+        assertEquals("C5|||MANUAL||0|false|false||||false||||||", canonical.invoke(service, dto));
+        // BO-03-06-08 and -30: the tender binding and the issuing kind are part of
+        // the fingerprint.
+        dto.tenderCode = "TR";
+        dto.issuedKind = "CREDIT_NOTE";
+        assertEquals("C5|||MANUAL||0|false|false||||false||TR|CREDIT_NOTE|||", canonical.invoke(service, dto));
     }
 
     // --------------------------------------------------
@@ -2440,6 +2504,885 @@ class RefExportServiceTest {
             String first = service.getFingerprints(List.of("VAT_RATES"), "POS01").get("VAT_RATES");
             String second = service.getFingerprints(List.of("VAT_RATES"), "POS02").get("VAT_RATES");
             assertEquals(first, second);
+        }
+    }
+    /** BO-03: snapshot DTOs preserve nullable classification and current employee/checkout metadata. */
+    @Test
+    void snapshotMappingsCoverOptionalClassificationAndIdentity() throws Exception {
+        RefExportService service = new RefExportService();
+        var image = new com.intermarche.edge.domain.setting.StoreImage();
+        image.usage = null;
+        var method = RefExportService.class.getDeclaredMethod("toDto", image.getClass());
+        method.setAccessible(true);
+        assertNull(((RefPayloads.StoreImageDto) method.invoke(service, image)).usage);
+        var list = new com.intermarche.edge.domain.setting.PosList();
+        list.kind = null;
+        method = RefExportService.class.getDeclaredMethod("toDto", list.getClass());
+        method.setAccessible(true);
+        assertNull(((RefPayloads.PosListDto) method.invoke(service, list)).kind);
+        Employee employee = new Employee();
+        employee.role = Employee.EmployeeRole.ADMIN;
+        employee.passwordChangedAt = LocalDateTime.of(2026, 10, 20, 12, 0);
+        employee.dallasKey = "01A2B3C4D5E6F708";
+        method = RefExportService.class.getDeclaredMethod("toDto", Employee.class);
+        method.setAccessible(true);
+        assertEquals("2026-10-20T12:00", ((RefPayloads.EmployeeDto) method.invoke(service, employee)).passwordChangedAt);
+        assertEquals("01A2B3C4D5E6F708", ((RefPayloads.EmployeeDto) method.invoke(service, employee)).dallasKey);
+        var island = mock(com.intermarche.edge.domain.store.CheckoutIsland.class);
+        when(island.terminals()).thenReturn(List.of("C04", "C05"));
+        method = RefExportService.class.getDeclaredMethod("toDto", com.intermarche.edge.domain.store.CheckoutIsland.class);
+        method.setAccessible(true);
+        assertEquals("C04;C05", ((RefPayloads.CheckoutIslandDto) method.invoke(service, island)).terminalIds);
+    }
+
+    /** BO-03-09/BO-03-08: fingerprint rows include checkout menu and provider-specific screen/paper wording. */
+    @Test
+    void canonicalRowsIncludeCheckoutMenusAndProviderMessages() throws Exception {
+        RefExportService service = new RefExportService();
+        var method = RefExportService.class.getDeclaredMethod("canonical", Object.class);
+        method.setAccessible(true);
+        var point = new RefPayloads.CheckoutPointDto();
+        point.terminalId = "C04";
+        String before = (String) method.invoke(service, point);
+        point.menuTemplateCode = "MENU";
+        assertNotEquals(before, method.invoke(service, point));
+        var message = new RefPayloads.ProviderMessageDto();
+        message.providerCode = "ISSUER";
+        message.messageCode = "4";
+        message.screenText = "SCREEN";
+        message.ticketText = "TICKET";
+        message.active = true;
+        assertEquals("ISSUER|4|SCREEN|TICKET|true", method.invoke(service, message));
+    }
+
+
+    /** BO-03-09: an island without terminals exports an absent legacy list, rather than an empty delimited identifier. */
+    @Test
+    void emptyIslandHasNoLegacyTerminalList() throws Exception {
+        var island = mock(com.intermarche.edge.domain.store.CheckoutIsland.class);
+        when(island.terminals()).thenReturn(List.of());
+        var method = RefExportService.class.getDeclaredMethod("toDto", com.intermarche.edge.domain.store.CheckoutIsland.class);
+        method.setAccessible(true);
+        assertNull(((RefPayloads.CheckoutIslandDto) method.invoke(new RefExportService(), island)).terminalIds);
+    }
+
+    /**
+     * BO-03-04-06/09/10/14: a printable document is exported whole — code,
+     * name, nature, printer, template, activation and order — its canonical row
+     * moves with each of them, and its subset fingerprint is served.
+     */
+    @Test
+    void printableDocumentsTravelWithTheirFingerprint() throws Exception {
+        var service = new RefExportService();
+        var document = new com.intermarche.edge.domain.setting.PrintableDocument();
+        document.code = "FACT_PRO";
+        document.label = "FACTURE PRO";
+        document.kind = com.intermarche.edge.domain.sale.DocumentType.BON_LIVRAISON;
+        document.output = "A4";
+        document.templateCode = "INV_PRO";
+        document.active = false;
+        document.priority = 7;
+        var page = singlePage(0, 10, List.of(document));
+        var fingerprintPages = pagedQuery(List.of(document));
+        try (var panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> PanacheEntityBase.find("order by code")).thenReturn(page);
+            var dto = (RefPayloads.PrintableDocumentDto) service.getPage("PRINTABLE_DOCUMENTS", 0, 10).getFirst();
+            assertEquals("FACT_PRO", dto.code);
+            assertEquals("FACTURE PRO", dto.label);
+            assertEquals("BON_LIVRAISON", dto.kind);
+            assertEquals("A4", dto.output);
+            assertEquals("INV_PRO", dto.templateCode);
+            assertFalse(dto.active);
+            assertEquals(7, dto.priority);
+            panache.when(() -> PanacheEntityBase.find("order by code")).thenReturn(fingerprintPages);
+            var fingerprints = service.getFingerprints(List.of("PRINTABLE_DOCUMENTS"));
+            assertEquals(64, fingerprints.get("PRINTABLE_DOCUMENTS").length());
+        }
+        var method = RefExportService.class.getDeclaredMethod("canonical", Object.class);
+        method.setAccessible(true);
+        var row = new RefPayloads.PrintableDocumentDto();
+        row.code = "FACT_PRO";
+        row.label = "FACTURE PRO";
+        row.kind = "FACTURE";
+        row.output = "TICKET";
+        row.templateCode = "INV";
+        row.active = true;
+        row.priority = 3;
+        assertEquals("FACT_PRO|FACTURE PRO|FACTURE|TICKET|INV|true|3", method.invoke(service, row));
+    }
+
+    /** BO-03-08: provider wording is exported intact, and subset fingerprints match the rows served to a register. */
+    @Test
+    void providerWordingTravelsWithItsSubsetFingerprint() throws Exception {
+        var service = new RefExportService();
+        var message = new com.intermarche.edge.domain.setting.ProviderMessage();
+        message.providerCode = "BANK";
+        message.messageCode = "WAIT";
+        message.screenText = "PLEASE WAIT";
+        message.ticketText = "APPROVED";
+        message.active = true;
+        var page = singlePage(0, 10, List.of(message));
+        var fingerprintPages = pagedQuery(List.of(message));
+        try (var panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> PanacheEntityBase.find("order by providerCode, messageCode")).thenReturn(page);
+            var dto = (RefPayloads.ProviderMessageDto) service.getPage("PROVIDER_MESSAGES", 0, 10).getFirst();
+            assertEquals("BANK", dto.providerCode);
+            assertEquals("WAIT", dto.messageCode);
+            assertEquals("PLEASE WAIT", dto.screenText);
+            assertEquals("APPROVED", dto.ticketText);
+            assertTrue(dto.active);
+            panache.when(() -> PanacheEntityBase.find("order by providerCode, messageCode")).thenReturn(fingerprintPages);
+            var fingerprints = service.getFingerprints(List.of("PROVIDER_MESSAGES"));
+            assertEquals(1, fingerprints.size());
+            assertEquals(service.getFingerprints(List.of("PROVIDER_MESSAGES"), null), fingerprints);
+            assertEquals(64, fingerprints.get("PROVIDER_MESSAGES").length());
+        }
+    }
+
+
+    /**
+     * Answers a finder with a list.
+     *
+     * @param rows the rows
+     * @param <T> the row type
+     * @return the query
+     */
+    @SuppressWarnings("unchecked")
+    private <T> PanacheQuery<T> listing(List<T> rows) {
+        PanacheQuery<T> query = mock(PanacheQuery.class);
+        when(query.list()).thenReturn(rows);
+        when(query.page(anyInt(), anyInt())).thenReturn(query);
+        return query;
+    }
+
+    /**
+     * Answers a finder with one row, or none.
+     *
+     * @param row the row, possibly null
+     * @param <T> the row type
+     * @return the query
+     */
+    @SuppressWarnings("unchecked")
+    private <T> PanacheQuery<T> single(T row) {
+        PanacheQuery<T> query = mock(PanacheQuery.class);
+        when(query.firstResult()).thenReturn(row);
+        return query;
+    }
+
+    /**
+     * Builds an account with echelon scopes.
+     *
+     * @param id the id
+     * @param login the login
+     * @param scopes the scopes, or null
+     * @return the account
+     */
+    private Employee account(long id, String login, String scopes) {
+        Employee account = new Employee();
+        account.id = id;
+        account.loginName = login;
+        account.firstName = "F";
+        account.lastName = "L";
+        account.role = Employee.EmployeeRole.CASHIER;
+        account.echelonScopes = scopes;
+        return account;
+    }
+
+    /**
+     * BO-01-02-03: a register receives the accounts its node admits and, when
+     * it names itself, those attached to it or to its type; a register asking
+     * without name, or with a blank one, receives the node's accounts; an
+     * undeclared register matches by identifier only.
+     */
+    @Test
+    void aRegisterReceivesTheAccountsItAdmits() {
+        RefExportService service = new RefExportService();
+        service.nodeEchelonService = mock(com.intermarche.edge.service.NodeEchelonService.class);
+        when(service.nodeEchelonService.current())
+                .thenReturn(new com.intermarche.edge.domain.store.NodeEchelon("07039", "ITM", "FR"));
+        Employee everywhere = account(1L, "a", null);
+        Employee elsewhere = account(2L, "b", "PDV:07040");
+        Employee onPos01 = account(3L, "c", "TPV:POS01");
+        Employee onSelf = account(4L, "d", "TPV_TYPE:SELF_CHECKOUT_NCR");
+        PanacheQuery<Employee> all = listing(List.of(everywhere, elsewhere, onPos01, onSelf));
+        com.intermarche.edge.domain.store.CheckoutPoint self = new com.intermarche.edge.domain.store.CheckoutPoint();
+        self.terminalId = "SCO1";
+        self.tpvType = com.intermarche.edge.domain.store.TpvType.SELF_CHECKOUT_NCR;
+        com.intermarche.edge.domain.store.CheckoutPoint untyped = new com.intermarche.edge.domain.store.CheckoutPoint();
+        untyped.terminalId = "POS01";
+        untyped.tpvType = null;
+        PanacheQuery<Object> selfQuery = single(self);
+        PanacheQuery<Object> untypedQuery = single(untyped);
+        PanacheQuery<Object> none = single(null);
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(() -> PanacheEntityBase.find("order by loginName")).thenReturn(all);
+            ms.when(() -> PanacheEntityBase.find("terminalId", "SCO1")).thenReturn(selfQuery);
+            ms.when(() -> PanacheEntityBase.find("terminalId", "POS01")).thenReturn(untypedQuery);
+            ms.when(() -> PanacheEntityBase.find("terminalId", "POS09")).thenReturn(none);
+            assertEquals(List.of(everywhere, onPos01, onSelf), service.registerEmployees(null));
+            assertEquals(List.of(everywhere, onPos01, onSelf), service.registerEmployees(" "));
+            assertEquals(List.of(everywhere, onSelf), service.registerEmployees("SCO1"));
+            assertEquals(List.of(everywhere, onPos01), service.registerEmployees(" POS01 "));
+            assertEquals(List.of(everywhere), service.registerEmployees("POS09"));
+            assertEquals(1, service.getPage("EMPLOYEES", 0, 1, "POS09").size());
+            assertTrue(service.getPage("EMPLOYEES", 5, 10, null).isEmpty());
+        }
+        RefExportService bare = new RefExportService();
+        PanacheQuery<Employee> one = listing(List.of(everywhere, elsewhere));
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(() -> PanacheEntityBase.find("order by loginName")).thenReturn(one);
+            assertEquals(List.of(everywhere), bare.registerEmployees(null));
+        }
+    }
+
+    /**
+     * BO-01-01-03, BO-01-03-04: the central node hands a point of sale the
+     * accounts its scopes cover, both secret hashes included, and their
+     * profile assignments; an assignment to a deleted profile is left out.
+     */
+    @Test
+    void theCentreHandsAPointOfSaleItsAccounts() {
+        RefExportService service = new RefExportService();
+        Employee everywhere = account(1L, "a", null);
+        everywhere.backOfficePassword = "$2a$bo";
+        everywhere.password = "$2a$pin";
+        everywhere.startDate = java.time.LocalDate.of(2026, 1, 2);
+        everywhere.passwordChangedAt = java.time.LocalDateTime.of(2026, 2, 3, 4, 5);
+        everywhere.authMode = Employee.AuthMode.SSO;
+        everywhere.hierarchyLevel = 2;
+        everywhere.dallasKey = "01A2B3C4D5E6F708";
+        Employee bare = account(2L, "b", null);
+        bare.role = null;
+        bare.authMode = null;
+        Employee elsewhere = account(3L, "c", "PDV:07040");
+        com.intermarche.edge.domain.people.Profile chief = new com.intermarche.edge.domain.people.Profile();
+        chief.id = 4L;
+        chief.name = "Chef";
+        PanacheQuery<Employee> all = listing(List.of(everywhere, bare, elsewhere));
+        com.intermarche.edge.domain.people.EmployeeProfile kept = new com.intermarche.edge.domain.people.EmployeeProfile();
+        kept.profileId = 4L;
+        kept.echelonScope = "ENSEIGNE:ITM";
+        com.intermarche.edge.domain.people.EmployeeProfile orphan = new com.intermarche.edge.domain.people.EmployeeProfile();
+        orphan.profileId = 99L;
+        PanacheQuery<Object> pdv = single(null);
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(() -> PanacheEntityBase.find("order by loginName")).thenReturn(all);
+            ms.when(() -> PanacheEntityBase.find("pdvNumber", "07039")).thenReturn(pdv);
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of(chief));
+            ms.when(() -> PanacheEntityBase.list(eq("employeeId"), any(io.quarkus.panache.common.Sort.class), eq(1L)))
+                    .thenReturn(List.of(kept, orphan));
+            List<?> accounts = service.getPage("ACCOUNTS", 0, 10, null, "07039");
+            assertEquals(2, accounts.size());
+            RefPayloads.AccountDto first = (RefPayloads.AccountDto) accounts.get(0);
+            assertEquals("$2a$bo", first.backOfficePassword);
+            assertEquals("$2a$pin", first.password);
+            assertEquals("2026-01-02", first.startDate);
+            assertEquals("2026-02-03T04:05", first.passwordChangedAt);
+            assertEquals("SSO", first.authMode);
+            assertEquals("CASHIER", first.role);
+            assertEquals(2, first.hierarchyLevel);
+            assertEquals("01A2B3C4D5E6F708", first.dallasKey);
+            RefPayloads.AccountDto second = (RefPayloads.AccountDto) accounts.get(1);
+            assertNull(second.role);
+            assertNull(second.authMode);
+            assertNull(second.startDate);
+            assertNull(second.passwordChangedAt);
+            List<?> bindings = service.getPage("ACCOUNT_PROFILES", 0, 10, null, "07039");
+            assertEquals(1, bindings.size());
+            RefPayloads.AccountProfileDto binding = (RefPayloads.AccountProfileDto) bindings.get(0);
+            assertEquals("a", binding.loginName);
+            assertEquals("Chef", binding.profileName);
+            assertEquals("ENSEIGNE:ITM", binding.echelonScope);
+        }
+    }
+
+    /**
+     * BO-01-03-04: a profile travels with its grants in a stable order, the
+     * validating profile by name, a grant without option or validator kept.
+     */
+    @Test
+    void profilesTravelWithTheirGrants() {
+        RefExportService service = new RefExportService();
+        com.intermarche.edge.domain.people.Profile chief = new com.intermarche.edge.domain.people.Profile();
+        chief.name = "Chef";
+        com.intermarche.edge.domain.people.Profile clerk = new com.intermarche.edge.domain.people.Profile();
+        clerk.name = "Caisse";
+        clerk.description = "Hôtes";
+        clerk.hierarchyLevel = 1;
+        clerk.grants.add(new com.intermarche.edge.domain.people.ProfileGrant("store", null, false, null));
+        clerk.grants.add(new com.intermarche.edge.domain.people.ProfileGrant("account",
+                com.intermarche.edge.domain.people.CrudOption.DELETE, true, 4L));
+        clerk.grants.add(new com.intermarche.edge.domain.people.ProfileGrant("account",
+                com.intermarche.edge.domain.people.CrudOption.VIEW, true, 99L));
+        PanacheQuery<com.intermarche.edge.domain.people.Profile> profiles = listing(List.of(clerk));
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(() -> PanacheEntityBase.find("order by name")).thenReturn(profiles);
+            ms.when(() -> PanacheEntityBase.findById(4L)).thenReturn(chief);
+            ms.when(() -> PanacheEntityBase.findById(99L)).thenReturn(null);
+            RefPayloads.ProfileDto dto = (RefPayloads.ProfileDto) service.getPage("PROFILES", 0, 10, null, null).get(0);
+            assertEquals("Caisse", dto.name);
+            assertEquals("Hôtes", dto.description);
+            assertEquals(1, dto.hierarchyLevel);
+            assertEquals(List.of("account:DELETE:Chef", "account:VIEW:null", "store:null:null"),
+                    dto.grants.stream().map(g -> g.featureKey + ":" + g.option + ":" + g.validatingProfileName).toList());
+        }
+    }
+
+    /**
+     * The distributed rows have canonical forms, so their fingerprint moves
+     * only when they do.
+     *
+     * @throws Exception never, the method is reached by reflection
+     */
+    @Test
+    void canonicalRendersTheDistributedRows() throws Exception {
+        Method canonical = RefExportService.class.getDeclaredMethod("canonical", Object.class);
+        canonical.setAccessible(true);
+        RefExportService service = new RefExportService();
+        RefPayloads.ProfileDto profile = new RefPayloads.ProfileDto();
+        profile.name = "Chef";
+        profile.hierarchyLevel = 2;
+        RefPayloads.ProfileGrantDto grant = new RefPayloads.ProfileGrantDto();
+        grant.featureKey = "account";
+        grant.option = "VIEW";
+        grant.requiresValidation = true;
+        profile.grants.add(grant);
+        assertEquals("Chef||2|account:VIEW:true:,", canonical.invoke(service, profile));
+        RefPayloads.AccountDto account = new RefPayloads.AccountDto();
+        account.loginName = "a";
+        account.active = true;
+        assertEquals("a||||||||true||||0||||false||false|", canonical.invoke(service, account));
+        account.dallasKey = "01A2B3C4D5E6F708";
+        assertEquals("a||||||||true||||0||||false||false|01A2B3C4D5E6F708", canonical.invoke(service, account));
+        RefPayloads.AccountProfileDto binding = new RefPayloads.AccountProfileDto();
+        binding.loginName = "a";
+        binding.profileName = "Chef";
+        binding.echelonScope = "*";
+        assertEquals("a|Chef|*", canonical.invoke(service, binding));
+    }
+
+    /**
+     * The accounts' fingerprint is cached per asking point of sale; a blank
+     * point of sale, or a domain that does not depend on it, keeps the bare key.
+     */
+    @Test
+    void theAccountsFingerprintIsCachedPerPointOfSale() {
+        RefExportService service = new RefExportService();
+        Employee scoped = account(1L, "a", "PDV:07039");
+        PanacheQuery<Employee> all = listing(List.of(scoped));
+        PanacheQuery<Object> none = single(null);
+        PanacheQuery<Object> empty = listing(List.of());
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(() -> PanacheEntityBase.find("order by loginName")).thenReturn(all);
+            ms.when(() -> PanacheEntityBase.find(eq("pdvNumber"), any(Object[].class))).thenReturn(none);
+            ms.when(() -> PanacheEntityBase.find("order by name")).thenReturn(empty);
+            String here = service.getFingerprints(List.of("ACCOUNTS"), null, "07039").get("ACCOUNTS");
+            String there = service.getFingerprints(List.of("ACCOUNTS"), null, "07040").get("ACCOUNTS");
+            assertNotEquals(here, there);
+            assertEquals(service.getFingerprints(List.of("ACCOUNTS"), null, null).get("ACCOUNTS"),
+                    service.getFingerprints(List.of("ACCOUNTS"), null, " ").get("ACCOUNTS"));
+            assertEquals(service.getFingerprints(List.of("ACCOUNT_PROFILES"), null, "07039").get("ACCOUNT_PROFILES"),
+                    service.getFingerprints(List.of("ACCOUNT_PROFILES"), null, "07039").get("ACCOUNT_PROFILES"));
+            assertEquals(service.getFingerprints(List.of("PROFILES"), null, "07039").get("PROFILES"),
+                    service.getFingerprints(List.of("PROFILES"), null, "07040").get("PROFILES"));
+        }
+    }
+
+    /**
+     * BO-03-10-16/17: the CASH_MENUS arm maps every field of a model, and its
+     * canonical row carries them all.
+     *
+     * @throws Exception if reflection fails
+     */
+    @Test
+    void getPageMapsCashMenus() throws Exception {
+        RefExportService service = new RefExportService();
+        com.intermarche.edge.domain.store.CashMenu menu = new com.intermarche.edge.domain.store.CashMenu();
+        menu.code = "SLS";
+        menu.label = "Libre-service";
+        menu.menuKeys = "articles;reglement";
+        menu.hiddenFunctions = "ABANDON";
+        menu.keyColumns = 3;
+        menu.ticketModel = "COMPACT";
+        PanacheQuery<com.intermarche.edge.domain.store.CashMenu> menus = pagedQuery(List.of(menu));
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> com.intermarche.edge.domain.store.CashMenu.find("order by code")).thenReturn(menus);
+            RefPayloads.CashMenuDto dto = (RefPayloads.CashMenuDto) service.getPage("CASH_MENUS", 0, 1000).get(0);
+            assertEquals("SLS", dto.code);
+            assertEquals("Libre-service", dto.label);
+            assertTrue(dto.active);
+            assertEquals("articles;reglement", dto.menuKeys);
+            assertEquals("ABANDON", dto.hiddenFunctions);
+            assertEquals(3, dto.keyColumns);
+            assertEquals("STANDARD", dto.cashierScreen);
+            assertEquals("STANDARD", dto.customerScreen);
+            assertEquals("COMPACT", dto.ticketModel);
+            Method canonical = RefExportService.class.getDeclaredMethod("canonical", Object.class);
+            canonical.setAccessible(true);
+            assertEquals("SLS|Libre-service|true|articles;reglement|ABANDON|3|STANDARD|STANDARD|COMPACT",
+                    canonical.invoke(service, dto));
+        }
+    }
+
+    /**
+     * BO-03-10-19/20, BO-03-12-01: the STORE arm maps the store record, with
+     * and without an address and a share capital, and its canonical row
+     * carries every field.
+     *
+     * @throws Exception if reflection fails
+     */
+    @Test
+    void getPageMapsTheStoreRecord() throws Exception {
+        RefExportService service = new RefExportService();
+        com.intermarche.edge.domain.store.Store store = new com.intermarche.edge.domain.store.Store();
+        store.code = "0034";
+        store.name = "Inter Vaucresson";
+        store.address = new com.intermarche.edge.domain.store.Address("1 rue A", "Bat B", "92420",
+                "Vaucresson", "FR", null, null);
+        store.vatNumber = "FR1";
+        store.siret = "123";
+        store.phone = "0102";
+        store.bankAccountNumber = "ACC";
+        store.legalName = "SAS";
+        store.rcs = "RCS";
+        store.shareCapital = new java.math.BigDecimal("1000.00");
+        store.fax = "FAX";
+        com.intermarche.edge.domain.store.Store bare = new com.intermarche.edge.domain.store.Store();
+        bare.code = "0035";
+        bare.name = "Nu";
+        PanacheQuery<com.intermarche.edge.domain.store.Store> stores = pagedQuery(List.of(store, bare));
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> com.intermarche.edge.domain.store.Store.find("order by code")).thenReturn(stores);
+            List<?> page = service.getPage("STORE", 0, 1000);
+            RefPayloads.StoreDto dto = (RefPayloads.StoreDto) page.get(0);
+            assertEquals("Bat B", dto.streetLine2);
+            assertEquals("1000.00", dto.shareCapital);
+            RefPayloads.StoreDto bareDto = (RefPayloads.StoreDto) page.get(1);
+            assertNull(bareDto.city);
+            assertNull(bareDto.shareCapital);
+            Method canonical = RefExportService.class.getDeclaredMethod("canonical", Object.class);
+            canonical.setAccessible(true);
+            assertEquals("0034|Inter Vaucresson|1 rue A|Bat B|92420|Vaucresson|FR|FR1|123|0102|ACC|SAS|RCS|1000.00|FAX",
+                    canonical.invoke(service, dto));
+        }
+    }
+
+    /**
+     * BO-03-09-04: the images are resolved for the asking register — the logo
+     * code its settings resolve to is handed to the resolver.
+     */
+    @Test
+    void storeImagesAreResolvedForTheAskingRegister() {
+        RefExportService service = new RefExportService();
+        wireSettingsPerTerminal(service, Map.of("C04", Map.of("print.logo-code", "LOGO2")), Map.of());
+        com.intermarche.edge.domain.setting.StoreImage logo = new com.intermarche.edge.domain.setting.StoreImage();
+        logo.code = "LOGO2";
+        when(service.storeImageService.resolvedImages("LOGO2")).thenReturn(List.of(logo));
+        List<?> page = service.getPage("STORE_IMAGES", 0, 10, "C04");
+        assertEquals("LOGO2", ((RefPayloads.StoreImageDto) page.get(0)).code);
+    }
+
+    /**
+     * BO-03-12-01: a back-office modification moves the change stamp and drops
+     * the cached fingerprints.
+     *
+     * @throws Exception if reflection fails
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void aChangeMovesTheStampAndDropsTheCache() throws Exception {
+        RefExportService service = new RefExportService();
+        seed(service, "FAMILIES", "OLD", System.currentTimeMillis());
+        long before = service.changeStamp();
+        service.referentialChanged();
+        assertEquals(before + 1, service.changeStamp());
+        Field cacheField = RefExportService.class.getDeclaredField("fingerprintCache");
+        cacheField.setAccessible(true);
+        assertTrue(((Map<String, String>) cacheField.get(service)).isEmpty());
+    }
+
+    // --------------------------------------------------
+    // BO-03-12-03/04 — the version held until its date
+    // --------------------------------------------------
+
+    /**
+     * Builds a VAT payload row.
+     *
+     * @param number the regime number
+     * @return the row
+     */
+    private RefPayloads.VatRateDto vat(int number) {
+        RefPayloads.VatRateDto dto = new RefPayloads.VatRateDto();
+        dto.number = number;
+        return dto;
+    }
+
+    /**
+     * A held domain answers its held rows, paged, without reading the tables
+     * (no static mock is open: a table read would fail).
+     */
+    @Test
+    void aHeldDomainAnswersItsHeldRows() {
+        RefExportService service = new RefExportService();
+        service.releaseService = mock(ReferentialReleaseService.class);
+        List<?> held = List.of(vat(1), vat(2), vat(3));
+        when(service.releaseService.heldRows("VAT_RATES", "C04")).thenAnswer(call -> held);
+        List<?> page = service.getPage("VAT_RATES", 1, 2, "C04", null);
+        assertEquals(1, page.size());
+        assertEquals(3, ((RefPayloads.VatRateDto) page.get(0)).number);
+    }
+
+    /** A domain not held answers its tables. */
+    @Test
+    void aDomainNotHeldAnswersItsTables() {
+        RefExportService service = new RefExportService();
+        service.releaseService = mock(ReferentialReleaseService.class);
+        when(service.releaseService.heldRows("VAT_RATES", null)).thenReturn(null);
+        VatRate normal = mock(VatRate.class);
+        normal.number = 7;
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> VatRate.list("order by number")).thenReturn(List.of(normal));
+            List<?> page = service.getPage("VAT_RATES", 0, 10, null, null);
+            assertEquals(7, ((RefPayloads.VatRateDto) page.get(0)).number);
+        }
+    }
+
+    /** The published fingerprint of a held domain is folded over its held rows. */
+    @Test
+    void theFingerprintOfAHeldDomainFollowsItsHeldRows() {
+        RefExportService service = new RefExportService();
+        service.releaseService = mock(ReferentialReleaseService.class);
+        when(service.releaseService.heldRows("VAT_RATES", null)).thenAnswer(call -> List.of());
+        assertEquals(EMPTY_SHA256, service.getFingerprints(List.of("VAT_RATES")).get("VAT_RATES"));
+    }
+
+    /** The live rows and the live fingerprint read the tables whatever is held. */
+    @Test
+    void theLiveViewReadsTheTablesWhateverIsHeld() {
+        RefExportService service = new RefExportService();
+        service.releaseService = mock(ReferentialReleaseService.class);
+        when(service.releaseService.heldRows(org.mockito.ArgumentMatchers.anyString(), nullable(String.class)))
+                .thenAnswer(call -> List.of());
+        VatRate normal = mock(VatRate.class);
+        normal.number = 1;
+        normal.rate = new BigDecimal("0.2000");
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> VatRate.list("order by number")).thenReturn(List.of(normal));
+            List<?> rows = service.liveRows("VAT_RATES", null);
+            assertEquals(1, rows.size());
+            String live = service.liveFingerprint("VAT_RATES", null);
+            assertEquals(service.fingerprintOf(rows), live);
+            assertNotEquals(EMPTY_SHA256, live);
+        }
+    }
+
+    /** Rows in hand fold to the published arithmetic; an unfoldable row is reported. */
+    @Test
+    void rowsInHandAreFolded() {
+        RefExportService service = new RefExportService();
+        assertEquals(EMPTY_SHA256, service.fingerprintOf(List.of()));
+        RefPayloads.FamilyDto broken = new RefPayloads.FamilyDto();
+        broken.code = "F1";
+        broken.parentCodes = null;
+        assertThrows(IllegalStateException.class, () -> service.fingerprintOf(List.of(broken)));
+    }
+    /**
+     * Covers the RETURN_TYPES and PREPAID_CARD_TYPES switch arms and their
+     * {@code toDto} mappings (BO-03-13-01, BO-03-02-37): every column flows
+     * verbatim.
+     */
+    @Test
+    void getPageMapsReturnAndPrepaidCardTypes() {
+        RefExportService service = new RefExportService();
+        com.intermarche.edge.domain.setting.ReturnTypeDefinition type =
+                new com.intermarche.edge.domain.setting.ReturnTypeDefinition();
+        type.code = "TRI";
+        type.label = "Machine de tri";
+        type.ticketMode = true;
+        type.endorsementExempt = true;
+        type.originOptional = true;
+        type.priceConfirmed = true;
+        type.depositReturn = true;
+        type.rangeCode = "PLAN";
+        type.displayOrder = 4;
+        type.active = false;
+        com.intermarche.edge.domain.payment.PrepaidCardType card =
+                new com.intermarche.edge.domain.payment.PrepaidCardType();
+        card.code = "GIFT";
+        card.label = "Carte cadeau";
+        card.protocol = "LOCAL";
+        card.provider = "ILLICADO";
+        card.ranges = "6299:16";
+        card.paymentAllowed = false;
+        card.displayOrder = 2;
+        PanacheQuery<com.intermarche.edge.domain.setting.ReturnTypeDefinition> types =
+                singlePage(0, 10, List.of(type));
+        PanacheQuery<com.intermarche.edge.domain.payment.PrepaidCardType> cards =
+                singlePage(0, 10, List.of(card));
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> PanacheEntityBase.find("order by code")).thenReturn(types, cards);
+            RefPayloads.ReturnTypeDto r = (RefPayloads.ReturnTypeDto) service.getPage("RETURN_TYPES", 0, 10).get(0);
+            assertEquals("TRI", r.code);
+            assertEquals("Machine de tri", r.label);
+            assertTrue(r.ticketMode && r.endorsementExempt && r.originOptional && r.priceConfirmed && r.depositReturn);
+            assertEquals("PLAN", r.rangeCode);
+            assertEquals(4, r.displayOrder);
+            assertFalse(r.active);
+            RefPayloads.PrepaidCardTypeDto c =
+                    (RefPayloads.PrepaidCardTypeDto) service.getPage("PREPAID_CARD_TYPES", 0, 10).get(0);
+            assertEquals("GIFT", c.code);
+            assertEquals("Carte cadeau", c.label);
+            assertEquals("LOCAL", c.protocol);
+            assertEquals("ILLICADO", c.provider);
+            assertEquals("6299:16", c.ranges);
+            assertFalse(c.paymentAllowed);
+            assertTrue(c.balanceAllowed && c.activationAllowed && c.active);
+            assertEquals(2, c.displayOrder);
+        }
+    }
+
+    /**
+     * Covers the return-type and prepaid-card-type arms of {@code canonical}:
+     * every field is part of the fingerprint, a null one rendering empty.
+     *
+     * @throws Exception if reflection fails
+     */
+    @Test
+    void canonicalRendersReturnAndPrepaidCardTypes() throws Exception {
+        RefExportService service = new RefExportService();
+        Method canonical = RefExportService.class.getDeclaredMethod("canonical", Object.class);
+        canonical.setAccessible(true);
+        RefPayloads.ReturnTypeDto r = new RefPayloads.ReturnTypeDto();
+        r.code = "TRI";
+        r.label = "Tri";
+        r.ticketMode = true;
+        r.displayOrder = 1;
+        r.active = true;
+        assertEquals("TRI|Tri|true|false|false|false|false||1|true", canonical.invoke(service, r));
+        RefPayloads.PrepaidCardTypeDto c = new RefPayloads.PrepaidCardTypeDto();
+        c.code = "GIFT";
+        c.protocol = "NEXO";
+        c.ranges = "6299";
+        c.paymentAllowed = true;
+        assertEquals("GIFT||NEXO||6299|true|false|false|0|false", canonical.invoke(service, c));
+    }
+
+    /**
+     * Builds a VAT regime of a country.
+     *
+     * @param number the number
+     * @param country the country, or null for every country
+     * @return the regime
+     */
+    private VatRate regimeOf(int number, String country) {
+        VatRate regime = new VatRate(number, new BigDecimal("0.2000"), "R" + number);
+        regime.country = country;
+        return regime;
+    }
+
+    /**
+     * Stubs the organisation tree for one point of sale: its enseigne and the
+     * country of that enseigne.
+     *
+     * @param mocked the active static mock
+     * @param pdvNumber the point of sale
+     * @param enseigneCode its enseigne
+     * @param countryCode the enseigne's country
+     */
+    @SuppressWarnings("unchecked")
+    private void stubTree(MockedStatic<PanacheEntityBase> mocked, String pdvNumber, String enseigneCode,
+                          String countryCode) {
+        Pdv pdv = new Pdv();
+        pdv.pdvNumber = pdvNumber;
+        pdv.enseigneCode = enseigneCode;
+        Enseigne enseigne = new Enseigne();
+        enseigne.code = enseigneCode;
+        enseigne.countryCode = countryCode;
+        PanacheQuery<Pdv> pdvQuery = mock(PanacheQuery.class);
+        when(pdvQuery.firstResult()).thenReturn(pdv);
+        PanacheQuery<Enseigne> enseigneQuery = mock(PanacheQuery.class);
+        when(enseigneQuery.firstResult()).thenReturn(enseigne);
+        mocked.when(() -> Pdv.find("pdvNumber", pdvNumber)).thenReturn(pdvQuery);
+        mocked.when(() -> Enseigne.find("code", enseigneCode)).thenReturn(enseigneQuery);
+    }
+
+    /**
+     * BO-02-02-01, BO-02-05-04: a point of sale receives the regimes of its
+     * country and those naming none, matched whatever the case; one whose
+     * country is unknown receives them all; without a named point of sale, the
+     * node answers for its own.
+     */
+    @Test
+    void vatRatesFollowTheCountryOfThePointOfSale() {
+        RefExportService service = new RefExportService();
+        service.nodeEchelonService = mock(com.intermarche.edge.service.NodeEchelonService.class);
+        when(service.nodeEchelonService.currentPdv()).thenReturn("20001");
+        VatRate french = regimeOf(1, "FR");
+        VatRate portuguese = regimeOf(10, "pt");
+        VatRate everywhere = regimeOf(20, null);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> VatRate.list("order by number")).thenReturn(List.of(french, portuguese, everywhere));
+            stubTree(mocked, "10001", "IP", "PT");
+            stubTree(mocked, "20001", "IF", "FR");
+            assertEquals(List.of(portuguese, everywhere), service.vatRatesFor("10001"));
+            assertEquals(List.of(french, everywhere), service.vatRatesFor(null));
+            assertEquals(List.of(french, everywhere), service.vatRatesFor(" "));
+            service.nodeEchelonService = null;
+            assertEquals(List.of(french, portuguese, everywhere), service.vatRatesFor(null));
+        }
+    }
+
+    /**
+     * Builds a document template of one type, posed at one echelon.
+     *
+     * @param code the code
+     * @param type the document type
+     * @param scope the echelon scope, or null
+     * @return the template
+     */
+    private com.intermarche.edge.domain.setting.DocumentTemplate template(String code,
+            com.intermarche.edge.domain.setting.DocumentTemplate.DocumentType type, String scope) {
+        com.intermarche.edge.domain.setting.DocumentTemplate template =
+                new com.intermarche.edge.domain.setting.DocumentTemplate();
+        template.code = code;
+        template.documentType = type;
+        template.echelonScope = scope;
+        return template;
+    }
+
+    /**
+     * BO-02-05-02, BO-02-05-04: for each document a point of sale receives the
+     * templates of the most specific echelon covering it, never one posed on
+     * another branch of the tree.
+     */
+    @Test
+    void templatesFollowTheMostSpecificEchelon() {
+        RefExportService service = new RefExportService();
+        com.intermarche.edge.domain.setting.DocumentTemplate.DocumentType receipt =
+                com.intermarche.edge.domain.setting.DocumentTemplate.DocumentType.SALE_RECEIPT;
+        com.intermarche.edge.domain.setting.DocumentTemplate.DocumentType invoice =
+                com.intermarche.edge.domain.setting.DocumentTemplate.DocumentType.INVOICE;
+        com.intermarche.edge.domain.setting.DocumentTemplate global = template("A", receipt, null);
+        com.intermarche.edge.domain.setting.DocumentTemplate blank = template("B", receipt, " ");
+        com.intermarche.edge.domain.setting.DocumentTemplate country = template("C", receipt, "COUNTRY:PT");
+        com.intermarche.edge.domain.setting.DocumentTemplate enseigne = template("D", receipt, "ENSEIGNE:IP");
+        com.intermarche.edge.domain.setting.DocumentTemplate other = template("E", receipt, "ENSEIGNE:IF");
+        com.intermarche.edge.domain.setting.DocumentTemplate invoiceOfAll = template("F", invoice, "*");
+        com.intermarche.edge.domain.setting.DocumentTemplate invoiceOfPdv = template("G", invoice, "PDV:10001");
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> com.intermarche.edge.domain.setting.DocumentTemplate.list("order by code"))
+                    .thenReturn(List.of(global, blank, country, enseigne, other, invoiceOfAll, invoiceOfPdv));
+            stubTree(mocked, "10001", "IP", "PT");
+            stubTree(mocked, "10002", "IQ", "PT");
+            assertEquals(List.of(enseigne, invoiceOfPdv), service.templatesFor("10001"));
+            assertEquals(List.of(country, invoiceOfAll), service.templatesFor("10002"));
+        }
+    }
+
+    /**
+     * The depth of a scope: nothing and the organisation 0, a country 1, an
+     * enseigne 2, a point of sale 3, a register-level scope 0.
+     */
+    @Test
+    void theDepthOfAScopeFollowsTheTree() {
+        assertEquals(0, RefExportService.depth(null));
+        assertEquals(0, RefExportService.depth("*"));
+        assertEquals(1, RefExportService.depth("COUNTRY:FR"));
+        assertEquals(2, RefExportService.depth("ENSEIGNE:IF"));
+        assertEquals(3, RefExportService.depth("PDV:07039"));
+        assertEquals(0, RefExportService.depth("TPV:POS01"));
+    }
+
+    /**
+     * BO-02-03-17: the units of measure travel to the registers in code order,
+     * every field mapped, and their canonical row carries every field so a
+     * re-labelled unit changes the fingerprint.
+     *
+     * @throws Exception if reflection fails
+     */
+    @Test
+    void measureUnitsAreExportedAndCanonical() throws Exception {
+        RefExportService service = new RefExportService();
+        com.intermarche.edge.domain.catalog.MeasureUnit unit = new com.intermarche.edge.domain.catalog.MeasureUnit();
+        unit.code = "B";
+        unit.label = "Mètre bobine";
+        unit.symbol = "mb";
+        unit.decimalAllowed = true;
+        unit.active = false;
+        PanacheQuery<com.intermarche.edge.domain.catalog.MeasureUnit> query = singlePage(0, 10, List.of(unit));
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> com.intermarche.edge.domain.catalog.MeasureUnit.find("order by code")).thenReturn(query);
+            List<?> result = service.getPage("MEASURE_UNITS", 0, 10);
+            RefPayloads.MeasureUnitDto dto = (RefPayloads.MeasureUnitDto) result.get(0);
+            assertEquals("B", dto.code);
+            assertEquals("Mètre bobine", dto.label);
+            assertEquals("mb", dto.symbol);
+            assertTrue(dto.decimalAllowed);
+            assertFalse(dto.active);
+            Method canonical = RefExportService.class.getDeclaredMethod("canonical", Object.class);
+            canonical.setAccessible(true);
+            assertEquals("B|Mètre bobine|mb|true|false", canonical.invoke(service, dto));
+        }
+    }
+
+    /**
+     * BO-02-03-33: the fingerprint a feed file is stamped with is the one a
+     * register is served, computed afresh; the engine-feed payload carries
+     * the stamps.
+     */
+    @Test
+    void publishedFingerprintIsUncachedAndFeedsCarryTheirStamps() {
+        RefExportService service = new RefExportService();
+        com.intermarche.edge.domain.sync.EngineFeed feed = new com.intermarche.edge.domain.sync.EngineFeed();
+        feed.code = "PRODUCTS";
+        feed.version = "v1";
+        feed.content = "EAN|NAME";
+        feed.baseFingerprint = "";
+        feed.resultFingerprint = "r1";
+        PanacheQuery<com.intermarche.edge.domain.sync.EngineFeed> feeds = singlePage(0, 10, List.of(feed));
+        PanacheQuery<com.intermarche.edge.domain.catalog.MeasureUnit> none = pagedQuery(List.of());
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> com.intermarche.edge.domain.sync.EngineFeed.find("order by code")).thenReturn(feeds);
+            RefPayloads.EngineFeedDto dto = (RefPayloads.EngineFeedDto) service.getPage("ENGINE_FEEDS", 0, 10).get(0);
+            assertEquals("", dto.baseFingerprint);
+            assertEquals("r1", dto.resultFingerprint);
+        }
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> com.intermarche.edge.domain.catalog.MeasureUnit.find("order by code")).thenReturn(none);
+            assertEquals(EMPTY_SHA256, service.publishedFingerprint("MEASURE_UNITS"));
+        }
+    }
+
+    /**
+     * The profiles a holder is bound to travel by name to the registers,
+     * once each; a holder without id or binding carries none, and a binding
+     * to a profile gone or unnamed is skipped (BO-04-02-01).
+     */
+    @Test
+    void profileNamesJoinTheBoundProfiles() {
+        RefExportService service = new RefExportService();
+        Employee holder = new Employee();
+        assertNull(service.profileNames(holder));
+        holder.id = 7L;
+        com.intermarche.edge.domain.people.EmployeeProfile chef = new com.intermarche.edge.domain.people.EmployeeProfile();
+        chef.profileId = 1L;
+        com.intermarche.edge.domain.people.EmployeeProfile again = new com.intermarche.edge.domain.people.EmployeeProfile();
+        again.profileId = 1L;
+        com.intermarche.edge.domain.people.EmployeeProfile gone = new com.intermarche.edge.domain.people.EmployeeProfile();
+        gone.profileId = 2L;
+        com.intermarche.edge.domain.people.EmployeeProfile unnamed = new com.intermarche.edge.domain.people.EmployeeProfile();
+        unnamed.profileId = 3L;
+        com.intermarche.edge.domain.people.Profile profile = new com.intermarche.edge.domain.people.Profile();
+        profile.name = "Chef de caisse";
+        com.intermarche.edge.domain.people.Profile nameless = new com.intermarche.edge.domain.people.Profile();
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> PanacheEntityBase.list("employeeId", 7L))
+                    .thenReturn(List.of(chef, again, gone, unnamed), List.of(), null);
+            panache.when(() -> PanacheEntityBase.findById(1L)).thenReturn(profile);
+            panache.when(() -> PanacheEntityBase.findById(3L)).thenReturn(nameless);
+            assertEquals("Chef de caisse", service.profileNames(holder));
+            assertNull(service.profileNames(holder));
+            assertNull(service.profileNames(holder));
         }
     }
 }

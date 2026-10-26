@@ -43,6 +43,14 @@ public class SyncIngestResource {
     @Inject
     SyncIngestService syncIngestService;
 
+    /** Tells whether a voucher was already consumed in the shop (BO-11-01-18). */
+    @Inject
+    com.intermarche.edge.service.sync.VoucherBurnService voucherBurnService;
+
+    /** The retrieval mode of the counter-scale baskets (BO-10-05-01). */
+    @Inject
+    com.intermarche.edge.service.PosSettingsService posSettingsService;
+
     /**
      * Ingests a pushed cash session.
      *
@@ -167,6 +175,167 @@ public class SyncIngestResource {
     }
 
     /**
+     * Ingests a ticket a register printed, in its 42-column format
+     * (LC-08-02-02, LC-08-03-08).
+     *
+     * @param presentedToken the shared token presented by the register
+     * @param dto the printed ticket
+     * @return 200 on upsert, 401 on a bad token, 403 off-role, 409 retryable
+     */
+    @POST
+    @Path("/printout")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.TEXT_PLAIN)
+    public Response ingestPrintout(@HeaderParam("X-Sync-Token") String presentedToken,
+                                   SyncPayloads.PrintoutDto dto) {
+        LOGGER.info("Entering method ingestPrintout");
+        LOGGER.info("Exiting method ingestPrintout");
+        return handle(presentedToken, () -> syncIngestService.ingestPrintout(dto));
+    }
+
+    /**
+     * Ingests a sale a register made in training mode (LC-13-05-06).
+     *
+     * @param presentedToken the shared token presented by the register
+     * @param dto the training sale
+     * @return 200 on upsert, 401 on a bad token, 403 off-role, 409 retryable
+     */
+    @POST
+    @Path("/training")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.TEXT_PLAIN)
+    public Response ingestTraining(@HeaderParam("X-Sync-Token") String presentedToken,
+                                   SyncPayloads.TrainingTicketDto dto) {
+        LOGGER.info("Entering method ingestTraining");
+        LOGGER.info("Exiting method ingestTraining");
+        return handle(presentedToken, () -> syncIngestService.ingestTrainingTicket(dto));
+    }
+
+    /**
+     * Ingests the signed trace of a ticket a register put on hold, resumed or
+     * purged (LC-04-01-03).
+     *
+     * @param presentedToken the shared token presented by the register
+     * @param dto the record
+     * @return 200 on upsert, 401 on a bad token, 403 off-role, 409 retryable
+     */
+    @POST
+    @Path("/parking")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.TEXT_PLAIN)
+    public Response ingestParking(@HeaderParam("X-Sync-Token") String presentedToken,
+                                  SyncPayloads.ParkedTicketDto dto) {
+        LOGGER.info("Entering method ingestParking");
+        LOGGER.info("Exiting method ingestParking");
+        return handle(presentedToken, () -> syncIngestService.ingestParkedTicket(dto));
+    }
+
+    /**
+     * Ingests an instrument a register printed or redeemed (BO-03-06-62, -48).
+     *
+     * @param presentedToken the shared token presented by the register
+     * @param dto the instrument as that register knows it
+     * @return 200 on upsert, 401 on a bad token, 403 off-role
+     */
+    @POST
+    @Path("/stored-value")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.TEXT_PLAIN)
+    public Response ingestStoredValue(@HeaderParam("X-Sync-Token") String presentedToken,
+                                      SyncPayloads.StoredValueDto dto) {
+        LOGGER.info("Entering method ingestStoredValue");
+        LOGGER.info("Exiting method ingestStoredValue");
+        // BO-03-06-48: the central node takes the instruments its shops pass on.
+        if ("central".equalsIgnoreCase(role)) {
+            return handleOnCentral(presentedToken, () -> syncIngestService.ingestStoredValue(dto));
+        }
+        return handle(presentedToken, () -> syncIngestService.ingestStoredValue(dto));
+    }
+
+    /**
+     * Ingests a payment barcode read at a till (BO-03-06-63).
+     *
+     * @param presentedToken the shared token presented by the register
+     * @param dto the reading
+     * @return 200 on upsert, 401 on a bad token, 403 off-role
+     */
+    @POST
+    @Path("/scanned-barcode")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.TEXT_PLAIN)
+    public Response ingestScannedBarcode(@HeaderParam("X-Sync-Token") String presentedToken,
+                                         SyncPayloads.ScannedBarcodeDto dto) {
+        LOGGER.info("Entering method ingestScannedBarcode");
+        LOGGER.info("Exiting method ingestScannedBarcode");
+        return handle(presentedToken, () -> syncIngestService.ingestScannedBarcode(dto));
+    }
+
+    /**
+     * Answers a register asking about an instrument another register of the
+     * shop printed (BO-03-06-48). A read: it writes nothing.
+     *
+     * @param presentedToken the shared token presented by the register
+     * @param number the scanned number
+     * @return 200 with the instrument, 401 on a bad token, 403 off-role, 404
+     *         when no register of the shop printed it
+     */
+    @jakarta.ws.rs.GET
+    @Path("/stored-value/{number}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response storedValue(@HeaderParam("X-Sync-Token") String presentedToken,
+                                @jakarta.ws.rs.PathParam("number") String number) {
+        LOGGER.info("Entering method storedValue with number: " + number);
+        // BO-03-06-48: the central node answers its shops as a store node
+        // answers its registers.
+        if (!"store".equalsIgnoreCase(role) && !"central".equalsIgnoreCase(role)) {
+            LOGGER.info("Exiting method storedValue");
+            return Response.status(Response.Status.FORBIDDEN)
+                    .entity("Ce nœud n'a pas le rôle store").build();
+        }
+        String expectedToken = token.orElse("");
+        if (!expectedToken.isBlank() && !expectedToken.equals(presentedToken)) {
+            LOGGER.info("Exiting method storedValue");
+            return Response.status(Response.Status.UNAUTHORIZED)
+                    .entity("Jeton de synchronisation invalide").build();
+        }
+        SyncPayloads.StoredValueDto found = syncIngestService.findStoredValue(number);
+        LOGGER.info("Exiting method storedValue");
+        return found == null ? Response.status(Response.Status.NOT_FOUND).build() : Response.ok(found).build();
+    }
+
+    /**
+     * Answers a register asking whether a voucher was already consumed by a
+     * closed sale of the shop (BO-11-01-18): the centralised burn of the
+     * vouchers. A read: it writes nothing.
+     *
+     * @param presentedToken the shared token presented by the register
+     * @param number the voucher number
+     * @return 200 with where it was burned, 401 on a bad token, 403 off-role,
+     *         404 when no closed sale of the shop settled it
+     */
+    @jakarta.ws.rs.GET
+    @Path("/voucher-burn/{number}")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response voucherBurn(@HeaderParam("X-Sync-Token") String presentedToken,
+                                @jakarta.ws.rs.PathParam("number") String number) {
+        LOGGER.info("Entering method voucherBurn");
+        if (!"store".equalsIgnoreCase(role)) {
+            LOGGER.info("Exiting method voucherBurn");
+            return Response.status(Response.Status.FORBIDDEN)
+                    .entity("Ce nœud n'a pas le rôle store").build();
+        }
+        String expectedToken = token.orElse("");
+        if (!expectedToken.isBlank() && !expectedToken.equals(presentedToken)) {
+            LOGGER.info("Exiting method voucherBurn");
+            return Response.status(Response.Status.UNAUTHORIZED)
+                    .entity("Jeton de synchronisation invalide").build();
+        }
+        com.intermarche.edge.service.sync.VoucherBurnService.Burn burn = voucherBurnService.findBurn(number);
+        LOGGER.info("Exiting method voucherBurn");
+        return burn == null ? Response.status(Response.Status.NOT_FOUND).build() : Response.ok(burn).build();
+    }
+
+    /**
      * Ingests a counter ticket pushed by a scale system (LC-06-01-02).
      *
      * <p>The scale is the emitter and it pushes — but it pushes HERE, never to a
@@ -184,6 +353,14 @@ public class SyncIngestResource {
     public Response ingestBalanceTicket(@HeaderParam("X-Sync-Token") String presentedToken,
                                         SyncPayloads.BalanceTicketDto dto) {
         LOGGER.info("Entering method ingestBalanceTicket with presentedToken: ***" + ", dto: " + dto);
+        // BO-10-05-01: a shop that reads its baskets from the FTP server alone,
+        // or takes none, refuses them on the API — a basket pushed here would be
+        // a second copy nobody arbitrates.
+        if (posSettingsService != null && !posSettingsService.balanceTicketApiAccepted()) {
+            LOGGER.info("Exiting method ingestBalanceTicket");
+            return Response.status(Response.Status.FORBIDDEN)
+                    .entity("Récupération des tickets balance par l'API désactivée").build();
+        }
         LOGGER.info("Exiting method ingestBalanceTicket");
         return handle(presentedToken, () -> syncIngestService.ingestBalanceTicket(dto));
     }
@@ -284,6 +461,19 @@ public class SyncIngestResource {
             return Response.status(Response.Status.FORBIDDEN)
                     .entity("Ce nœud n'a pas le rôle store").build();
         }
+        return handleOnCentral(presentedToken, ingestion);
+    }
+
+    /**
+     * Checks the token and runs an ingestion, whatever the role: the caller
+     * has already decided this node takes it (BO-03-06-48 on the central node).
+     *
+     * @param presentedToken the shared token presented by the caller
+     * @param ingestion the ingestion to run
+     * @return 200 on success, 401 on a bad token, 409 on a missing reference,
+     *         500 otherwise
+     */
+    private Response handleOnCentral(String presentedToken, Runnable ingestion) {
         String expectedToken = token.orElse("");
         if (!expectedToken.isBlank() && !expectedToken.equals(presentedToken)) {
             return Response.status(Response.Status.UNAUTHORIZED)

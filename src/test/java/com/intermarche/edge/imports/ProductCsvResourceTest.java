@@ -1,6 +1,7 @@
 package com.intermarche.edge.imports;
 
 import com.intermarche.edge.domain.catalog.Product;
+import com.intermarche.edge.domain.catalog.ProductFamily;
 import com.intermarche.edge.domain.catalog.ProductType;
 import io.quarkus.hibernate.orm.panache.Panache;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
@@ -19,6 +20,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -29,8 +31,11 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -38,20 +43,17 @@ import static org.mockito.Mockito.when;
  * Unit tests for {@link ProductCsvResource}.
  * <p>
  * The resource is the {@link Product}-specific concretion of the abstract
- * {@link ImporterCsvResource}: it bulk-fetches products for a chunk keyed by
- * EAN, then creates or updates each {@link Product} using a checksum
- * optimisation before persisting through the Panache entity manager. Every
- * collaborator is a Panache active-record static finder which, under plain
- * {@code mvn test}, resolves to {@link PanacheEntityBase}
- * ({@code list}/{@code find}/{@code findById}) — each is intercepted with
- * {@link org.mockito.Mockito#mockStatic} inside a try-with-resources block —
- * and {@code Panache.getEntityManager()} is stubbed the same way so
- * {@code persist} is observable. The private {@code computeIncomingChecksum}
- * helper is reached by reflection so the update-vs-skip checksum arms carry
- * byte-exact expected values; {@code feedProduct} is asserted through the
- * captured persisted entity and the freshly re-read entity. No database and no
- * Quarkus context is booted, every entity field is set directly, and every
- * branch is asserted against absolute expected values.
+ * {@link ImporterCsvResource}: for a chunk it bulk-fetches the products the
+ * file names, then for each line creates a product or, on an existing one,
+ * compares checksums through {@code changedFrom} to decide the update. Its
+ * finders resolve to {@link PanacheEntityBase} under plain {@code mvn test}
+ * and are intercepted with {@link org.mockito.Mockito#mockStatic} inside a
+ * try-with-resources block; {@code Panache.getEntityManager()} is stubbed the
+ * same way so {@code persist} is observable, and
+ * {@link ProductFamily#fileUnderNomenclature} is stubbed as a static so the
+ * filing side-call is verifiable. Private helpers are reached by reflection so
+ * both arms of every guard carry absolute expected values. No database and no
+ * Quarkus context is booted.
  */
 class ProductCsvResourceTest {
 
@@ -107,7 +109,7 @@ class ProductCsvResourceTest {
         ProductCsvResource resource = new ProductCsvResource();
         Response response = resource.importProducts(stream("EAN|NAME|DESCRIPTION|BRAND|REFERENCE_WEIGHT|REFERENCE_VOLUME|PRODUCT_TYPE|UNIT_NAME|ACTIVE\n"));
         assertEquals(200, response.getStatus());
-        assertEquals("{\"createdCount\":0, \"updatedCount\":0}", response.getEntity());
+        assertEquals("{\"createdCount\":0,\"updatedCount\":0}", response.getEntity());
     }
 
     /**
@@ -655,6 +657,43 @@ class ProductCsvResourceTest {
     }
 
     /**
+     * BO-02-03-04: the internal code is unique, so an empty cell leaves the
+     * article WITHOUT a code (null, never an empty string two articles would
+     * share), and a padded code is trimmed; the checksum reads an empty, a
+     * blank and a missing cell the same way.
+     *
+     * @throws Exception on reflective access to the checksum
+     */
+    @Test
+    void anEmptyInternalCodeCellStoresNoCode() throws Exception {
+        ProductCsvResource resource = new ProductCsvResource();
+        try (MockedStatic<Panache> panache = mockStatic(Panache.class)) {
+            EntityManager em = mock(EntityManager.class);
+            panache.when(Panache::getEntityManager).thenReturn(em);
+            resource.processLineLogic(lineWithExtras(1, new String[] {"333", "Melon", "", "", "", "", "", "", "true",
+                    "", " "}), new HashMap<>(), new int[] {0, 0});
+            resource.processLineLogic(lineWithExtras(2, new String[] {"334", "Melon", "", "", "", "", "", "", "true",
+                    "", " INT-7 "}), new HashMap<>(), new int[] {0, 0});
+            ArgumentCaptor<Product> captor = ArgumentCaptor.forClass(Product.class);
+            verify(em, org.mockito.Mockito.times(2)).persist(captor.capture());
+            assertNull(captor.getAllValues().get(0).internalCode);
+            assertEquals("INT-7", captor.getAllValues().get(1).internalCode);
+        }
+        Product existing = new Product();
+        existing.ean = "333";
+        existing.name = "Melon";
+        existing.active = true;
+        int blank = incomingChecksum(resource, lineWithExtras(1, new String[] {"333", "Melon", "", "", "", "", "", "",
+                "true", "", " "}), existing);
+        int empty = incomingChecksum(resource, lineWithExtras(1, new String[] {"333", "Melon", "", "", "", "", "", "",
+                "true", "", ""}), existing);
+        assertEquals(blank, empty);
+        int missing = incomingChecksum(resource, lineWithExtras(1, new String[] {"333", "Melon", "", "", "", "", "", "",
+                "true", ""}), existing);
+        assertEquals(blank, missing);
+    }
+
+    /**
      * BO-02-03-02/04: {@code computeIncomingChecksum} reads CHECKOUT_LABEL and
      * INTERNAL_CODE from the CSV when the header declares them (the {@code has}
      * true arms), so a change in either shifts the checksum.
@@ -993,5 +1032,719 @@ class ProductCsvResourceTest {
             verify(em).persist(captor.capture());
             assertNull(captor.getValue().infoMessage);
         }
+    }
+
+    /** The resource under test. */
+    private final ProductCsvResource resource = new ProductCsvResource();
+
+    /**
+     * Builds a parsed line over the given ordered column → value cells; the
+     * header declares exactly the named columns, which is what
+     * {@code LineData.has} keys on.
+     *
+     * @param cells the column-name → cell-value pairs, in order
+     * @return the parsed line, keyed on EAN
+     */
+    private ImporterCsvResource.LineData line(Map<String, String> cells) {
+        Map<String, Integer> header = new LinkedHashMap<>();
+        String[] parts = new String[cells.size()];
+        int index = 0;
+        for (Map.Entry<String, String> entry : cells.entrySet()) {
+            header.put(entry.getKey(), index);
+            parts[index] = entry.getValue();
+            index++;
+        }
+        return new ImporterCsvResource.LineData(1, header, parts, ProductCsvResource.COL_EAN);
+    }
+
+    /**
+     * Builds a line declaring every column this importer knows, all filled.
+     *
+     * @return a fully-populated parsed line
+     */
+    private ImporterCsvResource.LineData fullLine() {
+        Map<String, String> cells = new LinkedHashMap<>();
+        cells.put(ProductCsvResource.COL_EAN, "3000000000001");
+        cells.put(ProductCsvResource.COL_NAME, "Milk");
+        cells.put(ProductCsvResource.COL_DESCRIPTION, "Whole milk");
+        cells.put(ProductCsvResource.COL_BRAND, "DairyCo");
+        cells.put(ProductCsvResource.COL_REFERENCE_WEIGHT, "1.000");
+        cells.put(ProductCsvResource.COL_REFERENCE_VOLUME, "1.000");
+        cells.put(ProductCsvResource.COL_PRODUCT_TYPE, "unit");
+        cells.put(ProductCsvResource.COL_UNIT_NAME, "L");
+        cells.put(ProductCsvResource.COL_ACTIVE, "true");
+        cells.put(ProductCsvResource.COL_PLU, "1234");
+        cells.put(ProductCsvResource.COL_ICON, "milk");
+        cells.put(ProductCsvResource.COL_FORBIDDEN_TO_SALE, "true");
+        cells.put(ProductCsvResource.COL_CHECKOUT_LABEL, "MILK 1L");
+        cells.put(ProductCsvResource.COL_INTERNAL_CODE, "INT-1");
+        cells.put(ProductCsvResource.COL_VARIABLE_WEIGHT, "true");
+        cells.put(ProductCsvResource.COL_ATTRIBUTES, "MEAL_VOUCHER_ELIGIBLE=true;DISCOUNT_FORBIDDEN=false");
+        return line(cells);
+    }
+
+    /**
+     * Builds a line declaring only the required columns, so every optional
+     * column reports absent and the checksum falls back to the existing row.
+     *
+     * @return a required-columns-only parsed line
+     */
+    private ImporterCsvResource.LineData requiredOnlyLine() {
+        Map<String, String> cells = new LinkedHashMap<>();
+        cells.put(ProductCsvResource.COL_EAN, "3000000000002");
+        cells.put(ProductCsvResource.COL_NAME, "Bread");
+        cells.put(ProductCsvResource.COL_DESCRIPTION, "Baguette");
+        cells.put(ProductCsvResource.COL_BRAND, "Boulangerie");
+        cells.put(ProductCsvResource.COL_REFERENCE_WEIGHT, "0.250");
+        cells.put(ProductCsvResource.COL_REFERENCE_VOLUME, "0.000");
+        cells.put(ProductCsvResource.COL_PRODUCT_TYPE, "unit");
+        cells.put(ProductCsvResource.COL_UNIT_NAME, "pcs");
+        cells.put(ProductCsvResource.COL_ACTIVE, "true");
+        return line(cells);
+    }
+
+    /**
+     * Invokes a private method of the resource by reflection.
+     *
+     * @param name the method name
+     * @param types the parameter types
+     * @return the accessible method
+     * @throws Exception when the method does not exist
+     */
+    private Method privateMethod(String name, Class<?>... types) throws Exception {
+        Method method = ProductCsvResource.class.getDeclaredMethod(name, types);
+        method.setAccessible(true);
+        return method;
+    }
+
+    /**
+     * {@code importProducts} delegates to the base stream importer with the
+     * EAN key and the required columns: a header missing them is rejected
+     * with a BAD_REQUEST before any collaborator is touched.
+     */
+    @Test
+    void importProductsDelegatesToTheBaseStreamImporter() {
+        ByteArrayInputStream stream = new ByteArrayInputStream(
+                "EAN".getBytes(StandardCharsets.UTF_8));
+        Response response = resource.importProducts(stream);
+        assertEquals(Response.Status.BAD_REQUEST.getStatusCode(), response.getStatus());
+    }
+
+    /**
+     * The importer names the PRODUCTS engine feed, so the raw file is retained
+     * verbatim for the valuation engines.
+     */
+    @Test
+    void importerNamesTheProductsEngineFeed() {
+        assertEquals("PRODUCTS", resource.feedCode());
+    }
+
+    /**
+     * {@code processChunkWithFallback} answers an empty map on an empty chunk
+     * without querying (true arm of the emptiness guard).
+     */
+    @Test
+    void processChunkWithFallbackAnswersEmptyOnEmptyChunk() {
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            Map<String, Object> context = resource.processChunkWithFallback(
+                    List.of(), Set.of(), new int[]{0, 0}, new java.util.ArrayList<>());
+            assertTrue(context.isEmpty());
+            panache.verifyNoInteractions();
+        }
+    }
+
+    /**
+     * A non-empty chunk that names no key skips the bulk fetch and answers an
+     * empty context (false arm of the chunk guard, false arm of the key
+     * guard).
+     */
+    @Test
+    void processChunkWithFallbackSkipsFetchWhenNoKey() {
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            Map<String, Object> context = resource.processChunkWithFallback(
+                    List.of(fullLine()), Set.of(), new int[]{0, 0}, new java.util.ArrayList<>());
+            assertTrue(context.isEmpty());
+            panache.verifyNoInteractions();
+        }
+    }
+
+    /**
+     * A non-empty chunk with keys bulk-fetches the products and indexes them
+     * by their EAN (false arm of the chunk guard, true arm of the key guard,
+     * loop body).
+     */
+    @Test
+    void processChunkWithFallbackIndexesTheFetchedProducts() {
+        Product existing = new Product();
+        existing.ean = "3000000000001";
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> Product.list(eq("ean IN ?1"),
+                    org.mockito.ArgumentMatchers.<Object>any()))
+                    .thenReturn(List.of(existing));
+            Map<String, Object> context = resource.processChunkWithFallback(
+                    List.of(fullLine()), Set.of("3000000000001"),
+                    new int[]{0, 0}, new java.util.ArrayList<>());
+            assertEquals(1, context.size());
+            assertSame(existing, context.get("3000000000001"));
+        }
+    }
+
+    /**
+     * A code the referential does not carry yet creates a product, counted as
+     * a creation and persisted (true arm of the novelty guard), with no
+     * nomenclature filing when the column is absent (false arm of that guard).
+     */
+    @Test
+    void processLineLogicCreatesAnUnknownProduct() {
+        int[] counters = new int[]{0, 0};
+        EntityManager em = mock(EntityManager.class);
+        try (MockedStatic<Panache> panache = mockStatic(Panache.class)) {
+            panache.when(Panache::getEntityManager).thenReturn(em);
+            resource.processLineLogic(fullLine(), new HashMap<>(), counters);
+            assertEquals(1, counters[0]);
+            assertEquals(0, counters[1]);
+            ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
+            verify(em).persist(captor.capture());
+            Product created = (Product) captor.getValue();
+            assertEquals("3000000000001", created.ean);
+            assertEquals("Milk", created.name);
+            assertEquals("1234", created.plu);
+        }
+    }
+
+    /**
+     * A known code whose checksum moved is reloaded and refed, counted as an
+     * update (false arm of the novelty guard, true arm of the change guard).
+     */
+    @Test
+    void processLineLogicUpdatesAChangedProduct() {
+        Product existing = new Product();
+        existing.id = 5L;
+        existing.ean = "3000000000001";
+        existing.name = "Old milk";
+        existing.checksum = 0;
+        Map<String, Object> entityMap = new HashMap<>();
+        entityMap.put("3000000000001", existing);
+        int[] counters = new int[]{0, 0};
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> Product.findById(5L)).thenReturn(existing);
+            resource.processLineLogic(fullLine(), entityMap, counters);
+            assertEquals(0, counters[0]);
+            assertEquals(1, counters[1]);
+            assertEquals("Milk", existing.name);
+        }
+    }
+
+    /**
+     * A known code whose stored checksum is null is treated as changed and
+     * updated (true arm of {@code changedFrom}'s null branch at the call
+     * site).
+     */
+    @Test
+    void processLineLogicUpdatesAProductWithNoStoredChecksum() {
+        Product existing = new Product();
+        existing.id = 6L;
+        existing.ean = "3000000000001";
+        existing.checksum = null;
+        Map<String, Object> entityMap = new HashMap<>();
+        entityMap.put("3000000000001", existing);
+        int[] counters = new int[]{0, 0};
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> Product.findById(6L)).thenReturn(existing);
+            resource.processLineLogic(fullLine(), entityMap, counters);
+            assertEquals(0, counters[0]);
+            assertEquals(1, counters[1]);
+        }
+    }
+
+    /**
+     * A known code whose checksum matches the incoming one is left untouched
+     * and counted neither way (false arm of the change guard); no reload is
+     * issued.
+     */
+    @Test
+    void processLineLogicSkipsAnUnchangedProduct() throws Exception {
+        Product existing = new Product();
+        existing.id = 7L;
+        existing.ean = "3000000000001";
+        Method compute = privateMethod("computeIncomingChecksum",
+                ImporterCsvResource.LineData.class, Product.class);
+        int incoming = (int) compute.invoke(resource, fullLine(), existing);
+        existing.checksum = incoming;
+        Map<String, Object> entityMap = new HashMap<>();
+        entityMap.put("3000000000001", existing);
+        int[] counters = new int[]{0, 0};
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            resource.processLineLogic(fullLine(), entityMap, counters);
+            assertEquals(0, counters[0]);
+            assertEquals(0, counters[1]);
+            panache.verify(() -> Product.findById(any()), never());
+        }
+    }
+
+    /**
+     * When the feed declares the NOMENCLATURE column, the article is filed
+     * under the named node even on the skip path — the filing is outside the
+     * checksum shortcut (true arm of the nomenclature guard).
+     */
+    @Test
+    void processLineLogicFilesUnderNomenclatureWhenDeclared() throws Exception {
+        Product existing = new Product();
+        existing.id = 8L;
+        existing.ean = "3000000000001";
+        Map<String, String> cells = new LinkedHashMap<>();
+        cells.put(ProductCsvResource.COL_EAN, "3000000000001");
+        cells.put(ProductCsvResource.COL_NAME, "Milk");
+        cells.put(ProductCsvResource.COL_NOMENCLATURE, "SF01");
+        ImporterCsvResource.LineData data = line(cells);
+        Method compute = privateMethod("computeIncomingChecksum",
+                ImporterCsvResource.LineData.class, Product.class);
+        existing.checksum = (int) compute.invoke(resource, data, existing);
+        Map<String, Object> entityMap = new HashMap<>();
+        entityMap.put("3000000000001", existing);
+        int[] counters = new int[]{0, 0};
+        try (MockedStatic<ProductFamily> families = mockStatic(ProductFamily.class)) {
+            families.when(() -> ProductFamily.fileUnderNomenclature(existing, "SF01"))
+                    .thenReturn(true);
+            resource.processLineLogic(data, entityMap, counters);
+            assertEquals(0, counters[0]);
+            assertEquals(0, counters[1]);
+            families.verify(() -> ProductFamily.fileUnderNomenclature(existing, "SF01"));
+        }
+    }
+
+    /**
+     * {@code findEntityForLine} resolves the line's product through the EAN
+     * finder.
+     */
+    @Test
+    void findEntityForLineResolvesThroughTheEanFinder() {
+        Product existing = new Product();
+        existing.ean = "3000000000001";
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            @SuppressWarnings("unchecked")
+            PanacheQuery<Product> query = mock(PanacheQuery.class);
+            when(query.firstResult()).thenReturn(existing);
+            panache.when(() -> Product.find("ean", "3000000000001")).thenReturn(query);
+            assertSame(existing, resource.findEntityForLine(fullLine()));
+        }
+    }
+
+    /**
+     * {@code feedProduct} copies every declared column onto the product,
+     * including all optional register-only ones (true arm of every
+     * {@code has} guard) and the non-empty PLU (false arm of the PLU
+     * ternary).
+     */
+    @Test
+    void feedProductPopulatesEveryDeclaredColumn() throws Exception {
+        Method method = privateMethod("feedProduct",
+                ImporterCsvResource.LineData.class, Product.class);
+        Product product = new Product();
+        method.invoke(resource, fullLine(), product);
+        assertEquals("Milk", product.name);
+        assertEquals("Whole milk", product.description);
+        assertEquals("DairyCo", product.brand);
+        assertEquals(new BigDecimal("1.000"), product.referenceWeight);
+        assertEquals(new BigDecimal("1.000"), product.referenceVolume);
+        assertEquals(ProductType.UNIT, product.productType);
+        assertEquals("L", product.unitName);
+        assertTrue(product.active);
+        assertEquals("1234", product.plu);
+        assertEquals("milk", product.icon);
+        assertTrue(product.forbiddenToSale);
+        assertEquals("MILK 1L", product.checkoutLabel);
+        assertEquals("INT-1", product.internalCode);
+        assertTrue(product.variableWeight);
+        assertEquals("true", product.attributes.get("MEAL_VOUCHER_ELIGIBLE"));
+        assertEquals("false", product.attributes.get("DISCOUNT_FORBIDDEN"));
+    }
+
+    /**
+     * {@code feedProduct} leaves the optional register-only fields untouched
+     * when the feed declares none of their columns (false arm of every
+     * {@code has} guard).
+     */
+    @Test
+    void feedProductLeavesOptionalFieldsUntouchedWhenAbsent() throws Exception {
+        Method method = privateMethod("feedProduct",
+                ImporterCsvResource.LineData.class, Product.class);
+        Product product = new Product();
+        product.plu = "9999";
+        product.icon = "kept";
+        product.forbiddenToSale = true;
+        product.checkoutLabel = "KEPT";
+        product.internalCode = "KEPT-IC";
+        product.variableWeight = true;
+        product.attributes.put("KEEP", "yes");
+        method.invoke(resource, requiredOnlyLine(), product);
+        assertEquals("Bread", product.name);
+        assertEquals("9999", product.plu);
+        assertEquals("kept", product.icon);
+        assertTrue(product.forbiddenToSale);
+        assertEquals("KEPT", product.checkoutLabel);
+        assertEquals("KEPT-IC", product.internalCode);
+        assertTrue(product.variableWeight);
+        assertEquals("yes", product.attributes.get("KEEP"));
+    }
+
+    /**
+     * A declared but empty PLU cell lands as null, never the empty string
+     * (right operand of the PLU disjunction: null false, isEmpty true).
+     */
+    @Test
+    void feedProductNullsAnEmptyPlu() throws Exception {
+        Method method = privateMethod("feedProduct",
+                ImporterCsvResource.LineData.class, Product.class);
+        Map<String, String> cells = new LinkedHashMap<>();
+        cells.put(ProductCsvResource.COL_EAN, "3000000000001");
+        cells.put(ProductCsvResource.COL_NAME, "Milk");
+        cells.put(ProductCsvResource.COL_PLU, "");
+        Product product = new Product();
+        product.plu = "before";
+        method.invoke(resource, line(cells), product);
+        assertNull(product.plu);
+    }
+
+    /**
+     * A declared PLU column whose cell is null lands as null (left operand of
+     * the PLU disjunction: plu is null).
+     */
+    @Test
+    void feedProductNullsAMissingPluCell() throws Exception {
+        Method method = privateMethod("feedProduct",
+                ImporterCsvResource.LineData.class, Product.class);
+        Map<String, String> cells = new LinkedHashMap<>();
+        cells.put(ProductCsvResource.COL_EAN, "3000000000001");
+        cells.put(ProductCsvResource.COL_NAME, "Milk");
+        cells.put(ProductCsvResource.COL_PLU, null);
+        Product product = new Product();
+        product.plu = "before";
+        method.invoke(resource, line(cells), product);
+        assertNull(product.plu);
+    }
+
+    /**
+     * {@code mergeAttributes} merges nothing from a null cell (left operand of
+     * the emptiness disjunction).
+     */
+    @Test
+    void mergeAttributesIgnoresANullCell() throws Exception {
+        Method method = privateMethod("mergeAttributes", Map.class, String.class);
+        Map<String, String> target = new HashMap<>();
+        target.put("KEEP", "yes");
+        method.invoke(resource, target, (String) null);
+        assertEquals(1, target.size());
+        assertEquals("yes", target.get("KEEP"));
+    }
+
+    /**
+     * {@code mergeAttributes} merges nothing from an empty cell (right operand
+     * of the emptiness disjunction).
+     */
+    @Test
+    void mergeAttributesIgnoresAnEmptyCell() throws Exception {
+        Method method = privateMethod("mergeAttributes", Map.class, String.class);
+        Map<String, String> target = new HashMap<>();
+        target.put("KEEP", "yes");
+        method.invoke(resource, target, "");
+        assertEquals(1, target.size());
+    }
+
+    /**
+     * {@code mergeAttributes} poses the well-formed pairs, skips a token with
+     * no {@code =} (true arm of the eq guard) and a token with a blank code
+     * (true arm of the code guard), covering the false arms via the valid
+     * pairs.
+     */
+    @Test
+    void mergeAttributesPosesValidPairsAndSkipsMalformedTokens() throws Exception {
+        Method method = privateMethod("mergeAttributes", Map.class, String.class);
+        Map<String, String> target = new HashMap<>();
+        method.invoke(resource, target, "A=1;novalue;=orphan; B =2");
+        assertEquals(2, target.size());
+        assertEquals("1", target.get("A"));
+        assertEquals("2", target.get("B"));
+        assertFalse(target.containsKey("novalue"));
+    }
+
+    /**
+     * {@code incomingAttributes} starts from an empty map when the product
+     * carries no attributes and adds nothing when the column is absent (true
+     * arm of the null-attributes ternary, false arm of the column guard).
+     */
+    @Test
+    void incomingAttributesHandlesNullAttributesAndAbsentColumn() throws Exception {
+        Method method = privateMethod("incomingAttributes",
+                ImporterCsvResource.LineData.class, Product.class);
+        Product existing = new Product();
+        existing.attributes = null;
+        @SuppressWarnings("unchecked")
+        Map<String, String> result = (Map<String, String>) method.invoke(
+                resource, requiredOnlyLine(), existing);
+        assertTrue(result.isEmpty());
+    }
+
+    /**
+     * {@code incomingAttributes} copies the product's current attributes and
+     * merges the declared cell on top (false arm of the null-attributes
+     * ternary, true arm of the column guard).
+     */
+    @Test
+    void incomingAttributesCopiesCurrentAndMergesDeclaredCell() throws Exception {
+        Method method = privateMethod("incomingAttributes",
+                ImporterCsvResource.LineData.class, Product.class);
+        Product existing = new Product();
+        existing.attributes = new HashMap<>();
+        existing.attributes.put("OLD", "1");
+        Map<String, String> cells = new LinkedHashMap<>();
+        cells.put(ProductCsvResource.COL_EAN, "3000000000001");
+        cells.put(ProductCsvResource.COL_ATTRIBUTES, "NEW=2");
+        @SuppressWarnings("unchecked")
+        Map<String, String> result = (Map<String, String>) method.invoke(
+                resource, line(cells), existing);
+        assertEquals(2, result.size());
+        assertEquals("1", result.get("OLD"));
+        assertEquals("2", result.get("NEW"));
+    }
+
+    /**
+     * With every optional column declared, {@code computeIncomingChecksum}
+     * reproduces the checksum the product would carry after {@code feedProduct}
+     * (true arm of every column ternary, false arm of the plu-null ternary).
+     */
+    @Test
+    void computeIncomingChecksumMirrorsFeedProductWhenAllColumnsDeclared() throws Exception {
+        Method compute = privateMethod("computeIncomingChecksum",
+                ImporterCsvResource.LineData.class, Product.class);
+        Method feed = privateMethod("feedProduct",
+                ImporterCsvResource.LineData.class, Product.class);
+        Product existing = new Product();
+        int incoming = (int) compute.invoke(resource, fullLine(), existing);
+        Product expected = new Product();
+        feed.invoke(resource, fullLine(), expected);
+        expected.ean = "3000000000001";
+        assertEquals(expected.getChecksum(), incoming);
+    }
+
+    /**
+     * With no optional column declared, {@code computeIncomingChecksum} falls
+     * back to the existing row's optional fields (false arm of every column
+     * ternary) and hashes the empty stored PLU as "" (true arm of the plu-null
+     * ternary).
+     */
+    @Test
+    void computeIncomingChecksumFallsBackToExistingWhenColumnsAbsent() throws Exception {
+        Method compute = privateMethod("computeIncomingChecksum",
+                ImporterCsvResource.LineData.class, Product.class);
+        Product existing = new Product();
+        existing.plu = null;
+        existing.forbiddenToSale = true;
+        existing.checkoutLabel = "CL";
+        existing.internalCode = "IC";
+        existing.variableWeight = true;
+        existing.attributes = new HashMap<>();
+        existing.attributes.put("K", "V");
+        int incoming = (int) compute.invoke(resource, requiredOnlyLine(), existing);
+        Product expected = new Product();
+        expected.ean = "3000000000002";
+        expected.plu = null;
+        expected.name = "Bread";
+        expected.description = "Baguette";
+        expected.brand = "Boulangerie";
+        expected.referenceWeight = new BigDecimal("0.250");
+        expected.referenceVolume = new BigDecimal("0.000");
+        expected.productType = ProductType.UNIT;
+        expected.unitName = "pcs";
+        expected.active = true;
+        expected.forbiddenToSale = true;
+        expected.checkoutLabel = "CL";
+        expected.internalCode = "IC";
+        expected.variableWeight = true;
+        expected.attributes = new HashMap<>();
+        expected.attributes.put("K", "V");
+        assertEquals(expected.getChecksum(), incoming);
+    }
+
+    /**
+     * {@code safeParseProductType} answers null on an absent column, whose
+     * cell reads null (left operand of the disjunction).
+     */
+    @Test
+    void safeParseProductTypeAnswersNullOnAbsentColumn() {
+        Map<String, String> cells = new LinkedHashMap<>();
+        cells.put(ProductCsvResource.COL_EAN, "3000000000001");
+        assertNull(resource.safeParseProductType(line(cells), ProductCsvResource.COL_PRODUCT_TYPE));
+    }
+
+    /**
+     * {@code safeParseProductType} answers null on an empty cell (right operand
+     * of the disjunction).
+     */
+    @Test
+    void safeParseProductTypeAnswersNullOnEmptyCell() {
+        Map<String, String> cells = new LinkedHashMap<>();
+        cells.put(ProductCsvResource.COL_EAN, "3000000000001");
+        cells.put(ProductCsvResource.COL_PRODUCT_TYPE, "");
+        assertNull(resource.safeParseProductType(line(cells), ProductCsvResource.COL_PRODUCT_TYPE));
+    }
+
+    /**
+     * {@code safeParseProductType} upper-cases and resolves a well-formed cell
+     * (the nominal arm).
+     */
+    @Test
+    void safeParseProductTypeResolvesAWellFormedCell() {
+        Map<String, String> cells = new LinkedHashMap<>();
+        cells.put(ProductCsvResource.COL_EAN, "3000000000001");
+        cells.put(ProductCsvResource.COL_PRODUCT_TYPE, "weight");
+        assertEquals(ProductType.WEIGHT,
+                resource.safeParseProductType(line(cells), ProductCsvResource.COL_PRODUCT_TYPE));
+    }
+
+    /**
+     * {@code safeParseProductType} answers null on an unknown value (the catch
+     * arm).
+     */
+    @Test
+    void safeParseProductTypeAnswersNullOnUnknownValue() {
+        Map<String, String> cells = new LinkedHashMap<>();
+        cells.put(ProductCsvResource.COL_EAN, "3000000000001");
+        cells.put(ProductCsvResource.COL_PRODUCT_TYPE, "BOGUS");
+        assertNull(resource.safeParseProductType(line(cells), ProductCsvResource.COL_PRODUCT_TYPE));
+    }
+
+    /**
+     * Builds a required-columns line extended with lot-20 columns.
+     *
+     * @param extra the extra column → cell pairs
+     * @return the parsed line
+     */
+    private ImporterCsvResource.LineData lot20Line(Map<String, String> extra) {
+        Map<String, String> cells = new LinkedHashMap<>();
+        cells.put(ProductCsvResource.COL_EAN, "3000000000009");
+        cells.put(ProductCsvResource.COL_NAME, "Tuyau");
+        cells.put(ProductCsvResource.COL_DESCRIPTION, "Tuyau d'arrosage");
+        cells.put(ProductCsvResource.COL_BRAND, "Jardin");
+        cells.put(ProductCsvResource.COL_REFERENCE_WEIGHT, "0.100");
+        cells.put(ProductCsvResource.COL_REFERENCE_VOLUME, "0.000");
+        cells.put(ProductCsvResource.COL_PRODUCT_TYPE, "unit");
+        cells.put(ProductCsvResource.COL_UNIT_NAME, "pcs");
+        cells.put(ProductCsvResource.COL_ACTIVE, "true");
+        cells.putAll(extra);
+        return line(cells);
+    }
+
+    /**
+     * The lot-20 columns land on the article: the sale codes replace the
+     * article's (its own EAN and blanks dropped), the checkout mode, the unit
+     * code, the VAT regime and the exemption pose their attributes, and a known
+     * unit code gives its symbol to the article (BO-02-03-03, -05, -17, -21 to
+     * -27).
+     */
+    @Test
+    void feedProductCarriesTheLot20Columns() throws Exception {
+        Map<String, String> extra = new LinkedHashMap<>();
+        extra.put(ProductCsvResource.COL_SALE_CODES, " 3000000000010 ;;3000000000009;3000000000011");
+        extra.put(ProductCsvResource.COL_CHECKOUT_MODE, " decimal_quantity_to_enter ");
+        extra.put(ProductCsvResource.COL_UNIT_CODE, "4");
+        extra.put(ProductCsvResource.COL_VAT_NUMBER, " 2 ");
+        extra.put(ProductCsvResource.COL_VAT_EXEMPT, "true");
+        ImporterCsvResource.LineData data = lot20Line(extra);
+        com.intermarche.edge.domain.catalog.MeasureUnit metre = new com.intermarche.edge.domain.catalog.MeasureUnit();
+        metre.code = "4";
+        metre.symbol = "m";
+        @SuppressWarnings("unchecked")
+        PanacheQuery<com.intermarche.edge.domain.catalog.MeasureUnit> unit = mock(PanacheQuery.class,
+                invocation -> "firstResult".equals(invocation.getMethod().getName()) ? metre : null);
+        Product product = new Product();
+        product.ean = "3000000000009";
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> com.intermarche.edge.domain.catalog.MeasureUnit.find("code", "4")).thenReturn(unit);
+            feedProduct(resource, data, product);
+        }
+        assertEquals(Set.of("3000000000010", "3000000000011"), product.saleCodes);
+        assertEquals("DECIMAL_QUANTITY_TO_ENTER", product.attributes.get("CHECKOUT_MODE"));
+        assertEquals("4", product.attributes.get("UNIT_CODE"));
+        assertEquals("2", product.attributes.get("VAT_NUMBER"));
+        assertEquals("true", product.attributes.get("VAT_EXEMPT"));
+        assertEquals("m", product.unitName);
+    }
+
+    /**
+     * Empty lot-20 cells withdraw the attributes and the sale codes, and an
+     * unknown unit code leaves the line's own unit label (BO-02-03-03, -17).
+     */
+    @Test
+    void feedProductWithdrawsOnEmptyLot20Cells() throws Exception {
+        Map<String, String> extra = new LinkedHashMap<>();
+        extra.put(ProductCsvResource.COL_SALE_CODES, "");
+        extra.put(ProductCsvResource.COL_CHECKOUT_MODE, " ");
+        extra.put(ProductCsvResource.COL_UNIT_CODE, "Z");
+        extra.put(ProductCsvResource.COL_VAT_NUMBER, "");
+        ImporterCsvResource.LineData data = lot20Line(extra);
+        @SuppressWarnings("unchecked")
+        PanacheQuery<com.intermarche.edge.domain.catalog.MeasureUnit> none = mock(PanacheQuery.class);
+        Product product = new Product();
+        product.ean = "3000000000009";
+        product.saleCodes.add("OLD");
+        product.attributes.put("CHECKOUT_MODE", "WEIGHED");
+        product.attributes.put("UNIT_CODE", "2");
+        product.attributes.put("VAT_NUMBER", "1");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> com.intermarche.edge.domain.catalog.MeasureUnit.find("code", "Z")).thenReturn(none);
+            feedProduct(resource, data, product);
+        }
+        assertTrue(product.saleCodes.isEmpty());
+        assertNull(product.attributes.get("CHECKOUT_MODE"));
+        assertEquals("Z", product.attributes.get("UNIT_CODE"));
+        assertNull(product.attributes.get("VAT_NUMBER"));
+        assertEquals("pcs", product.unitName);
+    }
+
+    /**
+     * The incoming checksum mirrors the lot-20 columns: the incoming sale codes
+     * and attributes when the feed declares them, the existing ones when it does
+     * not — an unchanged row therefore hashes as the entity does.
+     */
+    @Test
+    void incomingChecksumMirrorsTheLot20Columns() throws Exception {
+        Product existing = new Product();
+        existing.ean = "3000000000009";
+        existing.name = "Tuyau";
+        existing.description = "Tuyau d'arrosage";
+        existing.brand = "Jardin";
+        existing.referenceWeight = new BigDecimal("0.100");
+        existing.referenceVolume = new BigDecimal("0.000");
+        existing.productType = ProductType.UNIT;
+        existing.unitName = "pcs";
+        existing.active = true;
+        existing.saleCodes.add("C1");
+        existing.attributes.put("CHECKOUT_MODE", "WEIGHED");
+        assertEquals(existing.getChecksum(), incomingChecksum(resource, lot20Line(Map.of()), existing));
+        Map<String, String> extra = new LinkedHashMap<>();
+        extra.put(ProductCsvResource.COL_SALE_CODES, "C1");
+        extra.put(ProductCsvResource.COL_CHECKOUT_MODE, "weighed");
+        assertEquals(existing.getChecksum(), incomingChecksum(resource, lot20Line(extra), existing));
+        extra.put(ProductCsvResource.COL_SALE_CODES, "C2");
+        assertNotEquals(existing.getChecksum(), incomingChecksum(resource, lot20Line(extra), existing));
+    }
+
+    /**
+     * A declared lot-20 column whose cell is missing reads as empty: no sale
+     * code, no mode.
+     */
+    @Test
+    void feedProductReadsMissingLot20CellsAsEmpty() throws Exception {
+        Map<String, String> extra = new LinkedHashMap<>();
+        extra.put(ProductCsvResource.COL_SALE_CODES, null);
+        extra.put(ProductCsvResource.COL_CHECKOUT_MODE, null);
+        Product product = new Product();
+        product.ean = "3000000000009";
+        product.saleCodes.add("OLD");
+        product.attributes.put("CHECKOUT_MODE", "WEIGHED");
+        feedProduct(resource, lot20Line(extra), product);
+        assertTrue(product.saleCodes.isEmpty());
+        assertNull(product.attributes.get("CHECKOUT_MODE"));
     }
 }

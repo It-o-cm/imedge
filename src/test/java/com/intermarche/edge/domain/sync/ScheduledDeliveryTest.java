@@ -8,6 +8,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
@@ -54,5 +55,18 @@ class ScheduledDeliveryTest {
             assertSame(expected, all);
             assertEquals(2, all.size());
         }
+    }
+
+    /**
+     * A fresh booking carries no feed (every feed), no status and no message
+     * until the keeper fills them in.
+     */
+    @Test
+    void aFreshBookingIsBlank() {
+        ScheduledDelivery fresh = new ScheduledDelivery();
+        assertNull(fresh.feedCode);
+        assertNull(fresh.status);
+        assertNull(fresh.message);
+        assertEquals(3, ScheduledDelivery.Status.values().length);
     }
 }

@@ -17,38 +17,55 @@ import com.intermarche.edge.domain.store.Country;
 import com.intermarche.edge.domain.store.Enseigne;
 import com.intermarche.edge.domain.store.Pdv;
 import com.intermarche.edge.domain.store.Store;
-import com.intermarche.edge.service.campaign.CampaignFeedProjector;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import io.quarkus.hibernate.orm.panache.PanacheQuery;
 import io.quarkus.runtime.StartupEvent;
+import jakarta.enterprise.inject.Instance;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedConstruction;
 import org.mockito.MockedStatic;
 
 import java.lang.reflect.Method;
 import java.util.HashSet;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Unit tests for the echelon-seeding branch of {@link DataInitializer}
- * ({@code loadEchelons}), the only part of the seeder this campaign adds.
+ * Unit tests for {@link DataInitializer}, the seeder shared by the register
+ * and the store node.
  * <p>
- * The four echelon entities are Panache entities and are NOT bytecode-enhanced
- * under plain {@code mvn test}: their {@code deleteAll()} statics are neutralized
- * with {@link org.mockito.Mockito#mockStatic(Class)} on {@link PanacheEntityBase}
- * and their {@code persist()} with {@link org.mockito.Mockito#mockConstruction(Class)}
- * on each entity, so the method runs with no database. Both arms of the role
- * guard are covered: a central node seeds the registry, a store node returns at
- * once and constructs nothing.
+ * Under plain {@code mvn test} the entities are not bytecode-enhanced, so the
+ * static finders and {@code deleteAll} resolve to {@link PanacheEntityBase}
+ * (intercepted with {@link org.mockito.Mockito#mockStatic}) and every
+ * {@code new X()} is neutralized with {@link org.mockito.Mockito#mockConstruction}
+ * so its {@code persist()} is a no-op. The {@link ProductFamily} mocks get their
+ * {@code products}/{@code productFamilies} collections initialized, since the
+ * mock constructor bypasses field initializers and the seeder wires the family
+ * tree through those sets.
+ * <p>
+ * Branch enumeration: the role ({@code storeSide}: store, central, register,
+ * unset); the register's guard that steps aside on a populated register (empty
+ * register seeded end to end with its eight table wipes, populated register
+ * left strictly untouched) and the store node that never asks; the store-side
+ * campaign wipe, campaign seed and feed projection; both arms of the echelon
+ * role guard (a central node seeds the registry, a store node constructs
+ * nothing); the password-change, prefix, price-field and article-filing arms
+ * of the private helpers. The assertions pin the absolute number of persisted
+ * rows per entity type, Marie's light theme override and the admin account's
+ * exemption from the forced password change.
  */
 class DataInitializerTest {
 
@@ -292,9 +309,9 @@ class DataInitializerTest {
     }
 
     /**
-     * Full seeder drive: on a store node, {@code onStart} wipes then reloads
-     * every referential table, running all seed steps in one pass with the
-     * database neutralized — Panache statics mocked and each persisted entity
+     * Full seeder drive: on a store node, {@code onStart} never asks whether
+     * the referential is present, wipes then reloads every referential table,
+     * running all seed steps in one pass with the database neutralized — Panache statics mocked and each persisted entity
      * type mock-constructed. The exact number of each entity built is asserted
      * (store, VAT regimes, employees, families, products, prices, coupon types,
      * coupon fields, campaign), the campaign feed projection is verified, and
@@ -305,8 +322,8 @@ class DataInitializerTest {
     void onStartRunsEveryStoreSeedStep() {
         DataInitializer initializer = new DataInitializer();
         initializer.role = "store";
-        CampaignFeedProjector projector = mock(CampaignFeedProjector.class);
-        initializer.campaignFeedProjector = projector;
+        SeedFeedProjector projector = mock(SeedFeedProjector.class);
+        initializer.seedFeedProjectors = projectors(projector);
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
              MockedConstruction<Store> stores = mockConstruction(Store.class);
              MockedConstruction<Address> addresses = mockConstruction(Address.class);
@@ -330,8 +347,8 @@ class DataInitializerTest {
              MockedConstruction<EchelonSetting> settings = mockConstruction(EchelonSetting.class)) {
             Employee marie = mock(Employee.class);
             Employee admin = mock(Employee.class);
-            PanacheQuery<Employee> marieQuery = employeeQueryReturning(marie);
-            PanacheQuery<Employee> adminQuery = employeeQueryReturning(admin);
+            PanacheQuery<Employee> marieQuery = employeeQuery(marie);
+            PanacheQuery<Employee> adminQuery = employeeQuery(admin);
             PanacheQuery<Product> noArticle = productQueryReturningNull();
             panache.when(() -> PanacheEntityBase.find("loginName", "mcurie")).thenReturn(marieQuery);
             panache.when(() -> PanacheEntityBase.find("loginName", "admin")).thenReturn(adminQuery);
@@ -357,22 +374,8 @@ class DataInitializerTest {
             assertTrue(pdvs.constructed().isEmpty());
             assertTrue(settings.constructed().isEmpty());
             verify(projector).project();
+            panache.verify(() -> Product.count(), never());
         }
-    }
-
-    /**
-     * Builds a Panache query mock whose {@code firstResult} yields the given
-     * employee, so a {@code find(...).firstResult()} lookup in the seeder
-     * resolves to an existing account.
-     *
-     * @param employee the employee the query returns
-     * @return the query mock
-     */
-    private PanacheQuery<Employee> employeeQueryReturning(Employee employee) {
-        @SuppressWarnings("unchecked")
-        PanacheQuery<Employee> query = mock(PanacheQuery.class);
-        when(query.firstResult()).thenReturn(employee);
-        return query;
     }
 
     /**
@@ -386,5 +389,228 @@ class DataInitializerTest {
         PanacheQuery<Product> query = mock(PanacheQuery.class);
         when(query.firstResult()).thenReturn(null);
         return query;
+    }
+
+    /**
+     * Exposes the given projectors as the CDI {@code Instance} the seeder
+     * iterates; each iteration gets a fresh iterator.
+     *
+     * @param projectors the projectors to expose, in order
+     * @return the mocked instance
+     */
+    @SuppressWarnings("unchecked")
+    private Instance<SeedFeedProjector> projectors(SeedFeedProjector... projectors) {
+        Instance<SeedFeedProjector> instance = mock(Instance.class);
+        when(instance.iterator()).thenAnswer(invocation -> List.of(projectors).iterator());
+        return instance;
+    }
+
+    /**
+     * The role decides the seed: {@code store} (first leg) and {@code central}
+     * (second leg, case-insensitive) are store-side, a {@code register} and an
+     * unset role (a plain unit test) are not.
+     */
+    @Test
+    void storeSideIsAStoreOrACentralNode() {
+        DataInitializer initializer = new DataInitializer();
+        initializer.role = "store";
+        assertTrue(initializer.storeSide());
+        initializer.role = "CENTRAL";
+        assertTrue(initializer.storeSide());
+        initializer.role = "register";
+        assertFalse(initializer.storeSide());
+        initializer.role = null;
+        assertFalse(initializer.storeSide());
+    }
+
+    /**
+     * Builds a mocked {@link PanacheQuery} whose {@code firstResult()} yields the
+     * given employee, mirroring {@code Employee.find(...).firstResult()}.
+     *
+     * @param employee the employee to return, possibly null
+     * @return the configured mocked query
+     */
+    @SuppressWarnings("unchecked")
+    private PanacheQuery<Employee> employeeQuery(Employee employee) {
+        PanacheQuery<Employee> query = mock(PanacheQuery.class);
+        when(query.firstResult()).thenReturn(employee);
+        return query;
+    }
+
+    /**
+     * Drives {@code onStart} through a fully mocked Panache layer and verifies
+     * that every entity type is constructed and persisted in the exact expected
+     * quantity, that the eight referential tables are wiped once, and that
+     * Marie's cashier-level light-theme preference is applied, and that the
+     * Intermarché nomenclature is seeded with its levels and its nodes.
+     */
+    @Test
+    void onStartWipesAndReloadsTheReferential() {
+        DataInitializer initializer = new DataInitializer();
+        Employee marie = mock(Employee.class);
+        Employee admin = mock(Employee.class);
+        admin.mustChangePassword = true;
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
+             MockedConstruction<Employee> employees = mockConstruction(Employee.class);
+             MockedConstruction<ProductFamily> families = mockConstruction(ProductFamily.class,
+                     (family, ctx) -> {
+                         family.products = new HashSet<>();
+                         family.productFamilies = new HashSet<>();
+                     });
+             MockedConstruction<Product> products = mockConstruction(Product.class);
+             MockedConstruction<Price> prices = mockConstruction(Price.class);
+             MockedConstruction<VatRate> vatRates = mockConstruction(VatRate.class);
+             MockedConstruction<CouponType> couponTypes = mockConstruction(CouponType.class);
+             MockedConstruction<Store> stores = mockConstruction(Store.class);
+             MockedConstruction<Nomenclature> schemes = mockConstruction(Nomenclature.class);
+             MockedConstruction<NomenclatureLevel> levels =
+                     mockConstruction(NomenclatureLevel.class)) {
+            // The seeder files four articles under their sous-famille by name;
+            // an unstubbed find would hand back null and the walk would stop
+            // before the nomenclature is wired.
+            // An empty register: the guard lets the seed through. Left
+            // explicit rather than relying on the 0 a mocked static returns
+            // by default, since that zero IS the leg under test.
+            panache.when(() -> Product.count()).thenReturn(0L);
+            PanacheQuery<Product> noArticle = mock(PanacheQuery.class);
+            when(noArticle.firstResult()).thenReturn(null);
+            panache.when(() -> Product.find(eq("name"), any(Object[].class)))
+                    .thenReturn(noArticle);
+            PanacheQuery<Employee> marieQuery = employeeQuery(marie);
+            panache.when(() -> Employee.find("loginName", "mcurie")).thenReturn(marieQuery);
+            PanacheQuery<Employee> adminQuery = employeeQuery(admin);
+            panache.when(() -> Employee.find("loginName", "admin")).thenReturn(adminQuery);
+            initializer.onStart(null);
+            panache.verify(() -> Employee.deleteAll(), times(8));
+            assertEquals(4, employees.constructed().size());
+            // Ten touch groups plus the twenty-one seeded nomenclature nodes.
+            assertEquals(31, families.constructed().size());
+            // One scheme, its four levels: the screen opens on real data.
+            assertEquals(1, schemes.constructed().size());
+            assertEquals(4, levels.constructed().size());
+            assertEquals(38, products.constructed().size());
+            assertEquals(41, prices.constructed().size());
+            // The five regimes of the French referential, written once before
+            // any price names one.
+            assertEquals(5, vatRates.constructed().size());
+            assertEquals(8, couponTypes.constructed().size());
+            assertEquals(1, stores.constructed().size());
+            for (Employee employee : employees.constructed()) {
+                verify(employee).persist();
+            }
+            // A touch group is persisted twice — once on creation, once after its
+            // edges and flags are wired — while a nomenclature node is written
+            // once, complete: it has no edge to wire, its parent being its own
+            // code prefix.
+            for (int i = 0; i < families.constructed().size(); i++) {
+                ProductFamily family = families.constructed().get(i);
+                verify(family, times(i < 10 ? 2 : 1)).persist();
+            }
+            for (Product product : products.constructed()) {
+                verify(product).persist();
+            }
+            for (Price price : prices.constructed()) {
+                verify(price).persist();
+            }
+            for (VatRate rate : vatRates.constructed()) {
+                verify(rate).persist();
+            }
+            for (CouponType couponType : couponTypes.constructed()) {
+                verify(couponType).persist();
+            }
+            verify(stores.constructed().get(0)).persist();
+            assertEquals("clair", marie.theme);
+            assertFalse(admin.mustChangePassword);
+        }
+    }
+
+    /**
+     * Drives {@code onStart} against a register that already holds articles
+     * and verifies that NOTHING happens: no table is wiped and no row is
+     * built. This is the leg that protects a demonstrator whose database
+     * survives a restart — the referential pulled from the store node and
+     * the sales of the day must not be replaced by the demonstration set,
+     * and the wipe would fail anyway, the articles being referenced by their
+     * families.
+     */
+    @Test
+    void onStartLeavesAPopulatedRegisterAlone() {
+        DataInitializer initializer = new DataInitializer();
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
+             MockedConstruction<Employee> employees = mockConstruction(Employee.class);
+             MockedConstruction<ProductFamily> families = mockConstruction(ProductFamily.class);
+             MockedConstruction<Product> products = mockConstruction(Product.class);
+             MockedConstruction<Price> prices = mockConstruction(Price.class);
+             MockedConstruction<VatRate> vatRates = mockConstruction(VatRate.class);
+             MockedConstruction<CouponType> couponTypes = mockConstruction(CouponType.class);
+             MockedConstruction<Store> stores = mockConstruction(Store.class);
+             MockedConstruction<Nomenclature> schemes = mockConstruction(Nomenclature.class);
+             MockedConstruction<NomenclatureLevel> levels =
+                     mockConstruction(NomenclatureLevel.class)) {
+            panache.when(() -> Product.count()).thenReturn(312L);
+            initializer.onStart(null);
+            panache.verify(() -> Employee.deleteAll(), never());
+            assertEquals(0, employees.constructed().size());
+            assertEquals(0, families.constructed().size());
+            assertEquals(0, products.constructed().size());
+            assertEquals(0, prices.constructed().size());
+            assertEquals(0, vatRates.constructed().size());
+            assertEquals(0, couponTypes.constructed().size());
+            assertEquals(0, stores.constructed().size());
+            assertEquals(0, schemes.constructed().size());
+            assertEquals(0, levels.constructed().size());
+        }
+    }
+
+    /**
+     * Drives {@code onStart} with the four seeded article names resolving to a
+     * non-null product, so {@code fileArticle} takes the {@code article != null}
+     * true arm and calls {@code ProductFamily.fileUnderNomenclature} for each of
+     * the four articles (the false arm alone is exercised by
+     * {@link #onStartWipesAndReloadsTheReferential()}). The nomenclature node
+     * lookup is stubbed to return null so the filing short-circuits before the
+     * relational walk, leaving the branch — not the downstream wiring — as the
+     * subject under test. The two absolute counts pin that the seeder resolves
+     * exactly the four articles by name and, because each is found, performs
+     * exactly four node lookups by code inside the true arm.
+     */
+    @Test
+    void onStartFilesSeededArticlesWhenTheyExist() {
+        DataInitializer initializer = new DataInitializer();
+        Employee marie = mock(Employee.class);
+        Employee admin = mock(Employee.class);
+        admin.mustChangePassword = true;
+        Product seededArticle = mock(Product.class);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
+             MockedConstruction<Employee> employees = mockConstruction(Employee.class);
+             MockedConstruction<ProductFamily> families = mockConstruction(ProductFamily.class,
+                     (family, ctx) -> {
+                         family.products = new HashSet<>();
+                         family.productFamilies = new HashSet<>();
+                     });
+             MockedConstruction<Product> products = mockConstruction(Product.class);
+             MockedConstruction<Price> prices = mockConstruction(Price.class);
+             MockedConstruction<VatRate> vatRates = mockConstruction(VatRate.class);
+             MockedConstruction<CouponType> couponTypes = mockConstruction(CouponType.class);
+             MockedConstruction<Store> stores = mockConstruction(Store.class);
+             MockedConstruction<Nomenclature> schemes = mockConstruction(Nomenclature.class);
+             MockedConstruction<NomenclatureLevel> levels =
+                     mockConstruction(NomenclatureLevel.class)) {
+            PanacheQuery<Product> articleFound = mock(PanacheQuery.class);
+            when(articleFound.firstResult()).thenReturn(seededArticle);
+            panache.when(() -> Product.find(eq("name"), any(Object[].class)))
+                    .thenReturn(articleFound);
+            PanacheQuery<ProductFamily> noNode = mock(PanacheQuery.class);
+            when(noNode.firstResult()).thenReturn(null);
+            panache.when(() -> ProductFamily.find(eq("code"), any(Object[].class)))
+                    .thenReturn(noNode);
+            PanacheQuery<Employee> marieQuery = employeeQuery(marie);
+            panache.when(() -> Employee.find("loginName", "mcurie")).thenReturn(marieQuery);
+            PanacheQuery<Employee> adminQuery = employeeQuery(admin);
+            panache.when(() -> Employee.find("loginName", "admin")).thenReturn(adminQuery);
+            initializer.onStart(null);
+            panache.verify(() -> Product.find(eq("name"), any(Object[].class)), times(4));
+            panache.verify(() -> ProductFamily.find(eq("code"), any(Object[].class)), times(4));
+        }
     }
 }

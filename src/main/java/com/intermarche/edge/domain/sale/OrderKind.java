@@ -21,7 +21,31 @@ public enum OrderKind {
     BON_VENTE("Bon de vente", false),
 
     /** A click-and-collect basket from a mobility tool, paid in full (EXP-92). */
-    CLICK_COLLECT("Click and collect", false);
+    CLICK_COLLECT("Click and collect", false),
+
+    /**
+     * A basket the customer scanned himself on an in-store selfscanning device,
+     * paid in full at the till after an optional control (LC-06-05-03).
+     */
+    SELF_SCAN("Selfscanning", false),
+
+    /**
+     * A basket built in the queue on a queue-busting handheld, paid in full at
+     * the till or the self-checkout that recalls it by its code (BO-03-06-57).
+     */
+    QBUSTING("Qbusting", false),
+
+    /**
+     * A basket of the e-commerce platform taken back at the till, under the
+     * rules of the e-commerce channel (BO-10-01-06, -07, -13).
+     */
+    ECOMMERCE("E-commerce", false),
+
+    /**
+     * A transaction finalised on a mobility device, possibly already paid there,
+     * integrated at the till (BO-10-01-34 to -39).
+     */
+    MOBILITY("Mobilité", false);
 
     /** The operator-facing label (French). */
     private final String label;

@@ -36,6 +36,10 @@ import org.jboss.logging.Logger;
  *
  * <p>Blank list, nothing done: a shop that programmed nothing gets nothing,
  * which is the conduct of before.
+ *
+ * <p>Where the store names a network printer, every edition is PRINTED as soon
+ * as it is edited (BO-09-01-10) — the « impression automatique » of the end of
+ * period — and still kept for download.
  */
 @ApplicationScoped
 public class ScheduledReportService {
@@ -57,6 +61,10 @@ public class ScheduledReportService {
     /** The journal: an automatic edition is an event of the shop. */
     @Inject
     TechnicalEventService technicalEventService;
+
+    /** The network printer the editions are sent to (BO-09-01-10). */
+    @Inject
+    ReportPrintService reportPrintService;
 
     /**
      * The reports the shop programmed, in the administered order
@@ -153,6 +161,32 @@ public class ScheduledReportService {
     }
 
     /**
+     * Prints a successful edition on the administered printer
+     * (BO-09-01-10): the moment it was sent, or why it could not be, is kept
+     * on the edition and written to the journal; a printer that fails takes
+     * nothing else with it.
+     *
+     * @param run the edition, its document rendered
+     */
+    void print(ScheduledReportRun run) {
+        String printer = posSettingsService.periodReportsPrinter();
+        if (printer.isEmpty()) {
+            return;
+        }
+        try {
+            reportPrintService.print(printer, run.content);
+            run.printedAt = LocalDateTime.now();
+            technicalEventService.log(TechnicalEvent.EventType.SCHEDULED_REPORTS_EDITED,
+                    "État de fin de période " + run.reportCode + " imprimé sur " + printer);
+        } catch (Exception failure) {
+            run.printFailure = failure.getMessage() == null
+                    ? failure.getClass().getSimpleName() : failure.getMessage();
+            technicalEventService.log(TechnicalEvent.EventType.SCHEDULED_REPORTS_EDITED,
+                    "Impression de l'état " + run.reportCode + " impossible sur " + printer);
+        }
+    }
+
+    /**
      * Edits one report and writes its edition, successful or not.
      *
      * @param definition the report to edit
@@ -179,6 +213,7 @@ public class ScheduledReportService {
             run.content = writer.write(data, criteria);
             run.rowCount = data.size();
             run.succeeded = true;
+            print(run);
         } catch (Exception failure) {
             run.succeeded = false;
             run.failure = failure.getMessage() == null

@@ -74,11 +74,17 @@ class PeriodCloseServiceTest {
         service.registerCommandService = mock(RegisterCommandService.class);
         service.technicalEventService = mock(TechnicalEventService.class);
         service.retentionPurgeService = mock(RetentionPurgeService.class);
+        service.salesVolumeService = mock(SalesVolumeService.class);
         service.financialStateEmissionService = mock(FinancialStateEmissionService.class);
         service.scheduledReportService = mock(ScheduledReportService.class);
         service.periodScheduleService = mock(PeriodScheduleService.class);
+        service.storePeriodCloseService = mock(StorePeriodCloseService.class);
         when(service.periodScheduleService.endingOn(any(LocalDate.class)))
                 .thenReturn(EnumSet.of(PeriodScheduleService.PeriodEnd.DAY));
+        when(service.posSettingsService.periodAutoLaunch()).thenReturn(true);
+        service.periodHookService = mock(PeriodHookService.class);
+        service.parkedTicketCloseService = mock(ParkedTicketCloseService.class);
+        service.registerPresenceService = mock(com.intermarche.edge.service.sync.RegisterPresenceService.class);
         return service;
     }
 
@@ -217,7 +223,7 @@ class PeriodCloseServiceTest {
     @Test
     void anOrderIsJournalled() {
         PeriodCloseService service = newService(true, "23:30", 5);
-        service.order("CAISSE1");
+        service.order(session("CAISSE1"));
         verify(service.technicalEventService).log(eq(TechnicalEvent.EventType.SESSION_CLOSED),
                 eq("Fermeture de fin de période demandée à la caisse CAISSE1"));
     }
@@ -230,8 +236,9 @@ class PeriodCloseServiceTest {
     @Test
     void aRegisterAlreadyCarryingAnOrderIsLeftAlone() {
         PeriodCloseService service = newService(true, "23:30", 5);
-        when(service.registerCommandService.pendingCount("CAISSE1")).thenReturn(1L);
-        service.order("CAISSE1");
+        when(service.registerCommandService.isPending("CAISSE1",
+                RegisterCommand.CommandType.CLOSE_SESSION_IF_IDLE)).thenReturn(true);
+        service.order(session("CAISSE1"));
         verify(service.registerCommandService, never()).issue(anyString(), any(), anyString(), anyString());
         verifyNoInteractions(service.technicalEventService);
     }
@@ -373,14 +380,17 @@ class PeriodCloseServiceTest {
         PeriodCloseService service = newService(true, "23:30", 5);
         LocalDate today = LocalDate.of(2026, 1, 15);
         service.maybeSweep(LocalTime.of(23, 45), today);
+        // BO-03-12-02: the consolidated close of the point of sale is built once.
+        verify(service.storePeriodCloseService).consolidate(today);
         // §4: the financial states are emitted BEFORE the purge, which may carry
         // away tickets a Z still needs; the programmed editions sit in between
         // (BO-09-01-10) for the same reason.
         org.mockito.InOrder order = org.mockito.Mockito.inOrder(
                 service.financialStateEmissionService, service.scheduledReportService,
-                service.retentionPurgeService);
+                service.salesVolumeService, service.retentionPurgeService);
         order.verify(service.financialStateEmissionService).emitEndOfPeriod(today);
         order.verify(service.scheduledReportService).runEndOfPeriod(today);
+        order.verify(service.salesVolumeService).refresh(today);
         order.verify(service.retentionPurgeService).sweep();
         assertEquals(today, service.lastPurgeDay);
     }
@@ -425,5 +435,212 @@ class PeriodCloseServiceTest {
             service.tick();
         }
         verify(service.retentionPurgeService).sweep();
+    }
+
+    /**
+     * A spied service whose island and checkout-point lookups are stubbed:
+     * register SCO1 stands on island CLS, which declares the end of period on
+     * its own, attaches host 0001 and holds a self-service point.
+     *
+     * @return the service, the host declaration activated
+     */
+    private PeriodCloseService scoService() {
+        PeriodCloseService service = org.mockito.Mockito.spy(newService(true, "23:30", 5));
+        when(service.posSettingsService.periodScoAutoDeclaration()).thenReturn(true);
+        com.intermarche.edge.domain.store.CheckoutIsland island = new com.intermarche.edge.domain.store.CheckoutIsland();
+        island.code = "CLS";
+        island.autoPeriodCloseDeclaration = true;
+        island.terminalIds = "POS9;SCO1";
+        island.hostBadges = "0001";
+        com.intermarche.edge.domain.store.CheckoutPoint sco = new com.intermarche.edge.domain.store.CheckoutPoint();
+        sco.tpvType = com.intermarche.edge.domain.store.TpvType.SELF_CHECKOUT_NCR;
+        org.mockito.Mockito.doReturn(island).when(service).islandOf("SCO1");
+        org.mockito.Mockito.doReturn(null).when(service).pointOf("POS9");
+        org.mockito.Mockito.doReturn(sco).when(service).pointOf("SCO1");
+        return service;
+    }
+
+    /**
+     * An open session of a host.
+     *
+     * @param terminalId the register
+     * @param badge the host's badge, or null for a session without cashier
+     * @return the session
+     */
+    private CashSession hosted(String terminalId, String badge) {
+        CashSession session = session(terminalId);
+        if (badge != null) {
+            session.openingCashier = new com.intermarche.edge.domain.people.Employee();
+            session.openingCashier.badgeId = badge;
+        }
+        return session;
+    }
+
+    /**
+     * BO-09-03-01: the host attached to a self-service island declaring the end
+     * of period on its own is declared automatically, and the journal says so;
+     * every other case takes the close-if-idle order.
+     */
+    @Test
+    void aSelfServiceHostIsDeclaredAutomatically() {
+        PeriodCloseService service = scoService();
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            service.order(hosted("SCO1", "0001"));
+            assertEquals(RegisterCommand.CommandType.CLOSE_SESSION_IF_IDLE, service.closeOrderType(hosted("SCO1", "0002")));
+            assertEquals(RegisterCommand.CommandType.CLOSE_SESSION_IF_IDLE, service.closeOrderType(hosted("SCO1", null)));
+            com.intermarche.edge.domain.store.CheckoutIsland island = service.islandOf("SCO1");
+            island.hostBadges = null;
+            assertEquals(RegisterCommand.CommandType.CLOSE_SESSION_AUTO_DECLARE, service.closeOrderType(hosted("SCO1", null)));
+        }
+        verify(service.registerCommandService).issue("SCO1", RegisterCommand.CommandType.CLOSE_SESSION_AUTO_DECLARE,
+                "Fin de période", "Fermeture automatique de fin de période");
+        verify(service.technicalEventService).log(TechnicalEvent.EventType.SESSION_CLOSED,
+                "Fermeture de fin de période demandée à la caisse SCO1 (déclaration automatique de l'hôte)");
+    }
+
+    /**
+     * BO-09-03-01: no automatic declaration while the store has not activated
+     * it, on a register on no island, on an island not declaring on its own,
+     * or on an island holding no self-service register.
+     */
+    @Test
+    void theAutomaticDeclarationNeedsEveryCondition() {
+        PeriodCloseService service = scoService();
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            assertAllConditions(service);
+        }
+    }
+
+    /**
+     * Plays each missing condition of the automatic declaration.
+     *
+     * @param service the spied service
+     */
+    private void assertAllConditions(PeriodCloseService service) {
+        org.mockito.Mockito.doReturn(null).when(service).islandOf("POS9");
+        assertEquals(RegisterCommand.CommandType.CLOSE_SESSION_IF_IDLE, service.closeOrderType(hosted("POS9", "0001")));
+        com.intermarche.edge.domain.store.CheckoutIsland island = service.islandOf("SCO1");
+        island.autoPeriodCloseDeclaration = false;
+        assertEquals(RegisterCommand.CommandType.CLOSE_SESSION_IF_IDLE, service.closeOrderType(hosted("SCO1", "0001")));
+        island.autoPeriodCloseDeclaration = true;
+        org.mockito.Mockito.doReturn(new com.intermarche.edge.domain.store.CheckoutPoint()).when(service).pointOf("SCO1");
+        assertEquals(RegisterCommand.CommandType.CLOSE_SESSION_IF_IDLE, service.closeOrderType(hosted("SCO1", "0001")));
+        when(service.posSettingsService.periodScoAutoDeclaration()).thenReturn(false);
+        assertEquals(RegisterCommand.CommandType.CLOSE_SESSION_IF_IDLE, service.closeOrderType(hosted("SCO1", "0001")));
+    }
+
+    /**
+     * The island and checkout-point lookups read the referential.
+     */
+    @Test
+    void theLookupsReadTheReferential() {
+        PeriodCloseService service = newService(true, "23:30", 5);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> PanacheEntityBase.list(anyString(), any(Object[].class))).thenReturn(List.of());
+            io.quarkus.hibernate.orm.panache.PanacheQuery<?> query = mock(io.quarkus.hibernate.orm.panache.PanacheQuery.class);
+            panache.when(() -> PanacheEntityBase.find(anyString(), any(Object[].class))).thenReturn(query);
+            assertNull(service.islandOf("SCO1"));
+            assertNull(service.pointOf("SCO1"));
+            assertFalse(service.deactivated("SCO1"));
+            assertTrue(service.closedTickets("SCO1", LocalDate.of(2026, 1, 15)).isEmpty());
+        }
+    }
+
+    /**
+     * A close order of either kind already waiting holds the next one back.
+     */
+    @Test
+    void anyCloseOrderPendingHoldsTheNextBack() {
+        PeriodCloseService service = newService(true, "23:30", 5);
+        assertFalse(service.closePending("SCO1"));
+        when(service.registerCommandService.isPending("SCO1",
+                RegisterCommand.CommandType.CLOSE_SESSION_AUTO_DECLARE)).thenReturn(true);
+        assertTrue(service.closePending("SCO1"));
+    }
+
+    /**
+     * BO-09-03-03: the automatic launch disarmed, the end of period journals
+     * once that its treatment did not start, treats nothing — and the day
+     * stays open to the manual launch, which then treats it once.
+     */
+    @Test
+    void aDisarmedLaunchLeavesTheDayToTheButton() {
+        PeriodCloseService service = newService(true, "23:30", 5);
+        when(service.posSettingsService.periodAutoLaunch()).thenReturn(false);
+        LocalDate today = LocalDate.of(2026, 1, 15);
+        service.maybeSweep(LocalTime.of(23, 45), today);
+        service.maybeSweep(LocalTime.of(23, 46), today);
+        verify(service.technicalEventService).log(TechnicalEvent.EventType.SESSION_CLOSED,
+                "Fin de période automatique désactivée : traitement du 2026-01-15 non lancé");
+        verifyNoInteractions(service.retentionPurgeService);
+        assertNull(service.lastPurgeDay);
+        assertTrue(service.runEndOfPeriod(today, "Marie Curie"));
+        assertFalse(service.runEndOfPeriod(today, "Marie Curie"));
+        verify(service.retentionPurgeService).sweep();
+        verify(service.parkedTicketCloseService).record(today, "Marie Curie");
+        verify(service.parkedTicketCloseService, never()).raz(any(), any(), any());
+    }
+
+    /**
+     * BO-09-02-04, BO-09-01-05, -08: the treatment runs the entry point before
+     * first and the one after last, records the tickets on hold and, at the
+     * automatic end of period where the store administers it, resets them.
+     */
+    @Test
+    void theTreatmentRunsItsEntryPointsAndTheTicketsOnHold() {
+        PeriodCloseService service = newService(true, "23:30", 5);
+        when(service.posSettingsService.periodParkedRaz()).thenReturn(true);
+        LocalDate today = LocalDate.of(2026, 1, 15);
+        service.maybeSweep(LocalTime.of(23, 45), today);
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(service.periodHookService,
+                service.parkedTicketCloseService, service.financialStateEmissionService, service.retentionPurgeService);
+        order.verify(service.periodHookService).run(com.intermarche.edge.domain.session.PeriodHookRun.Phase.BEFORE,
+                today, PeriodCloseService.AUTOMATIC);
+        order.verify(service.parkedTicketCloseService).record(today, PeriodCloseService.AUTOMATIC);
+        order.verify(service.parkedTicketCloseService).raz(null, PeriodCloseService.AUTOMATIC, today);
+        order.verify(service.financialStateEmissionService).emitEndOfPeriod(today);
+        order.verify(service.retentionPurgeService).sweep();
+        order.verify(service.periodHookService).run(com.intermarche.edge.domain.session.PeriodHookRun.Phase.AFTER,
+                today, PeriodCloseService.AUTOMATIC);
+        verifyNoInteractions(service.registerPresenceService);
+    }
+
+    /**
+     * BO-09-01-08: the reset administered for the automatic end of period is
+     * not the manual launch's, which leaves it to the reset button.
+     */
+    @Test
+    void theManualLaunchDoesNotResetTheTicketsOnHold() {
+        PeriodCloseService service = newService(true, "23:30", 5);
+        when(service.posSettingsService.periodParkedRaz()).thenReturn(true);
+        service.runEndOfPeriod(LocalDate.of(2026, 1, 15), "Marie Curie");
+        verify(service.parkedTicketCloseService, never()).raz(any(), any(), any());
+    }
+
+    /**
+     * BO-09-03-05: where the store activated the check, every register the
+     * node knows but the deactivated ones is ordered to check its day against
+     * what the server holds of it — the closed tickets and their total.
+     */
+    @Test
+    void theRegistersAreOrderedToCheckTheirData() {
+        PeriodCloseService service = org.mockito.Mockito.spy(newService(true, "23:30", 5));
+        when(service.posSettingsService.periodRegisterCheck()).thenReturn(true);
+        LocalDate today = LocalDate.of(2026, 1, 15);
+        when(service.registerPresenceService.all()).thenReturn(List.of(
+                new com.intermarche.edge.service.sync.RegisterPresenceService.Presence("POS1", null, 0L, true),
+                new com.intermarche.edge.service.sync.RegisterPresenceService.Presence("OFF", null, 0L, true)));
+        org.mockito.Mockito.doReturn(false).when(service).deactivated("POS1");
+        org.mockito.Mockito.doReturn(true).when(service).deactivated("OFF");
+        com.intermarche.edge.domain.sale.Ticket paid = new com.intermarche.edge.domain.sale.Ticket();
+        paid.totalIncludingTax = new java.math.BigDecimal("12.5");
+        org.mockito.Mockito.doReturn(List.of(paid, new com.intermarche.edge.domain.sale.Ticket()))
+                .when(service).closedTickets("POS1", today);
+        service.runEndOfPeriod(today, "Marie Curie");
+        verify(service.registerCommandService).issue("POS1", RegisterCommand.CommandType.VERIFY_SYNC,
+                "Fin de période", "2026-01-15;2;12.50");
+        verify(service.registerCommandService, never()).issue(eq("OFF"), any(), any(), any());
+        verify(service.technicalEventService).log(TechnicalEvent.EventType.SESSION_CLOSED,
+                "Contrôle caisse / serveur demandé à la caisse POS1 : 2 ticket(s) reçu(s) par le serveur");
     }
 }

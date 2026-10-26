@@ -10,6 +10,7 @@ import com.intermarche.edge.domain.safe.SafeMovement;
 import com.intermarche.edge.domain.safe.SafeMovementType;
 import com.intermarche.edge.domain.safe.SafeVatLine;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import org.jboss.logging.Logger;
 
@@ -50,6 +51,79 @@ public class SafeService {
     /** The refusal returned when a correction is attempted on a frozen movement. */
     public static final String FROZEN_MOVEMENT =
             "Ce mouvement est validé ou sa période est close.";
+
+    /** The forcing levels and the advance ceilings, as administered (BO-05-02-15). */
+    @Inject
+    PosSettingsService posSettingsService;
+
+    /**
+     * The refusal the FORCING LEVELS impose on a validation ({@code BO-05-02-15}):
+     * a movement entered by an employee carrying a forcing level is validated
+     * only by a strictly higher level — a level 2 by a level 3, never the
+     * reverse. A movement entered by nobody, or by a level zero, is validated by
+     * anyone allowed on the screen.
+     *
+     * @param movement the movement to validate, possibly null
+     * @param validator who validates, possibly null
+     * @return the refusal, or null when the validator outranks the author
+     */
+    public String forcingRefusal(SafeMovement movement, Employee validator) {
+        LOGGER.info("Entering method forcingRefusal");
+        if (movement == null || movement.enteredBy == null || movement.enteredBy.forcingLevel <= 0
+                || !posSettingsService.forcingLevelControl()) {
+            LOGGER.info("Exiting method forcingRefusal: no level to outrank");
+            return null;
+        }
+        if (validator != null && validator.forcingLevel > movement.enteredBy.forcingLevel) {
+            LOGGER.info("Exiting method forcingRefusal: outranked");
+            return null;
+        }
+        LOGGER.info("Exiting method forcingRefusal: refused");
+        return "Ce mouvement a été saisi par un niveau de forçage " + movement.enteredBy.forcingLevel
+                + " : il se valide par un niveau supérieur.";
+    }
+
+    /**
+     * The refusal the ADVANCE CEILING imposes on an expense made out to an
+     * employee ({@code BO-05-02-15}): what the safe already paid them, plus this
+     * expense, must stay within the ceiling their file carries.
+     *
+     * @param type the kind of movement entered
+     * @param amount its amount, possibly null
+     * @param employee the employee it is made out to, possibly null
+     * @return the refusal, or null when no ceiling is exceeded
+     */
+    public String advanceRefusal(SafeMovementType type, BigDecimal amount, Employee employee) {
+        LOGGER.info("Entering method advanceRefusal");
+        if (type != SafeMovementType.EXPENSE || amount == null || employee == null
+                || employee.advanceLimit == null || !posSettingsService.advanceLimitControl()) {
+            LOGGER.info("Exiting method advanceRefusal: no ceiling");
+            return null;
+        }
+        BigDecimal paid = BigDecimal.ZERO;
+        for (SafeMovement movement
+                : SafeMovement.<SafeMovement>find("employee.id = ?1", employee.id).list()) {
+            paid = paid.add(movement.signedAmount());
+        }
+        paid = paid.negate();
+        if (paid.add(amount.abs()).compareTo(employee.advanceLimit) <= 0) {
+            LOGGER.info("Exiting method advanceRefusal: within the ceiling");
+            return null;
+        }
+        LOGGER.info("Exiting method advanceRefusal: over the ceiling");
+        return "Plafond d'acompte dépassé : " + money(employee.advanceLimit) + " € autorisés, "
+                + money(paid) + " € déjà versés.";
+    }
+
+    /**
+     * Writes an amount the operator's way: two decimals, a decimal comma.
+     *
+     * @param amount the amount
+     * @return the written amount
+     */
+    private static String money(BigDecimal amount) {
+        return amount.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString().replace('.', ',');
+    }
 
     /**
      * The balance of the safe: the sum of every movement ever written.

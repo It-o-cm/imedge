@@ -175,11 +175,11 @@ class CustomerOrderServiceTest {
     void createFromTillRefusesBlankCodeOrUnknownKind() {
         CustomerOrderService service = new CustomerOrderService();
         assertNull(service.createFromTill(null, OrderKind.COMMANDE,
-                new BigDecimal("10.00"), null, null));
+                new BigDecimal("10.00"), null, null, null, null));
         assertNull(service.createFromTill("   ", OrderKind.COMMANDE,
-                new BigDecimal("10.00"), null, null));
+                new BigDecimal("10.00"), null, null, null, null));
         assertNull(service.createFromTill("C04-CMD000001", null,
-                new BigDecimal("10.00"), null, null));
+                new BigDecimal("10.00"), null, null, null, null));
     }
 
     /**
@@ -202,7 +202,7 @@ class CustomerOrderServiceTest {
                         mockConstruction(CustomerOrder.class)) {
             ms.when(() -> CustomerOrder.find("code", "C04-CMD000001")).thenReturn(absent);
             CustomerOrder order = service.createFromTill("C04-CMD000001",
-                    OrderKind.COMMANDE, new BigDecimal("100.00"), "0.2:1", lines);
+                    OrderKind.COMMANDE, new BigDecimal("100.00"), "0.2:1", lines, null, null);
             assertSame(created.constructed().get(0), order);
             assertEquals("C04-CMD000001", order.code);
             assertEquals(OrderKind.COMMANDE, order.kind);
@@ -220,7 +220,7 @@ class CustomerOrderServiceTest {
                         mockConstruction(CustomerOrder.class)) {
             ms.when(() -> CustomerOrder.find("code", "C04-CMD000002")).thenReturn(absentAgain);
             CustomerOrder bare = service.createFromTill("C04-CMD000002",
-                    OrderKind.COMMANDE, null, null, null);
+                    OrderKind.COMMANDE, null, null, null, null, null);
             assertEquals(BigDecimal.ZERO, bare.totalAmount);
             assertTrue(bare.lines.isEmpty());
             assertNull(bare.depositVatDetail);
@@ -242,7 +242,7 @@ class CustomerOrderServiceTest {
         try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
             ms.when(() -> CustomerOrder.find("code", "CMD1")).thenReturn(known);
             CustomerOrder refreshed = service.createFromTill("CMD1", OrderKind.COMMANDE,
-                    new BigDecimal("42.00"), "0.2:7", java.util.List.of());
+                    new BigDecimal("42.00"), "0.2:7", java.util.List.of(), null, null);
             assertSame(existing, refreshed);
             assertEquals(99L, refreshed.id);
             assertEquals(OrderStatus.OPEN, refreshed.status);
@@ -284,5 +284,95 @@ class CustomerOrderServiceTest {
         assertTrue(service.settleAtTill(order));
         assertEquals(BigDecimal.ZERO, order.depositPaid);
         assertEquals(OrderStatus.COLLECTED, order.status);
+    }
+
+    /**
+     * LC-06-02-02 / -04: a document of the commercial management tool keeps its
+     * label and the deposit rule it states.
+     */
+    @Test
+    void createFromTillKeepsTheLabelAndTheDepositRule() {
+        CustomerOrderService service = new CustomerOrderService();
+        PanacheQuery<CustomerOrder> absent = query(null);
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class);
+                org.mockito.MockedConstruction<CustomerOrder> created =
+                        mockConstruction(CustomerOrder.class)) {
+            ms.when(() -> CustomerOrder.find("code", "DV000123")).thenReturn(absent);
+            CustomerOrder order = service.createFromTill("DV000123", OrderKind.DEVIS,
+                    new BigDecimal("300.00"), null, null, "CUISINE DUPONT", "MANDATORY");
+            assertEquals("CUISINE DUPONT", order.label);
+            assertEquals("MANDATORY", order.depositRule);
+        }
+    }
+
+    /**
+     * LC-06-02-04 / -07: a deposit a register took adds its VAT to the
+     * document's, rate by rate, and the document stands partially paid; a
+     * document that can no longer be paid refuses it untouched.
+     */
+    @Test
+    void recordTillDepositAddsTheVatAndRefusesAClosedDocument() {
+        CustomerOrderService service = new CustomerOrderService();
+        CustomerOrder open = order(OrderKind.DEVIS, OrderStatus.OPEN, "300.00");
+        open.depositVatDetail = "0.2:10";
+        assertTrue(service.recordTillDeposit(open, "0.2:5;0.055:1"));
+        assertEquals("0.055:1;0.2:15", open.depositVatDetail);
+        assertEquals(OrderStatus.PARTIALLY_PAID, open.status);
+        CustomerOrder paid = order(OrderKind.DEVIS, OrderStatus.PAID, "300.00");
+        assertFalse(service.recordTillDeposit(paid, "0.2:5"));
+        assertNull(paid.depositVatDetail);
+        assertEquals(OrderStatus.PAID, paid.status);
+    }
+
+    /**
+     * BO-10-01-40: a sale voucher is recalled on the day it was written only; an
+     * undated one is not refused on its date, and another kind is never judged
+     * on it.
+     */
+    @Test
+    void aSaleVoucherIsRecalledOnItsDayOnly() {
+        CustomerOrderService service = new CustomerOrderService();
+        service.clock = java.time.Clock.fixed(java.time.Instant.parse("2026-10-24T10:00:00Z"),
+                java.time.ZoneId.of("Europe/Paris"));
+        CustomerOrder today = order(OrderKind.BON_VENTE, OrderStatus.OPEN, "10.00");
+        today.orderDate = java.time.LocalDateTime.of(2026, 10, 24, 8, 0);
+        CustomerOrder yesterday = order(OrderKind.BON_VENTE, OrderStatus.OPEN, "10.00");
+        yesterday.orderDate = java.time.LocalDateTime.of(2026, 10, 23, 18, 0);
+        CustomerOrder undated = order(OrderKind.BON_VENTE, OrderStatus.OPEN, "10.00");
+        CustomerOrder oldOrder = order(OrderKind.COMMANDE, OrderStatus.OPEN, "10.00");
+        oldOrder.orderDate = java.time.LocalDateTime.of(2026, 1, 1, 8, 0);
+        PanacheQuery<CustomerOrder> todayQ = query(today);
+        PanacheQuery<CustomerOrder> yesterdayQ = query(yesterday);
+        PanacheQuery<CustomerOrder> undatedQ = query(undated);
+        PanacheQuery<CustomerOrder> oldQ = query(oldOrder);
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(() -> CustomerOrder.find("code", "TODAY")).thenReturn(todayQ);
+            ms.when(() -> CustomerOrder.find("code", "YESTERDAY")).thenReturn(yesterdayQ);
+            ms.when(() -> CustomerOrder.find("code", "UNDATED")).thenReturn(undatedQ);
+            ms.when(() -> CustomerOrder.find("code", "OLD")).thenReturn(oldQ);
+            assertSame(today, service.recall("TODAY"));
+            assertNull(service.recall("YESTERDAY"));
+            assertSame(undated, service.recall("UNDATED"));
+            assertSame(oldOrder, service.recall("OLD"));
+        }
+    }
+
+    /**
+     * BO-10-01-18: the recall by customer answers the latest recallable order of
+     * the kind the customer holds.
+     */
+    @Test
+    void theRecallByCustomerAnswersTheCustomersLatestOrder() {
+        CustomerOrderService service = new CustomerOrderService();
+        CustomerOrder basket = order(OrderKind.SELF_SCAN, OrderStatus.OPEN, "10.00");
+        PanacheQuery<CustomerOrder> basketQ = query(basket);
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(() -> CustomerOrder.find("customerAccountNumber = ?1 and kind = ?2 and status in ?3 order by id desc",
+                    "C9", OrderKind.SELF_SCAN, java.util.List.of(OrderStatus.OPEN, OrderStatus.PARTIALLY_PAID)))
+                    .thenReturn(basketQ);
+            assertSame(basket, service.recallByCustomer(" C9 ", OrderKind.SELF_SCAN));
+            assertNull(service.recallByCustomer(null, OrderKind.SELF_SCAN));
+            assertNull(service.recallByCustomer(" ", OrderKind.SELF_SCAN));
+        }
     }
 }

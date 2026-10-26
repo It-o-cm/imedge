@@ -1,12 +1,14 @@
 package com.intermarche.edge.ui.admin;
 
+import io.quarkus.security.Authenticated;
+import com.intermarche.edge.security.FeatureAccess;
+import com.intermarche.edge.domain.setting.Feature;
 import com.intermarche.edge.domain.safe.AccountingPeriod;
 import com.intermarche.edge.domain.safe.SafeMovement;
 import com.intermarche.edge.service.SafeService;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
@@ -126,7 +128,8 @@ public class AdminSafeJournalResource {
      * @return the journal page
      */
     @GET
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SAFE_JOURNAL)
     public TemplateInstance journal(@QueryParam("from") String from,
                                     @QueryParam("to") String to) {
         LOGGER.info("Entering method journal with from: " + from + ", to: " + to);
@@ -153,7 +156,8 @@ public class AdminSafeJournalResource {
      */
     @GET
     @Path("/export")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SAFE_JOURNAL)
     @Produces("text/csv; charset=UTF-8")
     public Response export(@QueryParam("from") String from, @QueryParam("to") String to) {
         LOGGER.info("Entering method export");

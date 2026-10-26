@@ -141,4 +141,16 @@ class ProviderMessageTest {
                     ProviderMessage.ticketTextFor("ILLICADO", "4"));
         }
     }
+    /** BO-03/08: the finder selects the required business scope and ordering, preserving the returned rows. */
+    @org.junit.jupiter.api.Test
+    void listAllOrderedUsesItsBusinessScopeAndOrder() {
+        var row = new ProviderMessage();
+        java.util.List<ProviderMessage> rows = java.util.List.of(row);
+        try (var panache = org.mockito.Mockito.mockStatic(io.quarkus.hibernate.orm.panache.PanacheEntityBase.class)) {
+            panache.when(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase.list("order by providerCode, messageCode")).thenReturn(rows);
+            org.junit.jupiter.api.Assertions.assertSame(rows, ProviderMessage.listAllOrdered());
+            panache.verify(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase.list("order by providerCode, messageCode"));
+        }
+    }
+
 }

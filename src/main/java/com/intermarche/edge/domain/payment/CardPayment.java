@@ -2,9 +2,11 @@ package com.intermarche.edge.domain.payment;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.persistence.Column;
+import jakarta.persistence.Lob;
 import jakarta.persistence.DiscriminatorValue;
 import jakarta.persistence.Entity;
 import org.hibernate.annotations.ColumnDefault;
+
 import java.math.BigDecimal;
 
 /**
@@ -67,6 +69,19 @@ public class CardPayment extends TicketPayment {
      */
     @Column(name = "card_entry_mode", length = 16)
     public String cardEntryMode;
+
+    /**
+     * The customer receipt exactly as the integrated monetique returned it
+     * (LC-07-04-10), kept so the last card receipt can be reprinted as a
+     * duplicate (LC-08-05-07) — the very paper the terminal composed, card
+     * number masked by the terminal itself. Null when the terminal returned
+     * no receipt of its own, in which case the duplicate is the slip the
+     * register builds from its traces (LC-08-05-09). Register-local: the store
+     * synchronization does not carry it.
+     */
+    @Lob
+    @Column(name = "card_customer_receipt")
+    public String customerReceipt;
 
     /**
      * Default constructor for JPA.

@@ -64,6 +64,9 @@ class DayEndServiceTest {
         service.periodCloseService = mock(PeriodCloseService.class);
         when(service.periodCloseService.countdownMinutes()).thenReturn(countdown);
         when(service.periodCloseService.endOfPeriodLabel()).thenReturn("23:30");
+        when(service.periodCloseService.closeOrderType(any()))
+                .thenReturn(RegisterCommand.CommandType.CLOSE_SESSION_IF_IDLE);
+        service.parkedTicketCloseService = mock(ParkedTicketCloseService.class);
         return service;
     }
 
@@ -125,6 +128,45 @@ class DayEndServiceTest {
                 .thenReturn(sessions);
         panache.when(() -> Ticket.list("status", Ticket.TicketStatus.PARKED))
                 .thenReturn(carts);
+        stubPoint(panache, "CAISSE1", null);
+    }
+
+    /**
+     * Stubs the checkout point of a register (BO-03-09-01).
+     *
+     * @param panache the static mock
+     * @param terminalId the register
+     * @param point the point answered, or null for none
+     */
+    @SuppressWarnings("unchecked")
+    private void stubPoint(MockedStatic<PanacheEntityBase> panache, String terminalId,
+                           com.intermarche.edge.domain.store.CheckoutPoint point) {
+        io.quarkus.hibernate.orm.panache.PanacheQuery<com.intermarche.edge.domain.store.CheckoutPoint> query =
+                mock(io.quarkus.hibernate.orm.panache.PanacheQuery.class);
+        when(query.firstResult()).thenReturn(point);
+        panache.when(() -> com.intermarche.edge.domain.store.CheckoutPoint.find("terminalId", terminalId))
+                .thenReturn(query);
+    }
+
+    /**
+     * BO-03-09-01: a register the back office deactivated is left out of the
+     * closure control, its open session and its parked cart alike.
+     */
+    @Test
+    void aDeactivatedRegisterIsLeftOutOfTheControl() {
+        DayEndService service = service(20L, true, 60);
+        com.intermarche.edge.domain.store.CheckoutPoint off = new com.intermarche.edge.domain.store.CheckoutPoint();
+        off.active = false;
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            stubListings(panache,
+                    List.of(session("CAISSE1", "S-1", null), session("OFF", "S-2", null)),
+                    List.of(parked("OFF", "C09-1", "1.00")));
+            stubPoint(panache, "OFF", off);
+            DayEndService.DayEndState state = service.state();
+            assertEquals(1, state.openRegisters().size());
+            assertEquals("CAISSE1", state.openRegisters().get(0).terminalId());
+            assertTrue(state.parkedCarts().isEmpty());
+        }
     }
 
     /**
@@ -139,8 +181,10 @@ class DayEndServiceTest {
             stubListings(panache,
                     List.of(session("CAISSE1", "S-1", employee("Martin")),
                             session(null, null, null)),
-                    List.of(parked("CAISSE1", "C04-1", "12.50"),
-                            parked(null, null, null)));
+                    List.of());
+            when(service.parkedTicketCloseService.pending(null)).thenReturn(List.of(
+                    new ParkedTicketCloseService.Pending("CAISSE1", "C04-1", "Martin", 1, new BigDecimal("12.50"), ""),
+                    new ParkedTicketCloseService.Pending("", null, "", 0, null, "")));
             DayEndService.DayEndState state = service.state();
             assertEquals("23:30", state.endOfPeriod());
             assertTrue(state.autoEnabled());
@@ -152,7 +196,9 @@ class DayEndServiceTest {
             assertEquals("", state.openRegisters().get(1).terminalId());
             assertEquals("", state.openRegisters().get(1).cashier());
             assertEquals("12.50", state.parkedCarts().get(0).amount());
+            assertEquals("Martin", state.parkedCarts().get(0).cashier());
             assertEquals("", state.parkedCarts().get(1).amount());
+            assertEquals("", state.parkedCarts().get(1).ticketNumber());
         }
     }
 
@@ -186,7 +232,9 @@ class DayEndServiceTest {
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
             stubListings(panache,
                     List.of(session("CAISSE1", "S-1", employee("Martin"))),
-                    List.of(parked("CAISSE1", "C04-1", "12.50")));
+                    List.of());
+            when(service.parkedTicketCloseService.pending(null)).thenReturn(List.of(
+                    new ParkedTicketCloseService.Pending("CAISSE1", "C04-1", "", 1, new BigDecimal("12.50"), "")));
             service.launch("Marie Curie");
             verify(service.registerCommandService).issue(eq("CAISSE1"),
                     eq(RegisterCommand.CommandType.CLOSE_SESSION_IF_IDLE),
@@ -209,7 +257,7 @@ class DayEndServiceTest {
     @Test
     void anOrderIsNeverLeftTwice() {
         DayEndService service = service(10L, true, 60);
-        when(service.registerCommandService.pendingCount("CAISSE1")).thenReturn(1L);
+        when(service.periodCloseService.closePending("CAISSE1")).thenReturn(true);
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
             stubListings(panache,
                     List.of(session("CAISSE1", "S-1", null), session("", "S-2", null)),
@@ -230,5 +278,56 @@ class DayEndServiceTest {
         assertEquals(DayEndService.DEFAULT_ALERT_MINUTES, service(0L, true, 0).alertMinutes());
         assertEquals(DayEndService.DEFAULT_ALERT_MINUTES, service(0L, true, -3).alertMinutes());
         assertEquals(15, service(0L, true, 15).alertMinutes());
+    }
+    /** BO-09-01: offline registers and parked carts independently trigger the day-end alert. */
+    @Test
+    void eachPendingCategoryCanRaiseTheDayEndAlert() throws Exception {
+        var offline = new RegisterPresenceService.Presence("C04", null, 10, false);
+        var cart = new DayEndService.ParkedCart("C04", "T1", "OP", "10.00");
+        assertTrue(new DayEndService.DayEndState(false, "", 0, true, List.of(), List.of(offline), List.of()).hasAlert());
+        assertTrue(new DayEndService.DayEndState(false, "", 0, true, List.of(), List.of(), List.of(cart)).hasAlert());
+        DayEndService service = service(0, false, 0);
+        try (var base = mockStatic(PanacheEntityBase.class)) {
+            service.launch(" ");
+        }
+        verify(service.technicalEventService).log(eq(TechnicalEvent.EventType.SESSION_CLOSED), contains("par back-office"));
+        var method = DayEndService.class.getDeclaredMethod("order", DayEndService.OpenRegister.class, String.class);
+        method.setAccessible(true);
+        method.invoke(service, new DayEndService.OpenRegister(" ", "", "", null), "ADMIN");
+        org.mockito.Mockito.verifyNoInteractions(service.registerCommandService);
+    }
+
+
+    /** BO-09-02: a null operator uses the back-office identity and a null terminal never receives a command. */
+    @Test
+    void nullDayEndIdentitiesKeepTheirFallbacks() throws Exception {
+        DayEndService service = service(0, false, 0);
+        try (var base = mockStatic(PanacheEntityBase.class)) {
+            service.launch(null);
+        }
+        verify(service.technicalEventService).log(eq(TechnicalEvent.EventType.SESSION_CLOSED), contains("par back-office"));
+        var method = DayEndService.class.getDeclaredMethod("order", DayEndService.OpenRegister.class, String.class);
+        method.setAccessible(true);
+        method.invoke(service, new DayEndService.OpenRegister("", "", "", null), "ADMIN");
+        org.mockito.Mockito.verifyNoInteractions(service.registerCommandService);
+    }
+
+
+    /**
+     * BO-09-03-01: the manual launch leaves each open register the close order
+     * the end of period chooses for its session — here the automatic
+     * declaration of a self-service host.
+     */
+    @Test
+    void theManualLaunchLeavesTheChosenCloseOrder() {
+        DayEndService service = service(10L, true, 60);
+        when(service.periodCloseService.closeOrderType(any()))
+                .thenReturn(RegisterCommand.CommandType.CLOSE_SESSION_AUTO_DECLARE);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            stubListings(panache, List.of(session("CAISSE1", "S-1", null)), List.of());
+            service.launch("Marie Curie");
+        }
+        verify(service.registerCommandService).issue(eq("CAISSE1"),
+                eq(RegisterCommand.CommandType.CLOSE_SESSION_AUTO_DECLARE), eq("Marie Curie"), anyString());
     }
 }

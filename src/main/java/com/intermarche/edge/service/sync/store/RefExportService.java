@@ -6,7 +6,14 @@ import com.intermarche.edge.domain.barcode.CouponType;
 import com.intermarche.edge.domain.store.Country;
 import com.intermarche.edge.domain.setting.EchelonSetting;
 import com.intermarche.edge.domain.setting.TouchGroupSetting;
+import com.intermarche.edge.domain.people.EchelonScope;
 import com.intermarche.edge.domain.people.Employee;
+import com.intermarche.edge.domain.people.EmployeeProfile;
+import com.intermarche.edge.domain.people.Profile;
+import com.intermarche.edge.domain.people.ProfileGrant;
+import com.intermarche.edge.domain.store.CheckoutPoint;
+import com.intermarche.edge.domain.store.NodeEchelon;
+import com.intermarche.edge.service.NodeEchelonService;
 import com.intermarche.edge.domain.store.Enseigne;
 import com.intermarche.edge.domain.store.Pdv;
 import com.intermarche.edge.domain.catalog.Price;
@@ -61,6 +68,34 @@ public class RefExportService {
     /** Cache timestamp per domain (epoch millis). */
     private final Map<String, Long> fingerprintCachedAt = new HashMap<>();
 
+    /**
+     * The change stamp of the referential (BO-03-12-01), seeded with the boot
+     * time so a restarted node never repeats a stamp a register already read.
+     */
+    private volatile long changeStamp = System.currentTimeMillis();
+
+    /**
+     * Returns the change stamp of the referential (BO-03-12-01).
+     *
+     * @return the stamp, moving on every back-office modification
+     */
+    public long changeStamp() {
+        return changeStamp;
+    }
+
+    /**
+     * Records a back-office modification (BO-03-12-01): the stamp moves and
+     * the cached fingerprints are dropped, so the register that reacts to the
+     * stamp is answered with fingerprints computed after the change.
+     */
+    public synchronized void referentialChanged() {
+        LOGGER.info("Entering method referentialChanged");
+        changeStamp++;
+        fingerprintCache.clear();
+        fingerprintCachedAt.clear();
+        LOGGER.info("Exiting method referentialChanged");
+    }
+
     /** Resolves the effective SETTINGS values a store publishes to its registers. */
     @Inject
     PosSettingsService posSettingsService;
@@ -68,6 +103,18 @@ public class RefExportService {
     /** Resolves the images this store publishes: logo and advantage visuals. */
     @Inject
     com.intermarche.edge.service.StoreImageService storeImageService;
+
+    /** Where this node sits, for the accounts it hands to its registers (BO-01-02-03). */
+    @Inject
+    NodeEchelonService nodeEchelonService;
+
+    /**
+     * The programmed releases (BO-03-12-03, BO-03-12-04): a domain whose
+     * back-office change is programmed for a later date answers, until that
+     * date, the version the registers already hold.
+     */
+    @Inject
+    ReferentialReleaseService releaseService;
 
     /**
      * Returns the fingerprint of every REGISTER-facing domain, recomputing the
@@ -116,13 +163,31 @@ public class RefExportService {
     public synchronized Map<String, String> getFingerprints(List<String> domains, String terminalId) {
         LOGGER.info("Entering method getFingerprints with domains: " + domains
                 + ", terminalId: " + terminalId);
+        LOGGER.info("Exiting method getFingerprints");
+        return getFingerprints(domains, terminalId, null);
+    }
+
+    /**
+     * Returns the fingerprint of every domain in the given set as seen by one
+     * terminal of one point of sale: the central node answers the accounts
+     * and assignments of the asking store's point of sale (BO-01-01-03).
+     *
+     * @param domains the domains to fingerprint
+     * @param terminalId the asking register's identifier, or null
+     * @param pdv the asking store's point of sale, or null
+     * @return an ordered map domain to fingerprint
+     */
+    public synchronized Map<String, String> getFingerprints(List<String> domains, String terminalId,
+                                                            String pdv) {
+        LOGGER.info("Entering method getFingerprints with domains: " + domains
+                + ", terminalId: " + terminalId + ", pdv: " + pdv);
         Map<String, String> result = new LinkedHashMap<>();
         long now = System.currentTimeMillis();
         for (String domain : domains) {
-            String key = cacheKey(domain, terminalId);
+            String key = cacheKey(domain, terminalId, pdv);
             Long cachedAt = fingerprintCachedAt.get(key);
             if (cachedAt == null || now - cachedAt > FINGERPRINT_TTL_MS) {
-                fingerprintCache.put(key, computeFingerprint(domain, terminalId));
+                fingerprintCache.put(key, computeFingerprint(domain, terminalId, pdv));
                 fingerprintCachedAt.put(key, now);
             }
             result.put(domain, fingerprintCache.get(key));
@@ -138,9 +203,13 @@ public class RefExportService {
      *
      * @param domain the referential domain
      * @param terminalId the asking register's identifier, or null
+     * @param pdv the asking store's point of sale, or null
      * @return the cache key, never null
      */
-    private String cacheKey(String domain, String terminalId) {
+    private String cacheKey(String domain, String terminalId, String pdv) {
+        if (isPdvScoped(domain) && pdv != null && !pdv.isBlank()) {
+            return domain + "#" + pdv.trim();
+        }
         if (!isTerminalScoped(domain) || terminalId == null || terminalId.isBlank()) {
             return domain;
         }
@@ -148,17 +217,34 @@ public class RefExportService {
     }
 
     /**
+     * Tells whether a domain's rows depend on which point of sale is asking:
+     * the accounts the central node distributes and their assignments, the VAT
+     * regimes of the country of the point of sale and the document templates
+     * of its echelons (BO-02-05-02, BO-02-05-04).
+     *
+     * @param domain the referential domain
+     * @return true for ACCOUNTS, ACCOUNT_PROFILES, VAT_RATES and DOCUMENT_TEMPLATES
+     */
+    private boolean isPdvScoped(String domain) {
+        return "ACCOUNTS".equals(domain) || "ACCOUNT_PROFILES".equals(domain)
+                || "VAT_RATES".equals(domain) || "DOCUMENT_TEMPLATES".equals(domain);
+    }
+
+    /**
      * Tells whether a domain's rows depend on which register is asking.
      *
-     * <p>Only SETTINGS does: it carries the result of the echelon resolution,
-     * which walks down to the terminal. A domain added here must also be paged
+     * <p>SETTINGS carries the result of the echelon resolution, which walks
+     * down to the terminal; EMPLOYEES carries only the accounts the register
+     * admits, an account attached to types of point of contact or to points
+     * of contact signing in only there (BO-01-02-03). A domain added here must also be paged
      * with the terminal, or its fingerprint and its content would disagree.
      *
      * @param domain the referential domain
      * @return true when the domain is resolved per register
      */
-    private boolean isTerminalScoped(String domain) {
-        return "SETTINGS".equals(domain);
+    public boolean isTerminalScoped(String domain) {
+        return "SETTINGS".equals(domain) || "EMPLOYEES".equals(domain)
+                || "STORE_IMAGES".equals(domain);
     }
 
     /**
@@ -206,6 +292,52 @@ public class RefExportService {
         LOGGER.info("Entering method getPage with domain: " + domain + ", page: " + page
                 + ", size: " + size + ", terminalId: " + terminalId);
         LOGGER.info("Exiting method getPage");
+        return getPage(domain, page, size, terminalId, null);
+    }
+
+    /**
+     * Returns one page of a domain's snapshot for one terminal of one point of
+     * sale, in canonical order.
+     *
+     * @param domain the referential domain
+     * @param page the 0-based page index
+     * @param size the page size
+     * @param terminalId the asking register's identifier, or null
+     * @param pdv the asking store's point of sale, or null
+     * @return the page payloads, empty past the end
+     * @throws IllegalArgumentException on an unknown domain
+     */
+    @Transactional
+    public List<?> getPage(String domain, int page, int size, String terminalId, String pdv) {
+        LOGGER.info("Entering method getPage with domain: " + domain + ", page: " + page
+                + ", size: " + size + ", terminalId: " + terminalId + ", pdv: " + pdv);
+        List<?> held = releaseService == null ? null : releaseService.heldRows(domain, terminalId);
+        if (held != null) {
+            LOGGER.info("Exiting method getPage");
+            return slice(held, page, size);
+        }
+        LOGGER.info("Exiting method getPage");
+        return livePage(domain, page, size, terminalId, pdv);
+    }
+
+    /**
+     * Returns one page of a domain's snapshot READ FROM THE TABLES, whatever a
+     * programmed release holds (BO-03-12-03/04): the version the back office
+     * already carries, which the registers receive only from the release date.
+     *
+     * @param domain the referential domain
+     * @param page the 0-based page index
+     * @param size the page size
+     * @param terminalId the asking register's identifier, or null
+     * @param pdv the asking store's point of sale, or null
+     * @return the page payloads, empty past the end
+     * @throws IllegalArgumentException on an unknown domain
+     */
+    @Transactional
+    public List<?> livePage(String domain, int page, int size, String terminalId, String pdv) {
+        LOGGER.info("Entering method livePage with domain: " + domain + ", page: " + page
+                + ", size: " + size + ", terminalId: " + terminalId);
+        LOGGER.info("Exiting method livePage");
         return switch (domain) {
             case "FAMILIES" -> ProductFamily.<ProductFamily>find("order by code")
                     .page(page, size).list().stream().map(this::toDto).toList();
@@ -213,12 +345,16 @@ public class RefExportService {
                     .page(page, size).list().stream().map(this::toDto).toList();
             case "PRODUCTS" -> Product.<Product>find("order by ean")
                     .page(page, size).list().stream().map(this::toDto).toList();
-            case "VAT_RATES" -> VatRate.<VatRate>find("order by number")
-                    .page(page, size).list().stream().map(this::toDto).toList();
+            case "VAT_RATES" -> slice(vatRatesFor(pdv), page, size).stream()
+                    .map(this::toDto).toList();
             case "PRICES" -> Price.<Price>find("order by id")
                     .page(page, size).list().stream().map(this::toDto).toList();
-            case "EMPLOYEES" -> Employee.<Employee>find("order by loginName")
+            case "EMPLOYEES" -> slice(registerEmployees(terminalId), page, size).stream()
+                    .map(this::toDto).toList();
+            case "PROFILES" -> Profile.<Profile>find("order by name")
                     .page(page, size).list().stream().map(this::toDto).toList();
+            case "ACCOUNTS" -> slice(accountsFor(pdv), page, size).stream().map(this::toAccountDto).toList();
+            case "ACCOUNT_PROFILES" -> slice(bindingsFor(pdv), page, size);
             case "COUPON_TYPES" -> CouponType.<CouponType>find("order by code")
                     .page(page, size).list().stream().map(this::toDto).toList();
             case "ISLANDS" -> com.intermarche.edge.domain.store.CheckoutIsland
@@ -233,8 +369,10 @@ public class RefExportService {
             case "TENDERS" -> com.intermarche.edge.domain.payment.TenderDefinition
                     .<com.intermarche.edge.domain.payment.TenderDefinition>find("order by code")
                     .page(page, size).list().stream().map(this::toDto).toList();
-            case "DOCUMENT_TEMPLATES" -> com.intermarche.edge.domain.setting.DocumentTemplate
-                    .<com.intermarche.edge.domain.setting.DocumentTemplate>find("order by code")
+            case "DOCUMENT_TEMPLATES" -> slice(templatesFor(pdv), page, size).stream()
+                    .map(this::toDto).toList();
+            case "PRINTABLE_DOCUMENTS" -> com.intermarche.edge.domain.setting.PrintableDocument
+                    .<com.intermarche.edge.domain.setting.PrintableDocument>find("order by code")
                     .page(page, size).list().stream().map(this::toDto).toList();
             case "PROVIDER_MESSAGES" -> com.intermarche.edge.domain.setting.ProviderMessage
                     .<com.intermarche.edge.domain.setting.ProviderMessage>find(
@@ -249,11 +387,26 @@ public class RefExportService {
             case "CURRENCIES" -> com.intermarche.edge.domain.payment.Currency
                     .<com.intermarche.edge.domain.payment.Currency>find("order by code")
                     .page(page, size).list().stream().map(this::toDto).toList();
+            case "MEASURE_UNITS" -> com.intermarche.edge.domain.catalog.MeasureUnit
+                    .<com.intermarche.edge.domain.catalog.MeasureUnit>find("order by code")
+                    .page(page, size).list().stream().map(this::toDto).toList();
             case "POS_LISTS" -> com.intermarche.edge.domain.setting.PosList
                     .<com.intermarche.edge.domain.setting.PosList>find("order by code")
                     .page(page, size).list().stream().map(this::toDto).toList();
+            case "RETURN_TYPES" -> com.intermarche.edge.domain.setting.ReturnTypeDefinition
+                    .<com.intermarche.edge.domain.setting.ReturnTypeDefinition>find("order by code")
+                    .page(page, size).list().stream().map(this::toDto).toList();
+            case "PREPAID_CARD_TYPES" -> com.intermarche.edge.domain.payment.PrepaidCardType
+                    .<com.intermarche.edge.domain.payment.PrepaidCardType>find("order by code")
+                    .page(page, size).list().stream().map(this::toDto).toList();
             case "SETTINGS" -> settingsPage(page, size, terminalId);
-            case "STORE_IMAGES" -> storeImagesPage(page, size);
+            case "STORE_IMAGES" -> storeImagesPage(page, size, terminalId);
+            case "CASH_MENUS" -> com.intermarche.edge.domain.store.CashMenu
+                    .<com.intermarche.edge.domain.store.CashMenu>find("order by code")
+                    .page(page, size).list().stream().map(this::toDto).toList();
+            case "STORE" -> com.intermarche.edge.domain.store.Store
+                    .<com.intermarche.edge.domain.store.Store>find("order by code")
+                    .page(page, size).list().stream().map(this::toDto).toList();
             case "ENGINE_FEEDS" -> com.intermarche.edge.domain.sync.EngineFeed
                     .<com.intermarche.edge.domain.sync.EngineFeed>find("order by code")
                     .page(page, size).list().stream().map(this::toDto).toList();
@@ -276,14 +429,21 @@ public class RefExportService {
      * echelon chain answers and one visual per loyalty advantage. Paged in
      * memory, the resolved set being a handful of rows.
      *
+     * <p>Resolved FOR THE ASKING REGISTER (BO-03-09-04): a logo chosen for that
+     * lane, its island or its PDV through {@code print.logo-code} replaces the
+     * logo of the echelon chain, so each register still receives exactly one.
+     *
      * @param page the 0-based page index
      * @param size the page size
+     * @param terminalId the asking register's identifier, or null
      * @return the page, empty past the end
      */
-    private List<RefPayloads.StoreImageDto> storeImagesPage(int page, int size) {
+    private List<RefPayloads.StoreImageDto> storeImagesPage(int page, int size, String terminalId) {
+        String logoCode = posSettingsService == null ? null
+                : posSettingsService.administeredValues(terminalId).get("print.logo-code");
         List<RefPayloads.StoreImageDto> all = new ArrayList<>();
         for (com.intermarche.edge.domain.setting.StoreImage image
-                : storeImageService.resolvedImages()) {
+                : storeImageService.resolvedImages(logoCode)) {
             all.add(toDto(image));
         }
         int from = page * size;
@@ -344,6 +504,22 @@ public class RefExportService {
             return List.of();
         }
         return all.subList(from, Math.min(from + size, all.size()));
+    }
+
+    /**
+     * Maps a unit of measure to its snapshot payload (BO-02-03-17).
+     *
+     * @param unit the unit entity
+     * @return the transport DTO
+     */
+    private RefPayloads.MeasureUnitDto toDto(com.intermarche.edge.domain.catalog.MeasureUnit unit) {
+        RefPayloads.MeasureUnitDto dto = new RefPayloads.MeasureUnitDto();
+        dto.code = unit.code;
+        dto.label = unit.label;
+        dto.symbol = unit.symbol;
+        dto.decimalAllowed = unit.decimalAllowed;
+        dto.active = unit.active;
+        return dto;
     }
 
     /**
@@ -451,6 +627,50 @@ public class RefExportService {
         return dto;
     }
 
+    /**
+     * Maps an administered return type to its snapshot payload
+     * ({@code BO-03-13-01} to {@code -04}, {@code -11}, {@code -12}).
+     *
+     * @param type the return type
+     * @return the transport DTO
+     */
+    private RefPayloads.ReturnTypeDto toDto(com.intermarche.edge.domain.setting.ReturnTypeDefinition type) {
+        RefPayloads.ReturnTypeDto dto = new RefPayloads.ReturnTypeDto();
+        dto.code = type.code;
+        dto.label = type.label;
+        dto.ticketMode = type.ticketMode;
+        dto.endorsementExempt = type.endorsementExempt;
+        dto.originOptional = type.originOptional;
+        dto.priceConfirmed = type.priceConfirmed;
+        dto.depositReturn = type.depositReturn;
+        dto.rangeCode = type.rangeCode;
+        dto.displayOrder = type.displayOrder;
+        dto.active = type.active;
+        return dto;
+    }
+
+    /**
+     * Maps an administered type of prepaid card to its snapshot payload
+     * ({@code BO-03-02-37}).
+     *
+     * @param type the prepaid card type
+     * @return the transport DTO
+     */
+    private RefPayloads.PrepaidCardTypeDto toDto(com.intermarche.edge.domain.payment.PrepaidCardType type) {
+        RefPayloads.PrepaidCardTypeDto dto = new RefPayloads.PrepaidCardTypeDto();
+        dto.code = type.code;
+        dto.label = type.label;
+        dto.protocol = type.protocol;
+        dto.provider = type.provider;
+        dto.ranges = type.ranges;
+        dto.paymentAllowed = type.paymentAllowed;
+        dto.balanceAllowed = type.balanceAllowed;
+        dto.activationAllowed = type.activationAllowed;
+        dto.displayOrder = type.displayOrder;
+        dto.active = type.active;
+        return dto;
+    }
+
     private RefPayloads.PostalCodeDto toDto(com.intermarche.edge.domain.store.PostalCode postalCode) {
         RefPayloads.PostalCodeDto dto = new RefPayloads.PostalCodeDto();
         dto.code = postalCode.code;
@@ -505,8 +725,8 @@ public class RefExportService {
     }
 
     /**
-     * Maps an echelon parameter to its snapshot payload, its effect date as an
-     * ISO date string.
+     * Maps an echelon parameter to its snapshot payload — its current value,
+     * its pending value and the effect date of the latter as an ISO date string.
      *
      * @param setting the echelon setting entity
      * @return the transport DTO
@@ -517,6 +737,7 @@ public class RefExportService {
         dto.echelonCode = setting.echelonCode;
         dto.settingKey = setting.settingKey;
         dto.settingValue = setting.settingValue;
+        dto.pendingValue = setting.pendingValue;
         dto.effectiveDate = setting.effectiveDate != null ? setting.effectiveDate.toString() : null;
         return dto;
     }
@@ -533,6 +754,8 @@ public class RefExportService {
         dto.code = feed.code;
         dto.version = feed.version;
         dto.content = feed.content;
+        dto.baseFingerprint = feed.baseFingerprint;
+        dto.resultFingerprint = feed.resultFingerprint;
         return dto;
     }
 
@@ -543,24 +766,122 @@ public class RefExportService {
      *
      * @param domain the referential domain
      * @param terminalId the asking register's identifier, or null
+     * @param pdv the asking store's point of sale, or null
      * @return the fingerprint, hex encoded
      */
-    private String computeFingerprint(String domain, String terminalId) {
+    private String computeFingerprint(String domain, String terminalId, String pdv) {
+        return digest(domain, terminalId, pdv, false);
+    }
+
+    /**
+     * Returns every row of a domain READ FROM THE TABLES for one register,
+     * whatever a programmed release holds (BO-03-12-03/04): what a release
+     * captures before a programmed change and compares after it.
+     *
+     * @param domain the referential domain
+     * @param terminalId the register the rows are resolved for, or null
+     * @return the rows in canonical order, never null
+     */
+    @Transactional
+    public List<?> liveRows(String domain, String terminalId) {
+        LOGGER.info("Entering method liveRows with domain: " + domain + ", terminalId: " + terminalId);
+        List<Object> all = new ArrayList<>();
+        int page = 0;
+        List<?> rows;
+        do {
+            rows = livePage(domain, page++, 1000, terminalId, null);
+            all.addAll(rows);
+        } while (!rows.isEmpty());
+        LOGGER.info("Exiting method liveRows");
+        return all;
+    }
+
+    /**
+     * Returns the fingerprint of a domain READ FROM THE TABLES for one
+     * register, uncached and whatever a programmed release holds
+     * (BO-03-12-03/04).
+     *
+     * @param domain the referential domain
+     * @param terminalId the register the rows are resolved for, or null
+     * @return the fingerprint
+     */
+    public String liveFingerprint(String domain, String terminalId) {
+        LOGGER.info("Entering method liveFingerprint with domain: " + domain + ", terminalId: " + terminalId);
+        LOGGER.info("Exiting method liveFingerprint");
+        return digest(domain, terminalId, null, true);
+    }
+
+    /**
+     * Returns the fingerprint a register is served for a domain, uncached
+     * (BO-02-03-33): what a feed file is stamped with before and after its
+     * integration.
+     *
+     * @param domain the referential domain
+     * @return the fingerprint
+     */
+    public String publishedFingerprint(String domain) {
+        LOGGER.info("Entering method publishedFingerprint with domain: " + domain);
+        LOGGER.info("Exiting method publishedFingerprint");
+        return computeFingerprint(domain, null, null);
+    }
+
+    /**
+     * Folds the fingerprint of rows already in hand, with the arithmetic of
+     * the published fingerprints (BO-03-12-03/04).
+     *
+     * @param rows the payload rows, in canonical order
+     * @return the fingerprint
+     */
+    public String fingerprintOf(List<?> rows) {
+        LOGGER.info("Entering method fingerprintOf");
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            for (Object row : rows) {
+                digest.update(canonical(row).getBytes(StandardCharsets.UTF_8));
+            }
+            LOGGER.info("Exiting method fingerprintOf");
+            return hex(digest.digest());
+        } catch (Exception e) {
+            throw new IllegalStateException("Empreinte incalculable", e);
+        }
+    }
+
+    /**
+     * Encodes a digest in lower-case hexadecimal.
+     *
+     * @param bytes the digest
+     * @return the hexadecimal text
+     */
+    private static String hex(byte[] bytes) {
+        StringBuilder hex = new StringBuilder();
+        for (byte b : bytes) {
+            hex.append(String.format("%02x", b));
+        }
+        return hex.toString();
+    }
+
+    /**
+     * Folds the fingerprint of a domain over its exposed or its live rows.
+     *
+     * @param domain the referential domain
+     * @param terminalId the asking register's identifier, or null
+     * @param pdv the asking store's point of sale, or null
+     * @param live true to read the tables, false to read what the registers are exposed to
+     * @return the fingerprint
+     */
+    private String digest(String domain, String terminalId, String pdv, boolean live) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             int page = 0;
             List<?> rows;
             do {
-                rows = getPage(domain, page++, 1000, terminalId);
+                rows = live ? livePage(domain, page++, 1000, terminalId, pdv)
+                        : getPage(domain, page++, 1000, terminalId, pdv);
                 for (Object row : rows) {
                     digest.update(canonical(row).getBytes(StandardCharsets.UTF_8));
                 }
             } while (!rows.isEmpty());
-            StringBuilder hex = new StringBuilder();
-            for (byte b : digest.digest()) {
-                hex.append(String.format("%02x", b));
-            }
-            return hex.toString();
+            return hex(digest.digest());
         } catch (Exception e) {
             throw new IllegalStateException("Empreinte incalculable pour " + domain, e);
         }
@@ -589,11 +910,12 @@ public class RefExportService {
                     n(p.productType), n(p.unitName), String.valueOf(p.active),
                     String.valueOf(p.forbiddenToSale), n(p.ageRestriction), n(p.checkoutLabel),
                     n(p.internalCode), String.valueOf(p.variableWeight), n(p.infoMessage),
-                    attributes(p.attributes));
+                    attributes(p.attributes), String.valueOf(p.salesVolume),
+                    String.join(",", p.saleCodes));
         }
         if (row instanceof RefPayloads.VatRateDto v) {
             return String.join("|", n(v.number), n(v.rate), n(v.label), n(v.country),
-                    n(v.legalMention));
+                    n(v.legalMention), String.valueOf(v.exempt), n(v.exemptionCode));
         }
         if (row instanceof RefPayloads.PriceDto p) {
             return String.join("|", n(p.productEan), n(p.priceExcludingTax), n(p.priceIncludingTax),
@@ -602,7 +924,8 @@ public class RefExportService {
         if (row instanceof RefPayloads.EmployeeDto e) {
             return String.join("|", n(e.loginName), n(e.firstName), n(e.lastName), n(e.password),
                     n(e.email), n(e.role), n(e.badgeId), n(e.theme), n(e.language),
-                    n(e.passwordChangedAt), String.valueOf(e.active));
+                    n(e.passwordChangedAt), String.valueOf(e.active), n(e.supervisorCard), n(e.dallasKey),
+                    n(e.profiles));
         }
         if (row instanceof RefPayloads.SettingDto s) {
             return String.join("|", n(s.key), n(s.value));
@@ -617,21 +940,41 @@ public class RefExportService {
             return String.join("|", n(p.pdvNumber), n(p.name), n(p.enseigneCode), n(p.adherentCode),
                     String.valueOf(p.active));
         }
+        if (row instanceof RefPayloads.ProfileDto p) {
+            StringBuilder grants = new StringBuilder();
+            for (RefPayloads.ProfileGrantDto g : p.grants) {
+                grants.append(String.join(":", n(g.featureKey), n(g.option),
+                        String.valueOf(g.requiresValidation), n(g.validatingProfileName))).append(',');
+            }
+            return String.join("|", n(p.name), n(p.description), String.valueOf(p.hierarchyLevel),
+                    grants.toString());
+        }
+        if (row instanceof RefPayloads.AccountDto a) {
+            return String.join("|", n(a.loginName), n(a.firstName), n(a.lastName), n(a.email),
+                    n(a.password), n(a.backOfficePassword), n(a.role), n(a.badgeId), String.valueOf(a.active),
+                    n(a.phone), n(a.startDate), n(a.department), String.valueOf(a.hierarchyLevel),
+                    n(a.language), n(a.echelonScopes), n(a.authMode), String.valueOf(a.mustChangePassword),
+                    n(a.passwordChangedAt), String.valueOf(a.supervisorCard), n(a.dallasKey));
+        }
+        if (row instanceof RefPayloads.AccountProfileDto b) {
+            return String.join("|", n(b.loginName), n(b.profileName), n(b.echelonScope));
+        }
         if (row instanceof RefPayloads.EchelonSettingDto s) {
             return String.join("|", n(s.level), n(s.echelonCode), n(s.settingKey), n(s.settingValue),
-                    n(s.effectiveDate));
+                    n(s.pendingValue), n(s.effectiveDate));
         }
         if (row instanceof RefPayloads.EngineFeedDto f) {
             // The version IS the SHA-256 of the content: hashing code and
             // version covers the whole parcel without streaming its body
             // through the fingerprint a second time.
-            return String.join("|", n(f.code), n(f.version));
+            return String.join("|", n(f.code), n(f.version), n(f.baseFingerprint), n(f.resultFingerprint));
         }
         if (row instanceof RefPayloads.CouponTypeDto c) {
             return String.join("|", n(c.code), n(c.label), n(c.matchPattern), n(c.amountSource),
                     n(c.amountPattern), String.valueOf(c.priority), String.valueOf(c.active),
                     String.valueOf(c.depositLine), n(c.prefix), n(c.codeLength), n(c.codeKind),
                     String.valueOf(c.manualAmountOnAllNines), n(c.islandCodes),
+                    n(c.tenderCode), n(c.issuedKind), n(c.cardProtocol),
                     couponFields(c), couponControls(c));
         }
         if (row instanceof RefPayloads.ArticleBarcodeRangeDto r) {
@@ -642,7 +985,8 @@ public class RefExportService {
                     String.valueOf(r.valuePosition), String.valueOf(r.valueLength),
                     String.valueOf(r.valueDecimals), n(r.currency),
                     String.valueOf(r.checkDigit), n(r.matchPattern), n(r.purpose),
-                    n(r.promotionCode), n(r.lookupUrl));
+                    n(r.promotionCode), n(r.lookupUrl), n(r.functionCode),
+                    n(r.promotionType), n(r.lookupField));
         }
         if (row instanceof RefPayloads.CheckoutIslandDto i) {
             return String.join("|", n(i.code), n(i.label), String.valueOf(i.active),
@@ -677,7 +1021,14 @@ public class RefExportService {
                     String.valueOf(t.printCount), String.valueOf(t.printDuplicate),
                     String.valueOf(t.printForced), n(t.vicProductCode),
                     String.valueOf(t.selfServiceAllowed),
-                    String.valueOf(t.selfServiceSupervision));
+                    String.valueOf(t.selfServiceSupervision), n(t.nature),
+                    n(t.supervisionIslands), n(t.moneticCodes), String.valueOf(t.coinMachine),
+                    String.valueOf(t.micrReading), String.valueOf(t.chequeAuthorization),
+                    String.valueOf(t.accountNumberEntry), String.valueOf(t.chequeAutoPrint));
+        }
+        if (row instanceof RefPayloads.PrintableDocumentDto d) {
+            return String.join("|", n(d.code), n(d.label), n(d.kind), n(d.output),
+                    n(d.templateCode), String.valueOf(d.active), String.valueOf(d.priority));
         }
         if (row instanceof RefPayloads.ProviderMessageDto m) {
             return String.join("|", n(m.providerCode), n(m.messageCode), n(m.screenText),
@@ -687,7 +1038,12 @@ public class RefExportService {
             return String.join("|", n(t.code), n(t.label), n(t.documentType),
                     String.valueOf(t.active), String.valueOf(t.priority),
                     String.valueOf(t.width), String.valueOf(t.copies), n(t.source),
-                    n(t.title), n(t.duplicateTitle), n(t.numberPrefix), n(t.copyTitles));
+                    n(t.title), n(t.duplicateTitle), n(t.numberPrefix), n(t.copyTitles),
+                    n(t.echelonScope));
+        }
+        if (row instanceof RefPayloads.MeasureUnitDto u) {
+            return String.join("|", n(u.code), n(u.label), n(u.symbol), String.valueOf(u.decimalAllowed),
+                    String.valueOf(u.active));
         }
         if (row instanceof RefPayloads.CurrencyDto c) {
             return String.join("|", n(c.code), n(c.label), n(c.symbol), n(c.euroPerUnit),
@@ -702,8 +1058,30 @@ public class RefExportService {
             return String.join("|", n(l.code), n(l.label), n(l.kind), n(l.functions),
                     String.valueOf(l.active), listItems(l.items));
         }
+        if (row instanceof RefPayloads.ReturnTypeDto r) {
+            return String.join("|", n(r.code), n(r.label), String.valueOf(r.ticketMode),
+                    String.valueOf(r.endorsementExempt), String.valueOf(r.originOptional),
+                    String.valueOf(r.priceConfirmed), String.valueOf(r.depositReturn),
+                    n(r.rangeCode), String.valueOf(r.displayOrder), String.valueOf(r.active));
+        }
+        if (row instanceof RefPayloads.PrepaidCardTypeDto c) {
+            return String.join("|", n(c.code), n(c.label), n(c.protocol), n(c.provider),
+                    n(c.ranges), String.valueOf(c.paymentAllowed), String.valueOf(c.balanceAllowed),
+                    String.valueOf(c.activationAllowed), String.valueOf(c.displayOrder),
+                    String.valueOf(c.active));
+        }
         if (row instanceof RefPayloads.PostalCodeDto p) {
             return String.join("|", n(p.code), n(p.place), n(p.country));
+        }
+        if (row instanceof RefPayloads.CashMenuDto m) {
+            return String.join("|", n(m.code), n(m.label), String.valueOf(m.active), n(m.menuKeys),
+                    n(m.hiddenFunctions), String.valueOf(m.keyColumns), n(m.cashierScreen),
+                    n(m.customerScreen), n(m.ticketModel));
+        }
+        if (row instanceof RefPayloads.StoreDto s) {
+            return String.join("|", n(s.code), n(s.name), n(s.streetLine1), n(s.streetLine2),
+                    n(s.postalCode), n(s.city), n(s.country), n(s.vatNumber), n(s.siret), n(s.phone),
+                    n(s.bankAccountNumber), n(s.legalName), n(s.rcs), n(s.shareCapital), n(s.fax));
         }
         if (row instanceof RefPayloads.CustomerDto c) {
             return String.join("|", n(c.accountNumber), n(c.companyName), n(c.origin), n(c.civility),
@@ -860,6 +1238,9 @@ public class RefExportService {
         dto.variableWeight = product.variableWeight;
         dto.attributes = product.attributes != null
                 ? new java.util.TreeMap<>(product.attributes) : new java.util.TreeMap<>();
+        dto.salesVolume = product.salesVolume;
+        dto.saleCodes = product.saleCodes == null ? new java.util.ArrayList<>()
+                : new java.util.ArrayList<>(new java.util.TreeSet<>(product.saleCodes));
         return dto;
     }
 
@@ -876,6 +1257,8 @@ public class RefExportService {
         dto.label = rate.label;
         dto.country = rate.country;
         dto.legalMention = rate.legalMention;
+        dto.exempt = rate.exempt;
+        dto.exemptionCode = rate.exemptionCode;
         return dto;
     }
 
@@ -898,6 +1281,275 @@ public class RefExportService {
     }
 
     /**
+     * Lists the accounts a register admits (BO-01-02-03): those this node's
+     * point of sale admits and, when the register names itself, whose
+     * register-level scopes name it or its type.
+     *
+     * @param terminalId the asking register's identifier, or null
+     * @return the accounts, by login
+     */
+    List<Employee> registerEmployees(String terminalId) {
+        NodeEchelon node = nodeEchelonService == null
+                ? new NodeEchelon(null, null, null) : nodeEchelonService.current();
+        CheckoutPoint point = terminalId == null || terminalId.isBlank()
+                ? null : CheckoutPoint.findByTerminal(terminalId.trim());
+        String tpvType = point == null || point.tpvType == null ? null : point.tpvType.name();
+        List<Employee> admitted = new ArrayList<>();
+        for (Employee employee : Employee.<Employee>find("order by loginName").list()) {
+            List<String> scopes = EchelonScope.parseList(employee.echelonScopes);
+            boolean admits = terminalId == null || terminalId.isBlank()
+                    ? EchelonScope.admitsNode(scopes, node)
+                    : EchelonScope.admitsRegister(scopes, node, terminalId.trim(), tpvType);
+            if (admits) {
+                admitted.add(employee);
+            }
+        }
+        return admitted;
+    }
+
+    /**
+     * Places the asking point of sale in the organisation: the one the asking
+     * store named, else this node's own — a register asking its store names
+     * none, and the store answers for itself.
+     *
+     * @param pdv the asking store's point of sale, or null
+     * @return its place, every part null when no point of sale is known
+     */
+    NodeEchelon askingNode(String pdv) {
+        String number = pdv != null && !pdv.isBlank() ? pdv
+                : nodeEchelonService == null ? null : nodeEchelonService.currentPdv();
+        return NodeEchelon.of(number);
+    }
+
+    /**
+     * Lists the VAT regimes one point of sale receives (BO-02-02-01,
+     * BO-02-05-04): those of the country its enseigne belongs to, and those
+     * that name no country.
+     *
+     * <p>The referential holds the regimes of every country of the group — the
+     * French, the Belgian and the Portuguese ones side by side — and a point of
+     * sale is taxed by its own: a Portuguese till handed the French 5,5 % would
+     * name it on a receipt the moment two regimes share a rate. A point of sale
+     * whose country the tree does not know receives them all, as before.
+     *
+     * @param pdv the asking store's point of sale, or null
+     * @return the regimes, in number order
+     */
+    public List<VatRate> vatRatesFor(String pdv) {
+        String country = askingNode(pdv).country;
+        List<VatRate> regimes = new ArrayList<>();
+        for (VatRate regime : VatRate.listAllOrdered()) {
+            if (country == null || regime.country == null
+                    || regime.country.equalsIgnoreCase(country)) {
+                regimes.add(regime);
+            }
+        }
+        return regimes;
+    }
+
+    /**
+     * Lists the document templates one point of sale receives (BO-02-05-02,
+     * BO-02-05-04): for each document, the templates posed at the MOST SPECIFIC
+     * echelon that covers it — its own, else its enseigne's, else its
+     * country's, else the ones posed for everyone.
+     *
+     * <p>That is the inheritance of a document model: a Portuguese layout posed
+     * on the country reaches every Portuguese point of sale, an enseigne that
+     * lays its own receipt out overrides it for its points of sale, and a point
+     * of sale moved to another enseigne receives the new enseigne's at its next
+     * pull. A template posed on another branch of the tree never reaches it.
+     *
+     * @param pdv the asking store's point of sale, or null
+     * @return the templates, in code order
+     */
+    public List<com.intermarche.edge.domain.setting.DocumentTemplate> templatesFor(String pdv) {
+        NodeEchelon node = askingNode(pdv);
+        List<com.intermarche.edge.domain.setting.DocumentTemplate> covering = new ArrayList<>();
+        Map<Object, Integer> deepest = new HashMap<>();
+        for (com.intermarche.edge.domain.setting.DocumentTemplate template
+                : com.intermarche.edge.domain.setting.DocumentTemplate
+                        .<com.intermarche.edge.domain.setting.DocumentTemplate>list("order by code")) {
+            String scope = template.echelonScope;
+            if (scope != null && !scope.isBlank() && !EchelonScope.coversNode(scope, node)) {
+                continue;
+            }
+            covering.add(template);
+            deepest.merge(template.documentType, depth(scope), Math::max);
+        }
+        List<com.intermarche.edge.domain.setting.DocumentTemplate> kept = new ArrayList<>();
+        for (com.intermarche.edge.domain.setting.DocumentTemplate template : covering) {
+            if (depth(template.echelonScope) == deepest.get(template.documentType)) {
+                kept.add(template);
+            }
+        }
+        return kept;
+    }
+
+    /**
+     * The depth of an echelon scope in the organisation tree: nothing or the
+     * whole organisation 0, a country 1, an enseigne 2, a point of sale 3.
+     *
+     * @param scope the scope, possibly null
+     * @return its depth
+     */
+    static int depth(String scope) {
+        EchelonScope.Kind kind = EchelonScope.kindOf(scope);
+        if (kind == EchelonScope.Kind.COUNTRY) {
+            return 1;
+        }
+        if (kind == EchelonScope.Kind.ENSEIGNE) {
+            return 2;
+        }
+        return kind == EchelonScope.Kind.PDV ? 3 : 0;
+    }
+
+    /**
+     * Lists the accounts the central node hands to one point of sale
+     * (BO-01-01-03): those whose node-level scopes cover it.
+     *
+     * @param pdv the asking store's point of sale, or null
+     * @return the accounts, by login
+     */
+    List<Employee> accountsFor(String pdv) {
+        NodeEchelon node = NodeEchelon.of(pdv);
+        List<Employee> handed = new ArrayList<>();
+        for (Employee employee : Employee.<Employee>find("order by loginName").list()) {
+            if (EchelonScope.admitsNode(EchelonScope.parseList(employee.echelonScopes), node)) {
+                handed.add(employee);
+            }
+        }
+        return handed;
+    }
+
+    /**
+     * Lists the profile assignments of the accounts handed to one point of
+     * sale (BO-01-03-04).
+     *
+     * @param pdv the asking store's point of sale, or null
+     * @return the assignments, account by account
+     */
+    public List<RefPayloads.AccountProfileDto> bindingsFor(String pdv) {
+        Map<Long, String> profileNames = new HashMap<>();
+        for (Profile profile : Profile.<Profile>listAll()) {
+            profileNames.put(profile.id, profile.name);
+        }
+        List<RefPayloads.AccountProfileDto> bindings = new ArrayList<>();
+        for (Employee employee : accountsFor(pdv)) {
+            for (EmployeeProfile binding : EmployeeProfile.forEmployee(employee.id)) {
+                String profileName = profileNames.get(binding.profileId);
+                if (profileName == null) {
+                    continue;
+                }
+                RefPayloads.AccountProfileDto dto = new RefPayloads.AccountProfileDto();
+                dto.loginName = employee.loginName;
+                dto.profileName = profileName;
+                dto.echelonScope = binding.echelonScope;
+                bindings.add(dto);
+            }
+        }
+        return bindings;
+    }
+
+    /**
+     * Cuts one page out of a list already in canonical order.
+     *
+     * @param all the whole list
+     * @param page the 0-based page index
+     * @param size the page size
+     * @param <T> the row type
+     * @return the page, empty past the end
+     */
+    static <T> List<T> slice(List<T> all, int page, int size) {
+        int from = page * size;
+        if (from >= all.size()) {
+            return List.of();
+        }
+        return all.subList(from, Math.min(from + size, all.size()));
+    }
+
+    /**
+     * Maps a profile to its distribution payload, the validating profile by name.
+     *
+     * @param profile the profile
+     * @return the payload
+     */
+    private RefPayloads.ProfileDto toDto(Profile profile) {
+        RefPayloads.ProfileDto dto = new RefPayloads.ProfileDto();
+        dto.name = profile.name;
+        dto.description = profile.description;
+        dto.hierarchyLevel = profile.hierarchyLevel;
+        for (ProfileGrant grant : profile.grants) {
+            RefPayloads.ProfileGrantDto g = new RefPayloads.ProfileGrantDto();
+            g.featureKey = grant.featureKey;
+            g.option = grant.option == null ? null : grant.option.name();
+            g.requiresValidation = grant.requiresValidation;
+            Profile validator = grant.validatingProfileId == null
+                    ? null : Profile.<Profile>findById(grant.validatingProfileId);
+            g.validatingProfileName = validator == null ? null : validator.name;
+            dto.grants.add(g);
+        }
+        dto.grants.sort(java.util.Comparator.comparing((RefPayloads.ProfileGrantDto g) -> n(g.featureKey))
+                .thenComparing(g -> n(g.option)));
+        return dto;
+    }
+
+    /**
+     * Maps an account to its distribution payload, both secret hashes included.
+     *
+     * @param employee the account
+     * @return the payload
+     */
+    private RefPayloads.AccountDto toAccountDto(Employee employee) {
+        RefPayloads.AccountDto dto = new RefPayloads.AccountDto();
+        dto.loginName = employee.loginName;
+        dto.firstName = employee.firstName;
+        dto.lastName = employee.lastName;
+        dto.email = employee.email;
+        dto.password = employee.password;
+        dto.backOfficePassword = employee.backOfficePassword;
+        dto.role = employee.role == null ? null : employee.role.name();
+        dto.badgeId = employee.badgeId;
+        dto.active = employee.active;
+        dto.phone = employee.phone;
+        dto.startDate = employee.startDate == null ? null : employee.startDate.toString();
+        dto.department = employee.department;
+        dto.hierarchyLevel = employee.hierarchyLevel;
+        dto.language = employee.language;
+        dto.echelonScopes = employee.echelonScopes;
+        dto.authMode = employee.authMode == null ? null : employee.authMode.name();
+        dto.mustChangePassword = employee.mustChangePassword;
+        dto.passwordChangedAt = employee.passwordChangedAt == null ? null : employee.passwordChangedAt.toString();
+        dto.supervisorCard = employee.supervisorCard;
+        dto.dallasKey = employee.dallasKey;
+        return dto;
+    }
+
+    /**
+     * The names of the profiles an employee is bound to, joined by semicolons
+     * (BO-04-02-01): what a register endorses by besides the role.
+     *
+     * @param employee the employee entity
+     * @return the names, or null when the holder is bound to none
+     */
+    String profileNames(Employee employee) {
+        if (employee.id == null) {
+            return null;
+        }
+        List<EmployeeProfile> bindings = EmployeeProfile.list("employeeId", employee.id);
+        if (bindings == null) {
+            return null;
+        }
+        java.util.Set<String> names = new java.util.LinkedHashSet<>();
+        for (EmployeeProfile binding : bindings) {
+            Profile profile = Profile.findById(binding.profileId);
+            if (profile != null && profile.name != null) {
+                names.add(profile.name);
+            }
+        }
+        return names.isEmpty() ? null : String.join(";", names);
+    }
+
+    /**
      * Maps an employee to its payload.
      *
      * @param employee the employee entity
@@ -912,6 +1564,10 @@ public class RefExportService {
         dto.email = employee.email;
         dto.role = employee.role.name();
         dto.badgeId = employee.badgeId;
+        // BO-03-06-51: the supervisor card the back office printed for the holder.
+        dto.supervisorCard = employee.supervisorCard;
+        // BO-04-02-01: the profiles a register endorses by.
+        dto.profiles = profileNames(employee);
         dto.theme = employee.theme;
         // BO-01-01-04 / BO-01-02-12: the two account columns a REGISTER needs —
         // the operator's language, and the age of their secret. The telephone,
@@ -920,6 +1576,8 @@ public class RefExportService {
         dto.language = employee.language;
         dto.passwordChangedAt = employee.passwordChangedAt == null
                 ? null : employee.passwordChangedAt.toString();
+        // BO-01-02-07: the key that opens the register without a PIN.
+        dto.dallasKey = employee.dallasKey;
         dto.active = employee.active;
         return dto;
     }
@@ -1001,6 +1659,56 @@ public class RefExportService {
     }
 
     /**
+     * Maps a cash-menu model to its snapshot row (BO-03-10-16/17).
+     *
+     * @param menu the stored model
+     * @return the snapshot row
+     */
+    private RefPayloads.CashMenuDto toDto(com.intermarche.edge.domain.store.CashMenu menu) {
+        RefPayloads.CashMenuDto dto = new RefPayloads.CashMenuDto();
+        dto.code = menu.code;
+        dto.label = menu.label;
+        dto.active = menu.active;
+        dto.menuKeys = menu.menuKeys;
+        dto.hiddenFunctions = menu.hiddenFunctions;
+        dto.keyColumns = menu.keyColumns;
+        dto.cashierScreen = menu.cashierScreen;
+        dto.customerScreen = menu.customerScreen;
+        dto.ticketModel = menu.ticketModel;
+        return dto;
+    }
+
+    /**
+     * Maps the node's store record to its snapshot row (BO-03-10-19/20,
+     * BO-03-12-01); the node-local theme is not carried.
+     *
+     * @param store the stored record
+     * @return the snapshot row
+     */
+    private RefPayloads.StoreDto toDto(com.intermarche.edge.domain.store.Store store) {
+        RefPayloads.StoreDto dto = new RefPayloads.StoreDto();
+        dto.code = store.code;
+        dto.name = store.name;
+        com.intermarche.edge.domain.store.Address address = store.address;
+        if (address != null) {
+            dto.streetLine1 = address.streetLine1;
+            dto.streetLine2 = address.streetLine2;
+            dto.postalCode = address.postalCode;
+            dto.city = address.city;
+            dto.country = address.country;
+        }
+        dto.vatNumber = store.vatNumber;
+        dto.siret = store.siret;
+        dto.phone = store.phone;
+        dto.bankAccountNumber = store.bankAccountNumber;
+        dto.legalName = store.legalName;
+        dto.rcs = store.rcs;
+        dto.shareCapital = store.shareCapital == null ? null : store.shareCapital.toPlainString();
+        dto.fax = store.fax;
+        return dto;
+    }
+
+    /**
      * Maps an administered TENDER to its snapshot row (BO-03-02-03/04/10 to 30).
      *
      * <p>The bounds travel as plain strings rather than as decimals, for the
@@ -1050,6 +1758,14 @@ public class RefExportService {
         dto.printCount = tender.printCount;
         dto.printDuplicate = tender.printDuplicate;
         dto.printForced = tender.printForced;
+        dto.nature = tender.nature;
+        dto.supervisionIslands = tender.supervisionIslands;
+        dto.moneticCodes = tender.moneticCodes;
+        dto.coinMachine = tender.coinMachine;
+        dto.micrReading = tender.micrReading;
+        dto.chequeAuthorization = tender.chequeAuthorization;
+        dto.accountNumberEntry = tender.accountNumberEntry;
+        dto.chequeAutoPrint = tender.chequeAutoPrint;
         return dto;
     }
 
@@ -1063,6 +1779,26 @@ public class RefExportService {
      * @param template the stored template
      * @return the snapshot row
      */
+    /**
+     * Renders one printable document for the snapshot (BO-03-04-06, -09, -10
+     * and -14).
+     *
+     * @param document the administered document
+     * @return its travelling form
+     */
+    private RefPayloads.PrintableDocumentDto toDto(
+            com.intermarche.edge.domain.setting.PrintableDocument document) {
+        RefPayloads.PrintableDocumentDto dto = new RefPayloads.PrintableDocumentDto();
+        dto.code = document.code;
+        dto.label = document.label;
+        dto.kind = name(document.kind);
+        dto.output = document.output;
+        dto.templateCode = document.templateCode;
+        dto.active = document.active;
+        dto.priority = document.priority;
+        return dto;
+    }
+
     /**
      * Renders one provider-message substitution for the snapshot
      * (BO-03-08-06 and -07).
@@ -1096,6 +1832,7 @@ public class RefExportService {
         dto.duplicateTitle = template.duplicateTitle;
         dto.numberPrefix = template.numberPrefix;
         dto.copyTitles = template.copyTitles;
+        dto.echelonScope = template.echelonScope;
         return dto;
     }
 
@@ -1149,6 +1886,9 @@ public class RefExportService {
         dto.purpose = range.purpose == null ? null : range.purpose.name();
         dto.promotionCode = range.promotionCode;
         dto.lookupUrl = range.lookupUrl;
+        dto.functionCode = range.functionCode;
+        dto.promotionType = range.promotionType;
+        dto.lookupField = range.lookupField;
         return dto;
     }
 
@@ -1167,6 +1907,9 @@ public class RefExportService {
         dto.codeKind = type.codeKind == null ? null : type.codeKind.name();
         dto.manualAmountOnAllNines = type.manualAmountOnAllNines;
         dto.islandCodes = type.islandCodes;
+        dto.tenderCode = type.tenderCode;
+        dto.issuedKind = type.issuedKind;
+        dto.cardProtocol = type.cardProtocol;
         dto.fields = new ArrayList<>();
         if (type.fields != null) {
             for (CouponField field : type.fields) {

@@ -29,84 +29,92 @@
 !}
 {#include admin-layout}
 
-{#title}Gabarits de documents{/title}
+{#title}{inject:i18n.get('t.gabarits-de-documents')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Gabarits de documents</h1>
-        <p class="page-sub">Chaque document imprimé peut porter sa mise en page. Un document sans gabarit reste imprimé par la caisse, à l'identique.</p>
+        <h1>{inject:i18n.get('t.gabarits-de-documents')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.chaque-document-imprime-peut-porter-sa-mise')}</p>
     </div>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 {#for preview in previews}
 <div class="card">
-    <h2 class="card-title">{preview.template.code} — {preview.template.label}</h2>
+    <h2 class="card-title">{preview.template.code} — {inject:i18n.text(preview.template.label)}</h2>
     <form method="post" action="/admin/templates/save">
         <input type="hidden" name="code" value="{preview.template.code}">
         <input type="hidden" name="card" value="{preview.template.code}">
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="gl-{preview.template.code}">Libellé</label>
+                <label class="field-label" for="gl-{preview.template.code}">{inject:i18n.get('t.libelle')}</label>
                 <input class="input-control" id="gl-{preview.template.code}" type="text" name="label" maxlength="100" value="{preview.template.label}">
             </div>
             <div class="field">
-                <label class="field-label" for="gt-{preview.template.code}">Document</label>
+                <label class="field-label" for="gt-{preview.template.code}">{inject:i18n.get('t.document')}</label>
                 <select class="input-control" id="gt-{preview.template.code}" name="documentType">
                     {#for type in documentTypes}
-                    <option value="{type}" {#if preview.template.documentType == type}selected{/if}>{type.label}</option>
+                    <option value="{type}" {#if preview.template.documentType == type}selected{/if}>{inject:i18n.text(type.label)}</option>
                     {/for}
                 </select>
             </div>
             <div class="field gab-from">
-                <label class="field-label" for="gf-{preview.template.code}">Partir de</label>
+                <label class="field-label" for="gf-{preview.template.code}">{inject:i18n.get('t.partir-de')}</label>
                 <div class="gab-load">
                     <select class="input-control gab-pick" id="gf-{preview.template.code}" name="from">
                         {#for pick in preview.picks}
-                        <option value="{pick.key}" data-type="{pick.type}">{#if pick.sameType}✓ {/if}{pick.label}</option>
+                        <option value="{pick.key}" data-type="{pick.type}">{#if pick.sameType}✓ {/if}{inject:i18n.text(pick.label)}</option>
                         {/for}
                     </select>
-                    <button class="btn" type="submit" formaction="/admin/templates/copy" formnovalidate>Charger</button>
+                    <button class="btn" type="submit" formaction="/admin/templates/copy" formnovalidate>{inject:i18n.get('t.charger')}</button>
                 </div>
-                <span class="field-hint">Un gabarit du même document est en tête (✓).</span>
+                <span class="field-hint">{inject:i18n.get('t.un-gabarit-du-meme-document-est-en')}</span>
             </div>
             <div class="field">
-                <label class="field-label" for="gw-{preview.template.code}">Largeur</label>
+                <label class="field-label" for="gw-{preview.template.code}">{inject:i18n.get('t.largeur')}</label>
                 <input class="input-control" id="gw-{preview.template.code}" type="number" name="width" value="{preview.template.width}">
             </div>
             <div class="field">
-                <label class="field-label" for="gc-{preview.template.code}">Exemplaires</label>
+                <label class="field-label" for="gc-{preview.template.code}">{inject:i18n.get('t.exemplaires')}</label>
                 <input class="input-control" id="gc-{preview.template.code}" type="number" name="copies" min="1" value="{preview.template.copies}">
             </div>
             {! BO-03-04-12 et -13 : le nom du document et celui de sa reimpression.
              ! Vides, la caisse garde ses propres libelles. !}
             <div class="field">
-                <label class="field-label" for="gn-{preview.template.code}">Nom du document</label>
+                <label class="field-label" for="gn-{preview.template.code}">{inject:i18n.get('t.nom-du-document')}</label>
                 <input class="input-control" id="gn-{preview.template.code}" type="text" name="title" maxlength="60" value="{preview.template.title ?: ''}">
             </div>
             <div class="field">
-                <label class="field-label" for="gd-{preview.template.code}">Nom en réimpression</label>
+                <label class="field-label" for="gd-{preview.template.code}">{inject:i18n.get('t.nom-en-reimpression')}</label>
                 <input class="input-control" id="gd-{preview.template.code}" type="text" name="duplicateTitle" maxlength="60" value="{preview.template.duplicateTitle ?: ''}">
             </div>
             <div class="field">
-                <label class="field-label" for="gx-{preview.template.code}">Préfixe de numéro</label>
+                <label class="field-label" for="gx-{preview.template.code}">{inject:i18n.get('t.prefixe-de-numero')}</label>
                 <input class="input-control" id="gx-{preview.template.code}" type="text" name="numberPrefix" maxlength="20" value="{preview.template.numberPrefix ?: ''}">
             </div>
             <div class="field">
-                <label class="field-label" for="gy-{preview.template.code}">Nom des exemplaires</label>
+                <label class="field-label" for="gy-{preview.template.code}">{inject:i18n.get('t.nom-des-exemplaires')}</label>
                 <input class="input-control" id="gy-{preview.template.code}" type="text" name="copyTitles" maxlength="200" value="{preview.template.copyTitles ?: ''}">
-                <span class="field-hint">Un nom par exemplaire, séparés par des points-virgules : ORIGINAL;DUPLICADO;TRIPLICADO</span>
+                <span class="field-hint">{inject:i18n.get('t.un-nom-par-exemplaire-separes-par-des')}</span>
+            </div>
+            {! BO-02-05-04 : l'échelon où le gabarit est posé ; un point de vente
+             ! reçoit celui de l'échelon le plus précis qui le couvre. !}
+            <div class="field">
+                <label class="field-label" for="ge-{preview.template.code}">{inject:i18n.get('t.q-echelon-du-gabarit')}</label>
+                <select class="input-control" id="ge-{preview.template.code}" name="echelonScope">
+                    {#for choice in echelons}<option value="{choice.value}"{#if preview.template.echelonScope == choice.value} selected{#else if !preview.template.echelonScope && choice.value == '*'} selected{/if}>{inject:i18n.text(choice.label)}</option>{/for}
+                </select>
             </div>
             <div class="field">
-                <label class="field-label" for="gp-{preview.template.code}">Priorité</label>
+                <label class="field-label" for="gp-{preview.template.code}">{inject:i18n.get('t.priorite')}</label>
                 <input class="input-control" id="gp-{preview.template.code}" type="number" name="priority" value="{preview.template.priority}">
             </div>
             <div class="field">
-                <label class="field-label" for="ga-{preview.template.code}">Actif</label>
+                <label class="field-label" for="ga-{preview.template.code}">{inject:i18n.get('t.actif')}</label>
                 <input id="ga-{preview.template.code}" type="checkbox" name="active" {#if preview.template.active}checked{/if}>
             </div>
         </div>
@@ -117,17 +125,17 @@
          ! une ligne vide et non cochee est jetee au save. !}
         {#if preview.lines.size() > 0}
         <div class="field">
-            <label class="field-label">Lignes de la bannière</label>
+            <label class="field-label">{inject:i18n.get('t.lignes-de-la-banniere')}</label>
             <table class="data-table">
-                <tr><th>Texte</th><th>Alignement</th><th>Gras</th><th>Active</th></tr>
+                <tr><th>{inject:i18n.get('t.texte')}</th><th>{inject:i18n.get('t.alignement')}</th><th>{inject:i18n.get('t.gras')}</th><th>{inject:i18n.get('t.active')}</th></tr>
                 {#for line in preview.lines}
                 <tr>
                     <td><input class="input-control" type="text" name="lineText.{line_index}" maxlength="120" value="{line.text}"></td>
                     <td>
                         <select class="input-control" name="lineAlign.{line_index}">
-                            <option value="LEFT" {#if line.align.name() == 'LEFT'}selected{/if}>Gauche</option>
-                            <option value="CENTRE" {#if line.align.name() == 'CENTRE'}selected{/if}>Centre</option>
-                            <option value="RIGHT" {#if line.align.name() == 'RIGHT'}selected{/if}>Droite</option>
+                            <option value="LEFT" {#if line.align.name() == 'LEFT'}selected{/if}>{inject:i18n.get('t.gauche')}</option>
+                            <option value="CENTRE" {#if line.align.name() == 'CENTRE'}selected{/if}>{inject:i18n.get('t.centre')}</option>
+                            <option value="RIGHT" {#if line.align.name() == 'RIGHT'}selected{/if}>{inject:i18n.get('t.droite')}</option>
                         </select>
                     </td>
                     <td><input type="checkbox" name="lineBold.{line_index}" {#if line.bold}checked{/if}></td>
@@ -135,152 +143,158 @@
                 </tr>
                 {/for}
             </table>
-            <span class="field-hint">Une ligne désactivée garde son texte et ne s'imprime pas. Les lignes vides sont ignorées.</span>
+            <span class="field-hint">{inject:i18n.get('t.une-ligne-desactivee-garde-son-texte-et')}</span>
         </div>
         {/if}
         <div class="field">
-            <label class="field-label" for="gs-{preview.template.code}">Mise en page</label>
+            <label class="field-label" for="gs-{preview.template.code}">{inject:i18n.get('t.mise-en-page')}</label>
             <textarea class="input-control gab-source" id="gs-{preview.template.code}" name="source" rows="14" spellcheck="false"
                       data-type="{preview.template.documentType}">{#if draft && draft.isFor(preview.template.code)}{draft.source}{#else}{preview.template.source}{/if}</textarea>
-            <span class="field-hint">Clic droit dans la zone : les données de ce document, insérées au curseur.</span>
+            <span class="field-hint">{inject:i18n.get('t.clic-droit-dans-la-zone-les-donnees')}</span>
         </div>
         <details class="panel gab-fallback">
-            <summary class="panel-title">Données de ce document<span class="panel-count">{preview.references.size()}</span></summary>
+            <summary class="panel-title">{inject:i18n.get('t.donnees-de-ce-document')}<span class="panel-count">{preview.references.size()}</span></summary>
             <table class="data-table">
-                <tr><th>Référence</th><th>Exemple</th><th>Portée</th></tr>
+                <tr><th>{inject:i18n.get('t.reference')}</th><th>{inject:i18n.get('t.exemple')}</th><th>{inject:i18n.get('t.portee')}</th></tr>
                 {#for reference in preview.references}
                 <tr>
                     <td><code>{reference.expression}</code></td>
-                    <td>{reference.sample}</td>
-                    <td>{#if reference.repeating}<span class="field-hint">dans <code>{reference.loop}</code></span>{#else}—{/if}</td>
+                    <td>{inject:i18n.text(reference.sample)}</td>
+                    <td>{#if reference.repeating}<span class="field-hint">{inject:i18n.get('t.dans')} <code>{reference.loop}</code></span>{#else}—{/if}</td>
                 </tr>
                 {/for}
             </table>
         </details>
         <div class="page-actions">
-            <button class="btn btn-primary" type="submit">Enregistrer le gabarit</button>
-            <button class="btn btn-ghost" type="submit" formaction="/admin/templates/preview" formnovalidate>Aperçu</button>
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer-le-gabarit')}</button>
+            <button class="btn btn-ghost" type="submit" formaction="/admin/templates/preview" formnovalidate>{inject:i18n.get('t.apercu-2')}</button>
         </div>
     </form>
 
-    <h3 class="card-title">Aperçu</h3>
+    <h3 class="card-title">{inject:i18n.get('t.apercu-2')}</h3>
     {#if draft && draft.isFor(preview.template.code)}
     {#if draft.error}
-    <div class="alert alert-error" role="status">Aperçu impossible : {draft.error}</div>
+    <div class="alert alert-error" role="status">{inject:i18n.get('t.apercu-impossible')} {inject:i18n.text(draft.error)}</div>
     {#else}
-    <p class="field-hint">Aperçu de la mise en page saisie — rien n'est enregistré.</p>
+    <p class="field-hint">{inject:i18n.get('t.apercu-de-la-mise-en-page-saisie')}</p>
     <pre class="preview-pane">{draft.rendered}</pre>
     {/if}
     {#else if preview.rendered}
     <pre class="preview-pane">{preview.rendered}</pre>
     {#else}
-    <p class="page-sub">Ce gabarit ne rend rien : la caisse imprimera ce document à sa façon.</p>
+    <p class="page-sub">{inject:i18n.get('t.ce-gabarit-ne-rend-rien-la-caisse')}</p>
     {/if}
 
     <form method="post" action="/admin/templates/delete">
         <input type="hidden" name="code" value="{preview.template.code}">
-        <div class="page-actions"><button class="btn btn-muted" type="submit">Supprimer le gabarit</button></div>
+        <div class="page-actions"><button class="btn btn-muted" type="submit">{inject:i18n.get('t.supprimer-le-gabarit')}</button></div>
     </form>
 </div>
 {/for}
 
 <div class="card">
-    <h2 class="card-title">Nouveau gabarit</h2>
+    <h2 class="card-title">{inject:i18n.get('t.nouveau-gabarit')}</h2>
     <form method="post" action="/admin/templates/save">
         <input type="hidden" name="card" value="new">
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="new-gcode">Code</label>
+                <label class="field-label" for="new-gcode">{inject:i18n.get('t.code')}</label>
                 <input class="input-control" id="new-gcode" type="text" name="code" maxlength="50" required>
             </div>
             <div class="field">
-                <label class="field-label" for="new-glabel">Libellé</label>
+                <label class="field-label" for="new-glabel">{inject:i18n.get('t.libelle')}</label>
                 <input class="input-control" id="new-glabel" type="text" name="label" maxlength="100">
             </div>
             <div class="field">
-                <label class="field-label" for="new-gtype">Document</label>
+                <label class="field-label" for="new-gtype">{inject:i18n.get('t.document')}</label>
                 <select class="input-control" id="new-gtype" name="documentType" required>
                     {#for type in documentTypes}
-                    <option value="{type}" {#if draft && draft.new && draft.documentType == type}selected{/if}>{type.label}</option>
+                    <option value="{type}" {#if draft && draft.new && draft.documentType == type}selected{/if}>{inject:i18n.text(type.label)}</option>
                     {/for}
                 </select>
             </div>
             <div class="field gab-from">
-                <label class="field-label" for="new-gfrom">Partir de</label>
+                <label class="field-label" for="new-gfrom">{inject:i18n.get('t.partir-de')}</label>
                 <div class="gab-load">
                     <select class="input-control gab-pick" id="new-gfrom" name="from">
                         {#for pick in newPicks}
-                        <option value="{pick.key}" data-type="{pick.type}">{#if pick.sameType}✓ {/if}{pick.label}</option>
+                        <option value="{pick.key}" data-type="{pick.type}">{#if pick.sameType}✓ {/if}{inject:i18n.text(pick.label)}</option>
                         {/for}
                     </select>
-                    <button class="btn" type="submit" formaction="/admin/templates/copy" formnovalidate>Charger</button>
+                    <button class="btn" type="submit" formaction="/admin/templates/copy" formnovalidate>{inject:i18n.get('t.charger')}</button>
                 </div>
-                <span class="field-hint">Un exemple de la maison, ou un gabarit déjà administré — ceux du même document en tête (✓). Le code n'est jamais recopié.</span>
+                <span class="field-hint">{inject:i18n.get('t.un-exemple-de-la-maison-ou-un')}</span>
             </div>
             <div class="field">
-                <label class="field-label" for="new-gwidth">Largeur</label>
+                <label class="field-label" for="new-gwidth">{inject:i18n.get('t.largeur')}</label>
                 <input class="input-control" id="new-gwidth" type="number" name="width" value="42">
             </div>
             <div class="field">
-                <label class="field-label" for="new-gcopies">Exemplaires</label>
+                <label class="field-label" for="new-gcopies">{inject:i18n.get('t.exemplaires')}</label>
                 <input class="input-control" id="new-gcopies" type="number" name="copies" min="1" value="1">
             </div>
             <div class="field">
-                <label class="field-label" for="new-gtitle">Nom du document</label>
+                <label class="field-label" for="new-gtitle">{inject:i18n.get('t.nom-du-document')}</label>
                 <input class="input-control" id="new-gtitle" type="text" name="title" maxlength="60" value="">
             </div>
             <div class="field">
-                <label class="field-label" for="new-gduplicate">Nom en réimpression</label>
+                <label class="field-label" for="new-gduplicate">{inject:i18n.get('t.nom-en-reimpression')}</label>
                 <input class="input-control" id="new-gduplicate" type="text" name="duplicateTitle" maxlength="60" value="">
             </div>
             <div class="field">
-                <label class="field-label" for="new-gprefix">Préfixe de numéro</label>
+                <label class="field-label" for="new-gprefix">{inject:i18n.get('t.prefixe-de-numero')}</label>
                 <input class="input-control" id="new-gprefix" type="text" name="numberPrefix" maxlength="20" value="">
             </div>
             <div class="field">
-                <label class="field-label" for="new-gcopytitles">Nom des exemplaires</label>
+                <label class="field-label" for="new-gcopytitles">{inject:i18n.get('t.nom-des-exemplaires')}</label>
                 <input class="input-control" id="new-gcopytitles" type="text" name="copyTitles" maxlength="200" value="">
             </div>
             <div class="field">
-                <label class="field-label" for="new-gpriority">Priorité</label>
+                <label class="field-label" for="new-gechelon">{inject:i18n.get('t.q-echelon-du-gabarit')}</label>
+                <select class="input-control" id="new-gechelon" name="echelonScope">
+                    {#for choice in echelons}<option value="{choice.value}">{inject:i18n.text(choice.label)}</option>{/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-gpriority">{inject:i18n.get('t.priorite')}</label>
                 <input class="input-control" id="new-gpriority" type="number" name="priority" value="100">
             </div>
             <div class="field">
-                <label class="field-label" for="new-gactive">Actif</label>
+                <label class="field-label" for="new-gactive">{inject:i18n.get('t.actif')}</label>
                 <input id="new-gactive" type="checkbox" name="active" checked>
             </div>
         </div>
         <div class="field">
-            <label class="field-label" for="new-gsource">Mise en page</label>
+            <label class="field-label" for="new-gsource">{inject:i18n.get('t.mise-en-page')}</label>
             <textarea class="input-control gab-source" id="new-gsource" name="source" rows="14" spellcheck="false"
                       data-type="{#if draft && draft.new}{draft.documentType}{#else}SALE_RECEIPT{/if}">{#if draft && draft.new}{draft.source}{/if}</textarea>
-            <span class="field-hint">Clic droit dans la zone : les données de ce document, insérées au curseur.</span>
+            <span class="field-hint">{inject:i18n.get('t.clic-droit-dans-la-zone-les-donnees')}</span>
         </div>
         <details class="panel gab-fallback">
-            <summary class="panel-title">Données de ce document<span class="panel-count">{newReferences.size()}</span></summary>
+            <summary class="panel-title">{inject:i18n.get('t.donnees-de-ce-document')}<span class="panel-count">{newReferences.size()}</span></summary>
             <table class="data-table">
-                <tr><th>Référence</th><th>Exemple</th><th>Portée</th></tr>
+                <tr><th>{inject:i18n.get('t.reference')}</th><th>{inject:i18n.get('t.exemple')}</th><th>{inject:i18n.get('t.portee')}</th></tr>
                 {#for reference in newReferences}
                 <tr>
                     <td><code>{reference.expression}</code></td>
-                    <td>{reference.sample}</td>
-                    <td>{#if reference.repeating}<span class="field-hint">dans <code>{reference.loop}</code></span>{#else}—{/if}</td>
+                    <td>{inject:i18n.text(reference.sample)}</td>
+                    <td>{#if reference.repeating}<span class="field-hint">{inject:i18n.get('t.dans')} <code>{reference.loop}</code></span>{#else}—{/if}</td>
                 </tr>
                 {/for}
             </table>
         </details>
         <div class="page-actions">
-            <button class="btn btn-primary" type="submit">Créer le gabarit</button>
-            <button class="btn btn-ghost" type="submit" formaction="/admin/templates/preview" formnovalidate>Aperçu</button>
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.creer-le-gabarit')}</button>
+            <button class="btn btn-ghost" type="submit" formaction="/admin/templates/preview" formnovalidate>{inject:i18n.get('t.apercu-2')}</button>
         </div>
     </form>
 
     {#if draft && draft.new}
-    <h3 class="card-title">Aperçu</h3>
+    <h3 class="card-title">{inject:i18n.get('t.apercu-2')}</h3>
     {#if draft.error}
-    <div class="alert alert-error" role="status">Aperçu impossible : {draft.error}</div>
+    <div class="alert alert-error" role="status">{inject:i18n.get('t.apercu-impossible')} {inject:i18n.text(draft.error)}</div>
     {#else}
-    <p class="field-hint">Aperçu de la mise en page saisie — rien n'est enregistré.</p>
+    <p class="field-hint">{inject:i18n.get('t.apercu-de-la-mise-en-page-saisie')}</p>
     <pre class="preview-pane">{draft.rendered}</pre>
     {/if}
     {/if}

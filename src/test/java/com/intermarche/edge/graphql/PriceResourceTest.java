@@ -77,6 +77,13 @@ class PriceResourceTest {
     /** The resource under test; the trait default method is real, no collaborators are injected. */
     private final PriceResource resource = new PriceResource();
 
+    /** The stamp mover of the resource, a mock: every successful mutation calls it. */
+    private final ReferentialChangeNotifier referentialChange = org.mockito.Mockito.mock(ReferentialChangeNotifier.class);
+
+    {
+        resource.referentialChange = referentialChange;
+    }
+
     /**
      * Builds a bare {@link Product} carrying only the supplied id.
      *
@@ -431,6 +438,7 @@ class PriceResourceTest {
             panache.when(() -> Price.deleteById(PRICE_ID)).thenReturn(true);
             boolean result = resource.deletePrice(PRICE_ID);
             assertTrue(result);
+            verify(referentialChange).changed();
         }
     }
 

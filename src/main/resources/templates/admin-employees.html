@@ -6,36 +6,70 @@
 !}
 {#include admin-layout}
 
-{#title}Salariés{/title}
+{#title}{inject:i18n.get('t.salaries-2')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Salariés</h1>
-        <p class="page-sub">Personnes physiques ou morales pouvant recevoir un acompte, une avance ou un remboursement du coffre.</p>
+        <h1>{inject:i18n.get('t.salaries-2')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.personnes-physiques-ou-morales-pouvant-recevoir')}</p>
     </div>
     <div class="page-actions">
-        <a class="btn btn-ghost" href="/admin/users">Utilisateurs et profils</a>
-        <a class="btn btn-ghost" href="/admin/safe/movements">Mouvements du coffre</a>
+        <a class="btn btn-ghost" href="/admin/users">{inject:i18n.get('t.utilisateurs-et-profils')}</a>
+        <a class="btn btn-ghost" href="/admin/safe/movements">{inject:i18n.get('t.mouvements-du-coffre')}</a>
     </div>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
+{! BO-05-02-15 : une fiche — personne physique ou morale — se crée ici ; elle
+ ! ne se connecte nulle part et n'est jamais diffusée aux caisses. !}
 <div class="card">
-    <h2 class="card-title">Recherche</h2>
+    <h2 class="card-title">{inject:i18n.get('t.u-nouvelle-fiche')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.u-nouvelle-fiche-aide')}</p>
+    <form method="post" action="/admin/employees/create">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="n-last">{inject:i18n.get('t.u-nom-ou-raison-sociale')}</label>
+                <input class="input-control" id="n-last" type="text" name="lastName" maxlength="120" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="n-first">{inject:i18n.get('t.u-prenom')}</label>
+                <input class="input-control" id="n-first" type="text" name="firstName" maxlength="60">
+            </div>
+            <div class="field">
+                <label class="field-label" for="n-legal">{inject:i18n.get('t.personne-morale')}</label>
+                <input id="n-legal" type="checkbox" name="legalEntity">
+            </div>
+            <div class="field">
+                <label class="field-label" for="n-level">{inject:i18n.get('t.niveau-de-forcage')}</label>
+                <input class="input-control" id="n-level" type="number" min="0" step="1" name="forcingLevel" value="0">
+            </div>
+            <div class="field">
+                <label class="field-label" for="n-limit">{inject:i18n.get('t.plafond-d-acompte')}</label>
+                <input class="input-control" id="n-limit" type="text" inputmode="decimal" name="advanceLimit">
+            </div>
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.u-creer-la-fiche')}</button>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.recherche')}</h2>
     <form method="get" action="/admin/employees">
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="e-text">Nom ou identifiant</label>
+                <label class="field-label" for="e-text">{inject:i18n.get('t.nom-ou-identifiant')}</label>
                 <input class="input-control" id="e-text" type="text" name="text" value="{text}">
             </div>
         </div>
         <div class="page-actions" style="margin-top: 6px;">
-            <button class="btn btn-primary" type="submit">Rechercher</button>
-            <a class="btn btn-ghost" href="/admin/employees">Réinitialiser</a>
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.rechercher')}</button>
+            <a class="btn btn-ghost" href="/admin/employees">{inject:i18n.get('t.reinitialiser-2')}</a>
         </div>
     </form>
 </div>
@@ -43,8 +77,8 @@
 <div class="card">
     {#if page.empty}
     <div class="empty-state">
-        <p>Aucun salarié.</p>
-        <p class="empty-hint">Les comptes se créent depuis l'écran <a class="link-strong" href="/admin/users">Utilisateurs</a> ; cet écran en règle le volet financier.</p>
+        <p>{inject:i18n.get('t.aucun-salarie')}</p>
+        <p class="empty-hint">{inject:i18n.get('t.les-comptes-se-creent-depuis-l-ecran')} <a class="link-strong" href="/admin/users">{inject:i18n.get('t.utilisateurs')}</a> {inject:i18n.get('t.cet-ecran-en-regle-le-volet-financier')}</p>
     </div>
     {#else}
     {! Les formulaires sont déclarés hors du tableau ; les champs les visent par
@@ -57,14 +91,14 @@
     <table class="data-table">
         <thead>
         <tr>
-            <th>Nom</th><th>Identifiant</th><th>Personne morale</th>
-            <th>Niveau de forçage</th><th>Plafond d'acompte €</th><th>Actif</th><th></th>
+            <th>{inject:i18n.get('t.nom')}</th><th>{inject:i18n.get('t.identifiant')}</th><th>{inject:i18n.get('t.personne-morale')}</th>
+            <th>{inject:i18n.get('t.niveau-de-forcage')}</th><th>{inject:i18n.get('t.plafond-d-acompte')}</th><th>{inject:i18n.get('t.actif')}</th><th></th>
         </tr>
         </thead>
         <tbody>
         {#for employee in page.rows}
         <tr>
-            <td>{employee.fullName}</td>
+            <td>{#if employee.legalEntity}{employee.lastName}{#else}{employee.fullName}{/if}</td>
             <td>{employee.loginName}</td>
             <td>
                 <input type="checkbox" name="legalEntity" form="emp-{employee.id}" {#if employee.legalEntity}checked{/if}>
@@ -76,11 +110,11 @@
                 <input class="input-control" type="text" inputmode="decimal" name="advanceLimit" form="emp-{employee.id}" value="{employee.advanceLimit ?: ''}">
             </td>
             <td>
-                {#if employee.active}<span class="badge badge-ok">Actif</span>
-                {#else}<span class="badge badge-off">Inactif</span>{/if}
+                {#if employee.active}<span class="badge badge-ok">{inject:i18n.get('t.actif')}</span>
+                {#else}<span class="badge badge-off">{inject:i18n.get('t.inactif-3')}</span>{/if}
             </td>
             <td>
-                <button class="btn btn-small btn-primary" type="submit" form="emp-{employee.id}">Enregistrer</button>
+                <button class="btn btn-small btn-primary" type="submit" form="emp-{employee.id}">{inject:i18n.get('t.enregistrer')}</button>
             </td>
         </tr>
         {/for}
@@ -89,18 +123,18 @@
     {! La liste dit quelle tranche du résultat elle montre plutôt que de
      ! tronquer en silence. !}
     <div class="pager">
-        <span class="pager-status">Fiches {page.firstIndex} à {page.lastIndex} sur {page.total}</span>
+        <span class="pager-status">{inject:i18n.get('t.fiches')} {page.firstIndex} {inject:i18n.get('t.x21-a')} {page.lastIndex} {inject:i18n.get('t.sur')} {page.total}</span>
         {#if page.pageCount > 1}
         {#if page.first}
-        <span class="btn btn-small btn-muted is-hidden">Précédent</span>
+        <span class="btn btn-small btn-muted is-hidden">{inject:i18n.get('t.precedent')}</span>
         {#else}
-        <a class="btn btn-small btn-muted" href="/admin/employees?{baseQuery}page={page.previous}">Précédent</a>
+        <a class="btn btn-small btn-muted" href="/admin/employees?{baseQuery}page={page.previous}">{inject:i18n.get('t.precedent')}</a>
         {/if}
-        <span class="pager-status">Page {page.number} / {page.pageCount}</span>
+        <span class="pager-status">{inject:i18n.get('t.page')} {page.number} / {page.pageCount}</span>
         {#if page.last}
-        <span class="btn btn-small btn-muted is-hidden">Suivant</span>
+        <span class="btn btn-small btn-muted is-hidden">{inject:i18n.get('t.suivant')}</span>
         {#else}
-        <a class="btn btn-small btn-muted" href="/admin/employees?{baseQuery}page={page.next}">Suivant</a>
+        <a class="btn btn-small btn-muted" href="/admin/employees?{baseQuery}page={page.next}">{inject:i18n.get('t.suivant')}</a>
         {/if}
         {/if}
     </div>

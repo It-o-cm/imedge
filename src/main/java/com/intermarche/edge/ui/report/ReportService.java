@@ -31,6 +31,63 @@ public class ReportService {
     /** The renderers, discovered like the reports themselves. */
     @Inject Instance<ReportWriter> writers;
 
+    /** This node's point of sale, which owns the saved article lists (BO-02-03-31). */
+    @Inject com.intermarche.edge.service.NodeEchelonService nodeEchelonService;
+
+    /**
+     * Resolves the criteria that name something the node holds — the saved
+     * article list (BO-02-03-31) and the checkout island (BO-06-06-06) — into
+     * the articles and registers they stand for. The screen, the exports and
+     * the planned extractions all prepare their criteria here, so the three
+     * read the same restriction.
+     *
+     * @param criteria the edition parameters, restricted in place
+     */
+    public void prepare(ReportCriteria criteria) {
+        restrictToSelection(criteria);
+        if (criteria.island != null) {
+            com.intermarche.edge.domain.store.CheckoutIsland island =
+                    com.intermarche.edge.domain.store.CheckoutIsland.findByCode(criteria.island);
+            // An island this node does not know restricts the report to
+            // nothing rather than silently widening it to every register.
+            criteria.restrictToIsland(island == null ? List.of() : island.terminals());
+        }
+    }
+
+    /**
+     * Restricts a report to the articles of the saved list it names
+     * (BO-02-03-31): the list's criteria are run as the article search runs
+     * them, and their EANs bound the ticket lines the report reads. A list this
+     * point of sale does not know restricts the report to nothing rather than
+     * silently widening it to everything.
+     *
+     * @param criteria the edition parameters, restricted in place
+     */
+    void restrictToSelection(ReportCriteria criteria) {
+        if (criteria.selection == null) {
+            return;
+        }
+        com.intermarche.edge.domain.catalog.ArticleSelection selection =
+                com.intermarche.edge.domain.catalog.ArticleSelection.findForPdv(criteria.selection, pdv());
+        java.util.Set<String> eans = new java.util.TreeSet<>();
+        if (selection != null) {
+            for (com.intermarche.edge.domain.catalog.Product product
+                    : com.intermarche.edge.ui.admin.ArticleSearchCriteria.fromQueryString(selection.criteria).find().list()) {
+                eans.add(product.ean);
+            }
+        }
+        criteria.restrictToArticles(eans);
+    }
+
+    /**
+     * The point of sale of this node, null on a service built without it.
+     *
+     * @return the PDV code, or null
+     */
+    public String pdv() {
+        return nodeEchelonService == null ? null : nodeEchelonService.currentPdv();
+    }
+
     /**
      * Runs a report.
      *
@@ -44,6 +101,10 @@ public class ReportService {
     @Transactional
     public ReportData run(ReportDefinition definition, ReportCriteria criteria) {
         LOGGER.info("Entering method run for report: " + definition.code());
+        // BO-03-09-01: the registers the back office deactivated are left out,
+        // unless the operator kept them or chose them by name.
+        criteria.excludeDeactivated(
+                com.intermarche.edge.domain.store.CheckoutPoint.deactivatedTerminals());
         List<List<Object>> rows = definition.rows(criteria);
         LOGGER.info("Exiting method run with " + rows.size() + " row(s)");
         return new ReportData(definition, rows);

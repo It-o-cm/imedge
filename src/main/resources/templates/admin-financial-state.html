@@ -6,65 +6,65 @@
 !}
 {#include admin-layout}
 
-{#title}État financier{/title}
+{#title}{inject:i18n.get('t.etat-financier')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>{state.stateType} · {state.scope} · {state.periodKind}{#if state.cashier} · {state.cashier.loginName}{/if}</h1>
-        <p class="page-sub">Du {state.fromInstant} au {state.toInstant}{#if state.sequence} · Z n°{state.sequence}{/if}</p>
+        <h1>{state.stateType} · {inject:i18n.code('t.x21-fs-scope-', state.scope)} · {inject:i18n.code('t.x21-fs-period-', state.periodKind)}{#if state.cashier} · {state.cashier.loginName}{/if}</h1>
+        <p class="page-sub">{inject:i18n.get('t.du')} {#if state.fromInstant}{state.fromInstant.format('dd/MM/yyyy HH:mm')}{#else}—{/if} {inject:i18n.get('t.au-2')} {#if state.toInstant}{state.toInstant.format('dd/MM/yyyy HH:mm')}{#else}—{/if}{#if state.sequence} {inject:i18n.get('t.z-n')}{state.sequence}{/if}</p>
     </div>
-    <div><a href="/admin/financial-states">Retour</a></div>
+    <div><a href="/admin/financial-states">{inject:i18n.get('t.retour')}</a></div>
 </div>
 
 {#if state.lateTicketCount > 0}
-<div class="notice notice-ko">{state.lateTicketCount} ticket(s) arrivé(s) en retard, comptés dans cet état.</div>
+<div class="notice notice-ko">{state.lateTicketCount} {inject:i18n.get('t.ticket-s-arrive-s-en-retard-comptes')}</div>
 {/if}
 {#if state.controlVariance && state.controlVariance.signum() != 0}
-<div class="notice notice-ko">Écart de contrôle : {state.controlVariance} (CA net {state.netTurnover} vs total des Z {state.controlTotal}).</div>
+<div class="notice notice-ko">{inject:i18n.get('t.ecart-de-controle')} {inject:i18n.money(state.controlVariance)} {inject:i18n.get('t.ca-net')} {inject:i18n.money(state.netTurnover)} {inject:i18n.get('t.vs-total-des-z')} {inject:i18n.money(state.controlTotal)}).</div>
 {/if}
 
 <div class="card">
-    <h2 class="card-title">CA financier</h2>
+    <h2 class="card-title">{inject:i18n.get('t.ca-financier')}</h2>
     <table class="data-table">
         <tbody>
-        <tr><th>CA brut</th><td>{state.grossTurnover}</td><th>Remises</th><td>{state.discountTotal}</td></tr>
-        <tr><th>Retours avec ticket</th><td>{state.refundWithTicketTotal}</td><th>Retours sans ticket</th><td>{state.refundWithoutTicketTotal}</td></tr>
-        <tr><th>CA net</th><td>{state.netTurnover}</td><th>TVA</th><td>{state.vatTotal}</td></tr>
-        <tr><th>Nb clients</th><td>{state.customerCount}</td><th>Panier moyen</th><td>{state.averageBasket}</td></tr>
-        <tr><th>Nb articles</th><td>{state.itemCount}</td><th>% alimentaire</th><td>{state.foodShare}</td></tr>
-        <tr><th>Annul. dernière ligne</th><td>{state.cancelledLineCount} / {state.cancelledLineTotal}</td><th>Annul. avalisées (fraude)</th><td>{state.endorsedCancelCount} / {state.endorsedCancelTotal}</td></tr>
-        <tr><th>Tickets abandonnés</th><td>{state.abandonedTicketCount} / {state.abandonedTicketTotal}</td><th>Cartes cadeaux émises</th><td>{state.giftCardCount} / {state.giftCardTotal}</td></tr>
+        <tr><th>{inject:i18n.get('t.ca-brut')}</th><td>{inject:i18n.money(state.grossTurnover)}</td><th>{inject:i18n.get('t.remises')}</th><td>{inject:i18n.money(state.discountTotal)}</td></tr>
+        <tr><th>{inject:i18n.get('t.retours-avec-ticket')}</th><td>{inject:i18n.money(state.refundWithTicketTotal)}</td><th>{inject:i18n.get('t.retours-sans-ticket')}</th><td>{inject:i18n.money(state.refundWithoutTicketTotal)}</td></tr>
+        <tr><th>{inject:i18n.get('t.ca-net-2')}</th><td>{inject:i18n.money(state.netTurnover)}</td><th>{inject:i18n.get('t.tva')}</th><td>{inject:i18n.money(state.vatTotal)}</td></tr>
+        <tr><th>{inject:i18n.get('t.nb-clients')}</th><td>{state.customerCount}</td><th>{inject:i18n.get('t.panier-moyen')}</th><td>{inject:i18n.money(state.averageBasket)}</td></tr>
+        <tr><th>{inject:i18n.get('t.nb-articles')}</th><td>{state.itemCount}</td><th>{inject:i18n.get('t.alimentaire')}</th><td>{inject:i18n.percent(state.foodShare)}</td></tr>
+        <tr><th>{inject:i18n.get('t.annul-derniere-ligne')}</th><td>{state.cancelledLineCount} / {inject:i18n.money(state.cancelledLineTotal)}</td><th>{inject:i18n.get('t.annul-avalisees-fraude')}</th><td>{state.endorsedCancelCount} / {inject:i18n.money(state.endorsedCancelTotal)}</td></tr>
+        <tr><th>{inject:i18n.get('t.tickets-abandonnes')}</th><td>{state.abandonedTicketCount} / {inject:i18n.money(state.abandonedTicketTotal)}</td><th>{inject:i18n.get('t.cartes-cadeaux-emises')}</th><td>{state.giftCardCount} / {inject:i18n.money(state.giftCardTotal)}</td></tr>
         </tbody>
     </table>
 </div>
 
 {#for section in sections}
 <div class="card">
-    <h2 class="card-title">{section}</h2>
+    <h2 class="card-title">{inject:i18n.code('t.x21-fs-section-', section)}</h2>
     {#if state.sequence}
     <p class="page-sub">
-        Export :
-        <a href="/admin/financial-states/{state.id}/export?section={section}&format=csv">CSV</a> ·
-        <a href="/admin/financial-states/{state.id}/export?section={section}&format=xlsx">Tableur</a> ·
-        <a href="/admin/financial-states/{state.id}/export?section={section}&format=pdf">PDF</a>
+        {inject:i18n.get('t.export')}
+        <a href="/admin/financial-states/{state.id}/export?section={section}&format=csv">{inject:i18n.get('t.csv')}</a> ·
+        <a href="/admin/financial-states/{state.id}/export?section={section}&format=xlsx">{inject:i18n.get('t.tableur')}</a> ·
+        <a href="/admin/financial-states/{state.id}/export?section={section}&format=pdf">{inject:i18n.get('t.pdf')}</a>
     </p>
     {/if}
     <table class="data-table">
         <thead>
-        <tr><th>Code</th><th>Libellé</th><th>Quantité</th><th>HT</th><th>TVA</th><th>TTC</th><th>Part</th></tr>
+        <tr><th>{inject:i18n.get('t.code')}</th><th>{inject:i18n.get('t.libelle')}</th><th>{inject:i18n.get('t.quantite')}</th><th>{inject:i18n.get('t.ht')}</th><th>{inject:i18n.get('t.tva')}</th><th>{inject:i18n.get('t.ttc-2')}</th><th>{inject:i18n.get('t.part')}</th></tr>
         </thead>
         <tbody>
         {#for line in state.lines}
         {#if line.section == section}
         <tr>
-            <td>{line.code ?: '—'}</td>
+            <td>{#if line.section.name() == 'VAT' && line.code}{inject:i18n.rate(line.code)}{#else}{line.code ?: '—'}{/if}</td>
             <td>{line.label ?: ''}</td>
-            <td>{line.quantity ?: ''}</td>
-            <td>{line.amountExcludingTax ?: ''}</td>
-            <td>{line.vatAmount ?: ''}</td>
-            <td>{line.amount}</td>
-            <td>{line.share ?: ''}</td>
+            <td>{#if line.quantity != null}{inject:i18n.number(line.quantity)}{/if}</td>
+            <td>{#if line.amountExcludingTax != null}{inject:i18n.money(line.amountExcludingTax)}{/if}</td>
+            <td>{#if line.vatAmount != null}{inject:i18n.money(line.vatAmount)}{/if}</td>
+            <td>{inject:i18n.money(line.amount)}</td>
+            <td>{#if line.share != null}{inject:i18n.percent(line.share)}{/if}</td>
         </tr>
         {/if}
         {/for}

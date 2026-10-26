@@ -23,58 +23,58 @@
 !}
 {#include admin-layout}
 
-{#title}EGAlim{/title}
+{#title}{inject:i18n.get('t.egalim')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>EGAlim</h1>
-        <p class="page-sub">La catégorie légale d'un article décide du plafond de générosité promotionnelle qu'il peut recevoir. Le code est ce que porte le flux article ; le plafond est ce que dit la loi aujourd'hui.</p>
+        <h1>{inject:i18n.get('t.egalim')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.la-categorie-legale-d-un-article-decide')}</p>
     </div>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 <div class="card">
-    <h2 class="card-title">Régimes</h2>
+    <h2 class="card-title">{inject:i18n.get('t.regimes')}</h2>
     {#if rows.isEmpty()}
-    <p class="page-sub">Aucun régime n'est enregistré. Tant que la table est vide, aucun article n'est classé et le moteur ne plafonne rien : la garde tourne et ne corrige jamais.</p>
+    <p class="page-sub">{inject:i18n.get('t.aucun-regime-n-est-enregistre-tant-que')}</p>
     {#else}
     <div class="egalim-grid">
-        <span class="egalim-head egalim-code">Code</span>
-        <span class="egalim-head egalim-cap">Plafond</span>
+        <span class="egalim-head egalim-code">{inject:i18n.get('t.code')}</span>
+        <span class="egalim-head egalim-cap">{inject:i18n.get('t.plafond')}</span>
         <span class="egalim-head"></span>
-        <span class="egalim-head">Libellé</span>
+        <span class="egalim-head">{inject:i18n.get('t.libelle')}</span>
         <span class="egalim-head"></span>
         <span class="egalim-head"></span>
         {#for row in rows}
         <form method="post" action="/admin/egalim-regimes/save">
             <input type="hidden" name="id" value="{row.id}">
-            <input class="input-control egalim-code" type="text" name="code" maxlength="30" value="{row.code}" required aria-label="Code du régime">
-            <input class="input-control egalim-cap" type="text" name="capPercent" value="{row.getCapFormatted()}" placeholder="—" aria-label="Plafond en pourcentage">
-            <span class="egalim-unit">{#if row.capped}%{#else}non plafonné{/if}</span>
-            <input class="input-control egalim-label" type="text" name="label" maxlength="80" value="{row.label ?: ''}" placeholder="Sans libellé" aria-label="Libellé du régime">
-            <button class="btn btn-primary" type="submit">Enregistrer</button>
+            <input class="input-control egalim-code" type="text" name="code" maxlength="30" value="{row.code}" required aria-label="{inject:i18n.get('t.code-du-regime')}">
+            <input class="input-control egalim-cap" type="text" name="capPercent" value="{row.getCapFormatted()}" placeholder="—" aria-label="{inject:i18n.get('t.plafond-en-pourcentage')}">
+            <span class="egalim-unit">{#if row.capped}%{#else}{inject:i18n.get('t.non-plafonne')}{/if}</span>
+            <input class="input-control egalim-label" type="text" name="label" maxlength="80" value="{row.label ?: ''}" placeholder="{inject:i18n.get('t.sans-libelle')}" aria-label="{inject:i18n.get('t.libelle-du-regime')}">
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer')}</button>
             <span class="egalim-remove">
-                <button class="btn btn-muted" type="submit" formaction="/admin/egalim-regimes/delete">Retirer</button>
+                <button class="btn btn-muted" type="submit" formaction="/admin/egalim-regimes/delete">{inject:i18n.get('t.retirer')}</button>
             </span>
         </form>
         {/for}
     </div>
-    <p class="page-sub">Un plafond vide signifie « non plafonné » : c'est ainsi que se déclare la catégorie exemptée. Retirer un régime ne casse rien ici, mais les articles qui le portent cessent d'être plafonnés au prochain panier valorisé. Corriger un code ne détache aucun article, en revanche le prochain fichier qui nomme l'ancien code ne trouvera plus rien.</p>
+    <p class="page-sub">{inject:i18n.get('t.un-plafond-vide-signifie-non-plafonne-c')}</p>
     {/if}
 </div>
 
 <div class="card">
-    <h2 class="card-title">Nouveau régime</h2>
+    <h2 class="card-title">{inject:i18n.get('t.nouveau-regime')}</h2>
     <form method="post" action="/admin/egalim-regimes/save" class="egalim-new">
-        <input class="input-control egalim-code" type="text" name="code" maxlength="30" required aria-label="Code du régime" placeholder="FOOD">
-        <input class="input-control egalim-cap" type="text" name="capPercent" aria-label="Plafond en pourcentage" placeholder="34">
+        <input class="input-control egalim-code" type="text" name="code" maxlength="30" required aria-label="{inject:i18n.get('t.code-du-regime')}" placeholder="{inject:i18n.get('t.food')}">
+        <input class="input-control egalim-cap" type="text" name="capPercent" aria-label="{inject:i18n.get('t.plafond-en-pourcentage')}" placeholder="34">
         <span class="egalim-unit">%</span>
-        <input class="input-control egalim-label" type="text" name="label" maxlength="80" placeholder="Alimentaire et petfood" aria-label="Libellé du régime">
-        <button class="btn btn-primary" type="submit">Créer</button>
+        <input class="input-control egalim-label" type="text" name="label" maxlength="80" placeholder="{inject:i18n.get('t.alimentaire-et-petfood')}" aria-label="{inject:i18n.get('t.libelle-du-regime')}">
+        <button class="btn btn-primary" type="submit">{inject:i18n.get('t.creer-2')}</button>
         <span class="egalim-remove"></span>
     </form>
 </div>

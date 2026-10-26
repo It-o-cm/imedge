@@ -130,4 +130,206 @@ class AdminMessageResourceTest {
         form.putSingle("responseType", "PIERRE-PAPIER-CISEAUX");
         assertRefused(new AdminMessageResource().saveMessage(form), "Type de réponse inconnu");
     }
+    /** BO-03-08: a question-only creation persists an empty notice with its administered survey values. */
+    @Test
+    void createSurveyWithoutNoticeText() {
+        var resource = new AdminMessageResource();
+        var form = validForm();
+        form.remove("text");
+        form.putSingle("question", "Choose");
+        form.putSingle("audience", "TERMINAL");
+        form.putSingle("audienceValue", "C04");
+        form.putSingle("startsAt", "20/10/2026 08:00");
+        form.putSingle("endsAt", "20/10/2026 09:00");
+        form.putSingle("durationSeconds", "15");
+        try (var created = org.mockito.Mockito.mockConstruction(com.intermarche.edge.domain.setting.StoreMessage.class)) {
+            assertTrue(resource.saveMessage(form).getLocation().toString().contains("noticeOk=true"));
+            var message = created.constructed().getFirst();
+            assertEquals("", message.text);
+            assertEquals("Choose", message.question);
+            assertEquals(15, message.durationSeconds);
+            org.mockito.Mockito.verify(message).persist();
+        }
+    }
+
+    /** BO-03-08: updating a known message can clear it; unknown ids and malformed enum values are explicit refusals. */
+    @Test
+    void updateAndUnknownMessageGuards() {
+        var resource = new AdminMessageResource();
+        var message = new com.intermarche.edge.domain.setting.StoreMessage();
+        var form = validForm();
+        form.putSingle("id", "8");
+        form.remove("text");
+        form.putSingle("durationSeconds", "bad");
+        try (var base = org.mockito.Mockito.mockStatic(io.quarkus.hibernate.orm.panache.PanacheEntityBase.class)) {
+            base.when(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase.findById(8L)).thenReturn(message);
+            assertTrue(resource.saveMessage(form).getLocation().toString().contains("noticeOk=true"));
+            assertEquals("", message.text);
+            assertEquals(0, message.durationSeconds);
+            form.putSingle("startsAt", "20/10/2026 08:00");
+            assertTrue(resource.saveMessage(form).getLocation().toString().contains("noticeOk=true"));
+            form.remove("startsAt");
+            form.putSingle("endsAt", "20/10/2026 09:00");
+            assertTrue(resource.saveMessage(form).getLocation().toString().contains("noticeOk=true"));
+            form.putSingle("id", "9");
+            assertRefused(resource.saveMessage(form), "Message inconnu");
+        }
+        form = validForm();
+        form.putSingle("responseType", "UNKNOWN");
+        assertRefused(resource.saveMessage(form), "Type de réponse inconnu");
+        form.putSingle("id", "bad");
+        assertRefused(resource.saveMessage(form), "Type de réponse inconnu");
+    }
+
+    /** BO-03-08: deletion rejects missing/unknown ids and removes acknowledgements before a known message. */
+    @Test
+    void deletionBranches() {
+        var resource = new AdminMessageResource();
+        var form = new MultivaluedHashMap<String, String>();
+        assertRefused(resource.deleteMessage(form), "Message inconnu");
+        var message = org.mockito.Mockito.mock(com.intermarche.edge.domain.setting.StoreMessage.class);
+        try (var base = org.mockito.Mockito.mockStatic(io.quarkus.hibernate.orm.panache.PanacheEntityBase.class)) {
+            form.putSingle("id", "9");
+            assertRefused(resource.deleteMessage(form), "Message inconnu");
+            base.when(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase.findById(9L)).thenReturn(message);
+            assertTrue(resource.deleteMessage(form).getLocation().toString().contains("noticeOk=true"));
+            base.verify(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase.delete("messageId", 9L));
+            org.mockito.Mockito.verify(message).delete();
+        }
+    }
+
+    /** BO-03-08: message rows expose acknowledgements and all four combinations of diffusion bounds. */
+    @Test
+    void rowPeriodsAndPageProjection() {
+        var message = new com.intermarche.edge.domain.setting.StoreMessage();
+        message.id = 8L;
+        var acks = java.util.List.<com.intermarche.edge.domain.setting.StoreMessageAck>of();
+        var row = new AdminMessageResource.Row(message, acks);
+        assertEquals(message, row.getMessage());
+        assertEquals(acks, row.getAcks());
+        assertEquals("—", row.getPeriod());
+        message.startsAt = java.time.LocalDateTime.of(2026, 10, 20, 8, 0);
+        assertEquals("20/10/2026 08:00 → ", row.getPeriod());
+        message.endsAt = java.time.LocalDateTime.of(2026, 10, 20, 9, 0);
+        assertEquals("20/10/2026 08:00 → 20/10/2026 09:00", row.getPeriod());
+        message.startsAt = null;
+        assertEquals(" → 20/10/2026 09:00", row.getPeriod());
+        var resource = new AdminMessageResource();
+        resource.adminMessages = org.mockito.Mockito.mock(io.quarkus.qute.Template.class);
+        var view = org.mockito.Mockito.mock(io.quarkus.qute.TemplateInstance.class);
+        org.mockito.Mockito.when(resource.adminMessages.data(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any())).thenReturn(view);
+        org.mockito.Mockito.when(view.data(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any())).thenReturn(view);
+        try (var messages = org.mockito.Mockito.mockStatic(com.intermarche.edge.domain.setting.StoreMessage.class);
+             var confirmations = org.mockito.Mockito.mockStatic(com.intermarche.edge.domain.setting.StoreMessageAck.class)) {
+            messages.when(com.intermarche.edge.domain.setting.StoreMessage::listAllOrdered).thenReturn(java.util.List.of(message));
+            confirmations.when(() -> com.intermarche.edge.domain.setting.StoreMessageAck.listFor(8L)).thenReturn(acks);
+            assertEquals(view, resource.messagesPage(null, "false"));
+            assertEquals(view, resource.messagesPage(null, null));
+        }
+        org.mockito.Mockito.verify(view).data("noticeOk", false);
+        org.mockito.Mockito.verify(view).data("noticeOk", true);
+    }
+
+    /** BO-03-08: a question without display text is persisted with empty text and missing numeric fields use defaults. */
+    @Test
+    void questionWithoutTextKeepsAnEmptyDisplayText() throws Exception {
+        var posted = validForm();
+        posted.remove("text");
+        posted.putSingle("question", "QUESTION");
+        AdminMessageResource resource = new AdminMessageResource();
+        try (var created = org.mockito.Mockito.mockConstruction(com.intermarche.edge.domain.setting.StoreMessage.class)) {
+            assertEquals(303, resource.saveMessage(posted).getStatus());
+            assertEquals("", created.constructed().get(0).text);
+        }
+        var method = AdminMessageResource.class.getDeclaredMethod("intOr", String.class, int.class);
+        method.setAccessible(true);
+        assertEquals(20, method.invoke(resource, null, 20));
+    }
+
+
+    /** BO-03-08: a non-null notice text is kept verbatim after form trimming, independently of the question-only arm. */
+    @Test
+    void noticeTextIsPersistedWhenPresent() {
+        var resource = new AdminMessageResource();
+        try (var created = org.mockito.Mockito.mockConstruction(com.intermarche.edge.domain.setting.StoreMessage.class)) {
+            assertTrue(resource.saveMessage(validForm()).getLocation().toString().contains("noticeOk=true"));
+            assertEquals("FERMETURE A 19H", created.constructed().getFirst().text);
+        }
+    }
+
+    /**
+     * BO-06-03-01: the days ticked are joined, anything but an ISO day number
+     * dropped, none read as every day; a time is read, absent or malformed as
+     * none; a saved survey keeps them.
+     */
+    @Test
+    void theDaysAndHoursOfASurvey() {
+        assertEquals(null, AdminMessageResource.days(null));
+        assertEquals(null, AdminMessageResource.days(java.util.Arrays.asList(null, "9", "x")));
+        assertEquals("1;7", AdminMessageResource.days(java.util.List.of(" 1", "7")));
+        assertEquals(null, AdminMessageResource.timeOf(null));
+        assertEquals(null, AdminMessageResource.timeOf("midi"));
+        assertEquals(java.time.LocalTime.of(9, 30), AdminMessageResource.timeOf(" 09:30 "));
+        var form = validForm();
+        form.put("day", java.util.List.of("2", "4"));
+        form.putSingle("dailyFrom", "08:00");
+        form.putSingle("dailyTo", "12:00");
+        try (var created = org.mockito.Mockito.mockConstruction(com.intermarche.edge.domain.setting.StoreMessage.class)) {
+            new AdminMessageResource().saveMessage(form);
+            var message = created.constructed().getFirst();
+            assertEquals("2;4", message.activeDays);
+            assertEquals(java.time.LocalTime.of(8, 0), message.dailyFrom);
+            assertEquals(java.time.LocalTime.of(12, 0), message.dailyTo);
+        }
+    }
+
+    /**
+     * Builds the upload of a postal-code list.
+     *
+     * @param id the survey's identifier, possibly null
+     * @param file the file, possibly null
+     * @return the form
+     */
+    private AdminMessageResource.PostalCodeForm upload(String id, java.io.InputStream file) {
+        AdminMessageResource.PostalCodeForm form = new AdminMessageResource.PostalCodeForm();
+        form.id = id;
+        form.file = file;
+        return form;
+    }
+
+    /**
+     * BO-06-03-03: a list of postal codes imported for a survey is put in its
+     * mask, duplicates removed, in the file's order.
+     */
+    @Test
+    void aPostalCodeListIsImported() {
+        var message = new com.intermarche.edge.domain.setting.StoreMessage();
+        message.postalFormat = "CCCC-CCC";
+        try (var base = org.mockito.Mockito.mockStatic(io.quarkus.hibernate.orm.panache.PanacheEntityBase.class)) {
+            base.when(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase.findById(8L)).thenReturn(message);
+            Response response = new AdminMessageResource().importPostalCodes(upload("8",
+                    new java.io.ByteArrayInputStream("4100300\n4100-300;1000-001\n".getBytes())));
+            assertTrue(response.getLocation().toString().contains("noticeOk=true"));
+            assertEquals("4100-300;1000-001", message.postalCodes);
+            assertRefused(new AdminMessageResource().importPostalCodes(upload("8",
+                    new java.io.ByteArrayInputStream(new byte[0]))), "Fichier sans aucun code postal");
+            java.io.InputStream broken = new java.io.InputStream() {
+                /**
+                 * {@inheritDoc}
+                 *
+                 * @return never
+                 * @throws java.io.IOException always
+                 */
+                @Override
+                public int read() throws java.io.IOException {
+                    throw new java.io.IOException("coupé");
+                }
+            };
+            assertRefused(new AdminMessageResource().importPostalCodes(upload("8", broken)),
+                    "Fichier de codes postaux illisible");
+            assertRefused(new AdminMessageResource().importPostalCodes(upload("9", null)), "Message inconnu");
+        }
+        assertRefused(new AdminMessageResource().importPostalCodes(null), "Message inconnu");
+        assertRefused(new AdminMessageResource().importPostalCodes(upload("x", null)), "Message inconnu");
+    }
 }

@@ -60,7 +60,33 @@ public class SyncOutbox extends PanacheEntity {
          * comes earlier in this enumeration, and the drain follows the
          * ordinal.
          */
-        DOCUMENT
+        DOCUMENT,
+        /**
+         * A ticket the register printed, in its 42-column format (LC-08-02-02).
+         * It references nothing the node must resolve first.
+         */
+        PRINTOUT,
+        /**
+         * A sale made in training mode (LC-13-05-06), kept apart from the
+         * tickets so no revenue or accounting flow ever reads it.
+         */
+        TRAINING,
+        /**
+         * The signed trace of a ticket put on hold, resumed or purged
+         * (LC-04-01-03). It references nothing the node must resolve first.
+         */
+        PARKING,
+        /**
+         * An instrument the register printed, at issue and at every change of
+         * its balance (BO-03-06-62, -48). It references nothing the node must
+         * resolve first.
+         */
+        STORED_VALUE,
+        /**
+         * A payment barcode read at the till, known or not (BO-03-06-63). It
+         * references nothing the node must resolve first.
+         */
+        SCANNED_BARCODE
     }
 
     /** The kind of entity to push. */

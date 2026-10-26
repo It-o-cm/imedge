@@ -46,6 +46,13 @@ public class StoreMessageAck extends PanacheEntity {
     @Column(name = "answer", length = 200)
     public String answer;
 
+    /**
+     * The ticket the answer was given on (BO-06-03-02), as the register named
+     * it, or null for a notice acknowledged or an older register.
+     */
+    @Column(name = "ticket_number", length = 30)
+    public String ticketNumber;
+
     /** When the cashier confirmed. */
     @Column(name = "confirmed_at", nullable = false)
     public LocalDateTime confirmedAt = LocalDateTime.now();

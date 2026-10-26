@@ -6,6 +6,7 @@ import com.intermarche.edge.domain.catalog.VatRate;
 import io.smallrye.common.annotation.RunOnVirtualThread;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import org.eclipse.microprofile.graphql.*;
 import org.jboss.logging.Logger;
@@ -40,6 +41,10 @@ import java.util.NoSuchElementException;
 public class PriceResource implements GraphQLTrait {
 
     private static final Logger LOGGER = Logger.getLogger(PriceResource.class);
+
+    /** Moves the referential change stamp once a mutation has committed (BO-03-12-01). */
+    @Inject
+    ReferentialChangeNotifier referentialChange;
 
     // --------------------------------------------------
     // Queries (Retrieve) -> MANAGER only
@@ -145,6 +150,7 @@ public class PriceResource implements GraphQLTrait {
             price.startDateTime = input.startDateTime;
             price.endDateTime = input.endDateTime;
             price.persist();
+            referentialChange.changed();
             LOGGER.info("Exiting method createPrice. Created ID: " + price.id);
             return price;
         }, PriceResource.class, "createPrice");
@@ -205,6 +211,7 @@ public class PriceResource implements GraphQLTrait {
             if (input.priority != null) price.priority = input.priority;
             if (input.startDateTime != null) price.startDateTime = input.startDateTime;
             if (input.endDateTime != null) price.endDateTime = input.endDateTime;
+            referentialChange.changed();
             LOGGER.info("Exiting method updatePrice");
             return price;
         }, PriceResource.class, "updatePrice");
@@ -225,6 +232,7 @@ public class PriceResource implements GraphQLTrait {
         return this.execute(() -> {
             LOGGER.info("Entering method deletePrice for id: " + id);
             boolean result = Price.deleteById(id);
+            referentialChange.changed();
             LOGGER.info("Exiting method deletePrice. Result: " + result);
             return result;
         }, PriceResource.class, "deletePrice");

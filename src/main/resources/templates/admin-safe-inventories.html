@@ -5,37 +5,37 @@
 !}
 {#include admin-layout}
 
-{#title}Inventaire du coffre{/title}
+{#title}{inject:i18n.get('t.inventaire-du-coffre')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Inventaire du coffre</h1>
-        <p class="page-sub">Comptage physique comparé au solde théorique tenu par le journal.</p>
+        <h1>{inject:i18n.get('t.inventaire-du-coffre')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.comptage-physique-compare-au-solde-theorique-ten')}</p>
     </div>
     <div class="page-actions">
-        <a class="btn btn-ghost" href="/admin/safe/journal">Journal</a>
-        <a class="btn btn-ghost" href="/admin/safe/periods">Clôture</a>
+        <a class="btn btn-ghost" href="/admin/safe/journal">{inject:i18n.get('t.journal')}</a>
+        <a class="btn btn-ghost" href="/admin/safe/periods">{inject:i18n.get('t.cloture')}</a>
     </div>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 <div class="card">
-    <h2 class="card-title">Nouveau comptage</h2>
-    <p class="card-sub">Solde théorique au moment du comptage : <strong>{theoretical} €</strong></p>
+    <h2 class="card-title">{inject:i18n.get('t.nouveau-comptage')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.solde-theorique-au-moment-du-comptage')} <strong>{inject:i18n.money(theoretical)} €</strong></p>
     <form method="post" action="/admin/safe/inventories">
         <table class="data-table">
             <thead>
-            <tr><th>Billets</th><th>Valeur €</th><th>Quantité</th></tr>
+            <tr><th>{inject:i18n.get('t.billets')}</th><th>{inject:i18n.get('t.valeur-2')}</th><th>{inject:i18n.get('t.quantite')}</th></tr>
             </thead>
             <tbody>
             {#for denomination in notes}
             <tr>
-                <td>{denomination.label}</td>
-                <td>{denomination.value}</td>
+                <td>{inject:i18n.text(denomination.label)}</td>
+                <td>{inject:i18n.money(denomination.value)}</td>
                 <td><input class="input-control" type="number" min="0" step="1" name="qty{denomination.name}"></td>
             </tr>
             {/for}
@@ -43,13 +43,13 @@
         </table>
         <table class="data-table">
             <thead>
-            <tr><th>Pièces</th><th>Valeur €</th><th>Quantité</th></tr>
+            <tr><th>{inject:i18n.get('t.pieces')}</th><th>{inject:i18n.get('t.valeur-2')}</th><th>{inject:i18n.get('t.quantite')}</th></tr>
             </thead>
             <tbody>
             {#for denomination in coins}
             <tr>
-                <td>{denomination.label}</td>
-                <td>{denomination.value}</td>
+                <td>{inject:i18n.text(denomination.label)}</td>
+                <td>{inject:i18n.money(denomination.value)}</td>
                 <td><input class="input-control" type="number" min="0" step="1" name="qty{denomination.name}"></td>
             </tr>
             {/for}
@@ -57,21 +57,21 @@
         </table>
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="i-comment">Commentaire</label>
+                <label class="field-label" for="i-comment">{inject:i18n.get('t.commentaire')}</label>
                 <input class="input-control" id="i-comment" type="text" name="comment" maxlength="255">
             </div>
         </div>
         <div class="page-actions" style="margin-top: 6px;">
-            <button class="btn btn-primary" type="submit">Enregistrer le comptage</button>
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer-le-comptage')}</button>
         </div>
     </form>
 </div>
 
 <div class="card">
-    <h2 class="card-title">Comptages</h2>
+    <h2 class="card-title">{inject:i18n.get('t.comptages')}</h2>
     {#if inventories.isEmpty()}
     <div class="empty-state">
-        <p>Aucun inventaire.</p>
+        <p>{inject:i18n.get('t.aucun-inventaire')}</p>
     </div>
     {#else}
     {#for inventory in inventories}
@@ -81,24 +81,24 @@
     {/for}
     <table class="data-table">
         <thead>
-        <tr><th>Date</th><th>Compté €</th><th>Théorique €</th><th>Écart €</th><th>Commentaire</th><th>État</th><th></th></tr>
+        <tr><th>{inject:i18n.get('t.date')}</th><th>{inject:i18n.get('t.compte-2')}</th><th>{inject:i18n.get('t.theorique')}</th><th>{inject:i18n.get('t.ecart')}</th><th>{inject:i18n.get('t.commentaire')}</th><th>{inject:i18n.get('t.etat')}</th><th></th></tr>
         </thead>
         <tbody>
         {#for inventory in inventories}
         <tr>
-            <td>{inventory.countedAt}</td>
-            <td>{inventory.countedAmountFormatted}</td>
-            <td>{inventory.theoreticalAmountFormatted}</td>
-            <td>{inventory.varianceFormatted}</td>
+            <td>{#if inventory.countedAt}{inventory.countedAt.format('dd/MM/yyyy HH:mm')}{#else}—{/if}</td>
+            <td>{inject:i18n.money(inventory.countedAmount)}</td>
+            <td>{inject:i18n.money(inventory.theoreticalAmount)}</td>
+            <td>{inject:i18n.money(inventory.variance)}</td>
             <td>{inventory.comment ?: '—'}</td>
             <td>
-                {#if inventory.balanced}<span class="badge badge-ok">Sans écart</span>
-                {#else if inventory.adjustment}<span class="badge badge-ok">Régularisé</span>
-                {#else}<span class="badge badge-off">Écart</span>{/if}
+                {#if inventory.balanced}<span class="badge badge-ok">{inject:i18n.get('t.sans-ecart')}</span>
+                {#else if inventory.adjustment}<span class="badge badge-ok">{inject:i18n.get('t.regularise')}</span>
+                {#else}<span class="badge badge-off">{inject:i18n.get('t.ecart-2')}</span>{/if}
             </td>
             <td>
                 {#if inventory.adjustable}
-                <button class="btn btn-small btn-primary" type="submit" form="adj-{inventory.id}">Régulariser</button>
+                <button class="btn btn-small btn-primary" type="submit" form="adj-{inventory.id}">{inject:i18n.get('t.regulariser')}</button>
                 {/if}
             </td>
         </tr>

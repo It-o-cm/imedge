@@ -280,7 +280,7 @@ class CashierReportTest {
     void metadataIsConstant() {
         CashierReport report = reportWith(mock(EntityManager.class));
         assertEquals("cashiers", report.code());
-        assertEquals("État caissière", report.label());
+        assertEquals("État caissière synthétique", report.label());
         assertEquals("BO-06-06-03", report.requirement());
         assertEquals(ReportFamily.CASHIERS, report.family());
         assertEquals(11, report.columns().size());

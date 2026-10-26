@@ -26,11 +26,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * without prefix, and a {@code data:} string with no comma), the invalid-base64
  * and unreadable-image rejections, and the downscale versus keep-as-is arms in
  * both landscape and portrait orientations.
- * <p>
- * Residue: the two {@link IOException} catch blocks around
- * {@link ImageIO#read} and {@link ImageIO#write} are unreachable with in-memory
- * byte streams (a {@link ByteArrayInputStream}/{@link ByteArrayOutputStream}
- * never throws {@link IOException}); they are defensive and left uncovered.
+ * <p>Codec failures are injected independently of the in-memory byte streams:
+ * an image reader or writer can fail even when its underlying stream cannot.
  */
 class ImageResizeServiceTest {
 
@@ -196,4 +193,17 @@ class ImageResizeServiceTest {
         String notImage = Base64.getEncoder().encodeToString("hello world".getBytes());
         assertThrows(IllegalArgumentException.class, () -> service.resizeToDataUri(notImage));
     }
+    /** LC-02-07-14/-15: image decoder and encoder failures are reported as invalid pictures rather than silently stored. */
+    @Test
+    void codecFailuresAreRejectedBeforeAnImageIsStored() throws Exception {
+        var service = new ImageResizeService();
+        try (var images = org.mockito.Mockito.mockStatic(ImageIO.class)) {
+            images.when(() -> ImageIO.read(org.mockito.ArgumentMatchers.any(java.io.InputStream.class))).thenThrow(new IOException("decoder failed"));
+            assertEquals("Image illisible.", assertThrows(IllegalArgumentException.class, () -> service.resizeToDataUri("AQ==")).getMessage());
+            images.when(() -> ImageIO.read(org.mockito.ArgumentMatchers.any(java.io.InputStream.class))).thenReturn(new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB));
+            images.when(() -> ImageIO.write(org.mockito.ArgumentMatchers.any(java.awt.image.RenderedImage.class), org.mockito.ArgumentMatchers.eq("png"), org.mockito.ArgumentMatchers.any(java.io.OutputStream.class))).thenThrow(new IOException("encoder failed"));
+            assertEquals("Image inencodable.", assertThrows(IllegalArgumentException.class, () -> service.resizeToDataUri("AQ==")).getMessage());
+        }
+    }
+
 }

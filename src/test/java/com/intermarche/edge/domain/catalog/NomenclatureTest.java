@@ -6,12 +6,7 @@ import org.mockito.MockedStatic;
 
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mockStatic;
 
 /**
@@ -175,22 +170,6 @@ class NomenclatureTest {
     }
 
     /**
-     * A level above declared no shorter than the node's own code yields no
-     * parent even when the node sits below the top: the {@code >=} arm of the
-     * walk up, reached with a non-null level above whose length is not smaller
-     * than the node code's.
-     */
-    @Test
-    void aLevelAboveNotShorterThanTheNodeYieldsNoParent() {
-        Nomenclature itm = scheme("ITM_FR");
-        List<NomenclatureLevel> inverted = List.of(level(0, "A", 10, false),
-                level(1, "B", 5, false));
-        try (MockedStatic<PanacheEntityBase> mocked = withLevels(inverted)) {
-            assertNull(itm.parentCodeOf("10020"));
-        }
-    }
-
-    /**
      * The rank lookup answers the declared ranks and nothing beyond, and the
      * depth is the number of levels.
      */
@@ -265,4 +244,69 @@ class NomenclatureTest {
         other.enseigneCode = "ITM";
         assertNotEquals(reference, other.getChecksum());
     }
+
+    /**
+     * A code whose level exists but whose level ABOVE is absent has no parent —
+     * the null-above arm of the parent guard, reached with a scheme that skips
+     * the intermediate rank.
+     */
+    @Test
+    void parentCodeOfHasNoParentWhenTheLevelAboveIsAbsent() {
+        Nomenclature itm = scheme("ITM_FR");
+        List<NomenclatureLevel> gapped = List.of(
+                level(0, "RACINE", 2, false), level(2, "SOUS", 8, false));
+        try (MockedStatic<PanacheEntityBase> mocked = withLevels(gapped)) {
+            assertNull(itm.parentCodeOf("10203040"));
+        }
+    }
+
+    /**
+     * A level above declared no shorter than the node's own code yields no
+     * parent even when the node sits below the top: the {@code >=} arm of the
+     * walk up, reached with a non-null level above whose length is not smaller
+     * than the node code's.
+     */
+    @Test
+    void aLevelAboveNotShorterThanTheNodeYieldsNoParent() {
+        Nomenclature itm = scheme("ITM_FR");
+        List<NomenclatureLevel> inverted = List.of(level(0, "A", 10, false),
+                level(1, "B", 5, false));
+        try (MockedStatic<PanacheEntityBase> mocked = withLevels(inverted)) {
+            assertNull(itm.parentCodeOf("10020"));
+        }
+    }
+
+    /**
+     * {@code listAllOrdered()} lists every scheme IN CODE ORDER, the inactive
+     * ones included — the back-office screen must show a scheme it can reactivate,
+     * and a finder that hid them would make it unreachable.
+     */
+    @Test
+    void listAllOrderedListsEverySchemeInCodeOrder() {
+        Nomenclature itm = new Nomenclature();
+        itm.code = "ITM_FR";
+        Nomenclature brico = new Nomenclature();
+        brico.code = "BRICO_FR";
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> PanacheEntityBase.list("order by code"))
+                    .thenReturn(List.of(brico, itm));
+            List<Nomenclature> all = Nomenclature.listAllOrdered();
+            assertEquals(2, all.size());
+            assertSame(brico, all.get(0));
+            assertSame(itm, all.get(1));
+        }
+    }
+
+    /** LC-04-05 and BO-10-04/02: the lookup preserves its business identifier and returns the exact matching entity. */
+    @org.junit.jupiter.api.Test
+    void findByCodeUsesTheExactBusinessIdentifier() {
+        var row = new Nomenclature();
+        var query = org.mockito.Mockito.mock(io.quarkus.hibernate.orm.panache.PanacheQuery.class);
+        org.mockito.Mockito.when(query.firstResult()).thenReturn(row);
+        try (var panache = org.mockito.Mockito.mockStatic(io.quarkus.hibernate.orm.panache.PanacheEntityBase.class)) {
+            panache.when(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase.find("code", "MAIN")).thenReturn(query);
+            org.junit.jupiter.api.Assertions.assertSame(row, Nomenclature.findByCode("MAIN"));
+        }
+    }
+
 }

@@ -118,4 +118,54 @@ class StoreImageTest {
         second.imageData = "data:image/png;base64,BBB";
         assertNotEquals(first.getChecksum(), second.getChecksum());
     }
+
+    /** BO-03: nullable/blank lookup keys never query; a trimmed key returns the matching referential row. */
+    @org.junit.jupiter.api.Test
+    void coverageNullableBlankAndTrimmedCode() {
+        org.junit.jupiter.api.Assertions.assertNull(StoreImage.findByCode(null));
+        org.junit.jupiter.api.Assertions.assertNull(StoreImage.findByCode(" "));
+        StoreImage row = new StoreImage();
+        var query = org.mockito.Mockito.mock(io.quarkus.hibernate.orm.panache.PanacheQuery.class);
+        org.mockito.Mockito.when(query.firstResult()).thenReturn(row);
+        try (var panache = org.mockito.Mockito.mockStatic(io.quarkus.hibernate.orm.panache.PanacheEntityBase.class)) {
+            panache.when(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase.find("code", "KEY")).thenReturn(query);
+            org.junit.jupiter.api.Assertions.assertSame(row, StoreImage.findByCode(" KEY "));
+        }
+    }
+    /** BO-03/08: the finder selects the required business scope and ordering, preserving the returned rows. */
+    @org.junit.jupiter.api.Test
+    void findActiveByUsageUsesItsBusinessScopeAndOrder() {
+        var row = new StoreImage();
+        java.util.List<StoreImage> rows = java.util.List.of(row);
+        try (var panache = org.mockito.Mockito.mockStatic(io.quarkus.hibernate.orm.panache.PanacheEntityBase.class)) {
+            panache.when(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase.list("usage = ?1 and active = true order by code", StoreImage.Usage.values()[0])).thenReturn(rows);
+            org.junit.jupiter.api.Assertions.assertSame(rows, StoreImage.findActiveByUsage(StoreImage.Usage.values()[0]));
+            panache.verify(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase.list("usage = ?1 and active = true order by code", StoreImage.Usage.values()[0]));
+        }
+    }
+
+    /** BO-08-01-04: each synchronized business-field change invalidates the row checksum. */
+    @org.junit.jupiter.api.Test
+    void everyBusinessFieldChangeInvalidatesTheChecksum() {
+        var row = new StoreImage();
+        int previous = row.getChecksum();
+        row.code = "LOGO";
+        org.junit.jupiter.api.Assertions.assertNotEquals(previous, row.getChecksum(), "code must participate in synchronization");
+        previous = row.getChecksum();
+        row.label = "Shop";
+        org.junit.jupiter.api.Assertions.assertNotEquals(previous, row.getChecksum(), "label must participate in synchronization");
+        previous = row.getChecksum();
+        row.usage = StoreImage.Usage.values()[0];
+        org.junit.jupiter.api.Assertions.assertNotEquals(previous, row.getChecksum(), "usage must participate in synchronization");
+        previous = row.getChecksum();
+        row.advantageCode = "ADV";
+        org.junit.jupiter.api.Assertions.assertNotEquals(previous, row.getChecksum(), "advantageCode must participate in synchronization");
+        previous = row.getChecksum();
+        row.imageData = "data:image/png;base64,AQ==";
+        org.junit.jupiter.api.Assertions.assertNotEquals(previous, row.getChecksum(), "imageData must participate in synchronization");
+        previous = row.getChecksum();
+        row.active = false;
+        org.junit.jupiter.api.Assertions.assertNotEquals(previous, row.getChecksum(), "active must participate in synchronization");
+        previous = row.getChecksum();
+    }
 }

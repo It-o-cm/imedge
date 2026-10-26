@@ -80,4 +80,15 @@ class EngineFeedTest {
             Assertions.assertNull(EngineFeed.findByCode("OFFERS"));
         }
     }
+
+    /** BO-08-04: a newly retained feed carries its version without pretending that the local engine acknowledged it. */
+    @org.junit.jupiter.api.Test
+    void retainedFeedStartsWithoutAnEngineAcknowledgement() throws Exception {
+        var feed = new com.fasterxml.jackson.databind.ObjectMapper().readValue("{\"code\":\"PRODUCTS\",\"content\":\"CODE|LABEL\",\"version\":\"v1\"}", EngineFeed.class);
+        org.junit.jupiter.api.Assertions.assertEquals("PRODUCTS", feed.code);
+        org.junit.jupiter.api.Assertions.assertEquals("CODE|LABEL", feed.content);
+        org.junit.jupiter.api.Assertions.assertEquals("v1", feed.version);
+        org.junit.jupiter.api.Assertions.assertNull(feed.appliedVersion);
+        org.junit.jupiter.api.Assertions.assertNull(feed.appliedAt);
+    }
 }

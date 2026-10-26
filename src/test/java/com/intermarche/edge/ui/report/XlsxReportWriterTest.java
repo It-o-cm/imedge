@@ -122,6 +122,23 @@ class XlsxReportWriterTest {
     }
 
     /**
+     * A decimal figure is written as a number under the decimal style.
+     *
+     * @throws Exception when the package cannot be read
+     */
+    @Test
+    void decimalFigureIsTypedByItsStyle() throws Exception {
+        ReportDefinition definition = org.mockito.Mockito.mock(ReportDefinition.class,
+                org.mockito.Mockito.CALLS_REAL_METHODS);
+        org.mockito.Mockito.doReturn("decimal").when(definition).code();
+        org.mockito.Mockito.doReturn("Décimales").when(definition).label();
+        org.mockito.Mockito.doReturn(List.of(ReportColumn.decimal("ratio", "Ratio"))).when(definition).columns();
+        List<List<Object>> rows = List.of(List.of(new java.math.BigDecimal("2.50")));
+        String sheet = sheet(new ReportData(definition, rows), criteria());
+        assertTrue(sheet.contains("<c r=\"A3\" s=\"8\"><v>2.50</v></c>"), sheet);
+    }
+
+    /**
      * A textual cell is carried inline and styled by the text style, which is
      * zero on a body row.
      *
@@ -292,4 +309,18 @@ class XlsxReportWriterTest {
         assertEquals("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 writer.contentType());
     }
+    /** BO-09-01-11: a failed ZIP encoder refuses the workbook and preserves the I/O cause instead of returning a partial spreadsheet. */
+    @org.junit.jupiter.api.Test
+    void zipEncoderFailureCannotReturnAPartialWorkbook() {
+        var failure = new java.io.IOException("ZIP encoder failed");
+        try (var streams = org.mockito.Mockito.mockConstruction(java.util.zip.ZipOutputStream.class, (zip, context) -> {
+            org.mockito.Mockito.doThrow(failure).when(zip).putNextEntry(org.mockito.ArgumentMatchers.any(java.util.zip.ZipEntry.class));
+        })) {
+            var fixture = new ReportFixture(-1, List.of());
+            var error = org.junit.jupiter.api.Assertions.assertThrows(java.io.UncheckedIOException.class, () -> new XlsxReportWriter().write(new ReportData(fixture, fixture.rows(null)), criteria()));
+            org.junit.jupiter.api.Assertions.assertSame(failure, error.getCause());
+            org.junit.jupiter.api.Assertions.assertEquals(1, streams.constructed().size());
+        }
+    }
+
 }

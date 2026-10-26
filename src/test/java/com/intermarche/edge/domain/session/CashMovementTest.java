@@ -126,6 +126,17 @@ class CashMovementTest {
     }
 
     /**
+     * The safe-deposit flag is false by default and read/write (EXP-87).
+     */
+    @Test
+    void safeDepositFieldDefaultsFalseAndIsReadWrite() {
+        CashMovement bare = new CashMovement();
+        assertEquals(false, bare.safeDeposit);
+        bare.safeDeposit = true;
+        assertEquals(true, bare.safeDeposit);
+    }
+
+    /**
      * A change to a NON-hashed field (the reason) leaves the checksum
      * unchanged: the checksum tracks business identity, not free text.
      */
@@ -208,5 +219,29 @@ class CashMovementTest {
     @Test
     void cashIsTheSharedTenderKey() {
         assertEquals("CASH", CashMovement.CASH);
+    }
+
+    /**
+     * {@code acompteTotalForOrder} answers ZERO without a query for a null or a
+     * blank order reference (both guard arms).
+     */
+    @Test
+    void acompteTotalForOrderZeroWhenReferenceBlank() {
+        assertEquals(0, CashMovement.acompteTotalForOrder(null).compareTo(BigDecimal.ZERO));
+        assertEquals(0, CashMovement.acompteTotalForOrder("   ").compareTo(BigDecimal.ZERO));
+    }
+
+    /** LC-06-03: deposit totals include each non-null movement once and ignore rows without an amount. */
+    @Test
+    void orderDepositTotalSumsOnlyAvailableAmounts() {
+        CashMovement paid = new CashMovement();
+        paid.amount = new BigDecimal("12.50");
+        CashMovement corrected = new CashMovement();
+        corrected.amount = new BigDecimal("-2.50");
+        CashMovement missing = new CashMovement();
+        try (var base = org.mockito.Mockito.mockStatic(io.quarkus.hibernate.orm.panache.PanacheEntityBase.class)) {
+            base.when(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase.list("type = ?1 and orderReference = ?2", CashMovement.MovementType.CUSTOMER_DEPOSIT, "ORDER")).thenReturn(java.util.List.of(paid, corrected, missing));
+            assertEquals(new BigDecimal("10.00"), CashMovement.acompteTotalForOrder("ORDER"));
+        }
     }
 }

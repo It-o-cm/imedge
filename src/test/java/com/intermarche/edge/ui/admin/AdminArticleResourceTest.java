@@ -184,7 +184,7 @@ class AdminArticleResourceTest {
      * @param panache the active Panache mock
      */
     private void stubSelectionList(MockedStatic<PanacheEntityBase> panache) {
-        panache.when(() -> ArticleSelection.list("order by name")).thenReturn(List.of());
+        panache.when(() -> ArticleSelection.list("pdvCode is null order by name")).thenReturn(List.of());
         panache.when(() -> EgalimRegime.list("order by code")).thenReturn(List.of());
     }
 
@@ -200,6 +200,7 @@ class AdminArticleResourceTest {
         params.putSingle("type", "WEIGHT");
         Product weighed = product("1", ProductType.WEIGHT);
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            quiet(panache);
             PanacheQuery<Product> products = productQuery(List.of(weighed));
             panache.when(() -> Product.find(typeQuery(),
                     Map.of("type", ProductType.WEIGHT))).thenReturn(products);
@@ -233,8 +234,9 @@ class AdminArticleResourceTest {
         selection.criteria = "type=WEIGHT";
         Product weighed = product("1", ProductType.WEIGHT);
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            quiet(panache);
             PanacheQuery<ArticleSelection> found = priceSelection(selection);
-            panache.when(() -> ArticleSelection.find("name", "Pesés")).thenReturn(found);
+            panache.when(() -> ArticleSelection.find("name = ?1 and pdvCode is null", "Pesés")).thenReturn(found);
             PanacheQuery<Product> products = productQuery(List.of(weighed));
             panache.when(() -> Product.find(typeQuery(),
                     Map.of("type", ProductType.WEIGHT))).thenReturn(products);
@@ -257,8 +259,9 @@ class AdminArticleResourceTest {
         params.putSingle("selection", "Ghost");
         Product unit = product("2", ProductType.UNIT);
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            quiet(panache);
             PanacheQuery<ArticleSelection> missing = priceSelection(null);
-            panache.when(() -> ArticleSelection.find("name", "Ghost")).thenReturn(missing);
+            panache.when(() -> ArticleSelection.find("name = ?1 and pdvCode is null", "Ghost")).thenReturn(missing);
             PanacheQuery<Product> products = productQuery(List.of(unit));
             panache.when(() -> Product.find("from Product p order by p.ean")).thenReturn(products);
             stubSelectionList(panache);
@@ -287,6 +290,23 @@ class AdminArticleResourceTest {
     }
 
     /**
+     * BO-10-02-34/35: an article without its own flag shows the shop's
+     * article-code display on its fiche — on when the shop shows the codes,
+     * off when it does not.
+     */
+    @Test
+    void editInitialisesTheFlagFromTheShopParameter() {
+        AdminArticleResource resource = newResource();
+        TemplateInstance instance = wire(resource.adminArticle);
+        resource.posSettingsService = mock(com.intermarche.edge.service.PosSettingsService.class);
+        when(resource.posSettingsService.showEan()).thenReturn(true);
+        resource.edit(null);
+        verify(instance).data("codeOnScreen", true);
+        when(resource.posSettingsService.showEan()).thenReturn(false);
+        assertFalse(resource.codeOnScreenDefault());
+    }
+
+    /**
      * {@code edit} with an unknown id passes a null product (id-non-null arm,
      * findById-null arm).
      */
@@ -295,6 +315,7 @@ class AdminArticleResourceTest {
         AdminArticleResource resource = newResource();
         wire(resource.adminArticle);
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            quiet(panache);
             panache.when(() -> Product.findById(7L)).thenReturn(null);
             resource.edit(7L);
         }
@@ -320,6 +341,7 @@ class AdminArticleResourceTest {
         LocalDateTime now = LocalDateTime.of(2026, 9, 1, 10, 0);
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
              MockedStatic<DateTimeProvider> time = mockStatic(DateTimeProvider.class)) {
+            quiet(panache);
             time.when(DateTimeProvider::now).thenReturn(now);
             PanacheQuery<Price> currentQuery = priceQuery(current);
             panache.when(() -> Product.findById(1L)).thenReturn(product);
@@ -348,6 +370,7 @@ class AdminArticleResourceTest {
         LocalDateTime now = LocalDateTime.of(2026, 9, 1, 10, 0);
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
              MockedStatic<DateTimeProvider> time = mockStatic(DateTimeProvider.class)) {
+            quiet(panache);
             time.when(DateTimeProvider::now).thenReturn(now);
             PanacheQuery<Price> currentQuery = priceQuery(null);
             panache.when(() -> Product.findById(1L)).thenReturn(product);
@@ -406,9 +429,86 @@ class AdminArticleResourceTest {
         MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
         form.putSingle("id", "9");
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            quiet(panache);
             panache.when(() -> Product.findById(9L)).thenReturn(null);
             Response response = resource.save(form);
             assertTrue(response.getLocation().toString().contains("noticeOk=false"));
+        }
+    }
+
+    /** LC-02-03-04: disabled, valid, missing and cyclic associations are distinguished. */
+    @Test
+    void linkedArticleValidationTraversesTheWholeChain() {
+        AdminArticleResource resource = newResource();
+        assertFalse(resource.invalidLinkedArticle("A", null));
+        assertTrue(resource.invalidLinkedArticle("A", "A"));
+        Product b = product("B", ProductType.UNIT);
+        Product c = product("C", ProductType.UNIT);
+        PanacheQuery<Product> qb = mock(PanacheQuery.class);
+        PanacheQuery<Product> qc = mock(PanacheQuery.class);
+        when(qb.firstResult()).thenReturn(b);
+        when(qc.firstResult()).thenReturn(c);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            quiet(panache);
+            panache.when(() -> Product.find("ean = ?1 and active = true", "B")).thenReturn(qb);
+            panache.when(() -> Product.find("ean = ?1 and active = true", "C")).thenReturn(qc);
+            assertFalse(resource.invalidLinkedArticle("A", "B"));
+            b.attributes.put(ProductAttributeCatalog.LINKED_ARTICLE_EAN, " C ");
+            assertFalse(resource.invalidLinkedArticle("A", "B"));
+            c.attributes.put(ProductAttributeCatalog.LINKED_ARTICLE_EAN, "B");
+            assertTrue(resource.invalidLinkedArticle("A", "B"));
+            when(qb.firstResult()).thenReturn(null);
+            assertTrue(resource.invalidLinkedArticle("A", "B"));
+        }
+    }
+
+    /** BO-10-07-20: the article's own forbidden-sale message is typed on the fiche, trimmed, and blank removes it. */
+    @Test
+    void saveForbiddenSaleMessageTypedOnTheFiche() {
+        AdminArticleResource resource = newResource();
+        Product source = product("A", ProductType.UNIT);
+        MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
+        form.putSingle("id", "1");
+        form.putSingle(ProductAttributeCatalog.FORBIDDEN_SALE_MESSAGE, " RAPPEL LOT 12 ");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            quiet(panache);
+            panache.when(() -> Product.findById(1L)).thenReturn(source);
+            panache.when(() -> ArticleAttributeDefinition.list("order by code")).thenReturn(List.of());
+            assertTrue(resource.save(form).getLocation().toString().contains("noticeOk=true"));
+            assertEquals("RAPPEL LOT 12", source.attributes.get(ProductAttributeCatalog.FORBIDDEN_SALE_MESSAGE));
+            form.putSingle(ProductAttributeCatalog.FORBIDDEN_SALE_MESSAGE, " ");
+            assertTrue(resource.save(form).getLocation().toString().contains("noticeOk=true"));
+            assertFalse(source.attributes.containsKey(ProductAttributeCatalog.FORBIDDEN_SALE_MESSAGE));
+        }
+    }
+
+    /** LC-02-03-04: a valid association saves, blank removes it, and a loop changes nothing. */
+    @Test
+    void saveLinkedArticleValidatesBeforeAnyMutation() {
+        AdminArticleResource resource = newResource();
+        Product source = product("A", ProductType.UNIT);
+        Product target = product("B", ProductType.UNIT);
+        PanacheQuery<Product> query = mock(PanacheQuery.class);
+        when(query.firstResult()).thenReturn(target);
+        MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
+        form.putSingle("id", "1");
+        form.putSingle("checkoutLabel", "Bottle");
+        form.putSingle(ProductAttributeCatalog.LINKED_ARTICLE_EAN, " B ");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            quiet(panache);
+            panache.when(() -> Product.findById(1L)).thenReturn(source);
+            panache.when(() -> Product.find("ean = ?1 and active = true", "B")).thenReturn(query);
+            panache.when(() -> ArticleAttributeDefinition.list("order by code")).thenReturn(List.of());
+            assertTrue(resource.save(form).getLocation().toString().contains("noticeOk=true"));
+            assertEquals("B", source.attributes.get(ProductAttributeCatalog.LINKED_ARTICLE_EAN));
+            form.putSingle(ProductAttributeCatalog.LINKED_ARTICLE_EAN, "A");
+            form.putSingle("checkoutLabel", "Must not be saved");
+            assertTrue(resource.save(form).getLocation().toString().contains("noticeOk=false"));
+            assertEquals("Bottle", source.checkoutLabel);
+            assertEquals("B", source.attributes.get(ProductAttributeCatalog.LINKED_ARTICLE_EAN));
+            form.putSingle(ProductAttributeCatalog.LINKED_ARTICLE_EAN, " ");
+            assertTrue(resource.save(form).getLocation().toString().contains("noticeOk=true"));
+            assertFalse(source.attributes.containsKey(ProductAttributeCatalog.LINKED_ARTICLE_EAN));
         }
     }
 
@@ -426,6 +526,10 @@ class AdminArticleResourceTest {
         MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
         form.putSingle("id", "1");
         form.putSingle("checkoutLabel", "  LAIT  ");
+        form.putSingle("infoMessage", "  Check package  ");
+        form.putSingle(ProductAttributeCatalog.INFO_MESSAGE_BLOCKING, "on");
+        product.attributes.put(ProductAttributeCatalog.RECALL_LOTS, "LOT-42");
+        product.attributes.put(ProductAttributeCatalog.ECO_TAX, "0.125");
         form.putSingle("internalCode", "INT-1");
         form.putSingle("description", "  desc  ");
         form.putSingle("brand", "  ITM  ");
@@ -442,12 +546,17 @@ class AdminArticleResourceTest {
         form.putSingle("giftCardAmount", "10");
         form.putSingle("variableWeight", "on");
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            quiet(panache);
             panache.when(() -> Product.findById(1L)).thenReturn(product);
             panache.when(() -> ArticleAttributeDefinition.list("order by code")).thenReturn(List.of(custom));
             Response response = resource.save(form);
             assertTrue(response.getLocation().toString().contains("noticeOk=true"));
         }
         assertEquals("LAIT", product.checkoutLabel);
+        assertEquals("Check package", product.infoMessage);
+        assertEquals("true", product.attributes.get(ProductAttributeCatalog.INFO_MESSAGE_BLOCKING));
+        assertEquals("LOT-42", product.attributes.get(ProductAttributeCatalog.RECALL_LOTS));
+        assertEquals("0.125", product.attributes.get(ProductAttributeCatalog.ECO_TAX));
         assertEquals("desc", product.description);
         assertEquals("ITM", product.brand);
         assertTrue(product.active);
@@ -489,6 +598,7 @@ class AdminArticleResourceTest {
         form.putSingle("referenceWeight", "");
         form.putSingle("referenceVolume", "abc");
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            quiet(panache);
             panache.when(() -> Product.findById(1L)).thenReturn(product);
             panache.when(() -> ArticleAttributeDefinition.list("order by code")).thenReturn(List.of());
             Response response = resource.save(form);
@@ -520,6 +630,7 @@ class AdminArticleResourceTest {
         form.putSingle("id", "1");
         form.putSingle("ORIGIN", "   ");
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            quiet(panache);
             panache.when(() -> Product.findById(1L)).thenReturn(product);
             panache.when(() -> ArticleAttributeDefinition.list("order by code")).thenReturn(List.of(custom));
             resource.save(form);
@@ -544,6 +655,7 @@ class AdminArticleResourceTest {
         form.putSingle("id", "1");
         form.putSingle("ageRestriction", "   ");
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            quiet(panache);
             panache.when(() -> Product.findById(1L)).thenReturn(product);
             panache.when(() -> ArticleAttributeDefinition.list("order by code")).thenReturn(List.of());
             resource.save(form);
@@ -563,6 +675,7 @@ class AdminArticleResourceTest {
         form.putSingle("id", "1");
         form.putSingle("ageRestriction", "0");
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            quiet(panache);
             panache.when(() -> Product.findById(1L)).thenReturn(product);
             panache.when(() -> ArticleAttributeDefinition.list("order by code")).thenReturn(List.of());
             resource.save(form);
@@ -581,6 +694,7 @@ class AdminArticleResourceTest {
         form.putSingle("id", "1");
         form.putSingle("ageRestriction", "grand");
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            quiet(panache);
             panache.when(() -> Product.findById(1L)).thenReturn(product);
             panache.when(() -> ArticleAttributeDefinition.list("order by code")).thenReturn(List.of());
             resource.save(form);
@@ -605,6 +719,7 @@ class AdminArticleResourceTest {
         // untouched because it was never returned.
         PanacheQuery<Product> products = productQuery(List.of(weighed));
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            quiet(panache);
             panache.when(() -> Product.find(typeQuery(),
                     Map.of("type", ProductType.WEIGHT))).thenReturn(products);
             Response response = resource.bulkCodeOnScreen(form);
@@ -626,6 +741,7 @@ class AdminArticleResourceTest {
         MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
         PanacheQuery<Product> products = productQuery(List.of(unit));
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            quiet(panache);
             panache.when(() -> Product.find("from Product p order by p.ean")).thenReturn(products);
             resource.bulkCodeOnScreen(form);
         }
@@ -642,7 +758,9 @@ class AdminArticleResourceTest {
         Product product = new Product();
         product.attributes = null;
         List<AdminArticleResource.AttributeRow> rows = resource.attributeRows(product);
-        assertEquals(ProductAttributeCatalog.CATALOG.size(), rows.size());
+        assertEquals(AdminArticleResource.boolDefs().size(), rows.size());
+        assertFalse(rows.stream().anyMatch(row -> row.code.equals(ProductAttributeCatalog.LINKED_ARTICLE_EAN)));
+        assertFalse(rows.stream().anyMatch(row -> row.code.equals(ProductAttributeCatalog.FORBIDDEN_SALE_MESSAGE)));
         for (AdminArticleResource.AttributeRow row : rows) {
             assertFalse(row.checked);
         }
@@ -683,6 +801,7 @@ class AdminArticleResourceTest {
         other.code = "SEASON";
         other.label = "Saison";
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            quiet(panache);
             panache.when(() -> ArticleAttributeDefinition.list("order by code"))
                     .thenReturn(List.of(origin, other));
             List<AdminArticleResource.CustomAttrRow> rows = resource.customAttributeRows(product);
@@ -703,6 +822,7 @@ class AdminArticleResourceTest {
         origin.code = "ORIGIN";
         origin.label = "Origine";
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            quiet(panache);
             panache.when(() -> ArticleAttributeDefinition.list("order by code")).thenReturn(List.of(origin));
             List<AdminArticleResource.CustomAttrRow> rows = resource.customAttributeRows(product);
             assertEquals("", rows.get(0).value);
@@ -776,9 +896,10 @@ class AdminArticleResourceTest {
         MultivaluedMap<String, String> params = new MultivaluedHashMap<>();
         Product unit = product("2", ProductType.UNIT);
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            quiet(panache);
             PanacheQuery<Product> products = productQuery(List.of(unit));
             panache.when(() -> Product.find("from Product p order by p.ean")).thenReturn(products);
-            panache.when(() -> ArticleSelection.list("order by name")).thenReturn(List.of());
+            panache.when(() -> ArticleSelection.list("pdvCode is null order by name")).thenReturn(List.of());
             panache.when(() -> EgalimRegime.list("order by code")).thenReturn(List.of(
                     new EgalimRegime("FOOD_34", "Alimentaire", new java.math.BigDecimal("0.3400")),
                     new EgalimRegime("EXEMPT", "Hors champ", null)));
@@ -800,6 +921,7 @@ class AdminArticleResourceTest {
         TemplateInstance instance = wire(resource.adminArticles);
         MultivaluedMap<String, String> params = new MultivaluedHashMap<>();
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            quiet(panache);
             PanacheQuery<Product> products = productQuery(List.of(product("2", ProductType.UNIT)));
             panache.when(() -> Product.find("from Product p order by p.ean")).thenReturn(products);
             stubSelectionList(panache);
@@ -828,6 +950,7 @@ class AdminArticleResourceTest {
         PanacheQuery<EgalimRegime> foundRegime = regimeQuery(food);
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
              MockedStatic<DateTimeProvider> time = mockStatic(DateTimeProvider.class)) {
+            quiet(panache);
             time.when(DateTimeProvider::now).thenReturn(now);
             panache.when(() -> Product.findById(3L)).thenReturn(product);
             panache.when(() -> Price.list(HISTORY_QUERY, 3L)).thenReturn(List.of());
@@ -857,6 +980,7 @@ class AdminArticleResourceTest {
         PanacheQuery<EgalimRegime> noRegime = regimeQuery(null);
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
              MockedStatic<DateTimeProvider> time = mockStatic(DateTimeProvider.class)) {
+            quiet(panache);
             time.when(DateTimeProvider::now).thenReturn(now);
             panache.when(() -> Product.findById(4L)).thenReturn(product);
             panache.when(() -> Price.list(HISTORY_QUERY, 4L)).thenReturn(List.of());
@@ -884,6 +1008,7 @@ class AdminArticleResourceTest {
         PanacheQuery<Price> noCurrentPrice = priceQuery(null);
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
              MockedStatic<DateTimeProvider> time = mockStatic(DateTimeProvider.class)) {
+            quiet(panache);
             time.when(DateTimeProvider::now).thenReturn(now);
             panache.when(() -> Product.findById(5L)).thenReturn(product);
             panache.when(() -> Price.list(HISTORY_QUERY, 5L)).thenReturn(List.of());
@@ -919,6 +1044,7 @@ class AdminArticleResourceTest {
         params.putSingle("type", "WEIGHT");
         Product weighed = product("1", ProductType.WEIGHT);
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            quiet(panache);
             PanacheQuery<Product> products = productQuery(List.of(weighed));
             panache.when(() -> Product.find(typeQuery(),
                     Map.of("type", ProductType.WEIGHT))).thenReturn(products);
@@ -932,5 +1058,710 @@ class AdminArticleResourceTest {
         @SuppressWarnings("unchecked")
         JournalPage<Product> window = (JournalPage<Product>) captor.getValue();
         assertEquals(1, window.number);
+    }
+
+    /**
+     * Answers every finder of the fiche's referential reads with nothing: the
+     * lot-20 data of the fiche and of the list (units, VAT regimes, nomenclature
+     * nodes, selections) read the referential, and a test that does not care
+     * about them must not fault. Registered first, so a test's own stubs win.
+     *
+     * @param panache the open static mock
+     */
+    @SuppressWarnings("unchecked")
+    private void quiet(MockedStatic<PanacheEntityBase> panache) {
+        PanacheQuery<Object> nothing = mock(PanacheQuery.class);
+        when(nothing.list()).thenReturn(List.of());
+        panache.when(() -> PanacheEntityBase.find(anyString(), any(Object[].class))).thenReturn(nothing);
+        panache.when(() -> PanacheEntityBase.list(anyString(), any(Object[].class))).thenReturn(List.of());
+    }
+
+    // ------------------------------------------------------------------
+    // Lot 20 (BO-02-03-03 to -44)
+    // ------------------------------------------------------------------
+
+    /**
+     * Builds a single-result query answering the given first result.
+     *
+     * @param result the first result, possibly null
+     * @param <T> the entity type
+     * @return the query
+     */
+    @SuppressWarnings("unchecked")
+    private <T> PanacheQuery<T> single(T result) {
+        return mock(PanacheQuery.class, invocation -> switch (invocation.getMethod().getName()) {
+            case "firstResult" -> result;
+            case "list" -> List.of();
+            default -> null;
+        });
+    }
+
+    /**
+     * Builds a posted form from name/value pairs.
+     *
+     * @param pairs the pairs
+     * @return the form
+     */
+    private MultivaluedMap<String, String> posted(String... pairs) {
+        MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
+        for (int k = 0; k < pairs.length; k += 2) {
+            form.putSingle(pairs[k], pairs[k + 1]);
+        }
+        return form;
+    }
+
+    /**
+     * Builds a resource whose signed-in account may change only the given data.
+     *
+     * @param fields the changeable data
+     * @return the resource
+     */
+    private AdminArticleResource restrictedTo(ArticleField... fields) {
+        AdminArticleResource resource = newResource();
+        resource.articleFieldRights = mock(ArticleFieldRights.class);
+        resource.currentUser = mock(com.intermarche.edge.security.CurrentUser.class);
+        when(resource.currentUser.getName()).thenReturn("chef");
+        java.util.Set<ArticleField> set = java.util.EnumSet.noneOf(ArticleField.class);
+        set.addAll(List.of(fields));
+        when(resource.articleFieldRights.editable("chef")).thenReturn(set);
+        return resource;
+    }
+
+    /**
+     * Tells whether a redirect reports a success.
+     *
+     * @param response the redirect
+     * @return true for a green notice
+     */
+    private boolean green(Response response) {
+        return response.getLocation().toString().contains("noticeOk=true");
+    }
+
+    /**
+     * Builds a regime.
+     *
+     * @param number the number
+     * @param rate the rate
+     * @param exempt whether it is an exemption
+     * @return the regime
+     */
+    private com.intermarche.edge.domain.catalog.VatRate regime(int number, String rate, boolean exempt) {
+        com.intermarche.edge.domain.catalog.VatRate regime =
+                new com.intermarche.edge.domain.catalog.VatRate(number, new java.math.BigDecimal(rate), "R" + number);
+        regime.exempt = exempt;
+        return regime;
+    }
+
+    /**
+     * The list carries the lot-20 data: the boolean criteria, the VAT regimes,
+     * the nomenclature nodes, the canonical query, the EEG flow state and the
+     * point of sale's selections.
+     */
+    @Test
+    void listCarriesTheLot20Data() {
+        AdminArticleResource resource = newResource();
+        resource.posSettingsService = mock(com.intermarche.edge.service.PosSettingsService.class);
+        when(resource.posSettingsService.eegEnabled()).thenReturn(true);
+        resource.nodeEchelonService = mock(com.intermarche.edge.service.NodeEchelonService.class);
+        when(resource.nodeEchelonService.currentPdv()).thenReturn("P1");
+        TemplateInstance instance = wire(resource.adminArticles);
+        MultivaluedMap<String, String> params = new MultivaluedHashMap<>();
+        params.putSingle("plu", "12");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            quiet(panache);
+            PanacheQuery<Product> products = productQuery(List.of());
+            panache.when(() -> Product.find(anyString(), org.mockito.ArgumentMatchers.<String, Object>anyMap()))
+                    .thenReturn(products);
+            resource.list(uriInfo(params), 1, null, true);
+        }
+        verify(instance).data("eegEnabled", true);
+        verify(instance).data("criteriaQuery", "plu=12");
+        verify(instance).data("attributeDefs", AdminArticleResource.boolDefs());
+        assertEquals("P1", resource.currentPdv());
+    }
+
+    /**
+     * The boolean definitions are the catalog's booleans only, and the family
+     * nodes are the classified ones.
+     */
+    @Test
+    void boolDefsAndFamilyNodes() {
+        for (com.intermarche.edge.domain.catalog.attribute.ProductAttributeDef def : AdminArticleResource.boolDefs()) {
+            assertEquals(com.intermarche.edge.domain.catalog.attribute.ProductAttributeType.BOOL, def.type());
+        }
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> com.intermarche.edge.domain.catalog.ProductFamily
+                    .list("nomenclature is not null order by code")).thenReturn(List.of());
+            assertTrue(AdminArticleResource.familyNodes().isEmpty());
+        }
+    }
+
+    /**
+     * The fiche of a known article carries its sale codes, its checkout mode,
+     * its unit, its VAT, its links, its supplier, its valued attributes and,
+     * the flow being active, the prices its labels display.
+     */
+    @Test
+    void detailsCarriesTheLot20DataOfAnArticle() {
+        AdminArticleResource resource = newResource();
+        resource.posSettingsService = mock(com.intermarche.edge.service.PosSettingsService.class);
+        when(resource.posSettingsService.eegEnabled()).thenReturn(true);
+        resource.eegGateway = mock(EegGateway.class);
+        TemplateInstance page = mock(TemplateInstance.class);
+        when(page.data(anyString(), any())).thenReturn(page);
+        Product product = product("300", ProductType.UNIT);
+        product.id = 9L;
+        product.saleCodes.add("S2");
+        product.saleCodes.add("S1");
+        product.attributes.put(ProductAttributeCatalog.CHECKOUT_MODE, "WEIGHED");
+        product.attributes.put(ProductAttributeCatalog.LINKED_ARTICLE_QUANTITY, "6");
+        product.attributes.put(ProductAttributeCatalog.SUPPLIER_NAME, "Lactalis");
+        com.intermarche.edge.domain.catalog.EegProvider provider = new com.intermarche.edge.domain.catalog.EegProvider();
+        provider.label = "SES";
+        when(resource.eegGateway.readPrice(provider, "300")).thenReturn(new java.math.BigDecimal("2.00"));
+        Price current = price(0);
+        current.priceIncludingTax = new java.math.BigDecimal("1.99");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            quiet(panache);
+            panache.when(() -> com.intermarche.edge.domain.catalog.EegProvider.list("active = true order by code"))
+                    .thenReturn(List.of(provider));
+            panache.when(() -> Price.find(anyString(), any(Object[].class))).thenReturn(single(current));
+            resource.details(page, product, current);
+        }
+        verify(page).data("saleCodes", "S1\nS2");
+        verify(page).data("checkoutMode", "WEIGHED");
+        verify(page).data("linkedArticleQuantity", "6");
+        verify(page).data("supplierName", "Lactalis");
+        verify(page).data("eegEnabled", true);
+        org.mockito.ArgumentCaptor<Object> prices = org.mockito.ArgumentCaptor.forClass(Object.class);
+        verify(page).data(org.mockito.ArgumentMatchers.eq("eegPrices"), prices.capture());
+        @SuppressWarnings("unchecked")
+        List<AdminArticleResource.EegPrice> read = (List<AdminArticleResource.EegPrice>) prices.getValue();
+        assertEquals("SES", read.get(0).provider);
+        assertTrue(read.get(0).differs);
+    }
+
+    /**
+     * The fiche of an unknown article reads no referential; a known article
+     * without parameters shows no EEG card.
+     */
+    @Test
+    void detailsOfAnUnknownArticleReadsNothing() {
+        AdminArticleResource resource = newResource();
+        TemplateInstance page = mock(TemplateInstance.class);
+        when(page.data(anyString(), any())).thenReturn(page);
+        assertEquals(page, resource.details(page, null, null));
+        verify(page).data("eegEnabled", false);
+        Product product = product("300", ProductType.UNIT);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            quiet(panache);
+            resource.details(page, product, null);
+        }
+        verify(page).data("eegPrices", List.of());
+    }
+
+    /**
+     * The EEG reading compares each label's price with the current one: equal,
+     * absent, and without a current price.
+     */
+    @Test
+    void eegPricesCompareWithTheCurrentPrice() {
+        AdminArticleResource resource = newResource();
+        resource.eegGateway = mock(EegGateway.class);
+        com.intermarche.edge.domain.catalog.EegProvider same = new com.intermarche.edge.domain.catalog.EegProvider();
+        com.intermarche.edge.domain.catalog.EegProvider silent = new com.intermarche.edge.domain.catalog.EegProvider();
+        Product product = product("300", ProductType.UNIT);
+        product.id = 9L;
+        when(resource.eegGateway.readPrice(same, "300")).thenReturn(new java.math.BigDecimal("1.99"));
+        Price current = price(0);
+        current.priceIncludingTax = new java.math.BigDecimal("1.99");
+        Price noAmount = price(0);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> com.intermarche.edge.domain.catalog.EegProvider.list("active = true order by code"))
+                    .thenReturn(List.of(same, silent));
+            panache.when(() -> Price.find(anyString(), any(Object[].class))).thenReturn(single(current));
+            List<AdminArticleResource.EegPrice> read = resource.eegPrices(product);
+            assertFalse(read.get(0).differs);
+            assertFalse(read.get(1).differs);
+            panache.when(() -> Price.find(anyString(), any(Object[].class))).thenReturn(single(null));
+            assertFalse(resource.eegPrices(product).get(0).differs);
+            panache.when(() -> Price.find(anyString(), any(Object[].class))).thenReturn(single(noAmount));
+            assertFalse(resource.eegPrices(product).get(0).differs);
+        }
+    }
+
+    /**
+     * ownValue reads the article's own value only.
+     */
+    @Test
+    void ownValueReadsTheArticleOnly() {
+        assertEquals("", AdminArticleResource.ownValue(null, "X"));
+        Product product = product("300", ProductType.UNIT);
+        assertEquals("", AdminArticleResource.ownValue(product, ProductAttributeCatalog.LINKED_ARTICLE_QUANTITY));
+        product.attributes.put("X", "1");
+        assertEquals("1", AdminArticleResource.ownValue(product, "X"));
+        product.attributes = null;
+        assertEquals("", AdminArticleResource.ownValue(product, "X"));
+    }
+
+    /**
+     * Without the rights or the account every datum is changeable; with both,
+     * the rights answer, and the names follow.
+     */
+    @Test
+    void editableFollowsTheRights() {
+        AdminArticleResource resource = newResource();
+        assertEquals(ArticleField.values().length, resource.editable().size());
+        resource.articleFieldRights = mock(ArticleFieldRights.class);
+        assertEquals(ArticleField.values().length, resource.editable().size());
+        AdminArticleResource restricted = restrictedTo(ArticleField.VAT);
+        assertEquals(java.util.Set.of("VAT"), restricted.editableNames());
+    }
+
+    /**
+     * Every refusal of a fiche is decided before anything is written: an
+     * invalid link, an EAN another article carries (as EAN or as sale code), a
+     * PLU another article carries, a clashing sale code, an unknown VAT regime,
+     * an unknown or unclassified nomenclature node.
+     */
+    @Test
+    void refusalNamesEveryClash() {
+        AdminArticleResource resource = newResource();
+        java.util.Set<ArticleField> all = java.util.EnumSet.allOf(ArticleField.class);
+        Product product = product("300", ProductType.UNIT);
+        Product other = product("400", ProductType.UNIT);
+        com.intermarche.edge.domain.catalog.ProductFamily unclassified = new com.intermarche.edge.domain.catalog.ProductFamily();
+        com.intermarche.edge.domain.catalog.ProductFamily classified = new com.intermarche.edge.domain.catalog.ProductFamily();
+        classified.nomenclature = new com.intermarche.edge.domain.catalog.Nomenclature();
+        String saleQuery = "select p from Product p join p.saleCodes c where c = ?1 and p.active = true";
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            quiet(panache);
+            assertEquals("Article lié introuvable, inactif ou formant une boucle.",
+                    resource.refusal(product, posted(ProductAttributeCatalog.LINKED_ARTICLE_EAN, "999"), all));
+            panache.when(() -> Product.find("ean", "400")).thenReturn(single(other));
+            assertTrue(resource.refusal(product, posted("ean", "400"), all).contains("EAN 400"));
+            panache.when(() -> Product.find(saleQuery, "500")).thenReturn(single(other));
+            assertTrue(resource.refusal(product, posted("ean", "500"), all).contains("EAN 500"));
+            assertNull(resource.refusal(product, posted("ean", "600"), all));
+            assertNull(resource.refusal(product, posted("ean", "300"), all));
+            assertNull(resource.refusal(product, posted("ean", "400"), java.util.EnumSet.of(ArticleField.NAME)));
+            panache.when(() -> Product.find("plu", "12")).thenReturn(single(other));
+            panache.when(() -> Product.find("plu", "13")).thenReturn(single(product));
+            assertTrue(resource.refusal(product, posted("plu", "12"), all).contains("PLU 12"));
+            assertNull(resource.refusal(product, posted("plu", "13"), all));
+            assertNull(resource.refusal(product, posted("plu", "12"), java.util.EnumSet.of(ArticleField.NAME)));
+            assertTrue(resource.refusal(product, posted("saleCodes", "400"), all).contains("vente 400"));
+            assertNull(resource.refusal(product, posted("saleCodes", "400"), java.util.EnumSet.of(ArticleField.NAME)));
+            panache.when(() -> com.intermarche.edge.domain.catalog.VatRate.find("number", 3)).thenReturn(single(regime(3, "0.2", false)));
+            assertTrue(resource.refusal(product, posted(ProductAttributeCatalog.VAT_NUMBER, "8"), all).contains("numéro 8"));
+            assertNull(resource.refusal(product, posted(ProductAttributeCatalog.VAT_NUMBER, "3"), all));
+            assertNull(resource.refusal(product, posted(ProductAttributeCatalog.VAT_NUMBER, "8"), java.util.EnumSet.of(ArticleField.NAME)));
+            panache.when(() -> com.intermarche.edge.domain.catalog.ProductFamily.find("code", "N1")).thenReturn(single(unclassified));
+            panache.when(() -> com.intermarche.edge.domain.catalog.ProductFamily.find("code", "N2")).thenReturn(single(classified));
+            assertTrue(resource.refusal(product, posted("nomenclatureNode", "N0"), all).contains("code N0"));
+            assertTrue(resource.refusal(product, posted("nomenclatureNode", "N1"), all).contains("code N1"));
+            assertNull(resource.refusal(product, posted("nomenclatureNode", "N2"), all));
+            assertNull(resource.refusal(product, posted("nomenclatureNode", "N0"), java.util.EnumSet.of(ArticleField.NAME)));
+        }
+    }
+
+    /**
+     * saveCodeClash names a code another article answers to by its EAN or by a
+     * sale code, and none when the codes are the article's own or free.
+     */
+    @Test
+    void saleCodeClashNamesTheFirstClash() {
+        AdminArticleResource resource = newResource();
+        Product product = product("300", ProductType.UNIT);
+        Product other = product("400", ProductType.UNIT);
+        String query = "select p from Product p join p.saleCodes c where c = ?1";
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            quiet(panache);
+            panache.when(() -> Product.find("ean", "A")).thenReturn(single(other));
+            panache.when(() -> Product.find(query, "B")).thenReturn(single(other));
+            panache.when(() -> Product.find("ean", "C")).thenReturn(single(product));
+            panache.when(() -> Product.find(query, "C")).thenReturn(single(product));
+            assertEquals("A", resource.saleCodeClash(product, java.util.Set.of("A")));
+            assertEquals("B", resource.saleCodeClash(product, java.util.Set.of("B")));
+            assertNull(resource.saleCodeClash(product, java.util.Set.of("C", "D")));
+        }
+    }
+
+    /**
+     * The typed sale codes split on blanks, commas and semicolons, the article's
+     * own EAN dropped.
+     */
+    @Test
+    void saleCodesSplitTheTypedText() {
+        assertEquals(java.util.Set.of("A", "B"), AdminArticleResource.saleCodes(" A\nB;300, A ", "300"));
+        assertTrue(AdminArticleResource.saleCodes(null, "300").isEmpty());
+    }
+
+    /**
+     * A fiche saved with every lot-20 datum writes them all: identity, sale
+     * codes, PLU, type, declared unit, checkout mode, VAT code, filing,
+     * supplier, links and the valued attributes (a blank one withdrawn).
+     */
+    @Test
+    void saveWritesTheLot20Data() {
+        AdminArticleResource resource = newResource();
+        Product product = product("300", ProductType.UNIT);
+        product.attributes.put(ProductAttributeCatalog.RECALL_LOTS, "OLD");
+        com.intermarche.edge.domain.catalog.MeasureUnit metre = new com.intermarche.edge.domain.catalog.MeasureUnit();
+        metre.code = "4";
+        metre.symbol = "m";
+        com.intermarche.edge.domain.catalog.ProductFamily node = new com.intermarche.edge.domain.catalog.ProductFamily();
+        node.nomenclature = new com.intermarche.edge.domain.catalog.Nomenclature();
+        MultivaluedMap<String, String> form = posted("id", "1", "ean", "301", "name", "Tuyau", "saleCodes", "S1 S2",
+                "plu", "", "productType", "WEIGHT", ProductAttributeCatalog.UNIT_CODE, "4",
+                ProductAttributeCatalog.CHECKOUT_MODE, "DECIMAL_QUANTITY_TO_ENTER", ProductAttributeCatalog.VAT_NUMBER, "3",
+                "nomenclatureNode", "N2", ProductAttributeCatalog.SUPPLIER_CODE, "F1",
+                ProductAttributeCatalog.LINKED_ARTICLE_QUANTITY, "6", ProductAttributeCatalog.COMPLEMENTARY_EANS, "500",
+                ProductAttributeCatalog.RECALL_LOTS, " ");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
+                MockedStatic<com.intermarche.edge.domain.catalog.ProductFamily> families =
+                        mockStatic(com.intermarche.edge.domain.catalog.ProductFamily.class)) {
+            quiet(panache);
+            panache.when(() -> Product.findById(1L)).thenReturn(product);
+            panache.when(() -> com.intermarche.edge.domain.catalog.MeasureUnit.find("code", "4")).thenReturn(single(metre));
+            panache.when(() -> com.intermarche.edge.domain.catalog.VatRate.find("number", 3)).thenReturn(single(regime(3, "0.2", false)));
+            families.when(() -> com.intermarche.edge.domain.catalog.ProductFamily.findByCode("N2")).thenReturn(node);
+            assertTrue(green(resource.save(form)));
+            families.verify(() -> com.intermarche.edge.domain.catalog.ProductFamily.fileUnderNomenclature(product, "N2"));
+        }
+        assertEquals("301", product.ean);
+        assertEquals("Tuyau", product.name);
+        assertEquals(java.util.Set.of("S1", "S2"), product.saleCodes);
+        assertNull(product.plu);
+        assertEquals(ProductType.WEIGHT, product.productType);
+        assertEquals("m", product.unitName);
+        assertEquals("4", product.attributes.get(ProductAttributeCatalog.UNIT_CODE));
+        assertEquals("DECIMAL_QUANTITY_TO_ENTER", product.attributes.get(ProductAttributeCatalog.CHECKOUT_MODE));
+        assertEquals("3", product.attributes.get(ProductAttributeCatalog.VAT_NUMBER));
+        assertEquals("F1", product.attributes.get(ProductAttributeCatalog.SUPPLIER_CODE));
+        assertEquals("6", product.attributes.get(ProductAttributeCatalog.LINKED_ARTICLE_QUANTITY));
+        assertEquals("500", product.attributes.get(ProductAttributeCatalog.COMPLEMENTARY_EANS));
+        assertNull(product.attributes.get(ProductAttributeCatalog.RECALL_LOTS));
+    }
+
+    /**
+     * A fiche saved by an account that may change nothing leaves every datum as
+     * it was, and a refused fiche writes nothing.
+     */
+    @Test
+    void saveHonoursTheRightsAndTheRefusals() {
+        AdminArticleResource resource = restrictedTo();
+        Product product = product("300", ProductType.UNIT);
+        product.checkoutLabel = "KEEP";
+        product.active = true;
+        product.attributes.put(ProductAttributeCatalog.BULKY, "true");
+        MultivaluedMap<String, String> form = posted("id", "1", "checkoutLabel", "NEW", "ean", "301",
+                ProductAttributeCatalog.UNIT_CODE, "4", "nomenclatureNode", "N2");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            quiet(panache);
+            panache.when(() -> Product.findById(1L)).thenReturn(product);
+            assertTrue(green(resource.save(form)));
+            assertEquals("KEEP", product.checkoutLabel);
+            assertEquals("300", product.ean);
+            assertTrue(product.active);
+            assertEquals("true", product.attributes.get(ProductAttributeCatalog.BULKY));
+            AdminArticleResource open = newResource();
+            panache.when(() -> Product.find("plu", "12")).thenReturn(single(product("400", ProductType.UNIT)));
+            assertFalse(green(open.save(posted("id", "1", "plu", "12", "checkoutLabel", "NEW"))));
+            assertEquals("KEEP", product.checkoutLabel);
+        }
+    }
+
+    /**
+     * A free unit label is kept when no declared unit is chosen, and the
+     * declared unit code is withdrawn; an unreadable type leaves the type.
+     */
+    @Test
+    void saveKeepsAFreeUnitLabel() {
+        AdminArticleResource resource = newResource();
+        Product product = product("300", ProductType.UNIT);
+        product.attributes.put(ProductAttributeCatalog.UNIT_CODE, "4");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            quiet(panache);
+            panache.when(() -> Product.findById(1L)).thenReturn(product);
+            assertTrue(green(resource.save(posted("id", "1", "unitName", "rouleau", "productType", "?"))));
+        }
+        assertEquals("rouleau", product.unitName);
+        assertNull(product.attributes.get(ProductAttributeCatalog.UNIT_CODE));
+        assertEquals(ProductType.UNIT, product.productType);
+    }
+
+    /**
+     * The valued attribute rows are the non-boolean catalog entries without a
+     * field of their own, with the article's own values.
+     */
+    @Test
+    void textAttributeRowsListTheValuedEntries() {
+        Product product = product("300", ProductType.UNIT);
+        product.attributes.put(ProductAttributeCatalog.RECALL_LOTS, "L1");
+        List<AdminArticleResource.CustomAttrRow> rows = newResource().textAttributeRows(product);
+        assertEquals(ProductAttributeCatalog.RECALL_LOTS, rows.get(0).code);
+        assertEquals("L1", rows.get(0).value);
+        for (AdminArticleResource.CustomAttrRow row : rows) {
+            assertFalse(AdminArticleResource.DEDICATED_CODES.contains(row.code));
+        }
+    }
+
+    /**
+     * The VAT view reads the article's own regime, else the price's, else none,
+     * and states the exemption whoever declares it.
+     */
+    @Test
+    void vatViewDescribesTheAppliedVat() {
+        Product own = product("300", ProductType.UNIT);
+        own.attributes.put(ProductAttributeCatalog.VAT_NUMBER, "3");
+        Product plain = product("400", ProductType.UNIT);
+        Product exempt = product("500", ProductType.UNIT);
+        exempt.attributes.put(ProductAttributeCatalog.VAT_EXEMPT, "true");
+        Price price = price(0);
+        price.vat = regime(9, "0", true);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> com.intermarche.edge.domain.catalog.VatRate.find("number", 3)).thenReturn(single(regime(3, "0.10", false)));
+            AdminArticleResource.VatView view = AdminArticleResource.vatView(own, null);
+            assertTrue(view.fromArticle);
+            assertEquals("D", view.code);
+            assertEquals("10", view.rate);
+            assertFalse(view.exempt);
+        }
+        AdminArticleResource.VatView fromPrice = AdminArticleResource.vatView(plain, price);
+        assertFalse(fromPrice.fromArticle);
+        assertTrue(fromPrice.exempt);
+        AdminArticleResource.VatView none = AdminArticleResource.vatView(exempt, null);
+        assertNull(none.code);
+        assertEquals("", none.rate);
+        assertEquals("", none.label);
+        assertTrue(none.exempt);
+        assertFalse(AdminArticleResource.vatView(plain, null).exempt);
+    }
+
+    /**
+     * The nomenclature path climbs from the deepest node to the top, naming each
+     * level, and is empty for an article filed nowhere.
+     */
+    @Test
+    void nomenclaturePathClimbsTheTree() {
+        Product product = product("300", ProductType.UNIT);
+        com.intermarche.edge.domain.catalog.Nomenclature scheme = mock(com.intermarche.edge.domain.catalog.Nomenclature.class);
+        com.intermarche.edge.domain.catalog.NomenclatureLevel family = new com.intermarche.edge.domain.catalog.NomenclatureLevel();
+        family.label = "Famille";
+        com.intermarche.edge.domain.catalog.ProductFamily leaf = new com.intermarche.edge.domain.catalog.ProductFamily();
+        leaf.code = "1002";
+        leaf.nomenclature = scheme;
+        leaf.level = 1;
+        com.intermarche.edge.domain.catalog.ProductFamily top = new com.intermarche.edge.domain.catalog.ProductFamily();
+        top.code = "10";
+        top.nomenclature = scheme;
+        com.intermarche.edge.domain.catalog.ProductFamily loose = new com.intermarche.edge.domain.catalog.ProductFamily();
+        loose.code = "X";
+        when(scheme.levelAt(1)).thenReturn(family);
+        when(scheme.parentCodeOf("1002")).thenReturn("10");
+        when(scheme.parentCodeOf("10")).thenReturn(null);
+        try (MockedStatic<com.intermarche.edge.domain.catalog.ProductFamily> families =
+                mockStatic(com.intermarche.edge.domain.catalog.ProductFamily.class, org.mockito.Mockito.CALLS_REAL_METHODS)) {
+            families.when(() -> com.intermarche.edge.domain.catalog.ProductFamily.findDirectFamily(product)).thenReturn(leaf);
+            families.when(() -> com.intermarche.edge.domain.catalog.ProductFamily.findByCode("10")).thenReturn(top);
+            List<AdminArticleResource.PathNode> path = AdminArticleResource.nomenclaturePath(product);
+            assertEquals(2, path.size());
+            assertEquals("10", path.get(0).code);
+            assertNull(path.get(0).level);
+            assertEquals("Famille", path.get(1).level);
+            families.when(() -> com.intermarche.edge.domain.catalog.ProductFamily.findDirectFamily(product)).thenReturn(loose);
+            List<AdminArticleResource.PathNode> single = AdminArticleResource.nomenclaturePath(product);
+            assertEquals(1, single.size());
+            assertNull(single.get(0).level);
+            families.when(() -> com.intermarche.edge.domain.catalog.ProductFamily.findDirectFamily(product)).thenReturn(null);
+            assertTrue(AdminArticleResource.nomenclaturePath(product).isEmpty());
+        }
+    }
+
+    /**
+     * The perimeter of a list gesture is the applied selection, else the
+     * canonical query, else the posted criteria.
+     */
+    @Test
+    void perimeterReadsSelectionQueryOrCriteria() {
+        AdminArticleResource resource = newResource();
+        ArticleSelection selection = new ArticleSelection();
+        selection.criteria = "plu=1";
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> ArticleSelection.find("name = ?1 and pdvCode is null", "S")).thenReturn(single(selection));
+            panache.when(() -> ArticleSelection.find("name = ?1 and pdvCode is null", "U")).thenReturn(single(null));
+            assertEquals("plu=1", resource.perimeter(posted("selection", "S")).toQueryString());
+            assertEquals("brand=B", resource.perimeter(posted("selection", "U", "query", "brand=B")).toQueryString());
+        }
+        assertEquals("plu=7", resource.perimeter(posted("plu", "7")).toQueryString());
+    }
+
+    /**
+     * Deleting refuses an unknown article and an account without the right,
+     * deactivates a sold article, and removes an unsold one with its prices and
+     * its memberships.
+     */
+    @Test
+    void deleteRemovesOrDeactivates() {
+        Product sold = mock(Product.class);
+        sold.id = 1L;
+        sold.ean = "300";
+        sold.active = true;
+        Product unsold = mock(Product.class);
+        unsold.id = 2L;
+        unsold.ean = "400";
+        com.intermarche.edge.domain.catalog.ProductFamily family = new com.intermarche.edge.domain.catalog.ProductFamily();
+        family.products.add(unsold);
+        @SuppressWarnings("unchecked")
+        PanacheQuery<com.intermarche.edge.domain.catalog.ProductFamily> memberships = mock(PanacheQuery.class);
+        when(memberships.list()).thenReturn(List.of(family));
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            assertFalse(green(newResource().delete(posted())));
+            panache.when(() -> Product.findById(1L)).thenReturn(sold);
+            panache.when(() -> Product.findById(2L)).thenReturn(unsold);
+            assertFalse(green(restrictedTo(ArticleField.NAME).delete(posted("id", "1"))));
+            panache.when(() -> com.intermarche.edge.domain.sale.TicketLine.count("product.id", 1L)).thenReturn(3L);
+            panache.when(() -> com.intermarche.edge.domain.sale.TicketLine.count("product.id", 2L)).thenReturn(0L);
+            panache.when(() -> com.intermarche.edge.domain.catalog.ProductFamily.find(
+                    "select pf from ProductFamily pf join pf.products p where p.id = ?1", 2L)).thenReturn(memberships);
+            assertTrue(green(newResource().delete(posted("id", "1"))));
+            assertFalse(sold.active);
+            verify(sold, org.mockito.Mockito.never()).delete();
+            assertTrue(green(newResource().delete(posted("id", "2"))));
+            panache.verify(() -> Price.delete("product.id", 2L));
+        }
+        verify(unsold).delete();
+        assertTrue(family.products.isEmpty());
+    }
+
+    /**
+     * The export writes one CSV line per article of the perimeter, with its
+     * current price, quoting what needs it.
+     */
+    @Test
+    void exportWritesThePerimeter() {
+        AdminArticleResource resource = newResource();
+        Product priced = product("300", ProductType.UNIT);
+        priced.id = 1L;
+        priced.name = "Lait; entier";
+        Product unpriced = product("400", ProductType.UNIT);
+        unpriced.id = 2L;
+        Price price = price(0);
+        price.priceIncludingTax = new java.math.BigDecimal("1.20");
+        price.vat = regime(1, "0.055", false);
+        Price bare = price(0);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
+                MockedStatic<Price> prices = mockStatic(Price.class)) {
+            PanacheQuery<Product> perimeter = productQuery(List.of(priced, unpriced, priced));
+            panache.when(() -> Product.find("from Product p order by p.ean")).thenReturn(perimeter);
+            prices.when(() -> Price.findCurrentPrice(1L)).thenReturn(price, bare);
+            prices.when(() -> Price.findCurrentPrice(2L)).thenReturn(null);
+            Response response = resource.export(uriInfo(new MultivaluedHashMap<>()));
+            String csv = (String) response.getEntity();
+            assertTrue(csv.contains("300;\"Lait; entier\";;;;;1.20;0.055;true"), csv);
+            assertTrue(csv.contains("400;400;;;;;;;true"), csv);
+            assertTrue(csv.contains("300;\"Lait; entier\";;;;;;;true"), csv);
+        }
+        assertEquals("", AdminArticleResource.cell(null));
+        assertEquals("\"a\"\"b\"", AdminArticleResource.cell("a\"b"));
+        assertEquals("plain", AdminArticleResource.cell("plain"));
+    }
+
+    /**
+     * Sending prices to the labels is refused without parameters, with the flow
+     * off and without an active provider; otherwise the current prices of the
+     * active, priced articles reach every provider, a failed one turning the
+     * notice red.
+     */
+    @Test
+    void eegPushSendsThePerimeterPrices() {
+        AdminArticleResource resource = newResource();
+        assertFalse(green(resource.eegPush(posted())));
+        resource.posSettingsService = mock(com.intermarche.edge.service.PosSettingsService.class);
+        assertFalse(green(resource.eegPush(posted())));
+        when(resource.posSettingsService.eegEnabled()).thenReturn(true);
+        resource.eegGateway = mock(EegGateway.class);
+        com.intermarche.edge.domain.catalog.EegProvider up = new com.intermarche.edge.domain.catalog.EegProvider();
+        com.intermarche.edge.domain.catalog.EegProvider down = new com.intermarche.edge.domain.catalog.EegProvider();
+        Product active = product("300", ProductType.UNIT);
+        active.id = 1L;
+        active.active = true;
+        Product inactive = product("400", ProductType.UNIT);
+        inactive.id = 2L;
+        inactive.active = false;
+        Product unpriced = product("500", ProductType.UNIT);
+        unpriced.id = 3L;
+        unpriced.active = true;
+        Product noAmount = product("600", ProductType.UNIT);
+        noAmount.id = 4L;
+        noAmount.active = true;
+        Price price = price(0);
+        price.priceIncludingTax = new java.math.BigDecimal("1.999");
+        java.util.Map<String, java.math.BigDecimal> expected = java.util.Map.of("300", new java.math.BigDecimal("2.00"));
+        when(resource.eegGateway.push(up, expected)).thenReturn(true);
+        when(resource.eegGateway.push(down, expected)).thenReturn(false);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
+                MockedStatic<Price> prices = mockStatic(Price.class)) {
+            panache.when(() -> com.intermarche.edge.domain.catalog.EegProvider.list("active = true order by code"))
+                    .thenReturn(List.of());
+            assertFalse(green(resource.eegPush(posted())));
+            panache.when(() -> com.intermarche.edge.domain.catalog.EegProvider.list("active = true order by code"))
+                    .thenReturn(List.of(up, down));
+            PanacheQuery<Product> perimeter = productQuery(List.of(active, inactive, unpriced, noAmount));
+            panache.when(() -> Product.find("from Product p order by p.ean")).thenReturn(perimeter);
+            prices.when(() -> Price.findCurrentPrice(1L)).thenReturn(price);
+            prices.when(() -> Price.findCurrentPrice(2L)).thenReturn(price);
+            prices.when(() -> Price.findCurrentPrice(3L)).thenReturn(null);
+            Price unpricedAmount = price(0);
+            prices.when(() -> Price.findCurrentPrice(4L)).thenReturn(unpricedAmount);
+            Response partial = resource.eegPush(posted());
+            assertFalse(green(partial));
+            assertTrue(partial.getLocation().toString().contains("1+fournisseur"), partial.getLocation().toString());
+            when(resource.eegGateway.push(down, expected)).thenReturn(true);
+            assertTrue(green(resource.eegPush(posted())));
+        }
+    }
+
+    /**
+     * With parameters whose EEG flow is off, the list and the fiche show no EEG
+     * card.
+     */
+    @Test
+    void theEegCardFollowsTheParameter() {
+        AdminArticleResource resource = newResource();
+        resource.posSettingsService = mock(com.intermarche.edge.service.PosSettingsService.class);
+        TemplateInstance instance = wire(resource.adminArticles);
+        TemplateInstance page = mock(TemplateInstance.class);
+        when(page.data(anyString(), any())).thenReturn(page);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            quiet(panache);
+            PanacheQuery<Product> products = productQuery(List.of());
+            panache.when(() -> Product.find("from Product p order by p.ean")).thenReturn(products);
+            resource.list(uriInfo(new MultivaluedHashMap<>()), 1, null, true);
+            resource.details(page, product("300", ProductType.UNIT), null);
+        }
+        verify(instance).data("eegEnabled", false);
+        verify(page).data("eegEnabled", false);
+    }
+
+    /**
+     * A nomenclature whose parents loop stops after sixteen steps rather than
+     * climbing forever.
+     */
+    @Test
+    void aLoopingNomenclatureStops() {
+        Product product = product("300", ProductType.UNIT);
+        com.intermarche.edge.domain.catalog.Nomenclature scheme = mock(com.intermarche.edge.domain.catalog.Nomenclature.class);
+        com.intermarche.edge.domain.catalog.ProductFamily loop = new com.intermarche.edge.domain.catalog.ProductFamily();
+        loop.code = "10";
+        loop.nomenclature = scheme;
+        when(scheme.parentCodeOf("10")).thenReturn("10");
+        try (MockedStatic<com.intermarche.edge.domain.catalog.ProductFamily> families =
+                mockStatic(com.intermarche.edge.domain.catalog.ProductFamily.class)) {
+            families.when(() -> com.intermarche.edge.domain.catalog.ProductFamily.findDirectFamily(product)).thenReturn(loop);
+            families.when(() -> com.intermarche.edge.domain.catalog.ProductFamily.findByCode("10")).thenReturn(loop);
+            assertEquals(16, AdminArticleResource.nomenclaturePath(product).size());
+        }
     }
 }

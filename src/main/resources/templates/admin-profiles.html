@@ -5,37 +5,38 @@
 !}
 {#include admin-layout}
 
-{#title}Profils{/title}
+{#title}{inject:i18n.get('t.profils')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Profils</h1>
-        <p class="page-sub">Ensembles de droits (fonctionnalité × option) affectables aux utilisateurs.</p>
+        <h1>{inject:i18n.get('t.profils')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.ensembles-de-droits-fonctionnalite-option-affect')}</p>
     </div>
     <div class="page-actions">
-        <a class="btn btn-primary" href="/admin/profiles/new">Nouveau profil</a>
+        <a class="btn btn-primary" href="/admin/profiles/new">{inject:i18n.get('t.nouveau-profil')}</a>
     </div>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 <div class="card">
     {#if profiles.isEmpty()}
     <div class="empty-state">
-        <p>Aucun profil défini.</p>
-        <p class="empty-hint">Créez un premier profil pour commencer à administrer les droits.</p>
+        <p>{inject:i18n.get('t.aucun-profil-defini')}</p>
+        <p class="empty-hint">{inject:i18n.get('t.creez-un-premier-profil-pour-commencer-a')}</p>
     </div>
     {#else}
     <table class="data-table">
         <thead>
             <tr>
-                <th>Nom</th>
-                <th>Description</th>
-                <th>Droits</th>
-                <th class="col-actions">Actions</th>
+                <th>{inject:i18n.get('t.nom')}</th>
+                <th>{inject:i18n.get('t.description')}</th>
+                <th>{inject:i18n.get('t.niveau-2')}</th>
+                <th>{inject:i18n.get('t.droits')}</th>
+                <th class="col-actions">{inject:i18n.get('t.actions')}</th>
             </tr>
         </thead>
         <tbody>
@@ -43,13 +44,14 @@
             <tr>
                 <td><a class="link-strong" href="/admin/profiles/edit?id={profile.id}">{profile.name}</a></td>
                 <td class="col-muted">{profile.description ?: '—'}</td>
-                <td><span class="badge badge-ok">{profile.grants.size()} droit(s)</span></td>
+                <td>{profile.hierarchyLevel}{#if profile.centralManaged} <span class="badge">{inject:i18n.get('t.central')}</span>{/if}</td>
+                <td><span class="badge badge-ok">{profile.grants.size()} {inject:i18n.get('t.droit-s')}</span></td>
                 <td class="col-actions">
-                    <a class="btn btn-small btn-ghost" href="/admin/profiles/edit?id={profile.id}">Modifier</a>
+                    <a class="btn btn-small btn-ghost" href="/admin/profiles/edit?id={profile.id}">{inject:i18n.get('t.modifier')}</a>
                     <form method="post" action="/admin/profiles/delete" class="app-identity-form"
-                          onsubmit="return confirm('Supprimer le profil « {profile.name} » ?');">
+                          onsubmit="return confirm('{inject:i18n.js('t.supprimer-le-profil')} {profile.name} » ?');">
                         <input type="hidden" name="id" value="{profile.id}">
-                        <button class="btn btn-small btn-danger" type="submit">Supprimer</button>
+                        <button class="btn btn-small btn-danger" type="submit">{inject:i18n.get('t.supprimer')}</button>
                     </form>
                 </td>
             </tr>
@@ -60,4 +62,4 @@
 </div>
 {/body}
 
-{#footer}Un profil créé ici autorise ou refuse une fonctionnalité précise, sans redéploiement.{/footer}
+{#footer}{inject:i18n.get('t.un-profil-cree-ici-autorise-ou-refuse')}{/footer}

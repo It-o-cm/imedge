@@ -189,8 +189,94 @@ public class TechnicalEvent extends PanacheEntity {
          * editions were written, failures included — a state that was programmed
          * and did not come out is what an operator needs to find the next morning.
          */
-        SCHEDULED_REPORTS_EDITED
+        SCHEDULED_REPORTS_EDITED,
+        /** Supervisor-authorised workstation control request (LC-13-03-04). */
+        WORKSTATION_REQUEST,
+        /** A dynamically identified configured key was used (LC-13-05-01). */
+        TOUCH_USED,
+        /**
+         * The drawer was opened outside any transaction with the supervisor's
+         * authorisation (LC-12-01-01); the detail carries the administered reason's
+         * code and label when one was chosen (LC-12-01-02) and who authorised it.
+         * Appended last: the type is stored by its rank.
+         */
+        DRAWER_FORCED_OPEN,
+        /**
+         * An administered return TYPE was selected in caisse (its label in the
+         * detail, LC-05-04-01), so the store reports can tell a container return
+         * from a defective-article one. Appended after
+         * {@link #DRAWER_FORCED_OPEN} for the same reason: the type is stored by
+         * its rank.
+         */
+        RETURN_TYPE_SELECTED,
+
+        /**
+         * A cashier declared the vignettes she handed out on her shift
+         * (BO-11-01-20); the detail reads {@code session=<number>;count=<n>}.
+         * Appended last: the type is stored by its rank.
+         */
+        VIGNETTES_DECLARED,
+        // ---- lot 21: S event types (appended: the type is stored by its rank) ----
+        /**
+         * A self-scanning basket was put under a total control the hostess
+         * decided at the till (BO-04-01-42); the operator is the hostess.
+         */
+        SELF_SCAN_CONTROLLED,
+        /**
+         * A self-scanning basket was put under a control the system drew or the
+         * basket required (BO-04-01-43).
+         */
+        SELF_SCAN_VERIFIED,
+        /** A code no article answers was scanned; {@link #code} carries it (BO-04-01-34). */
+        UNKNOWN_ARTICLE_SCANNED,
+        /**
+         * One settlement was cancelled on a ticket; {@link #amount} and
+         * {@link #code} (the payment method) carry it (BO-04-01-19).
+         */
+        PAYMENT_CANCELLED,
+        /** The drawer received its opening pulse (BO-04-03-07). */
+        DRAWER_OPENED,
+        /**
+         * A price modification was applied to a line or to the ticket — a
+         * remise, a percentage discount or a forced price; {@link #code} names
+         * the kind (BO-04-03-07).
+         */
+        PRICE_MODIFIED,
+        /** An article line was cancelled (BO-04-03-07). */
+        LINE_CANCELLED,
+        /**
+         * An administered control alert fired (BO-04-03-08/09/14); {@link #code}
+         * names the rule's target and the detail its type and outcome.
+         */
+        CONTROL_ALERT,
+        /**
+         * A justification was chosen for a register function (BO-04-03-10/12/14);
+         * {@link #code} carries the function and the detail the justification.
+         */
+        JUSTIFICATION_CHOSEN,
+        /** A watched back-office menu was opened (BO-04-03-04); {@link #code} names it. */
+        BACK_OFFICE_MENU_OPENED,
+        /**
+         * The back office handled a register request — acknowledged, authorised,
+         * sent back to the till, refused, or a forced close (BO-04-03-14).
+         */
+        SUPERVISION_HANDLED,
+
+        /**
+         * A CASH OPERATION timed at the till — a count, a withdrawal, a cash
+         * movement (BO-06-06-03): the detail carries the kind and the seconds
+         * it took, {@code kind;seconds}, so the cashier state can tell the time
+         * spent on the drawer from the idle time. Appended for the same reason
+         * as the others: the type is stored by its rank.
+         */
+        CASH_OPERATION_TIMED
     }
+
+    /** The detail of a lock the cashier made herself (BO-06-06-02). */
+    public static final String LOCK_MANUAL = "MANUEL";
+
+    /** The detail of the lock the idle delay triggered (BO-06-06-02). */
+    public static final String LOCK_AUTOMATIC = "AUTO";
 
     /** The type of the event. */
     @Column(name = "event_type", nullable = false, length = 30)
@@ -225,4 +311,22 @@ public class TechnicalEvent extends PanacheEntity {
     /** Stable identity of the event across nodes (store-sync upsert key). */
     @Column(name = "event_uid", unique = true, length = 36)
     public String eventUid;
+
+    /**
+     * The number of the ticket the event is about, or null (BO-04-01-19/34):
+     * a first-class column so the journal joins an event to its ticket.
+     */
+    @Column(name = "ticket_number", length = 40)
+    public String ticketNumber;
+
+    /** The amount the event bears, or null (BO-04-01-19, BO-04-03-07). */
+    @Column(name = "amount", precision = 19, scale = 4)
+    public java.math.BigDecimal amount;
+
+    /**
+     * A searchable code the event carries — a payment method, a scanned code,
+     * a rule target, a menu — or null (BO-04-01-19/34, BO-04-03-04/08).
+     */
+    @Column(name = "event_code", length = 120)
+    public String code;
 }

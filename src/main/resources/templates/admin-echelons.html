@@ -8,22 +8,22 @@
 !}
 {#include admin-layout}
 
-{#title}Échelons{/title}
+{#title}{inject:i18n.get('t.echelons-2')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Échelons</h1>
-        <p class="page-sub">Pays, enseignes et points de vente de l'organisation, et les paramètres hérités.</p>
+        <h1>{inject:i18n.get('t.echelons-2')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.pays-enseignes-et-points-de-vente-de')}</p>
     </div>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 <div class="card">
-    <h2 class="card-title">Pays</h2>
+    <h2 class="card-title">{inject:i18n.get('t.pays')}</h2>
     <ul>
         {#for country in countries}
         <li><strong>{country.code}</strong> — {country.name}{#if country.defaultLanguage} ({country.defaultLanguage}){/if}</li>
@@ -32,183 +32,298 @@
     <form method="post" action="/admin/echelons/country">
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="c-code">Code pays</label>
+                <label class="field-label" for="c-code">{inject:i18n.get('t.code-pays')}</label>
                 <input class="input-control" id="c-code" type="text" name="code" maxlength="8" required>
             </div>
             <div class="field">
-                <label class="field-label" for="c-name">Nom</label>
+                <label class="field-label" for="c-name">{inject:i18n.get('t.nom')}</label>
                 <input class="input-control" id="c-name" type="text" name="name" maxlength="120">
             </div>
             <div class="field">
-                <label class="field-label" for="c-lang">Langue par défaut</label>
+                <label class="field-label" for="c-lang">{inject:i18n.get('t.langue-par-defaut')}</label>
                 <input class="input-control" id="c-lang" type="text" name="defaultLanguage" maxlength="8">
             </div>
         </div>
-        <div class="page-actions"><button class="btn btn-primary" type="submit">Enregistrer le pays</button></div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer-le-pays')}</button></div>
     </form>
 </div>
 
 <div class="card">
-    <h2 class="card-title">Enseignes</h2>
+    <h2 class="card-title">{inject:i18n.get('t.enseignes')}</h2>
     <ul>
         {#for enseigne in enseignes}
-        <li><strong>{enseigne.code}</strong> — {enseigne.name}{#if enseigne.countryCode} · pays {enseigne.countryCode}{/if}</li>
+        <li><strong>{enseigne.code}</strong> — {enseigne.name}{#if enseigne.countryCode} {inject:i18n.get('t.pays-2')} {enseigne.countryCode}{/if}</li>
         {/for}
     </ul>
     <form method="post" action="/admin/echelons/enseigne">
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="e-code">Code enseigne</label>
+                <label class="field-label" for="e-code">{inject:i18n.get('t.code-enseigne')}</label>
                 <input class="input-control" id="e-code" type="text" name="code" maxlength="8" required>
             </div>
             <div class="field">
-                <label class="field-label" for="e-name">Nom</label>
+                <label class="field-label" for="e-name">{inject:i18n.get('t.nom')}</label>
                 <input class="input-control" id="e-name" type="text" name="name" maxlength="120">
             </div>
             <div class="field">
-                <label class="field-label" for="e-country">Code pays de rattachement</label>
+                <label class="field-label" for="e-country">{inject:i18n.get('t.code-pays-de-rattachement')}</label>
                 <input class="input-control" id="e-country" type="text" name="countryCode" maxlength="8">
             </div>
             <div class="field">
-                <label class="field-label" for="e-lang">Langue par défaut</label>
+                <label class="field-label" for="e-lang">{inject:i18n.get('t.langue-par-defaut')}</label>
                 <input class="input-control" id="e-lang" type="text" name="defaultLanguage" maxlength="8">
             </div>
         </div>
-        <div class="page-actions"><button class="btn btn-primary" type="submit">Enregistrer l'enseigne</button></div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer-l-enseigne')}</button></div>
     </form>
 </div>
 
 <div class="card">
-    <h2 class="card-title">Points de vente</h2>
+    <h2 class="card-title">{inject:i18n.get('t.points-de-vente')}</h2>
     <ul>
         {#for pdv in pdvs}
-        <li><strong>{pdv.pdvNumber}</strong> — {pdv.name}{#if pdv.enseigneCode} · enseigne {pdv.enseigneCode}{/if}{#if pdv.adherentCode} · adhérent {pdv.adherentCode}{/if}{#if !pdv.active} · inactif{/if}</li>
+        <li><strong>{pdv.pdvNumber}</strong> — {pdv.name}{#if pdv.enseigneCode} {inject:i18n.get('t.enseigne')} {pdv.enseigneCode}{/if}{#if pdv.adherentCode} {inject:i18n.get('t.adherent')} {pdv.adherentCode}{/if}{#if !pdv.active} {inject:i18n.get('t.inactif-2')}{/if} · <a href="/admin/echelons?viewPdv={pdv.pdvNumber}#heritage">{inject:i18n.get('t.q-heritage-et-historique')}</a></li>
         {/for}
     </ul>
     <form method="post" action="/admin/echelons/pdv">
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="p-number">N° PDV (5 chiffres)</label>
+                <label class="field-label" for="p-number">{inject:i18n.get('t.n-pdv-5-chiffres')}</label>
                 <input class="input-control" id="p-number" type="text" name="pdvNumber" maxlength="5" pattern="[0-9]{5}" required>
-                <span class="field-hint">Renommer : renseignez l'ancien numéro ci-dessous.</span>
+                <span class="field-hint">{inject:i18n.get('t.renommer-renseignez-l-ancien-numero-ci-dessous')}</span>
             </div>
             <div class="field">
-                <label class="field-label" for="p-original">Ancien N° (renommage)</label>
+                <label class="field-label" for="p-original">{inject:i18n.get('t.ancien-n-renommage')}</label>
                 <input class="input-control" id="p-original" type="text" name="originalNumber" maxlength="5">
             </div>
             <div class="field">
-                <label class="field-label" for="p-name">Nom</label>
+                <label class="field-label" for="p-name">{inject:i18n.get('t.nom')}</label>
                 <input class="input-control" id="p-name" type="text" name="name" maxlength="120">
             </div>
             <div class="field">
-                <label class="field-label" for="p-enseigne">Code enseigne</label>
+                <label class="field-label" for="p-enseigne">{inject:i18n.get('t.code-enseigne')}</label>
                 <input class="input-control" id="p-enseigne" type="text" name="enseigneCode" maxlength="8">
             </div>
             <div class="field">
-                <label class="field-label" for="p-adherent">Code adhérent</label>
+                <label class="field-label" for="p-adherent">{inject:i18n.get('t.code-adherent')}</label>
                 <input class="input-control" id="p-adherent" type="text" name="adherentCode" maxlength="32">
             </div>
             <div class="field">
-                <label class="field-label" for="p-active">Actif</label>
+                <label class="field-label" for="p-active">{inject:i18n.get('t.actif')}</label>
                 <input id="p-active" type="checkbox" name="active" value="1" checked>
             </div>
         </div>
-        <div class="page-actions"><button class="btn btn-primary" type="submit">Enregistrer le point de vente</button></div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer-le-point-de-vente')}</button></div>
     </form>
 </div>
 
 <div class="card">
-    <h2 class="card-title">Paramètre d'échelon</h2>
+    <h2 class="card-title">{inject:i18n.get('t.parametre-d-echelon')}</h2>
     <form method="post" action="/admin/echelons/setting">
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="s-level">Niveau</label>
+                <label class="field-label" for="s-level">{inject:i18n.get('t.niveau-2')}</label>
                 <select class="input-control" id="s-level" name="level">
-                    <option value="COUNTRY">Pays</option>
-                    <option value="ENSEIGNE">Enseigne</option>
-                    <option value="PDV">Point de vente</option>
-                    <option value="ISLAND">Îlot (code)</option>
-                    <option value="CHECKOUT_POINT">Point de caisse (terminal)</option>
+                    <option value="COUNTRY">{inject:i18n.get('t.pays')}</option>
+                    <option value="ENSEIGNE">{inject:i18n.get('t.enseigne-2')}</option>
+                    <option value="PDV">{inject:i18n.get('t.point-de-vente')}</option>
+                    <option value="ISLAND">{inject:i18n.get('t.ilot-code')}</option>
+                    <option value="CHECKOUT_POINT">{inject:i18n.get('t.point-de-caisse-terminal')}</option>
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="s-code">Code échelon</label>
+                <label class="field-label" for="s-code">{inject:i18n.get('t.code-echelon')}</label>
                 <input class="input-control" id="s-code" type="text" name="echelonCode" maxlength="32" required>
             </div>
             <div class="field">
-                <label class="field-label" for="s-key">Paramètre</label>
+                <label class="field-label" for="s-key">{inject:i18n.get('t.parametre')}</label>
                 <select class="input-control" id="s-key" name="key">
                     {#for def in keys}
-                    <option value="{def.key}">{def.key} — {def.label}</option>
+                    <option value="{def.key}">{def.key} — {inject:i18n.text(def.label)}</option>
                     {/for}
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="s-value">Valeur</label>
+                <label class="field-label" for="s-value">{inject:i18n.get('t.valeur')}</label>
                 {! Deux champs pour une seule valeur : le champ libre, et la liste
                  ! des valeurs permises quand le parametre choisi en a. Celui qui
                  ! ne sert pas est DESACTIVE, donc non soumis — le formulaire ne
                  ! porte jamais deux "value". !}
-                <input class="input-control" id="s-value" type="text" name="value" maxlength="255">
+                <input class="input-control" id="s-value" type="password" name="value" maxlength="4000" style="display:none;" disabled>
+                {! BO-04-02-01, BO-04-03-08/10 : une valeur libre peut tenir sur
+                 ! plusieurs lignes — les regles d'aval, les alertes et les
+                 ! fonctions justifiees se posent une par ligne, a l'ilot comme
+                 ! au magasin. !}
+                <textarea class="input-control" id="s-value-lines" name="value" rows="3" maxlength="4000"></textarea>
                 <select class="input-control" id="s-value-choice" name="value" style="display:none;" disabled></select>
             </div>
             <div class="field">
-                <label class="field-label" for="s-effective">Date d'effet (optionnel)</label>
+                <label class="field-label" for="s-effective">{inject:i18n.get('t.date-d-effet-optionnel')}</label>
                 <input class="input-control" id="s-effective" type="date" name="effectiveDate">
-                <span class="field-hint">Vide : effet immédiat. Sinon la valeur s'applique à partir de cette date.</span>
+                <span class="field-hint">{inject:i18n.get('t.vide-effet-immediat-sinon-la-valeur-s')}</span>
             </div>
         </div>
-        <div class="page-actions"><button class="btn btn-primary" type="submit">Poser le paramètre</button></div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.poser-le-parametre')}</button></div>
     </form>
 </div>
 
 <script>
   /* Les valeurs permises par parametre, telles que le catalogue les declare. */
   var CLOSED_VALUES = {closedValues.raw};
+  /* BO-10-03-08 : les parametres secrets se saisissent masques. */
+  var SECRET_KEYS = {secretKeys.raw};
 
   (function () {
     var key = document.getElementById('s-key');
     var free = document.getElementById('s-value');
+    var lines = document.getElementById('s-value-lines');
     var list = document.getElementById('s-value-choice');
+    /* Shows one field and disables the two others, so the form carries one value. */
+    function only(field) {
+      [free, lines, list].forEach(function (candidate) {
+        candidate.style.display = candidate === field ? '' : 'none';
+        candidate.disabled = candidate !== field;
+      });
+    }
     /* Rebranche le champ sur la nature du parametre choisi : une liste fermee
-       se CHOISIT, le reste se tape. */
+       se CHOISIT, un secret se tape masque, le reste se tape sur une ou
+       plusieurs lignes. */
     function bindValueField() {
       var values = CLOSED_VALUES[key.value];
       if (!values) {
-        list.style.display = 'none';
-        list.disabled = true;
-        free.style.display = '';
-        free.disabled = false;
+        only(SECRET_KEYS.indexOf(key.value) >= 0 ? free : lines);
         return;
       }
       list.innerHTML = '';
       values.forEach(function (value) {
         var option = document.createElement('option');
         option.value = value;
-        option.textContent = value === '' ? '— aucune —' : value;
+        option.textContent = value === '' ? '{inject:i18n.js('t.s21-aucune-valeur')}' : value;
         list.appendChild(option);
       });
-      free.style.display = 'none';
-      free.disabled = true;
-      list.style.display = '';
-      list.disabled = false;
+      only(list);
     }
     key.addEventListener('change', bindValueField);
     bindValueField();
   })();
 </script>
 
+{! BO-02-05-05 : la vue de regroupement des points de vente par adhérent. !}
 <div class="card">
-    <h2 class="card-title">Personnalisations (BO-03-12-07)</h2>
-    <p class="page-sub">Points de vente d'une enseigne ayant leur propre valeur pour un paramètre.</p>
+    <h2 class="card-title">{inject:i18n.get('t.q-regroupement-par-adherent')}</h2>
+    <p class="page-sub">{inject:i18n.get('t.q-un-adherent-exploite-plusieurs-points-de-vente')}</p>
+    {#if adherents.isEmpty()}
+    <p class="page-sub">{inject:i18n.get('t.q-aucun-point-de-vente-n-est-rattache-a-un-adherent')}</p>
+    {#else}
+    <div class="table-wrap">
+    <table class="data-table" id="adherent-view">
+        <thead><tr><th>{inject:i18n.get('t.code-adherent')}</th><th>{inject:i18n.get('t.points-de-vente')}</th></tr></thead>
+        <tbody>
+            {#for entry in adherents.entrySet()}
+            <tr><td class="link-strong">{entry.key}</td><td>{#for pdv in entry.value}<span class="sup-muted">{pdv.pdvNumber}</span> {pdv.name}{#if pdv.enseigneCode} ({pdv.enseigneCode}){/if}{#if pdv_hasNext} · {/if}{/for}</td></tr>
+            {/for}
+        </tbody>
+    </table>
+    </div>
+    {/if}
+</div>
+
+{! BO-02-05-01/02/04 : ce qu'un point de vente hérite de son pays et de son
+ ! enseigne, et l'historique de son numéro, de son enseigne et de son adhérent. !}
+<div class="card" id="heritage">
+    <h2 class="card-title">{inject:i18n.get('t.q-heritage-d-un-point-de-vente')}</h2>
     <form method="get" action="/admin/echelons">
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="v-enseigne">Code enseigne</label>
+                <label class="field-label" for="h-pdv">{inject:i18n.get('t.n-pdv-5-chiffres')}</label>
+                <input class="input-control" id="h-pdv" type="text" name="viewPdv" value="{viewPdv}" maxlength="5">
+            </div>
+        </div>
+        <div class="page-actions"><button class="btn btn-ghost" type="submit">{inject:i18n.get('t.afficher')}</button></div>
+    </form>
+    {#if viewed}
+    <p class="page-sub" id="heritage-identity"><strong>{viewed.pdvNumber}</strong> — {viewed.name}{#if viewed.enseigneCode} {inject:i18n.get('t.enseigne')} {viewed.enseigneCode}{/if}{#if viewed.adherentCode} {inject:i18n.get('t.adherent')} {viewed.adherentCode}{/if}</p>
+    <h3 class="card-title">{inject:i18n.get('t.q-historique')}</h3>
+    {#if history.isEmpty()}
+    <p class="page-sub">{inject:i18n.get('t.q-aucun-changement')}</p>
+    {#else}
+    <div class="table-wrap">
+    <table class="data-table" id="heritage-history">
+        <thead><tr><th>{inject:i18n.get('t.q-date')}</th><th>{inject:i18n.get('t.q-changement')}</th><th>{inject:i18n.get('t.q-avant')}</th><th>{inject:i18n.get('t.q-apres')}</th><th>{inject:i18n.get('t.q-origine')}</th></tr></thead>
+        <tbody>
+            {#for change in history}
+            <tr><td class="col-muted">{#if change.changedAt}{change.changedAt.format('dd/MM/yyyy HH:mm')}{/if}</td><td>{inject:i18n.code('t.q-changement-', change.kind)}</td><td>{change.oldValue ?: '—'}</td><td>{change.newValue ?: '—'}</td><td class="col-muted">{inject:i18n.code('t.q-source-', change.source)}</td></tr>
+            {/for}
+        </tbody>
+    </table>
+    </div>
+    <p class="page-sub">{inject:i18n.get('t.q-les-donnees-produites-restent-rattachees')}</p>
+    {/if}
+    <h3 class="card-title">{inject:i18n.get('t.q-parametres-herites')}</h3>
+    {#if inherited.isEmpty()}
+    <p class="page-sub">{inject:i18n.get('t.q-aucun-parametre-pose-aux-echelons')}</p>
+    {#else}
+    <div class="table-wrap">
+    <table class="data-table" id="heritage-settings">
+        <thead><tr><th>{inject:i18n.get('t.parametre')}</th><th>{inject:i18n.get('t.q-valeur')}</th><th>{inject:i18n.get('t.q-origine')}</th></tr></thead>
+        <tbody>
+            {#for row in inherited}
+            <tr><td class="col-muted">{row.key}</td><td>{row.value}</td><td>{inject:i18n.code('t.q-niveau-', row.level)} {row.code}</td></tr>
+            {/for}
+        </tbody>
+    </table>
+    </div>
+    {/if}
+    <h3 class="card-title">{inject:i18n.get('t.q-tva-recue')}</h3>
+    <p class="page-sub" id="heritage-vat">{#for rate in inheritedVat}{rate.number} {rate.label} ({rate.getRateFormatted()} %{#if rate.country} {rate.country}{/if}){#if rate_hasNext} · {/if}{#else}{inject:i18n.get('t.q-aucun')}{/for}</p>
+    <h3 class="card-title">{inject:i18n.get('t.q-modeles-de-documents-recus')}</h3>
+    <p class="page-sub" id="heritage-templates">{#for template in inheritedTemplates}{template.code} ({template.echelonScope ?: '*'}){#if template_hasNext} · {/if}{#else}{inject:i18n.get('t.q-aucun')}{/for}</p>
+    <h3 class="card-title">{inject:i18n.get('t.q-comptes-et-profils-recus')}</h3>
+    <p class="page-sub" id="heritage-accounts">{#for binding in inheritedAccounts}{binding.loginName} : {binding.profileName}{#if binding_hasNext} · {/if}{#else}{inject:i18n.get('t.q-aucun')}{/for}</p>
+    <p class="page-sub">{inject:i18n.get('t.q-un-point-de-vente-change-d-enseigne')}</p>
+    {#else if viewPdv}
+    <p class="page-sub">{inject:i18n.get('t.q-point-de-vente-inconnu')}</p>
+    {/if}
+</div>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.f19-valeurs-programmees')} ({programmed.size()})</h2>
+    <p class="page-sub">{inject:i18n.get('t.f19-valeurs-programmees-aide')}</p>
+    {#if programmed.isEmpty()}
+    <p class="page-sub">{inject:i18n.get('t.k2-aucun-date')}</p>
+    {#else}
+    <div style="overflow-x: auto;">
+    <table class="data-table">
+        <thead><tr><th>{inject:i18n.get('t.k2-echelon')}</th><th>{inject:i18n.get('t.code')}</th><th>{inject:i18n.get('t.k2-cle')}</th><th>{inject:i18n.get('t.f19-valeur-actuelle')}</th><th>{inject:i18n.get('t.f19-valeur-programmee')}</th><th>{inject:i18n.get('t.k2-date-effet')}</th></tr></thead>
+        <tbody>
+        {#for setting in programmed}
+        <tr>
+            <td>{inject:i18n.code('t.k2-niveau-', setting.level)}</td>
+            <td>{setting.echelonCode}</td>
+            <td style="word-break: break-all;">{setting.settingKey}</td>
+            <td>{#if setting.settingValue != null}{setting.settingValue}{#else}{inject:i18n.get('t.f19-heritee')}{/if}</td>
+            <td>{#if setting.pendingValue != null}{setting.pendingValue}{#else}{inject:i18n.get('t.f19-heritee')}{/if}</td>
+            <td>{setting.effectiveDate}</td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+    </div>
+    <p class="page-sub"><a href="/admin/releases">{inject:i18n.get('t.f19-gerer-les-dates')}</a></p>
+    {/if}
+</div>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.personnalisations-bo-03-12-07')}</h2>
+    <p class="page-sub">{inject:i18n.get('t.points-de-vente-d-une-enseigne-ayant')}</p>
+    <form method="get" action="/admin/echelons">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="v-enseigne">{inject:i18n.get('t.code-enseigne')}</label>
                 <input class="input-control" id="v-enseigne" type="text" name="viewEnseigne" value="{viewEnseigne ?: ''}" maxlength="8">
             </div>
             <div class="field">
-                <label class="field-label" for="v-key">Paramètre</label>
+                <label class="field-label" for="v-key">{inject:i18n.get('t.parametre')}</label>
                 <select class="input-control" id="v-key" name="viewKey">
                     {#for def in keys}
                     <option value="{def.key}" {#if def.key == viewKey}selected{/if}>{def.key}</option>
@@ -216,18 +331,18 @@
                 </select>
             </div>
         </div>
-        <div class="page-actions"><button class="btn btn-ghost" type="submit">Afficher</button></div>
+        <div class="page-actions"><button class="btn btn-ghost" type="submit">{inject:i18n.get('t.afficher')}</button></div>
     </form>
     {#if viewKey}
     <ul>
         {#for pdv in personalised}
         <li><strong>{pdv.pdvNumber}</strong> — {pdv.name}</li>
         {#else}
-        <li>Aucun point de vente n'a personnalisé ce paramètre.</li>
+        <li>{inject:i18n.get('t.aucun-point-de-vente-n-a-personnalise')}</li>
         {/for}
     </ul>
     {/if}
 </div>
 {/body}
 
-{#footer}Les échelons et leurs paramètres sont administrés sur le nœud central et distribués aux magasins par le tirage.{/footer}
+{#footer}{inject:i18n.get('t.les-echelons-et-leurs-parametres-sont-administre')}{/footer}

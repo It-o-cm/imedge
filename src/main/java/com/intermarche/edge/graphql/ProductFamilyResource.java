@@ -4,6 +4,7 @@ import com.intermarche.edge.domain.catalog.Product;
 import com.intermarche.edge.domain.catalog.ProductFamily;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import org.eclipse.microprofile.graphql.*;
 import org.jboss.logging.Logger;
@@ -36,6 +37,10 @@ import java.util.NoSuchElementException;
 public class ProductFamilyResource implements GraphQLTrait {
 
     private static final Logger LOGGER = Logger.getLogger(ProductFamilyResource.class);
+
+    /** Moves the referential change stamp once a mutation has committed (BO-03-12-01). */
+    @Inject
+    ReferentialChangeNotifier referentialChange;
 
     // --------------------------------------------------
     // Queries (Retrieve) -> MANAGER only
@@ -143,6 +148,7 @@ public class ProductFamilyResource implements GraphQLTrait {
 
             family.persist();
 
+            referentialChange.changed();
             LOGGER.info("Exiting method createProductFamily. Created ID: " + family.id);
             return family;
         }, ProductFamilyResource.class, "createProductFamily");
@@ -213,6 +219,7 @@ public class ProductFamilyResource implements GraphQLTrait {
                 }
             }
 
+            referentialChange.changed();
             LOGGER.info("Exiting method updateProductFamily");
             return family;
         }, ProductFamilyResource.class, "updateProductFamily");
@@ -226,6 +233,7 @@ public class ProductFamilyResource implements GraphQLTrait {
         return this.execute(() -> {
             LOGGER.info("Entering method deleteProductFamily for id: " + id);
             boolean result = ProductFamily.deleteById(id);
+            referentialChange.changed();
             LOGGER.info("Exiting method deleteProductFamily. Result: " + result);
             return result;
         }, ProductFamilyResource.class, "deleteProductFamily");

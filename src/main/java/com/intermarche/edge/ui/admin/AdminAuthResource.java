@@ -76,6 +76,14 @@ public class AdminAuthResource {
     @Inject
     SecurityIdentity identity;
 
+    /** Whether the single sign-on is offered on this node (BO-01-02-01). */
+    @org.eclipse.microprofile.config.inject.ConfigProperty(name = "pos.sso.enabled", defaultValue = "false")
+    boolean ssoEnabled;
+
+    /** The sign-in mode posed at this node's echelon (BO-01-02-09). */
+    @Inject
+    com.intermarche.edge.service.PosSettingsService posSettingsService;
+
     /**
      * The journal emitter. A back-office password change (BO-04-01-29) is
      * recorded through the single event mechanism, naming the operator by
@@ -85,10 +93,12 @@ public class AdminAuthResource {
     com.intermarche.edge.service.TechnicalEventService technicalEventService;
 
     /**
-     * Shows the sign-in page.
+     * Shows the sign-in page, with the single sign-on button when the node
+     * offers it (BO-01-02-01).
      *
      * @param error present when form authentication rejected the credentials
      * @param notice the one-shot message carried back from a sign-out
+     * @param sso the code of a refused single sign-on: disabled or refused, or null
      * @return the sign-in page
      */
     @GET
@@ -96,15 +106,37 @@ public class AdminAuthResource {
     @PermitAll
     @Produces(MediaType.TEXT_HTML)
     public TemplateInstance loginPage(@QueryParam("error") String error,
-                                      @QueryParam("notice") String notice) {
+                                      @QueryParam("notice") String notice,
+                                      @QueryParam("sso") String sso) {
         LOGGER.info("Entering method loginPage with error: " + error + ", notice: " + notice);
         String message = error == null
                 ? null
                 : "Identifiant ou code incorrect, ou compte désactivé ou verrouillé.";
+        if ("disabled".equals(sso)) {
+            message = "La connexion SSO n'est pas activée sur ce nœud.";
+        } else if (sso != null) {
+            message = "Aucun compte actif n'admet la connexion SSO pour cette identité.";
+        }
         LOGGER.info("Exiting method loginPage");
-        return adminLogin.data("error", message).data("notice", notice);
+        return adminLogin.data("error", message).data("notice", notice).data("ssoEnabled", ssoOffered());
     }
 
+    /**
+     * Tells whether the sign-in page offers the single sign-on: enabled on the
+     * node, and not closed by the echelon's sign-in mode.
+     *
+     * @return true when the SSO button is shown
+     */
+    boolean ssoOffered() {
+        if (!ssoEnabled) {
+            return false;
+        }
+        try {
+            return posSettingsService.backOfficeSignIn() != Employee.AuthMode.PASSWORD;
+        } catch (RuntimeException unreadable) {
+            return true;
+        }
+    }
     /**
      * Signs the operator out by clearing the session cookie.
      *
@@ -187,10 +219,15 @@ public class AdminAuthResource {
             return refuse("Le nouveau mot de passe doit être différent de l'actuel.");
         }
         String loginName = identity.getPrincipal().getName();
-        boolean applied = QuarkusTransaction.requiringNew().call(() -> {
+        int outcome = QuarkusTransaction.requiringNew().call(() -> {
             Employee employee = Employee.find("loginName", loginName).firstResult();
             if (employee == null || !employee.verifyBackOfficePassword(current)) {
-                return false;
+                return 1;
+            }
+            if (employee.centralManaged) {
+                // BO-01-01-03: the central node owns this password and hands
+                // it to every store; a store-side change would be undone.
+                return 2;
             }
             employee.setBackOfficePassword(renewed);
             employee.mustChangePassword = false;
@@ -199,11 +236,15 @@ public class AdminAuthResource {
             employee.passwordChangedAt = java.time.LocalDateTime.now();
             technicalEventService.log(TechnicalEvent.EventType.PASSWORD_CHANGED,
                     null, employee.badgeId);
-            return true;
+            return 0;
         });
-        if (!applied) {
+        if (outcome == 1) {
             LOGGER.info("Exiting method changePassword");
             return refuse("Mot de passe actuel incorrect.");
+        }
+        if (outcome == 2) {
+            LOGGER.info("Exiting method changePassword");
+            return refuse("Ce compte est administré par le nœud central : changez-y votre mot de passe.");
         }
         NewCookie cleared = new NewCookie.Builder(SESSION_COOKIE)
                 .value("")

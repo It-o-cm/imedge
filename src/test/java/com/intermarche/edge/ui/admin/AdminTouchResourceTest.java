@@ -616,4 +616,59 @@ class AdminTouchResourceTest {
             verify(createdRow).persist();
         }
     }
+    /** BO-03-01-21/22/23: scope checkboxes cover null, blank, null candidate, match and no-match legs. */
+    @Test
+    void scopeCheckboxesReflectOnlyExplicitSelections() {
+        var empty = new AdminTouchResource.TouchRow(1L, "G", "GROUP", false, "NORMAL", 0, 0L, null, " ", "POS", null);
+        assertFalse(empty.hasIsland("A"));
+        assertFalse(empty.hasTerminal("C04"));
+        assertFalse(empty.hasTpvType(null));
+        var selected = new AdminTouchResource.TouchRow(1L, "G", "GROUP", false, "NORMAL", 0, 0L, "A; B", "C03; C04", "SCO; POS", null);
+        assertTrue(selected.hasIsland(" B "));
+        assertFalse(selected.hasIsland("C"));
+        assertTrue(selected.hasTerminal("C04"));
+        assertTrue(selected.hasTpvType("POS"));
+    }
+
+    /** BO-03-01-19/21: saving wording and scope ignores blank/null entries and preserves administered order. */
+    @Test
+    void saveConfigRetainsTranslatedWordingAndNonEmptyScope() {
+        AdminTouchResource resource = newResource();
+        ProductFamily family = new ProductFamily();
+        family.code = "G";
+        TouchGroupSetting setting = mock(TouchGroupSetting.class);
+        PanacheQuery<TouchGroupSetting> lookup = mock(PanacheQuery.class);
+        when(lookup.firstResult()).thenReturn(setting);
+        var posted = form("id", "1", "buttonSize", "NORMAL", "displayOrder", "2", "salesVolume", "5", "labels", "nl=Groep");
+        posted.put("islandCodes", java.util.Arrays.asList(null, " ", "A", " B "));
+        posted.put("terminalIds", java.util.List.of());
+        posted.put("tpvTypes", java.util.Arrays.asList(null, " "));
+        try (var base = mockStatic(PanacheEntityBase.class)) {
+            base.when(() -> PanacheEntityBase.findById(1L)).thenReturn(family);
+            base.when(() -> PanacheEntityBase.find("familyCode", "G")).thenReturn(lookup);
+            assertRedirect(resource.saveConfig(posted), true);
+        }
+        assertEquals("nl=Groep", setting.labels);
+        assertEquals("A;B", setting.islandCodes);
+        assertNull(setting.terminalIds);
+        assertNull(setting.tpvTypes);
+        verify(setting).persist();
+    }
+
+    /**
+     * BO-03-01-13: the sales volumes are recomputed on demand from the
+     * registers' sales, and the operator is told how many articles sold.
+     */
+    @Test
+    void refreshSalesVolumeRecomputesOnDemand() {
+        AdminTouchResource resource = newResource();
+        resource.salesVolumeService = mock(com.intermarche.edge.service.SalesVolumeService.class);
+        when(resource.salesVolumeService.refresh(org.mockito.ArgumentMatchers.any())).thenReturn(12);
+        Response response = resource.refreshSalesVolume();
+        assertRedirect(response, true);
+        assertTrue(java.net.URLDecoder.decode(response.getLocation().toString(),
+                java.nio.charset.StandardCharsets.UTF_8).contains("12 article(s) vendu(s)"));
+        org.mockito.Mockito.verify(resource.salesVolumeService)
+                .refresh(com.intermarche.edge.domain.util.DateTimeProvider.now().toLocalDate());
+    }
 }

@@ -38,20 +38,26 @@ public final class RefPayloads {
      * association is owned by the family — so the swap is safe.
      */
     public static final List<String> DOMAINS =
-            List.of("ENGINE_FEEDS", "PRODUCTS", "FAMILIES", "TOUCH_GROUPS", "VAT_RATES", "PRICES",
+            List.of("ENGINE_FEEDS", "MEASURE_UNITS", "PRODUCTS", "FAMILIES", "TOUCH_GROUPS", "VAT_RATES", "PRICES",
                     "EMPLOYEES", "COUPON_TYPES", "ARTICLE_RANGES", "ISLANDS", "CHECKOUT_POINTS",
                     "TENDERS",
-                    "DOCUMENT_TEMPLATES", "PROVIDER_MESSAGES", "SETTINGS",
-                    "CUSTOMERS", "CURRENCIES", "POSTAL_CODES", "POS_LISTS", "STORE_IMAGES");
+                    "DOCUMENT_TEMPLATES", "PRINTABLE_DOCUMENTS", "PROVIDER_MESSAGES", "SETTINGS",
+                    "CASH_MENUS", "STORE",
+                    "CUSTOMERS", "CURRENCIES", "POSTAL_CODES", "POS_LISTS", "RETURN_TYPES",
+                    "PREPAID_CARD_TYPES", "STORE_IMAGES");
 
     /**
      * The echelon domains a STORE node pulls from the CENTRAL node (route A),
      * in apply order: the organisation tree top-down (a PDV references its
-     * enseigne, an enseigne its country) then the parameters posed on it. A
+     * enseigne, an enseigne its country) then the parameters posed on it,
+     * then the accounts the centre administers for that point of sale with
+     * the profiles they hold (BO-01-01-03, BO-01-03-04): profiles before the
+     * accounts, both before the assignments binding them. A
      * register never pulls these — it receives only the resolved SETTINGS.
      */
     public static final List<String> ECHELON_DOMAINS =
-            List.of("COUNTRIES", "ENSEIGNES", "PDVS", "ECHELON_SETTINGS");
+            List.of("COUNTRIES", "ENSEIGNES", "PDVS", "ECHELON_SETTINGS",
+                    "PROFILES", "ACCOUNTS", "ACCOUNT_PROFILES");
 
     /**
      * How one article group is drawn on the touch grid (upsert by group code).
@@ -158,6 +164,13 @@ public final class RefPayloads {
          * by key; never null (empty when the article carries no attribute).
          */
         public Map<String, String> attributes = new TreeMap<>();
+        /** The quantity the shop's registers sold over the administered window (BO-03-01-13). */
+        public long salesVolume;
+        /**
+         * The additional sale codes of the article, sorted, never null (BO-02-03-03):
+         * the register resolves any of them to this article.
+         */
+        public List<String> saleCodes = new java.util.ArrayList<>();
     }
 
     /**
@@ -180,6 +193,10 @@ public final class RefPayloads {
         public String country;
         /** The legal mention the regime obliges the documents to carry, or null. */
         public String legalMention;
+        /** Whether the regime is an exemption rather than a mere zero rate (BO-02-02-01). */
+        public boolean exempt;
+        /** The administration's code of the exemption, or null (BO-02-02-01). */
+        public String exemptionCode;
     }
 
     public static class PriceDto {
@@ -221,12 +238,24 @@ public final class RefPayloads {
         public String role;
         /** The badge id, or null. */
         public String badgeId;
+        /**
+         * Whether the holder carries a supervisor card (BO-03-06-51); null from
+         * a node that does not know the column, read as no card.
+         */
+        public Boolean supervisorCard;
+        /**
+         * The names of the profiles the holder is bound to, joined by
+         * semicolons, or null (BO-04-02-01).
+         */
+        public String profiles;
         /** The personal display theme, or null (follows the store). */
         public String theme;
         /** Interface language administered for this employee, or null (BO-01-01-04). */
         public String language;
         /** When the secret was last changed, ISO-8601, or null (BO-01-02-12). */
         public String passwordChangedAt;
+        /** The Dallas key identifier, or null (BO-01-02-07). */
+        public String dallasKey;
         /** Whether the employee is active. */
         public boolean active;
     }
@@ -254,6 +283,10 @@ public final class RefPayloads {
         public String version;
         /** The raw CSV content, verbatim. */
         public String content;
+        /** The fingerprint the file was integrated over, empty for an empty referential, or null. */
+        public String baseFingerprint;
+        /** The fingerprint the integration left, or null. */
+        public String resultFingerprint;
     }
 
     /**
@@ -304,7 +337,8 @@ public final class RefPayloads {
     /**
      * A back-office parameter posed at an echelon (upsert by the triplet
      * level/code/key) pulled by a store node from the central node (domain
-     * ECHELON_SETTINGS). Carries the effect date the value applies from.
+     * ECHELON_SETTINGS). Carries the current value and, when a change is
+     * programmed, the pending value and the date it applies from.
      */
     public static class EchelonSettingDto {
         /** The echelon level name (COUNTRY, ENSEIGNE or PDV). */
@@ -313,9 +347,11 @@ public final class RefPayloads {
         public String echelonCode;
         /** The catalog key (part of the upsert key). */
         public String settingKey;
-        /** The value, as text. */
+        /** The current value, as text, or null when only a change is programmed. */
         public String settingValue;
-        /** The effect date (ISO-8601 yyyy-MM-dd), or null for immediate effect. */
+        /** The pending value programmed for the effect date, or null (a programmed removal). */
+        public String pendingValue;
+        /** The effect date of the pending value (ISO-8601 yyyy-MM-dd), or null when nothing is programmed. */
         public String effectiveDate;
     }
 
@@ -329,14 +365,44 @@ public final class RefPayloads {
         public String label;
         /** Whether the island is in service. */
         public boolean active;
-        /** The attached registers, as a semicolon list of terminal identifiers. */
+        /**
+         * OLD FORM (BO-03-06-07): the attached registers as a semicolon list of
+         * terminal identifiers. Still emitted while the estate migrates, so a
+         * caisse that reads only this field keeps its islands.
+         */
         public String terminalIds;
+        /**
+         * NEW FORM (BO-03-09/BO-03-10): the attachment carried by the CONTACT
+         * POINTS of the island. A caisse accepts both forms without preference;
+         * when this list is present the effective terminals are read from it,
+         * otherwise from {@link #terminalIds}. Never renamed away the old field:
+         * losing the islands at the first pull is the one unacceptable failure.
+         */
+        public java.util.List<ContactPointDto> contactPoints;
+    }
+
+    /**
+     * One CONTACT POINT of a checkout island (BO-03-09) — the level between the
+     * island and the register that carries the register attachment in the new
+     * payload form. Extra fields the node may add are tolerated (the register's
+     * Jackson ignores unknown properties).
+     */
+    public static class ContactPointDto {
+        /** The contact-point code. */
+        public String code;
+        /** The identifier of the register bound to this contact point. */
+        public String terminalId;
     }
 
     /**
      * One administered CHECKOUT POINT — a register seen from the back office
      * (BO-03-09, BO-03-10), with the attributes the lane cannot know about
-     * itself: its island, its kind, its hostess, its two displays, its menu.
+     * itself: its island, its kind, its technical hostess, its two displays,
+     * its cash-menu model, and whether it is in service at all.
+     *
+     * <p>Distinct from {@link ContactPointDto}, which carries nothing but the
+     * attachment of a register to an island inside the ISLANDS payload. This one
+     * is the point itself, pulled as its own domain.
      *
      * <p>The snapshot is GLOBAL and not filtered to the terminal that asks: a
      * register receives every point of its store, because the technical hostess
@@ -347,6 +413,9 @@ public final class RefPayloads {
      * <p>Enumerations travel by their NAME in text, like every other enum on
      * this wire, never by their ordinal: a value inserted in the middle of an
      * enum would otherwise silently renumber what the registers already hold.
+     * A null stays null: the register's own column carries its default, and
+     * inventing one here would hide a point the back office has not finished
+     * describing.
      */
     public static class CheckoutPointDto {
         /** The register identifier ({@code pos.terminal.id}), the upsert key. */
@@ -385,6 +454,27 @@ public final class RefPayloads {
         public Integer coinMachinePort;
         /** The code of the cash-menu model assigned (BO-03-10-16), or null. */
         public String menuTemplateCode;
+    }
+
+    /**
+     * ONE DOCUMENT the registers may print over a closed ticket (BO-03-04-06,
+     * -09, -10 and -14).
+     */
+    public static class PrintableDocumentDto {
+        /** The document code (upsert key). */
+        public String code;
+        /** The name printed on the document. */
+        public String label;
+        /** The nature of the document: FACTURE or BON_LIVRAISON. */
+        public String kind;
+        /** The printer it comes out of, or null for the administered default. */
+        public String output;
+        /** The template laying it out, or null for the register's own layout. */
+        public String templateCode;
+        /** Whether the registers offer it. */
+        public boolean active;
+        /** The order the documents are offered in. */
+        public int priority;
     }
 
     /**
@@ -433,6 +523,8 @@ public final class RefPayloads {
         public String numberPrefix;
         /** The name of each printed copy, in order, separated by semicolons. */
         public String copyTitles;
+        /** The echelon the template is posed at, or null for every point of sale (BO-02-05-04). */
+        public String echelonScope;
     }
 
     /**
@@ -512,6 +604,22 @@ public final class RefPayloads {
         public boolean printDuplicate;
         /** Whether that slip is printed even when the receipt is not. */
         public boolean printForced;
+        /** The settlement nature of a tender the store added (BO-03-02-01), or null. */
+        public String nature;
+        /** The islands on which this tender calls a supervisor (BO-03-02-29), or null. */
+        public String supervisionIslands;
+        /** The monetics answers selecting this tender (BO-03-02-44), or null. */
+        public String moneticCodes;
+        /** Whether cash goes through the coin machine (BO-03-02-36). */
+        public boolean coinMachine;
+        /** Whether a cheque is read by the MICR reader (BO-03-02-24). */
+        public boolean micrReading = true;
+        /** Whether a cheque needs a supervisor's authorization (BO-03-02-24). */
+        public boolean chequeAuthorization;
+        /** Whether the cashier keys the cheque's account number (BO-03-02-24). */
+        public boolean accountNumberEntry;
+        /** Whether the cheque front is printed automatically (BO-03-02-24). */
+        public boolean chequeAutoPrint;
     }
 
     /**
@@ -556,6 +664,12 @@ public final class RefPayloads {
         public String promotionCode;
         /** The third-party service an EXTERNAL_LOOKUP range asks (BO-03-06-41), or null. */
         public String lookupUrl;
+        /** The register function a FUNCTION range calls (BO-03-06-59), or null. */
+        public String functionCode;
+        /** What a PROMOTION range's promotion is worth: PERCENT, AMOUNT or null (BO-03-06-43). */
+        public String promotionType;
+        /** Where an EXTERNAL_LOOKUP answer carries what the register acts on, or null (BO-03-06-41). */
+        public String lookupField;
     }
 
     /**
@@ -588,6 +702,12 @@ public final class RefPayloads {
         public boolean manualAmountOnAllNines;
         /** The checkout islands accepting the range, or null for all (BO-03-06-07). */
         public String islandCodes;
+        /** The tender the range is settled as (BO-03-06-08), or null. */
+        public String tenderCode;
+        /** The instrument kind the register issues under the range (BO-03-06-30 to -38), or null. */
+        public String issuedKind;
+        /** The card protocol of a prepaid range (BO-03-02-37), or null. */
+        public String cardProtocol;
         /** The administered positions of the range, empty when there are none. */
         public List<CouponFieldDto> fields = new ArrayList<>();
         /** The administered controls of the range, empty when there are none. */
@@ -713,6 +833,25 @@ public final class RefPayloads {
     }
 
     /**
+     * A unit of measure of the article referential (BO-02-03-17): the code the
+     * Gestion Commerciale sends with an article and the symbol it prints. It
+     * travels BEFORE the articles, so a register applying an article file
+     * resolves the unit code exactly as the store node did.
+     */
+    public static class MeasureUnitDto {
+        /** The code, one or two characters (upsert key). */
+        public String code;
+        /** The label. */
+        public String label;
+        /** The symbol printed beside a quantity. */
+        public String symbol;
+        /** Whether a decimal quantity is allowed. */
+        public boolean decimalAllowed;
+        /** Whether the unit is in use. */
+        public boolean active;
+    }
+
+    /**
      * A foreign currency the shop accepts, with the rate it applies
      * ({@code LC-07-14}).
      */
@@ -782,6 +921,61 @@ public final class RefPayloads {
     }
 
     /**
+     * An administered RETURN TYPE ({@code BO-03-13-01} to {@code -04},
+     * {@code -11}, {@code -12}), upserted by code; a type the snapshot no
+     * longer names is deleted at the register.
+     */
+    public static class ReturnTypeDto {
+        /** The type code (upsert key). */
+        public String code;
+        /** What the key is called in front of the cashier. */
+        public String label;
+        /** Whether the type opens a dedicated return ticket on an identified sale. */
+        public boolean ticketMode;
+        /** Whether the type needs no supervisor endorsement. */
+        public boolean endorsementExempt;
+        /** Whether the type may be used without the original ticket. */
+        public boolean originOptional;
+        /** Whether each returned line has its price confirmed. */
+        public boolean priceConfirmed;
+        /** Whether the type is a déconsigne. */
+        public boolean depositReturn;
+        /** The attached RETURN barcode range code, or null. */
+        public String rangeCode;
+        /** The rank the key is drawn at. */
+        public int displayOrder;
+        /** Whether the register offers the type. */
+        public boolean active;
+    }
+
+    /**
+     * An administered TYPE OF PREPAID CARD ({@code BO-03-02-37}), upserted by
+     * code; a type the snapshot no longer names is deleted at the register.
+     */
+    public static class PrepaidCardTypeDto {
+        /** The type code (upsert key). */
+        public String code;
+        /** What the type is called. */
+        public String label;
+        /** The protocol, NEXO or LOCAL. */
+        public String protocol;
+        /** The issuing provider, or null. */
+        public String provider;
+        /** The ranges, {@code prefix} or {@code prefix:length}, semicolon-separated. */
+        public String ranges;
+        /** Whether a card of the type may settle a sale. */
+        public boolean paymentAllowed;
+        /** Whether its balance may be consulted. */
+        public boolean balanceAllowed;
+        /** Whether it may be activated at the sale. */
+        public boolean activationAllowed;
+        /** The rank the type is listed at. */
+        public int displayOrder;
+        /** Whether the register knows the type. */
+        public boolean active;
+    }
+
+    /**
      * An administered IMAGE resolved for the asking store
      * ({@code BO-03-03-15}, {@code BO-10-03-09}): the receipt logo, or the
      * visual of a loyalty advantage.
@@ -803,5 +997,159 @@ public final class RefPayloads {
         public String imageData;
         /** Whether the register uses it at all. */
         public boolean active;
+    }
+
+    /**
+     * A profile the central node administers (domain PROFILES, upsert by
+     * name), with its grants. The validating profile travels by NAME: ids are
+     * local to each node.
+     */
+    public static class ProfileDto {
+        /** The profile name (upsert key). */
+        public String name;
+        /** The description, or null. */
+        public String description;
+        /** The hierarchical level. */
+        public int hierarchyLevel;
+        /** The grants, feature by option. */
+        public List<ProfileGrantDto> grants = new java.util.ArrayList<>();
+    }
+
+    /** One grant of a distributed profile. */
+    public static class ProfileGrantDto {
+        /** The feature key. */
+        public String featureKey;
+        /** The option name (VIEW, CREATE, UPDATE, DELETE). */
+        public String option;
+        /** Whether the option asks for a validation. */
+        public boolean requiresValidation;
+        /** The name of the validating profile, or null. */
+        public String validatingProfileName;
+    }
+
+    /**
+     * An account the central node administers for the asking point of sale
+     * (domain ACCOUNTS, upsert by login): the same identifiers as at the
+     * centre, back-office password hash included, so a central account signs
+     * in to the store's back office as it does to the central one
+     * (BO-01-01-03).
+     */
+    public static class AccountDto {
+        /** The login (upsert key). */
+        public String loginName;
+        /** The first name. */
+        public String firstName;
+        /** The surname. */
+        public String lastName;
+        /** The electronic address. */
+        public String email;
+        /** The register PIN hash. */
+        public String password;
+        /** The back-office password hash, or null. */
+        public String backOfficePassword;
+        /** The role name. */
+        public String role;
+        /** The badge, or null. */
+        public String badgeId;
+        /** Whether the account is active. */
+        public boolean active;
+        /** The telephone, or null. */
+        public String phone;
+        /** The start date (ISO), or null. */
+        public String startDate;
+        /** The department, or null. */
+        public String department;
+        /** The hierarchical level. */
+        public int hierarchyLevel;
+        /** The language, or null. */
+        public String language;
+        /** The echelon scopes, or null for the whole organisation. */
+        public String echelonScopes;
+        /** The back-office sign-in mode name. */
+        public String authMode;
+        /** Whether the holder must change the back-office password. */
+        public boolean mustChangePassword;
+        /** When the secret was last changed (ISO), or null. */
+        public String passwordChangedAt;
+        /** Whether the holder carries a supervisor card. */
+        public boolean supervisorCard;
+        /** The Dallas key identifier, or null (BO-01-02-07). */
+        public String dallasKey;
+    }
+
+    /**
+     * A profile assignment of a distributed account (domain ACCOUNT_PROFILES):
+     * account by login, profile by name, and the echelon it applies to.
+     */
+    public static class AccountProfileDto {
+        /** The account's login. */
+        public String loginName;
+        /** The profile's name. */
+        public String profileName;
+        /** The echelon scope. */
+        public String echelonScope;
+    }
+
+    /**
+     * One CASH MENU MODEL (domain CASH_MENUS, upsert by code) — what a register
+     * draws of its sale screen (BO-03-10-16, BO-03-10-17).
+     */
+    public static class CashMenuDto {
+        /** The model code (upsert key). */
+        public String code;
+        /** The human-readable label. */
+        public String label;
+        /** Whether the model is in service. */
+        public boolean active;
+        /** The menu-bar keys shown, semicolon separated, or null for all. */
+        public String menuKeys;
+        /** The function keys hidden, semicolon separated, or null. */
+        public String hiddenFunctions;
+        /** The number of key columns, zero for proportional. */
+        public int keyColumns;
+        /** The cashier screen model. */
+        public String cashierScreen;
+        /** The customer screen model. */
+        public String customerScreen;
+        /** The virtual ticket model. */
+        public String ticketModel;
+    }
+
+    /**
+     * The STORE RECORD the node administers (domain STORE, one row): the data
+     * the register's document headers read (BO-03-10-19, BO-03-10-20,
+     * BO-03-12-01). The theme stays node-local and is not carried.
+     */
+    public static class StoreDto {
+        /** The store code. */
+        public String code;
+        /** The store name. */
+        public String name;
+        /** The first street line, or null. */
+        public String streetLine1;
+        /** The second street line, or null. */
+        public String streetLine2;
+        /** The postal code, or null. */
+        public String postalCode;
+        /** The city, or null. */
+        public String city;
+        /** The country, or null. */
+        public String country;
+        /** The intra-community VAT number, or null. */
+        public String vatNumber;
+        /** The SIRET, or null. */
+        public String siret;
+        /** The phone number, or null. */
+        public String phone;
+        /** The bank (cheque) account number, or null. */
+        public String bankAccountNumber;
+        /** The legal name, or null. */
+        public String legalName;
+        /** The trade register entry, or null. */
+        public String rcs;
+        /** The share capital as a plain decimal, or null. */
+        public String shareCapital;
+        /** The fax number, or null. */
+        public String fax;
     }
 }

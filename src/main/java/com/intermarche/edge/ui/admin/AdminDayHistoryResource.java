@@ -1,5 +1,9 @@
 package com.intermarche.edge.ui.admin;
 
+import io.quarkus.security.Authenticated;
+import com.intermarche.edge.security.FeatureAccess;
+import com.intermarche.edge.domain.setting.Feature;
+import com.intermarche.edge.domain.people.CrudOption;
 import com.intermarche.edge.domain.people.Employee;
 import com.intermarche.edge.domain.session.CashMovement;
 import com.intermarche.edge.domain.session.CashSession;
@@ -7,7 +11,6 @@ import com.intermarche.edge.service.CashSessionService;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
@@ -56,6 +59,10 @@ public class AdminDayHistoryResource {
 
     /** Technical log of this class. */
     private static final Logger LOGGER = Logger.getLogger(AdminDayHistoryResource.class);
+
+    /** The operator's language, for the names of the tenders. */
+    @Inject
+    BackOfficeMessages i18n;
 
     /** The day-history template. */
     @Inject
@@ -121,7 +128,8 @@ public class AdminDayHistoryResource {
      * @return the day page
      */
     @GET
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SAFE_DAY)
     public TemplateInstance day(@QueryParam("day") String day,
                                 @QueryParam("notice") String notice,
                                 @QueryParam("noticeOk") @DefaultValue("true") boolean noticeOk) {
@@ -136,12 +144,18 @@ public class AdminDayHistoryResource {
                 declarations.put(session.sessionNumber, summary);
             }
         }
+        List<CashMovement> movements = movementsOf(examined);
         LOGGER.info("Exiting method day with " + sessions.size() + " session(s)");
         return adminSafeDays.data("sessions", sessions)
+                .data("validation", com.intermarche.edge.domain.safe.SafeDayValidation.forDay(examined))
+                .data("netRevenue", format(netRevenueOf(sessions)))
+                .data("pending", pendingOf(movements))
+                .data("tenderCodes", tenderCodesOf(byTender, movements))
+                .data("tenderLabels", tenderLabelsOf(tenderCodesOf(byTender, movements)))
                 .data("day", examined.toString())
                 .data("tenders", rowsOf(byTender))
                 .data("total", format(sum(byTender.values())))
-                .data("movements", movementsOf(examined))
+                .data("movements", movements)
                 .data("withdrawn", format(withdrawnOf(sessions)))
                 .data("declarations", declarations)
                 .data("notice", notice)
@@ -161,7 +175,8 @@ public class AdminDayHistoryResource {
      */
     @POST
     @Path("/validate")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SAFE_DAY, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response validate(MultivaluedMap<String, String> form) {
@@ -173,16 +188,340 @@ public class AdminDayHistoryResource {
             return back(AdminForms.text(form, "day"), "Mouvement inconnu.", false);
         }
         String endorsement = AdminForms.text(form, "endorsedBy");
-        if (endorsement == null) {
+        String refused = endorsementRefusal(endorsement);
+        if (refused != null) {
             LOGGER.info("Exiting method validate: no endorsement");
-            return back(AdminForms.text(form, "day"),
-                    "Nom ou badge du valideur obligatoire.", false);
+            return back(AdminForms.text(form, "day"), refused, false);
         }
         movement.endorsedBy = endorsement;
         movement.persist();
         LOGGER.infof("Mouvement de caisse %s validé par %s", movement.movementUid, endorsement);
         LOGGER.info("Exiting method validate");
         return back(AdminForms.text(form, "day"), "Mouvement validé.", true);
+    }
+
+    /**
+     * Corrects a cashier's movement of the day ({@code BO-05-02-09}).
+     *
+     * <p>The register's row is its witness and is never rewritten: the
+     * correction is a NEW movement of the same kind and tender, carrying the
+     * difference between the amount the controller found and the amount the
+     * register recorded — or, for a cash declaration, which counts as its last
+     * value, the corrected declaration itself. It is validated by construction,
+     * by the controller who enters it, and it is refused once the day is
+     * validated.
+     *
+     * @param form the posted form
+     * @return a 303 back to the day with the notice
+     */
+    @POST
+    @Path("/correct")
+    @Authenticated
+    @FeatureAccess(value = Feature.SAFE_DAY, option = CrudOption.UPDATE)
+    @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
+    @Transactional
+    public Response correct(MultivaluedMap<String, String> form) {
+        LOGGER.info("Entering method correct");
+        String day = AdminForms.text(form, "day");
+        Long id = AdminForms.id(form.getFirst("id"));
+        CashMovement movement = id == null ? null : CashMovement.<CashMovement>findById(id);
+        if (movement == null) {
+            LOGGER.info("Exiting method correct: unknown movement");
+            return back(day, "Mouvement inconnu.", false);
+        }
+        java.time.LocalDateTime when = movement.movementDate == null
+                ? java.time.LocalDateTime.now() : movement.movementDate;
+        String refusal = entryRefusal(when.toLocalDate(), form, true);
+        if (refusal != null) {
+            LOGGER.info("Exiting method correct: " + refusal);
+            return back(day, refusal, false);
+        }
+        BigDecimal corrected = AdminForms.amount(form.getFirst("amount"));
+        if (corrected == null) {
+            LOGGER.info("Exiting method correct: no amount");
+            return back(day, "Montant corrigé obligatoire.", false);
+        }
+        boolean declaration = movement.type == CashMovement.MovementType.DECLARATION;
+        BigDecimal recorded = movement.amount == null ? BigDecimal.ZERO : movement.amount;
+        BigDecimal written = declaration ? corrected : corrected.subtract(recorded);
+        if (corrected.compareTo(recorded) == 0) {
+            LOGGER.info("Exiting method correct: nothing to correct");
+            return back(day, "Le montant corrigé est celui du mouvement.", false);
+        }
+        CashMovement correction = new CashMovement();
+        correction.movementUid = backOfficeUid();
+        correction.terminalId = movement.terminalId;
+        correction.session = movement.session;
+        correction.cashier = movement.cashier;
+        correction.type = movement.type;
+        correction.paymentMethod = movement.paymentMethod;
+        correction.transferTo = movement.transferTo;
+        correction.orderReference = movement.orderReference;
+        correction.amount = written;
+        correction.reason = clip("Correction du mouvement du "
+                + when.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")) + " : "
+                + AdminForms.text(form, "reason"));
+        correction.movementDate = when.plusSeconds(1);
+        correction.endorsedBy = AdminForms.text(form, "endorsedBy");
+        correction.persist();
+        LOGGER.infof("Mouvement de caisse %s corrigé par %s", movement.movementUid, correction.endorsedBy);
+        LOGGER.info("Exiting method correct");
+        return back(day, "Correction enregistrée.", true);
+    }
+
+    /**
+     * Transfers a settlement from one tender to another in a session of the
+     * day ({@code BO-05-02-09}, {@code LC-12-10}).
+     *
+     * <p>The same {@code TRANSFER} movement the register writes when a cashier
+     * repairs a mis-keying, entered here by the controller who found it: the
+     * session's report, and so the day's breakdown by tender, moves the amount
+     * from one tender to the other.
+     *
+     * @param form the posted form
+     * @return a 303 back to the day with the notice
+     */
+    @POST
+    @Path("/transfer")
+    @Authenticated
+    @FeatureAccess(value = Feature.SAFE_DAY, option = CrudOption.UPDATE)
+    @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
+    @Transactional
+    public Response transfer(MultivaluedMap<String, String> form) {
+        LOGGER.info("Entering method transfer");
+        String day = AdminForms.text(form, "day");
+        String number = AdminForms.text(form, "session");
+        CashSession session = number == null ? null
+                : CashSession.<CashSession>find("sessionNumber", number).firstResult();
+        if (session == null) {
+            LOGGER.info("Exiting method transfer: unknown session");
+            return back(day, "Session inconnue.", false);
+        }
+        LocalDate examined = AdminForms.day(day) == null ? LocalDate.now() : AdminForms.day(day);
+        String refusal = entryRefusal(examined, form, true);
+        if (refusal != null) {
+            LOGGER.info("Exiting method transfer: " + refusal);
+            return back(day, refusal, false);
+        }
+        String from = AdminForms.text(form, "from") == null ? CashMovement.CASH : AdminForms.text(form, "from");
+        String to = AdminForms.text(form, "to");
+        if (to == null || to.equals(from)) {
+            LOGGER.info("Exiting method transfer: same tender");
+            return back(day, "Les deux moyens de paiement du transfert doivent différer.", false);
+        }
+        BigDecimal amount = AdminForms.amount(form.getFirst("amount"));
+        if (amount == null || amount.signum() <= 0) {
+            LOGGER.info("Exiting method transfer: unusable amount");
+            return back(day, "Montant obligatoire et strictement positif.", false);
+        }
+        CashMovement transfer = new CashMovement();
+        transfer.movementUid = backOfficeUid();
+        transfer.terminalId = session.terminalId;
+        transfer.session = session;
+        transfer.cashier = session.openingCashier;
+        transfer.type = CashMovement.MovementType.TRANSFER;
+        transfer.paymentMethod = from;
+        transfer.transferTo = to;
+        transfer.amount = amount;
+        transfer.reason = clip("Transfert de règlement : " + AdminForms.text(form, "reason"));
+        transfer.movementDate = examined.atTime(java.time.LocalTime.now().withNano(0));
+        transfer.endorsedBy = AdminForms.text(form, "endorsedBy");
+        transfer.persist();
+        LOGGER.infof("Transfert de %s de %s vers %s sur %s", amount, from, to, session.sessionNumber);
+        LOGGER.info("Exiting method transfer");
+        return back(day, "Transfert de règlement enregistré.", true);
+    }
+
+    /**
+     * Validates the net revenue of the day ({@code BO-05-02-09}).
+     *
+     * <p>Refused while a cashier's movement of the day is still waiting for its
+     * validation: the net revenue is confirmed once what the drawers did is
+     * checked, and the pouches of the day wait for this validation
+     * ({@code BO-05-02-10}).
+     *
+     * @param form the posted form
+     * @return a 303 back to the day with the notice
+     */
+    @POST
+    @Path("/validate-day")
+    @Authenticated
+    @FeatureAccess(value = Feature.SAFE_DAY, option = CrudOption.UPDATE)
+    @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
+    @Transactional
+    public Response validateDay(MultivaluedMap<String, String> form) {
+        LOGGER.info("Entering method validateDay");
+        String day = AdminForms.text(form, "day");
+        LocalDate examined = AdminForms.day(day) == null ? LocalDate.now() : AdminForms.day(day);
+        String refusal = entryRefusal(examined, form, false);
+        if (refusal != null) {
+            LOGGER.info("Exiting method validateDay: " + refusal);
+            return back(day, refusal, false);
+        }
+        List<CashSession> sessions = sessionsOf(examined);
+        if (sessions.isEmpty()) {
+            LOGGER.info("Exiting method validateDay: no session");
+            return back(day, "Aucune session close ce jour-là : rien à valider.", false);
+        }
+        if (pendingOf(movementsOf(examined)) > 0) {
+            LOGGER.info("Exiting method validateDay: pending movements");
+            return back(day, "Des mouvements de caissières ne sont pas validés : validez-les avant la journée.",
+                    false);
+        }
+        Map<String, BigDecimal> byTender = totalsByTender(sessions);
+        StringBuilder totals = new StringBuilder();
+        for (Map.Entry<String, BigDecimal> entry : byTender.entrySet()) {
+            totals.append(totals.length() == 0 ? "" : ";").append(entry.getKey()).append('=')
+                    .append(format(entry.getValue()));
+        }
+        com.intermarche.edge.domain.safe.SafeDayValidation validation =
+                new com.intermarche.edge.domain.safe.SafeDayValidation();
+        validation.accountingDay = examined;
+        validation.netRevenue = netRevenueOf(sessions);
+        validation.tenderTotals = clip(totals.toString());
+        validation.validatedBy = AdminForms.text(form, "endorsedBy");
+        validation.validatedAt = java.time.LocalDateTime.now();
+        validation.persist();
+        LOGGER.infof("Journée %s validée par %s", examined, validation.validatedBy);
+        LOGGER.info("Exiting method validateDay");
+        return back(day, "Chiffre d'affaires net de la journée validé.", true);
+    }
+
+    /**
+     * The refusal common to the gestures of the controller: a day already
+     * validated is frozen, and every gesture names its controller and, for a
+     * correction or a transfer, its reason.
+     *
+     * @param day the accounting day the gesture touches
+     * @param form the posted form
+     * @param reasonRequired whether the gesture must state its reason
+     * @return the refusal, or null when the gesture may proceed
+     */
+    String entryRefusal(LocalDate day, MultivaluedMap<String, String> form, boolean reasonRequired) {
+        if (com.intermarche.edge.domain.safe.SafeDayValidation.forDay(day) != null) {
+            return "Cette journée est déjà validée : elle ne se modifie plus.";
+        }
+        String endorsement = endorsementRefusal(AdminForms.text(form, "endorsedBy"));
+        if (endorsement != null) {
+            return endorsement;
+        }
+        if (reasonRequired && AdminForms.text(form, "reason") == null) {
+            return "Motif obligatoire.";
+        }
+        return null;
+    }
+
+    /**
+     * The net revenue the registers reported for the day: the closed tickets
+     * less the refunds, session by session ({@code BO-05-02-09}).
+     *
+     * @param sessions the sessions of the day
+     * @return the net revenue, never null
+     */
+    BigDecimal netRevenueOf(List<CashSession> sessions) {
+        BigDecimal total = BigDecimal.ZERO;
+        for (CashSession session : sessions) {
+            CashSessionService.SessionReport report = cashSessionService.buildReport(session);
+            total = total.add(report.totalIncludingTax == null ? BigDecimal.ZERO : report.totalIncludingTax)
+                    .subtract(report.totalRefunds == null ? BigDecimal.ZERO : report.totalRefunds);
+        }
+        return total;
+    }
+
+    /**
+     * How many movements of a list still wait for their validation.
+     *
+     * @param movements the movements of a day
+     * @return the number of movements nobody validated
+     */
+    static long pendingOf(List<CashMovement> movements) {
+        long pending = 0;
+        for (CashMovement movement : movements) {
+            if (movement.endorsedBy == null || movement.endorsedBy.isBlank()) {
+                pending++;
+            }
+        }
+        return pending;
+    }
+
+    /**
+     * The tenders a transfer may name: the cash, the tenders of the day's
+     * takings and those of its movements, from and to.
+     *
+     * @param byTender the day's takings by tender
+     * @param movements the day's movements
+     * @return the tender keys, cash first, without repetition
+     */
+    static List<String> tenderCodesOf(Map<String, BigDecimal> byTender, List<CashMovement> movements) {
+        java.util.Set<String> codes = new java.util.LinkedHashSet<>();
+        codes.add(CashMovement.CASH);
+        codes.addAll(byTender.keySet());
+        for (CashMovement movement : movements) {
+            if (movement.paymentMethod != null && !movement.paymentMethod.isBlank()) {
+                codes.add(movement.paymentMethod);
+            }
+            if (movement.transferTo != null && !movement.transferTo.isBlank()) {
+                codes.add(movement.transferTo);
+            }
+        }
+        return new ArrayList<>(codes);
+    }
+
+    /**
+     * The operator's names of the tenders the screen shows: the name of the
+     * tender's nature in the page's language, the one the other screens use
+     * ({@code t.x21-tender-CASH}…); for a key the bundles do not name, the
+     * label the tender is declared under, else the key itself.
+     *
+     * @param codes the tender keys
+     * @return each key's label, in the order given
+     */
+    Map<String, String> tenderLabelsOf(List<String> codes) {
+        Map<String, String> labels = new java.util.LinkedHashMap<>();
+        for (String code : codes) {
+            String label = i18n.code("t.x21-tender-", code);
+            if (label.equals(code)) {
+                com.intermarche.edge.domain.payment.TenderDefinition tender =
+                        com.intermarche.edge.domain.payment.TenderDefinition.findByCode(code);
+                label = tender == null || tender.label == null || tender.label.isBlank() ? code : tender.label;
+            }
+            labels.put(code, label);
+        }
+        return labels;
+    }
+
+    /**
+     * The refusal of a controller's name or badge: one is required, and it
+     * holds in the 20 characters a movement keeps of it.
+     *
+     * @param endorsement the name or badge typed, or null
+     * @return the refusal, or null when it is accepted
+     */
+    static String endorsementRefusal(String endorsement) {
+        if (endorsement == null) {
+            return "Nom ou badge du valideur obligatoire.";
+        }
+        return endorsement.length() > 20 ? "Nom ou badge du valideur trop long : 20 caractères au plus." : null;
+    }
+
+    /**
+     * The identifier of a movement the back office writes: {@code BO-} and a
+     * random UUID without its dashes, within the 36 characters the column holds.
+     *
+     * @return the identifier, 35 characters
+     */
+    static String backOfficeUid() {
+        return "BO-" + java.util.UUID.randomUUID().toString().replace("-", "");
+    }
+
+    /**
+     * Clips a text to the 255 characters a movement's reason holds.
+     *
+     * @param text the text, never null
+     * @return the text, at most 255 characters
+     */
+    static String clip(String text) {
+        return text.length() <= 255 ? text : text.substring(0, 255);
     }
 
     /**
@@ -193,7 +532,8 @@ public class AdminDayHistoryResource {
      */
     @GET
     @Path("/export")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SAFE_DAY)
     @Produces("text/csv; charset=UTF-8")
     public Response export(@QueryParam("day") String day) {
         LOGGER.info("Entering method export");
@@ -239,7 +579,10 @@ public class AdminDayHistoryResource {
     }
 
     /**
-     * The day's takings, tender by tender ({@code BO-05-02-08}).
+     * The day's theoretical, tender by tender ({@code BO-05-02-08}): the expected
+     * amount of each tender as the registers' own reports state it, so the cash
+     * line is the sum of the Z theoreticals (float, sales, refunds, cash-ins,
+     * expenses, withdrawals and transfers) and never a second, different drawer.
      *
      * @param sessions the sessions of the day
      * @return the totals by tender key, in the order the registers report them
@@ -248,7 +591,7 @@ public class AdminDayHistoryResource {
         Map<String, BigDecimal> totals = new LinkedHashMap<>();
         for (CashSession session : sessions) {
             CashSessionService.SessionReport report = cashSessionService.buildReport(session);
-            for (Map.Entry<String, BigDecimal> entry : report.totalsByMethod.entrySet()) {
+            for (Map.Entry<String, BigDecimal> entry : report.theoreticalByMethod.entrySet()) {
                 BigDecimal already = totals.get(entry.getKey());
                 BigDecimal added = entry.getValue() == null ? BigDecimal.ZERO : entry.getValue();
                 totals.put(entry.getKey(), already == null ? added : already.add(added));

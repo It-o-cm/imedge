@@ -7,55 +7,55 @@
 !}
 {#include admin-layout}
 
-{#title}Codes postaux{/title}
+{#title}{inject:i18n.get('t.codes-postaux')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Codes postaux</h1>
-        <p class="page-sub">Couples code / localité, pour la saisie des adresses clients en caisse.</p>
+        <h1>{inject:i18n.get('t.codes-postaux')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.couples-code-localite-pour-la-saisie-des')}</p>
     </div>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 <div class="card">
-    <h2 class="card-title">Ajouter un code postal</h2>
+    <h2 class="card-title">{inject:i18n.get('t.ajouter-un-code-postal')}</h2>
     <form method="post" action="/admin/postal-codes">
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="n-code">Code postal</label>
+                <label class="field-label" for="n-code">{inject:i18n.get('t.code-postal')}</label>
                 <input class="input-control" id="n-code" type="text" name="code" required>
             </div>
             <div class="field">
-                <label class="field-label" for="n-place">Localité</label>
+                <label class="field-label" for="n-place">{inject:i18n.get('t.localite')}</label>
                 <input class="input-control" id="n-place" type="text" name="place" required>
             </div>
             <div class="field">
-                <label class="field-label" for="n-country">Pays (ISO)</label>
+                <label class="field-label" for="n-country">{inject:i18n.get('t.pays-iso')}</label>
                 <input class="input-control" id="n-country" type="text" name="country" maxlength="3">
             </div>
         </div>
         <div class="page-actions" style="margin-top: 6px;">
-            <button class="btn btn-primary" type="submit">Ajouter</button>
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.ajouter')}</button>
         </div>
     </form>
 </div>
 
 <div class="card">
-    <h2 class="card-title">Recherche</h2>
+    <h2 class="card-title">{inject:i18n.get('t.recherche')}</h2>
     <form method="get" action="/admin/postal-codes">
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="s-text">Code ou localité</label>
+                <label class="field-label" for="s-text">{inject:i18n.get('t.code-ou-localite')}</label>
                 <input class="input-control" id="s-text" type="text" name="text" value="{text}">
             </div>
         </div>
         <div class="page-actions" style="margin-top: 6px;">
-            <button class="btn btn-primary" type="submit">Rechercher</button>
-            <a class="btn btn-ghost" href="/admin/postal-codes">Réinitialiser</a>
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.rechercher')}</button>
+            <a class="btn btn-ghost" href="/admin/postal-codes">{inject:i18n.get('t.reinitialiser-2')}</a>
         </div>
     </form>
 </div>
@@ -63,8 +63,8 @@
 <div class="card">
     {#if page.empty}
     <div class="empty-state">
-        <p>Aucun code postal.</p>
-        <p class="empty-hint">Chargez une liste via <code>/feeds/import/POSTAL_CODES</code>, ou ajoutez-en un ci-dessus.</p>
+        <p>{inject:i18n.get('t.aucun-code-postal')}</p>
+        <p class="empty-hint">{inject:i18n.get('t.chargez-une-liste-via')} <code>{inject:i18n.get('t.feeds-import-postal-codes')}</code>{inject:i18n.get('t.ou-ajoutez-en-un-ci-dessus')}</p>
     </div>
     {#else}
     {! Les formulaires sont déclarés HORS du tableau et les champs les visent par
@@ -80,10 +80,10 @@
     <table class="data-table">
         <thead>
             <tr>
-                <th>Code</th>
-                <th>Localité</th>
-                <th>Pays</th>
-                <th class="col-actions">Actions</th>
+                <th>{inject:i18n.get('t.code')}</th>
+                <th>{inject:i18n.get('t.localite')}</th>
+                <th>{inject:i18n.get('t.pays')}</th>
+                <th class="col-actions">{inject:i18n.get('t.actions')}</th>
             </tr>
         </thead>
         <tbody>
@@ -96,8 +96,8 @@
                 <td><input class="input-control" form="edit-{row.id}" type="text" name="place" value="{row.place}"></td>
                 <td><input class="input-control" form="edit-{row.id}" type="text" name="country" value="{row.country ?: ''}" maxlength="3"></td>
                 <td class="col-actions">
-                    <button class="btn btn-small btn-ghost" type="submit" form="edit-{row.id}">Enregistrer</button>
-                    <button class="btn btn-small btn-danger" type="submit" form="del-{row.id}">Supprimer</button>
+                    <button class="btn btn-small btn-ghost" type="submit" form="edit-{row.id}">{inject:i18n.get('t.enregistrer')}</button>
+                    <button class="btn btn-small btn-danger" type="submit" form="del-{row.id}">{inject:i18n.get('t.supprimer')}</button>
                 </td>
             </tr>
             {/for}
@@ -108,18 +108,18 @@
      ! français compte des dizaines de milliers de lignes, et un écran qui en
      ! affiche cent sans le dire fait conclure faux. !}
     <div class="pager">
-        <span class="pager-status">Codes {page.firstIndex} à {page.lastIndex} sur {page.total}</span>
+        <span class="pager-status">{inject:i18n.get('t.codes')} {page.firstIndex} {inject:i18n.get('t.x21-a')} {page.lastIndex} {inject:i18n.get('t.sur')} {page.total}</span>
         {#if page.pageCount > 1}
         {#if page.first}
-        <span class="btn btn-small btn-muted is-hidden">Précédent</span>
+        <span class="btn btn-small btn-muted is-hidden">{inject:i18n.get('t.precedent')}</span>
         {#else}
-        <a class="btn btn-small btn-muted" href="/admin/postal-codes?{baseQuery}page={page.previous}">Précédent</a>
+        <a class="btn btn-small btn-muted" href="/admin/postal-codes?{baseQuery}page={page.previous}">{inject:i18n.get('t.precedent')}</a>
         {/if}
-        <span class="pager-status">Page {page.number} / {page.pageCount}</span>
+        <span class="pager-status">{inject:i18n.get('t.page')} {page.number} / {page.pageCount}</span>
         {#if page.last}
-        <span class="btn btn-small btn-muted is-hidden">Suivant</span>
+        <span class="btn btn-small btn-muted is-hidden">{inject:i18n.get('t.suivant')}</span>
         {#else}
-        <a class="btn btn-small btn-muted" href="/admin/postal-codes?{baseQuery}page={page.next}">Suivant</a>
+        <a class="btn btn-small btn-muted" href="/admin/postal-codes?{baseQuery}page={page.next}">{inject:i18n.get('t.suivant')}</a>
         {/if}
         {/if}
     </div>
@@ -127,4 +127,4 @@
 </div>
 {/body}
 
-{#footer}Une liste posée sur le nœud central descend dans les magasins au tirage suivant ; posée ici, elle reste ici.{/footer}
+{#footer}{inject:i18n.get('t.une-liste-posee-sur-le-nud-central')}{/footer}

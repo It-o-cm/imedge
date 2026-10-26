@@ -16,6 +16,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -48,6 +49,8 @@ class ScheduledReportServiceTest {
         service.posSettingsService = mock(PosSettingsService.class);
         service.reportService = mock(ReportService.class);
         service.technicalEventService = mock(TechnicalEventService.class);
+        service.reportPrintService = mock(ReportPrintService.class);
+        when(service.posSettingsService.periodReportsPrinter()).thenReturn("");
         return service;
     }
 
@@ -243,5 +246,72 @@ class ScheduledReportServiceTest {
     void theArchiveFindersAnswer() {
         assertEquals("scheduled_report_runs",
                 ScheduledReportRun.class.getAnnotation(jakarta.persistence.Table.class).name());
+    }
+    /** BO-09-01-10: absent renderers and exceptions without messages are recorded as failed editions, never lost. */
+    @Test
+    void failedEditionRecordsMissingWriterAndUnnamedFailure() throws Exception {
+        ScheduledReportService service = service();
+        ReportDefinition definition = definition("REPORT");
+        var method = ScheduledReportService.class.getDeclaredMethod("edit", ReportDefinition.class, ReportWriter.class, LocalDate.class);
+        method.setAccessible(true);
+        try (var created = mockConstruction(ScheduledReportRun.class)) {
+            assertEquals(true, method.invoke(service, definition, null, LocalDate.of(2026, 10, 20)));
+            var missing = created.constructed().get(0);
+            assertEquals(false, missing.succeeded);
+            assertEquals("aucun format de rendu disponible", missing.failure);
+            ReportWriter writer = writer("CSV");
+            when(service.reportService.run(any(), any())).thenThrow(new IllegalArgumentException());
+            assertEquals(true, method.invoke(service, definition, writer, LocalDate.of(2026, 10, 20)));
+            var failed = created.constructed().get(1);
+            assertEquals(false, failed.succeeded);
+            assertEquals("IllegalArgumentException", failed.failure);
+            verify(failed).persist();
+        }
+    }
+
+    /** BO-09-01-10: the administration history preserves the caller limit and the archived report rows. */
+    @org.junit.jupiter.api.Test
+    void latestReportsDelegatesTheRequestedHistoryLimit() {
+        var rows = java.util.List.of(new com.intermarche.edge.domain.session.ScheduledReportRun());
+        try (var reports = org.mockito.Mockito.mockStatic(com.intermarche.edge.domain.session.ScheduledReportRun.class)) {
+            reports.when(() -> com.intermarche.edge.domain.session.ScheduledReportRun.latest(7)).thenReturn(rows);
+            org.junit.jupiter.api.Assertions.assertSame(rows, new ScheduledReportService().latest(7));
+        }
+    }
+
+
+    /**
+     * BO-09-01-10: where a printer is named, an edition is sent to it and the
+     * moment kept and journalled; a printer failing keeps why, its message or
+     * its kind; no printer named, nothing is sent.
+     */
+    @Test
+    void anEditionIsPrintedWhereAPrinterIsNamed() throws Exception {
+        ScheduledReportService service = service();
+        com.intermarche.edge.domain.session.ScheduledReportRun run = new com.intermarche.edge.domain.session.ScheduledReportRun();
+        run.reportCode = "settlements";
+        run.content = new byte[]{1};
+        service.print(run);
+        org.mockito.Mockito.verifyNoInteractions(service.reportPrintService);
+        when(service.posSettingsService.periodReportsPrinter()).thenReturn("printer:9100");
+        service.print(run);
+        verify(service.reportPrintService).print("printer:9100", run.content);
+        assertNotNull(run.printedAt);
+        verify(service.technicalEventService).log(TechnicalEvent.EventType.SCHEDULED_REPORTS_EDITED,
+                "État de fin de période settlements imprimé sur printer:9100");
+        com.intermarche.edge.domain.session.ScheduledReportRun refused = new com.intermarche.edge.domain.session.ScheduledReportRun();
+        refused.reportCode = "cashiers";
+        org.mockito.Mockito.doThrow(new java.io.IOException("Connexion refusée"))
+                .when(service.reportPrintService).print(org.mockito.ArgumentMatchers.eq("printer:9100"), org.mockito.ArgumentMatchers.isNull());
+        service.print(refused);
+        assertEquals("Connexion refusée", refused.printFailure);
+        verify(service.technicalEventService).log(TechnicalEvent.EventType.SCHEDULED_REPORTS_EDITED,
+                "Impression de l'état cashiers impossible sur printer:9100");
+        com.intermarche.edge.domain.session.ScheduledReportRun silent = new com.intermarche.edge.domain.session.ScheduledReportRun();
+        silent.content = new byte[]{2};
+        org.mockito.Mockito.doThrow(new java.io.IOException())
+                .when(service.reportPrintService).print("printer:9100", silent.content);
+        service.print(silent);
+        assertEquals("IOException", silent.printFailure);
     }
 }

@@ -1,7 +1,12 @@
 package com.intermarche.edge.ui.admin;
 
+import com.intermarche.edge.domain.catalog.Price;
 import com.intermarche.edge.domain.catalog.Product;
+import com.intermarche.edge.domain.catalog.ProductFamily;
 import com.intermarche.edge.domain.catalog.ProductType;
+import com.intermarche.edge.domain.catalog.VatRate;
+import java.math.BigDecimal;
+import java.util.Set;
 import com.intermarche.edge.domain.catalog.attribute.ProductAttributeCatalog;
 import jakarta.ws.rs.core.MultivaluedHashMap;
 import jakarta.ws.rs.core.MultivaluedMap;
@@ -519,7 +524,9 @@ class ArticleSearchCriteriaTest {
         ArticleSearchCriteria criteria = new ArticleSearchCriteria();
         criteria.text = "LaIt";
         Assertions.assertEquals("(lower(p.ean) like :text or lower(p.name) like :text"
-                + " or lower(p.internalCode) like :text)", criteria.whereClause());
+                + " or lower(p.internalCode) like :text"
+                + " or p.id in (select s.id from Product s join s.saleCodes sc where lower(sc) like :text))",
+                criteria.whereClause());
         Assertions.assertEquals("%lait%", criteria.parameters().get("text"));
     }
 
@@ -659,7 +666,8 @@ class ArticleSearchCriteriaTest {
         criteria.eanFrom = "300";
         criteria.eanTo = "400";
         Assertions.assertEquals("(lower(p.ean) like :text or lower(p.name) like :text"
-                + " or lower(p.internalCode) like :text)"
+                + " or lower(p.internalCode) like :text"
+                + " or p.id in (select s.id from Product s join s.saleCodes sc where lower(sc) like :text))"
                 + " and p.productType = :type"
                 + " and p.active = true"
                 + " and p.forbiddenToSale = :forbidden"
@@ -688,5 +696,349 @@ class ArticleSearchCriteriaTest {
                     + " and lower(v0) <> 'true')", criteria.whereClause());
             Assertions.assertEquals("TRUE_DEF", criteria.parameters().get("attr0"));
         }
+    }
+
+    /**
+     * Builds a current price of the given amount under the given regime.
+     *
+     * @param amount the price including tax, or null
+     * @param vatNumber the regime number, or null for no regime
+     * @return the price
+     */
+    private Price price(String amount, Integer vatNumber) {
+        Price price = new Price();
+        price.priceIncludingTax = amount == null ? null : new BigDecimal(amount);
+        price.vat = vatNumber == null ? null : new VatRate(vatNumber, new BigDecimal("0.2000"), "N");
+        return price;
+    }
+
+    /**
+     * The free text reaches the additional sale codes (BO-02-03-03).
+     */
+    @Test
+    void theFreeTextMatchesASaleCode() {
+        Product product = product("300", "Lait", null);
+        product.saleCodes.add("ALT-77");
+        ArticleSearchCriteria criteria = new ArticleSearchCriteria();
+        criteria.text = "alt-7";
+        Assertions.assertTrue(criteria.matches(product));
+        criteria.text = "zzz";
+        Assertions.assertFalse(criteria.matches(product));
+    }
+
+    /**
+     * Each field fragment of BO-02-03-30 matches by containment, and a miss on
+     * any one of them excludes the article (one test per leg).
+     */
+    @Test
+    void theFieldFragmentsMatchByContainment() {
+        Product product = product("300", "Lait", "INT-1");
+        product.plu = "1234";
+        product.description = "Lait demi-écrémé";
+        product.checkoutLabel = "LAIT DE";
+        product.brand = "Lactel";
+        ArticleSearchCriteria criteria = new ArticleSearchCriteria();
+        criteria.plu = "23";
+        criteria.internalCode = "int";
+        criteria.description = "DEMI";
+        criteria.checkoutLabel = "lait";
+        criteria.brand = "act";
+        Assertions.assertTrue(criteria.matches(product));
+        String[] misses = {"plu", "internalCode", "description", "checkoutLabel", "brand"};
+        for (String miss : misses) {
+            ArticleSearchCriteria one = ArticleSearchCriteria.fromQueryString(criteria.toQueryString());
+            switch (miss) {
+                case "plu" -> one.plu = "99";
+                case "internalCode" -> one.internalCode = "zz";
+                case "description" -> one.description = "zz";
+                case "checkoutLabel" -> one.checkoutLabel = "zz";
+                default -> one.brand = "zz";
+            }
+            Assertions.assertFalse(one.matches(product), miss);
+        }
+    }
+
+    /**
+     * The supplier criteria read the supplier attributes, code or name, and
+     * the supplier's article attributes, code or name.
+     */
+    @Test
+    void theSupplierCriteriaReadTheSupplierAttributes() {
+        Product product = product("300", "Lait", null);
+        product.attributes.put(ProductAttributeCatalog.SUPPLIER_NAME, "Lactalis");
+        product.attributes.put(ProductAttributeCatalog.SUPPLIER_ARTICLE_CODE, "LX-9");
+        ArticleSearchCriteria criteria = new ArticleSearchCriteria();
+        criteria.supplier = "lacta";
+        criteria.supplierArticle = "lx-";
+        Assertions.assertTrue(criteria.matches(product));
+        product.attributes.remove(ProductAttributeCatalog.SUPPLIER_NAME);
+        product.attributes.put(ProductAttributeCatalog.SUPPLIER_CODE, "LACTA01");
+        product.attributes.remove(ProductAttributeCatalog.SUPPLIER_ARTICLE_CODE);
+        product.attributes.put(ProductAttributeCatalog.SUPPLIER_ARTICLE_NAME, "Brique LX-9");
+        Assertions.assertTrue(criteria.matches(product));
+        criteria.supplier = "zz";
+        Assertions.assertFalse(criteria.matches(product));
+        criteria.supplier = null;
+        criteria.supplierArticle = "zz";
+        Assertions.assertFalse(criteria.matches(product));
+    }
+
+    /**
+     * The family criterion matches an article filed under a selected node or
+     * below it, and nothing else.
+     */
+    @Test
+    void theFamilyCriterionReadsTheAncestry() {
+        Product product = product("300", "Lait", null);
+        ProductFamily rayon = new ProductFamily();
+        rayon.code = "1002";
+        ArticleSearchCriteria criteria = new ArticleSearchCriteria();
+        criteria.families.add("1002");
+        try (MockedStatic<ProductFamily> families = mockStatic(ProductFamily.class)) {
+            families.when(() -> ProductFamily.findAllFamiliesForProduct(product)).thenReturn(Set.of(rayon));
+            Assertions.assertTrue(criteria.matches(product));
+            criteria.families.clear();
+            criteria.families.add("2001");
+            Assertions.assertFalse(criteria.matches(product));
+        }
+    }
+
+    /**
+     * Inside a nomenclature scheme the family criterion climbs the code
+     * ancestry: an article filed under a sous-famille is found by its
+     * activité, and not by a node outside its branch.
+     */
+    @Test
+    void theFamilyCriterionClimbsTheSchemeCodes() {
+        Product product = product("300", "Lait", null);
+        com.intermarche.edge.domain.catalog.Nomenclature scheme =
+                org.mockito.Mockito.mock(com.intermarche.edge.domain.catalog.Nomenclature.class);
+        org.mockito.Mockito.when(scheme.parentCodeOf("202002000001")).thenReturn("20200200");
+        org.mockito.Mockito.when(scheme.parentCodeOf("20200200")).thenReturn("2020");
+        org.mockito.Mockito.when(scheme.parentCodeOf("2020")).thenReturn("20");
+        org.mockito.Mockito.when(scheme.parentCodeOf("20")).thenReturn(null);
+        ProductFamily leaf = new ProductFamily();
+        leaf.code = "202002000001";
+        leaf.nomenclature = scheme;
+        ArticleSearchCriteria criteria = new ArticleSearchCriteria();
+        criteria.families.add("20");
+        try (MockedStatic<ProductFamily> families = mockStatic(ProductFamily.class)) {
+            families.when(() -> ProductFamily.findAllFamiliesForProduct(product)).thenReturn(Set.of(leaf));
+            Assertions.assertTrue(criteria.matches(product));
+            criteria.families.clear();
+            criteria.families.add("30");
+            Assertions.assertFalse(criteria.matches(product));
+        }
+    }
+
+    /**
+     * A node of a nomenclature scheme expands to the scheme nodes whose code
+     * names it as parent, and below them; the scheme is read once, and a node
+     * of another branch or the node itself is not taken as a child.
+     */
+    @Test
+    void aSchemeNodeExpandsToItsCodeDescendants() {
+        com.intermarche.edge.domain.catalog.Nomenclature scheme =
+                org.mockito.Mockito.mock(com.intermarche.edge.domain.catalog.Nomenclature.class);
+        org.mockito.Mockito.when(scheme.parentCodeOf("20")).thenReturn(null);
+        org.mockito.Mockito.when(scheme.parentCodeOf("2020")).thenReturn("20");
+        org.mockito.Mockito.when(scheme.parentCodeOf("3030")).thenReturn("30");
+        ProductFamily activity = new ProductFamily();
+        activity.code = "20";
+        activity.nomenclature = scheme;
+        ProductFamily rayon = new ProductFamily();
+        rayon.code = "2020";
+        rayon.nomenclature = scheme;
+        ProductFamily other = new ProductFamily();
+        other.code = "3030";
+        other.nomenclature = scheme;
+        try (MockedStatic<ProductFamily> families = mockStatic(ProductFamily.class)) {
+            families.when(() -> ProductFamily.findByCode("20")).thenReturn(activity);
+            families.when(() -> ProductFamily.findByCode("2020")).thenReturn(rayon);
+            families.when(() -> ProductFamily.listInNomenclature(scheme)).thenReturn(List.of(activity, rayon, other));
+            Assertions.assertEquals(Set.of("20", "2020"), ArticleSearchCriteria.expandFamilies(Set.of("20")));
+            families.verify(() -> ProductFamily.listInNomenclature(scheme), org.mockito.Mockito.times(1));
+        }
+    }
+
+    /**
+     * The price range reads the CURRENT price: inside the bounds, below the
+     * minimum, above the maximum, without a price and without an amount.
+     */
+    @Test
+    void thePriceRangeReadsTheCurrentPrice() {
+        Product product = product("300", "Lait", null);
+        product.id = 7L;
+        ArticleSearchCriteria criteria = new ArticleSearchCriteria();
+        criteria.priceMin = new BigDecimal("1.00");
+        criteria.priceMax = new BigDecimal("2.00");
+        try (MockedStatic<Price> prices = mockStatic(Price.class)) {
+            prices.when(() -> Price.findCurrentPrice(7L)).thenReturn(price("1.50", null));
+            Assertions.assertTrue(criteria.matches(product));
+            prices.when(() -> Price.findCurrentPrice(7L)).thenReturn(price("0.50", null));
+            Assertions.assertFalse(criteria.matches(product));
+            prices.when(() -> Price.findCurrentPrice(7L)).thenReturn(price("2.50", null));
+            Assertions.assertFalse(criteria.matches(product));
+            prices.when(() -> Price.findCurrentPrice(7L)).thenReturn(price(null, null));
+            Assertions.assertFalse(criteria.matches(product));
+            prices.when(() -> Price.findCurrentPrice(7L)).thenReturn(null);
+            Assertions.assertFalse(criteria.matches(product));
+            criteria.priceMin = null;
+            prices.when(() -> Price.findCurrentPrice(7L)).thenReturn(price("0.10", null));
+            Assertions.assertTrue(criteria.matches(product));
+            criteria.priceMin = new BigDecimal("0.05");
+            criteria.priceMax = null;
+            Assertions.assertTrue(criteria.matches(product));
+        }
+    }
+
+    /**
+     * The VAT criterion reads the article's own regime first, the current
+     * price's otherwise, and nothing when there is neither.
+     */
+    @Test
+    void theVatCriterionReadsTheArticleThenThePrice() {
+        Product product = product("300", "Lait", null);
+        product.id = 7L;
+        ArticleSearchCriteria criteria = new ArticleSearchCriteria();
+        criteria.vat = 3;
+        try (MockedStatic<Price> prices = mockStatic(Price.class)) {
+            prices.when(() -> Price.findCurrentPrice(7L)).thenReturn(price("1.00", 3));
+            Assertions.assertTrue(criteria.matches(product));
+            product.attributes.put(ProductAttributeCatalog.VAT_NUMBER, "1");
+            Assertions.assertFalse(criteria.matches(product));
+            product.attributes.remove(ProductAttributeCatalog.VAT_NUMBER);
+            prices.when(() -> Price.findCurrentPrice(7L)).thenReturn(null);
+            Assertions.assertFalse(criteria.matches(product));
+        }
+    }
+
+    /**
+     * Every lot-20 criterion renders its clause and binds its parameters, the
+     * families expanded with their descendants and the current time bound for
+     * the price and VAT clauses.
+     */
+    @Test
+    void theLot20CriteriaRenderTheirClauses() {
+        ArticleSearchCriteria criteria = new ArticleSearchCriteria();
+        criteria.plu = "12";
+        criteria.internalCode = "I";
+        criteria.description = "D";
+        criteria.checkoutLabel = "C";
+        criteria.brand = "B";
+        criteria.supplier = "S";
+        criteria.supplierArticle = "A";
+        criteria.families.add("10");
+        criteria.priceMin = BigDecimal.ONE;
+        criteria.priceMax = BigDecimal.TEN;
+        criteria.vat = 2;
+        ProductFamily root = new ProductFamily();
+        root.code = "10";
+        ProductFamily child = new ProductFamily();
+        child.code = "1001";
+        root.productFamilies.add(child);
+        child.productFamilies.add(root);
+        try (MockedStatic<ProductFamily> families = mockStatic(ProductFamily.class)) {
+            families.when(() -> ProductFamily.findByCode("10")).thenReturn(root);
+            families.when(() -> ProductFamily.findByCode("1001")).thenReturn(child);
+            String where = criteria.whereClause();
+            Assertions.assertTrue(where.contains("lower(p.plu) like :plu"));
+            Assertions.assertTrue(where.contains("lower(p.internalCode) like :internalCode"));
+            Assertions.assertTrue(where.contains("lower(p.description) like :description"));
+            Assertions.assertTrue(where.contains("lower(p.checkoutLabel) like :checkoutLabel"));
+            Assertions.assertTrue(where.contains("lower(p.brand) like :brand"));
+            Assertions.assertTrue(where.contains("key(suv) in :supplierCodes"));
+            Assertions.assertTrue(where.contains("key(sav) in :supplierArticleCodes"));
+            Assertions.assertTrue(where.contains("f.code in :families"));
+            Assertions.assertTrue(where.contains("pc.priceIncludingTax >= :priceMin"));
+            Assertions.assertTrue(where.contains("pc.priceIncludingTax <= :priceMax"));
+            Assertions.assertTrue(where.contains("pc.vat.number = :vat"));
+            java.util.Map<String, Object> params = criteria.parameters();
+            Assertions.assertEquals("%12%", params.get("plu"));
+            Assertions.assertEquals(Set.of("10", "1001"), params.get("families"));
+            Assertions.assertEquals("2", params.get("vatText"));
+            Assertions.assertEquals(2, params.get("vat"));
+            Assertions.assertNotNull(params.get("now"));
+            Assertions.assertEquals(List.of(ProductAttributeCatalog.SUPPLIER_CODE, ProductAttributeCatalog.SUPPLIER_NAME),
+                    params.get("supplierCodes"));
+            Assertions.assertEquals("%a%", params.get("supplierArticle"));
+        }
+    }
+
+    /**
+     * An unknown node expands to itself, and a criteria without price or VAT
+     * binds no time.
+     */
+    @Test
+    void anUnknownFamilyExpandsToItself() {
+        try (MockedStatic<ProductFamily> families = mockStatic(ProductFamily.class)) {
+            families.when(() -> ProductFamily.findByCode("99")).thenReturn(null);
+            Assertions.assertEquals(Set.of("99"), ArticleSearchCriteria.expandFamilies(Set.of("99")));
+        }
+        ArticleSearchCriteria criteria = new ArticleSearchCriteria();
+        criteria.plu = "1";
+        Assertions.assertFalse(criteria.parameters().containsKey("now"));
+        criteria.plu = null;
+        criteria.priceMax = BigDecimal.ONE;
+        Assertions.assertTrue(criteria.parameters().containsKey("now"));
+    }
+
+    /**
+     * The lot-20 criteria survive the query-string round trip, families given
+     * as several values or one comma-separated value, malformed amounts and
+     * VAT numbers dropped.
+     */
+    @Test
+    void theLot20CriteriaRoundTrip() {
+        MultivaluedMap<String, String> params = new MultivaluedHashMap<>();
+        params.putSingle("plu", "12");
+        params.putSingle("internalCode", "I");
+        params.putSingle("description", "D");
+        params.putSingle("checkoutLabel", "C");
+        params.putSingle("supplier", "S");
+        params.putSingle("supplierArticle", "A");
+        params.putSingle("brand", "B");
+        params.add("family", "10, 20");
+        params.add("family", " ");
+        params.add("family", null);
+        params.putSingle("priceMin", "1,5");
+        params.putSingle("priceMax", "x");
+        params.putSingle("vat", "3");
+        ArticleSearchCriteria criteria = ArticleSearchCriteria.fromParams(params);
+        Assertions.assertEquals(new BigDecimal("1.5"), criteria.priceMin);
+        Assertions.assertNull(criteria.priceMax);
+        Assertions.assertEquals(3, criteria.vat);
+        Assertions.assertEquals(Set.of("10", "20"), criteria.families);
+        String query = criteria.toQueryString();
+        Assertions.assertEquals("plu=12&internalCode=I&description=D&checkoutLabel=C&supplier=S"
+                + "&supplierArticle=A&brand=B&family=10&family=20&priceMin=1.5&vat=3", query);
+        ArticleSearchCriteria back = ArticleSearchCriteria.fromQueryString(query);
+        Assertions.assertEquals(query, back.toQueryString());
+        Assertions.assertFalse(back.isEmpty());
+        Assertions.assertTrue(new ArticleSearchCriteria().isEmpty());
+        params.putSingle("priceMax", "4");
+        params.putSingle("vat", "x");
+        ArticleSearchCriteria other = ArticleSearchCriteria.fromParams(params);
+        Assertions.assertNull(other.vat);
+        Assertions.assertTrue(other.toQueryString().contains("priceMax=4"));
+        Assertions.assertNull(ArticleSearchCriteria.parseAmount(" "));
+        Assertions.assertNull(ArticleSearchCriteria.parseVat(null));
+        java.util.Set<String> target = new java.util.LinkedHashSet<>();
+        ArticleSearchCriteria.addFamilies(target, null);
+        Assertions.assertTrue(target.isEmpty());
+    }
+
+    /**
+     * A VAT criterion alone binds the current time, and a null family value
+     * adds nothing.
+     */
+    @Test
+    void aVatCriterionAloneBindsTheTime() {
+        ArticleSearchCriteria criteria = new ArticleSearchCriteria();
+        criteria.vat = 1;
+        Assertions.assertTrue(criteria.parameters().containsKey("now"));
+        java.util.Set<String> target = new java.util.LinkedHashSet<>();
+        ArticleSearchCriteria.addFamilies(target, java.util.Arrays.asList((String) null, "10"));
+        Assertions.assertEquals(Set.of("10"), target);
     }
 }

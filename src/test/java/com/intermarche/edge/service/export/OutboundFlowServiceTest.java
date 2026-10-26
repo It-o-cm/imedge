@@ -69,6 +69,19 @@ class OutboundFlowServiceTest {
     /** The accounting day every test below produces. */
     private static final LocalDate DAY = LocalDate.of(2026, 3, 17);
 
+    /** The payment codes read during the day, served by the wired service. */
+    private final List<com.intermarche.edge.domain.barcode.ScannedBarcode> readings = new java.util.ArrayList<>();
+
+    /** The vignette declarations of the day, served by the wired service. */
+    private final List<com.intermarche.edge.domain.session.TechnicalEvent> declarations = new java.util.ArrayList<>();
+
+    /** The engine valuations of the day's lines, served by the wired service. */
+    private final List<com.intermarche.edge.domain.sale.TicketLineValuation> valuations = new java.util.ArrayList<>();
+
+    /** The burn registry the wired service asks. */
+    private final com.intermarche.edge.service.sync.VoucherBurnService burns =
+            mock(com.intermarche.edge.service.sync.VoucherBurnService.class);
+
     /**
      * Builds the service, with the given activation and destination, serving the
      * given tickets for every day asked.
@@ -163,9 +176,30 @@ class OutboundFlowServiceTest {
             List<CheckoutPoint> checkoutPoints() {
                 return park;
             }
+
+            @Override
+            java.util.Set<String> planexaExcludedIslands() {
+                return java.util.Set.of("DRIVE");
+            }
+
+            @Override
+            List<com.intermarche.edge.domain.barcode.ScannedBarcode> scannedBarcodesOf(LocalDate day) {
+                return readings;
+            }
+
+            @Override
+            List<com.intermarche.edge.domain.session.TechnicalEvent> vignetteDeclarationsOf(LocalDate day) {
+                return declarations;
+            }
+
+            @Override
+            List<com.intermarche.edge.domain.sale.TicketLineValuation> lineValuationsOf(List<Long> ticketIds) {
+                return valuations;
+            }
         };
         service.posSettingsService = settings;
         service.accountingDay = accountingDay;
+        service.voucherBurnService = burns;
         return service;
     }
 
@@ -198,6 +232,13 @@ class OutboundFlowServiceTest {
         when(settings.exportFidelityVatEnabled()).thenReturn(flow == OutboundFlow.FIDELITY_VAT);
         when(settings.exportOrderVatEnabled()).thenReturn(flow == OutboundFlow.ORDER_VAT);
         when(settings.exportPanelsEnabled()).thenReturn(flow == OutboundFlow.PANELS);
+        when(settings.planexaExportEnabled()).thenReturn(flow == OutboundFlow.PLANEXA);
+        when(settings.exportGs1PaymentsEnabled()).thenReturn(flow == OutboundFlow.GS1_PAYMENTS);
+        when(settings.exportVignettesEnabled()).thenReturn(flow == OutboundFlow.VIGNETTES);
+        when(settings.invoiceExportEcoTax()).thenReturn(true);
+        when(settings.exportUpstreamOffers()).thenReturn(List.of());
+        when(settings.vignetteAmountStep()).thenReturn(new BigDecimal("10.00"));
+        when(settings.vignettePerStep()).thenReturn(1);
         return settings;
     }
 
@@ -439,6 +480,33 @@ class OutboundFlowServiceTest {
         Assertions.assertEquals("2026-03-17;TOTAL;35.50;3", rows.get(rows.size() - 1));
     }
 
+    /**
+     * BO-07-01-04: the settlements of an integrated transaction are booked on
+     * rows of their own, keyed by channel and by the means the system stated —
+     * the tender's key when it stated none, or a blank one.
+     */
+    @Test
+    void theCashBookIsolatesTheIntegratedSettlements(@TempDir Path directory) throws IOException {
+        Ticket lane = new Ticket();
+        lane.payments.add(payment("CARD", "10.00"));
+        Ticket web = new Ticket();
+        web.salesChannel = com.intermarche.edge.domain.sale.SalesChannel.ECOMMERCE;
+        TicketPayment paypal = payment("CARD", "30.00");
+        paypal.tenderCode = "PAYPAL";
+        TicketPayment blank = payment("CARD", "5.00");
+        blank.tenderCode = " ";
+        web.payments.add(paypal);
+        web.payments.add(blank);
+        web.payments.add(payment("CASH", "1.00"));
+        OutboundFlowService service = service(directory.toString(), false, true, List.of(lane, web));
+        List<String> rows = Files.readAllLines(service.produce(OutboundFlow.CASH_BOOK, DAY));
+        Assertions.assertTrue(rows.contains("2026-03-17;CARD;10.00;1"));
+        Assertions.assertTrue(rows.contains("2026-03-17;ECOMMERCE/PAYPAL;30.00;1"));
+        Assertions.assertTrue(rows.contains("2026-03-17;ECOMMERCE/CARD;5.00;1"));
+        Assertions.assertTrue(rows.contains("2026-03-17;ECOMMERCE/CASH;1.00;1"));
+        Assertions.assertEquals("2026-03-17;TOTAL;46.00;4", rows.get(rows.size() - 1));
+    }
+
     /** Every arm of the activation switch answers its own administered key. */
     @Test
     void isActivatedReadsTheKeyOfEachFlow() {
@@ -472,17 +540,17 @@ class OutboundFlowServiceTest {
         Assertions.assertEquals("cafamil-20260317.csv", written.getFileName().toString());
         List<String> rows = Files.readAllLines(written);
         Assertions.assertEquals("JOURNEE;CODE_ILOT;CODE_FAMILLE;LIBELLE_FAMILLE;QUANTITE;"
-                + "TOTAL_TTC;TOTAL_HT;TVA;REMISES;NB_TICKETS", rows.get(0));
+                + "TOTAL_TTC;TOTAL_HT;TVA;REMISES;REMISES_AMONT;NB_TICKETS", rows.get(0));
         // Island 1, family 100: 2 units, 12.00 TTC, a 1.00 x 2 discount, 1 ticket.
-        Assertions.assertEquals("2026-03-17;ILE1;100;EPICERIE;2.000;12.00;10.00;2.00;2.00;1",
+        Assertions.assertEquals("2026-03-17;ILE1;100;EPICERIE;2.000;12.00;10.00;2.00;2.00;0.00;1",
                 rows.get(1));
-        Assertions.assertEquals("2026-03-17;ILE1;200;FRUITS;1.000;12.00;10.00;2.00;0.00;1",
+        Assertions.assertEquals("2026-03-17;ILE1;200;FRUITS;1.000;12.00;10.00;2.00;0.00;0.00;1",
                 rows.get(2));
         // Island 2 is its own cell even though the family is the same.
-        Assertions.assertEquals("2026-03-17;ILE2;100;EPICERIE;1.000;6.00;5.00;1.00;0.00;1",
+        Assertions.assertEquals("2026-03-17;ILE2;100;EPICERIE;1.000;6.00;5.00;1.00;0.00;0.00;1",
                 rows.get(3));
         Assertions.assertTrue(rows.stream().noneMatch(row -> row.contains("99.00")));
-        Assertions.assertEquals("2026-03-17;TOTAL;;;;30.00;25.00;5.00;2.00;2", rows.get(4));
+        Assertions.assertEquals("2026-03-17;TOTAL;;;;30.00;25.00;5.00;2.00;0.00;2", rows.get(4));
     }
 
     /**
@@ -498,7 +566,7 @@ class OutboundFlowServiceTest {
                 List.of(ticket), List.of(point(null, "ILE1"), point("CA01", null)));
 
         List<String> rows = Files.readAllLines(service.produce(OutboundFlow.FAMILY_SALES, DAY));
-        Assertions.assertEquals("2026-03-17;;;;0.000;12.00;10.00;2.00;0.00;1", rows.get(1));
+        Assertions.assertEquals("2026-03-17;;;;0.000;12.00;10.00;2.00;0.00;0.00;1", rows.get(1));
     }
 
     /**
@@ -532,7 +600,7 @@ class OutboundFlowServiceTest {
                 List.of(ticket), List.of(point("CA01", "ILE1")));
 
         List<String> rows = Files.readAllLines(service.produce(OutboundFlow.FAMILY_SALES, DAY));
-        Assertions.assertEquals("2026-03-17;ILE1;100;EPICERIE;1.000;12.00;10.00;2.00;0.00;1",
+        Assertions.assertEquals("2026-03-17;ILE1;100;EPICERIE;1.000;12.00;10.00;2.00;0.00;0.00;1",
                 rows.get(1));
     }
 
@@ -550,8 +618,8 @@ class OutboundFlowServiceTest {
                 List.of(ticket), List.of(point("CA01", "ILE1")));
 
         List<String> rows = Files.readAllLines(service.produce(OutboundFlow.FAMILY_SALES, DAY));
-        Assertions.assertTrue(rows.get(1).endsWith(";0.00;1"));
-        Assertions.assertTrue(rows.get(2).endsWith(";0.00;1"));
+        Assertions.assertTrue(rows.get(1).endsWith(";0.00;0.00;1"));
+        Assertions.assertTrue(rows.get(2).endsWith(";0.00;0.00;1"));
     }
 
     /**
@@ -581,7 +649,7 @@ class OutboundFlowServiceTest {
         Assertions.assertEquals("JOURNEE;NUM_TICKET;DATE_HEURE;TERMINAL;CAISSIERE;NUM_LIGNE;EAN;"
                 + "PLU;LIBELLE;CODE_FAMILLE;QUANTITE;PRIX_UNITAIRE;PRIX_ORIGINE;REMISE;"
                 + "TOTAL_TTC;TAUX_TVA;ANNULEE", rows.get(0));
-        Assertions.assertEquals("2026-03-17;T1;2026-03-17T18:30;CA01;mdupont;1;3250390000000;"
+        Assertions.assertEquals("2026-03-17;T1;2026-03-17T18:30:00;CA01;mdupont;1;3250390000000;"
                 + "4011;CAFE;100;2.000;6.00;7.00;2.00;12.00;0.2000;N", rows.get(1));
         Assertions.assertTrue(rows.get(2).endsWith(";O"));
         Assertions.assertEquals(3, rows.size());
@@ -642,7 +710,7 @@ class OutboundFlowServiceTest {
         List<String> familyRows = Files.readAllLines(
                 families.produce(OutboundFlow.FAMILY_SALES, DAY));
         Assertions.assertTrue(familyRows.get(1).contains("EPICERIE BIO"));
-        Assertions.assertEquals(10, familyRows.get(1).split(";", -1).length);
+        Assertions.assertEquals(11, familyRows.get(1).split(";", -1).length);
     }
 
     /**
@@ -943,6 +1011,17 @@ class OutboundFlowServiceTest {
         TicketLine cancelled = saleLine("100", "EPICERIE", "1", "6.00", null, "6.00");
         cancelled.cancelled = true;
         ticket.lines.add(cancelled);
+        com.intermarche.edge.domain.payment.CardPayment card =
+                new com.intermarche.edge.domain.payment.CardPayment(new BigDecimal("100.00"));
+        card.paymentIndex = 1;
+        card.authorizationNumber = "A12345";
+        ticket.payments.add(card);
+        TicketPayment credit = mock(TicketPayment.class);
+        when(credit.getMethodKey()).thenReturn("CREDIT");
+        credit.paymentIndex = 2;
+        credit.tenderCode = "COMPTE";
+        credit.amount = new BigDecimal("20.00");
+        ticket.payments.add(credit);
         document.ticket = ticket;
         OutboundFlowService service = wire(settings(directory.toString(),
                 OutboundFlow.CUSTOMER_INVOICES, ""), List.of(), List.of(), List.of(document),
@@ -951,7 +1030,7 @@ class OutboundFlowServiceTest {
         Path written = service.produce(OutboundFlow.CUSTOMER_INVOICES, DAY);
         Assertions.assertEquals("clifact-20260317.dat", written.getFileName().toString());
         List<String> records = Files.readAllLines(written);
-        Assertions.assertEquals(2, records.size());
+        Assertions.assertEquals(1, records.size());
         String header = records.get(0);
         Assertions.assertEquals("H", header.substring(0, 1));
         Assertions.assertEquals("FA-001              ", header.substring(1, 21));
@@ -963,7 +1042,9 @@ class OutboundFlowServiceTest {
         Assertions.assertTrue(header.contains("SARL DUPONT"));
         Assertions.assertTrue(header.contains("Vaucresson"));
         Assertions.assertTrue(header.contains("20260430"));
-        String detail = records.get(1);
+        List<String> lines = Files.readAllLines(directory.resolve("clilfact-20260317.dat"));
+        Assertions.assertEquals(1, lines.size());
+        String detail = lines.get(0);
         Assertions.assertEquals("L", detail.substring(0, 1));
         Assertions.assertEquals("FA-001              ", detail.substring(1, 21));
         Assertions.assertEquals("00001", detail.substring(21, 26));
@@ -971,6 +1052,38 @@ class OutboundFlowServiceTest {
         // The rate travels in basis points: 0.2000 is 2000.
         Assertions.assertTrue(detail.contains("002000"));
         Assertions.assertTrue(detail.endsWith("0000000012000"));
+        // cliregl.dat: one R record per settlement, the card one with its authorisation.
+        List<String> settlements = Files.readAllLines(directory.resolve("cliregl-20260317.dat"));
+        Assertions.assertEquals(2, settlements.size());
+        Assertions.assertEquals("R" + "FA-001" + " ".repeat(14) + "001CARD" + " ".repeat(8) + " ".repeat(20) + "0000000010000A12345      ",
+                settlements.get(0));
+        Assertions.assertEquals("R" + "FA-001" + " ".repeat(14) + "002CREDIT" + " ".repeat(6) + "COMPTE" + " ".repeat(14) + "0000000002000"
+                + " ".repeat(12), settlements.get(1));
+        // clitva.dat: one T record per rate of the billed lines, then the eco-tax record.
+        List<String> vat = Files.readAllLines(directory.resolve("clitva-20260317.dat"));
+        Assertions.assertEquals(List.of("T" + "FA-001" + " ".repeat(14) + "002000" + "0000000010000"
+                + "0000000002000" + "0000000012000", "E" + "FA-001" + " ".repeat(14) + "0000000000150"), vat);
+    }
+
+    /**
+     * Without the eco-tax administered, clitva.dat holds the VAT records alone;
+     * a document whose ticket carries no line states its own totals on a rate
+     * of its own.
+     */
+    @Test
+    void theEcoTaxRecordFollowsTheParameter(@TempDir Path directory) throws IOException {
+        Invoice document = invoice("FA-009", DocumentType.FACTURE, null, "10.00", "12.00", "2.00", "0.50");
+        document.ticket = ticket("T1", "CA01", 0, "12.00", null);
+        PosSettingsService settings = settings(directory.toString(), OutboundFlow.CUSTOMER_INVOICES, "");
+        when(settings.invoiceExportEcoTax()).thenReturn(false);
+        OutboundFlowService service = wire(settings, List.of(), List.of(), List.of(document),
+                List.of(), List.of());
+        service.produce(OutboundFlow.CUSTOMER_INVOICES, DAY);
+        Assertions.assertEquals(List.of("T" + "FA-009" + " ".repeat(14) + "000000" + "0000000001000"
+                + "0000000000200" + "0000000001200"),
+                Files.readAllLines(directory.resolve("clitva-20260317.dat")));
+        Assertions.assertEquals("", Files.readString(directory.resolve("clilfact-20260317.dat")));
+        Assertions.assertEquals("", Files.readString(directory.resolve("cliregl-20260317.dat")));
     }
 
     /**
@@ -989,6 +1102,9 @@ class OutboundFlowServiceTest {
         List<String> records = Files.readAllLines(
                 service.produce(OutboundFlow.CUSTOMER_INVOICES, DAY));
         Assertions.assertEquals(1, records.size());
+        Assertions.assertEquals(List.of("T" + "FA-002" + " ".repeat(14) + "000000" + "0".repeat(39),
+                "E" + "FA-002" + " ".repeat(14) + "0".repeat(13)),
+                Files.readAllLines(directory.resolve("clitva-20260317.dat")));
         Assertions.assertEquals("H", records.get(0).substring(0, 1));
         // No type, no issue instant, no address, no total: blanks and zeros, and
         // every following field still found at its own offset.
@@ -1025,6 +1141,10 @@ class OutboundFlowServiceTest {
                 OutboundFlow.CUSTOMER_INVOICES, ""), List.of(new Ticket()), List.of(),
                 List.of(), List.of(), List.of());
         Assertions.assertNull(service.produce(OutboundFlow.CUSTOMER_INVOICES, DAY));
+        OutboundFlowService erp = wire(settings(directory.toString(),
+                OutboundFlow.ERP_INVOICES, ""), List.of(new Ticket()), List.of(),
+                List.of(), List.of(), List.of());
+        Assertions.assertNull(erp.produce(OutboundFlow.ERP_INVOICES, DAY));
     }
 
     /**
@@ -1056,7 +1176,7 @@ class OutboundFlowServiceTest {
         Assertions.assertEquals("JOURNEE;NUM_DOCUMENT;TYPE;DATE_EMISSION;TERMINAL;NUM_TICKET;"
                 + "COMPTE_CLIENT;NOM_CLIENT;SIRET;TVA_INTRA;NIF;ECHEANCE;TOTAL_HT;TOTAL_TTC;"
                 + "TVA;ECOTAXE;DUPLICATA", rows.get(0));
-        Assertions.assertEquals("2026-03-17;FA-001;FACTURE;2026-03-17T18:30;CA01;T1;C0001;"
+        Assertions.assertEquals("2026-03-17;FA-001;FACTURE;2026-03-17T18:30:00;CA01;T1;C0001;"
                 + "SARL DUPONT;12345678901234;FR12345678901;999999990;2026-04-30;100.00;"
                 + "120.00;20.00;1.50;O", rows.get(1));
         // Nothing but its number and type: every other column empty or zero, N on
@@ -1146,7 +1266,7 @@ class OutboundFlowServiceTest {
         Assertions.assertTrue(members.get("Scvenmag.076")
                 .contains("2026-03-17;1;3;12.00;10.00;2.00"));
         Assertions.assertTrue(members.get("Tlogextr.076")
-                .contains("2026-03-17;T1;2026-03-17T10:00;CA01;3;24.00"));
+                .contains("2026-03-17;T1;2026-03-17T10:00:00;CA01;3;24.00"));
     }
 
     /**
@@ -1210,6 +1330,11 @@ class OutboundFlowServiceTest {
         when(settings.exportFidelityVatEnabled()).thenReturn(true);
         when(settings.exportOrderVatEnabled()).thenReturn(true);
         when(settings.exportPanelsEnabled()).thenReturn(true);
+        when(settings.planexaExportEnabled()).thenReturn(true);
+        when(settings.exportGs1PaymentsEnabled()).thenReturn(true);
+        when(settings.exportVignettesEnabled()).thenReturn(true);
+        when(settings.vignetteAmountStep()).thenReturn(new BigDecimal("10.00"));
+        when(settings.exportUpstreamOffers()).thenReturn(List.of());
         Ticket ticket = ticket("T1", "CA01", 1, "12.00", LocalDateTime.of(2026, 3, 17, 10, 0));
         ticket.cashier = cashier("mdupont");
         ticket.lines.add(saleLine("100", "EPICERIE", "1", "12.00", null, "12.00"));
@@ -1283,5 +1408,570 @@ class OutboundFlowServiceTest {
         OutboundFlowService service = service("", true, true, List.of());
         Assertions.assertEquals(LocalDate.now(),
                 service.accountingDay.of(LocalDateTime.now()));
+    }
+    /** BO-11-01: incomplete invoice coordinates and type still yield a complete flat header. */
+    @Test
+    void invoiceExportsTolerateAbsentAddressAndDocumentType() throws Exception {
+        OutboundFlowService service = new OutboundFlowService();
+        Invoice invoice = invoice("FA-NULL", null, null, null, null, null, null);
+        invoice.customerAddress = null;
+        var method = OutboundFlowService.class.getDeclaredMethod("invoiceHeader", Invoice.class);
+        method.setAccessible(true);
+        String header = (String) method.invoke(service, invoice);
+        Assertions.assertTrue(header.startsWith("HFA-NULL"));
+        Assertions.assertFalse(header.contains("null"));
+        method = OutboundFlowService.class.getDeclaredMethod("erpInvoiceRows", LocalDate.class, List.class);
+        method.setAccessible(true);
+        var rows = (List<?>) method.invoke(service, DAY, List.of(invoice));
+        Assertions.assertEquals(3, rows.size());
+        Assertions.assertTrue(rows.get(1).toString().contains("FA-NULL"));
+        Assertions.assertTrue(rows.get(2).toString().contains(";TOTAL;"));
+    }
+
+    /** BO-11-01: fidelity VAT allocation skips missing amounts and treats an absent rate as zero. */
+    @Test
+    void allocationHandlesMissingLineAmountsAndRates() throws Exception {
+        OutboundFlowService service = new OutboundFlowService();
+        Ticket ticket = ticket("T1", "C04", 1, "10.00", null);
+        TicketLine missing = line("0.2000", "1.00", false);
+        missing.totalPrice = null;
+        TicketLine zeroRated = line("0.2000", "10.00", false);
+        zeroRated.vatRate = null;
+        ticket.lines.addAll(List.of(missing, zeroRated));
+        var method = OutboundFlowService.class.getDeclaredMethod("ventilate", BigDecimal.class, Ticket.class);
+        method.setAccessible(true);
+        Assertions.assertEquals(Map.of(BigDecimal.ZERO, new BigDecimal("3.00")), method.invoke(service, new BigDecimal("3.00"), ticket));
+        method = OutboundFlowService.class.getDeclaredMethod("basisPoints", BigDecimal.class);
+        method.setAccessible(true);
+        Assertions.assertEquals(0L, method.invoke(service, (Object) null));
+        method = OutboundFlowService.class.getDeclaredMethod("rate", BigDecimal.class);
+        method.setAccessible(true);
+        Assertions.assertEquals("0.0000", method.invoke(service, (Object) null));
+    }
+
+    /** BO-11-03-01: production uses the CDI proxy when available and otherwise retains the local bean. */
+    @Test
+    void selfResolvesAvailableProxyOrOwnBean() {
+        OutboundFlowService service = new OutboundFlowService();
+        OutboundFlowService proxy = mock(OutboundFlowService.class);
+        var container = mock(io.quarkus.arc.ArcContainer.class);
+        io.quarkus.arc.InstanceHandle<OutboundFlowService> handle = mock(io.quarkus.arc.InstanceHandle.class);
+        when(container.instance(OutboundFlowService.class)).thenReturn(handle);
+        try (var arc = org.mockito.Mockito.mockStatic(io.quarkus.arc.Arc.class)) {
+            arc.when(io.quarkus.arc.Arc::container).thenReturn(container);
+            Assertions.assertSame(service, service.self());
+            when(handle.get()).thenReturn(proxy);
+            Assertions.assertSame(proxy, service.self());
+        }
+    }
+
+    /** BO-11-01: an empty panel day creates no archive and a completed daily pass records produced files once. */
+    @Test
+    void panelAbsenceAndDailyProductionKeepTheirBoundaries(@TempDir Path directory) throws Exception {
+        OutboundFlowService empty = serviceFor(directory.toString(), OutboundFlow.PANELS, List.of(), List.of());
+        Assertions.assertNull(empty.produce(OutboundFlow.PANELS, DAY));
+        Ticket ticket = ticket("T1", "C04", 1, "12.00", LocalDateTime.of(2026, 3, 17, 10, 0));
+        ticket.lines.add(line("0.2000", "12.00", false));
+        OutboundFlowService enabled = service(directory.toString(), true, false, List.of(ticket));
+        enabled.tick();
+        Assertions.assertEquals(enabled.accountingDay.of(LocalDateTime.now()).minusDays(1), enabled.lastProducedDay);
+        Assertions.assertTrue(Files.isRegularFile(directory.resolve(OutboundFlow.REVENUE.fileName(enabled.lastProducedDay))));
+    }
+
+
+    /** BO-11-01: a day with no enabled output is still marked complete, preventing an endless retry loop. */
+    @Test
+    void dailyPassWithNoFilesIsStillCompleted() throws Exception {
+        var service = new OutboundFlowService();
+        service.accountingDay = mock(AccountingDay.class);
+        when(service.accountingDay.of(org.mockito.ArgumentMatchers.any(LocalDateTime.class))).thenReturn(DAY);
+        var proxy = mock(OutboundFlowService.class);
+        when(proxy.produceAll(DAY.minusDays(1))).thenReturn(List.of());
+        var container = mock(io.quarkus.arc.ArcContainer.class);
+        io.quarkus.arc.InstanceHandle<OutboundFlowService> handle = mock(io.quarkus.arc.InstanceHandle.class);
+        when(container.instance(OutboundFlowService.class)).thenReturn(handle);
+        when(handle.get()).thenReturn(proxy);
+        try (var arc = org.mockito.Mockito.mockStatic(io.quarkus.arc.Arc.class)) {
+            arc.when(io.quarkus.arc.Arc::container).thenReturn(container);
+            service.tick();
+            service.tick();
+        }
+        Assertions.assertEquals(DAY.minusDays(1), service.lastProducedDay);
+        org.mockito.Mockito.verify(proxy).produceAll(DAY.minusDays(1));
+    }
+
+    /** BO-11: startup installs one daemon worker at the administered cadence without performing an export. */
+    @org.junit.jupiter.api.Test
+    void startupUsesOneDaemonAtTheAdministeredCadence() {
+        var service = new OutboundFlowService();
+        service.tickSeconds = 23;
+        var executor = org.mockito.Mockito.mock(java.util.concurrent.ScheduledExecutorService.class);
+        var factory = org.mockito.ArgumentCaptor.forClass(java.util.concurrent.ThreadFactory.class);
+        try (var executors = org.mockito.Mockito.mockStatic(java.util.concurrent.Executors.class)) {
+            executors.when(() -> java.util.concurrent.Executors.newSingleThreadScheduledExecutor(org.mockito.ArgumentMatchers.any(java.util.concurrent.ThreadFactory.class))).thenReturn(executor);
+            service.onStart(new io.quarkus.runtime.StartupEvent());
+            executors.verify(() -> java.util.concurrent.Executors.newSingleThreadScheduledExecutor(factory.capture()));
+            var thread = factory.getValue().newThread(() -> { });
+            org.junit.jupiter.api.Assertions.assertEquals("outbound-flows", thread.getName());
+            org.junit.jupiter.api.Assertions.assertTrue(thread.isDaemon());
+            org.junit.jupiter.api.Assertions.assertEquals(Thread.State.NEW, thread.getState());
+            org.mockito.Mockito.verify(executor).scheduleWithFixedDelay(org.mockito.ArgumentMatchers.any(Runnable.class), org.mockito.ArgumentMatchers.eq(23L), org.mockito.ArgumentMatchers.eq(23L), org.mockito.ArgumentMatchers.eq(java.util.concurrent.TimeUnit.SECONDS));
+        }
+    }
+
+    /** BO-11-01-02: an unexpected failure outside the export fold is contained and the next scheduler invocation still runs. */
+    @Test
+    void schedulerSurvivesAnUnexpectedTickFailure() {
+        var service = org.mockito.Mockito.spy(new OutboundFlowService());
+        org.mockito.Mockito.doThrow(new IllegalStateException("database unavailable")).doNothing().when(service).tick();
+        Assertions.assertDoesNotThrow(service::tickSafely);
+        Assertions.assertDoesNotThrow(service::tickSafely);
+        org.mockito.Mockito.verify(service, org.mockito.Mockito.times(2)).tick();
+    }
+
+    /** BO-11-01-05: persisted exports share exclusive accounting-day bounds, including the first cutover of the next month. */
+    @Test
+    void persistenceLoadersUseTheAccountingBoundariesAndBusinessDates() {
+        var service = new OutboundFlowService();
+        service.accountingDay = new AccountingDay();
+        service.accountingDay.posSettingsService = mock(PosSettingsService.class);
+        when(service.accountingDay.posSettingsService.accountingCutoverHour()).thenReturn(3);
+        var day = LocalDate.of(2026, 12, 17);
+        var from = LocalDateTime.of(2026, 12, 17, 3, 0);
+        var to = LocalDateTime.of(2026, 12, 18, 3, 0);
+        var ticketQuery = org.mockito.Mockito.mock(io.quarkus.hibernate.orm.panache.PanacheQuery.class);
+        var invoiceQuery = org.mockito.Mockito.mock(io.quarkus.hibernate.orm.panache.PanacheQuery.class);
+        var orderQuery = org.mockito.Mockito.mock(io.quarkus.hibernate.orm.panache.PanacheQuery.class);
+        var tickets = List.of(new Ticket());
+        var invoices = List.of(new Invoice());
+        var orders = List.of(new CustomerOrder());
+        when(ticketQuery.list()).thenReturn(tickets);
+        when(invoiceQuery.list()).thenReturn(invoices);
+        when(orderQuery.list()).thenReturn(orders);
+        var points = List.of(new CheckoutPoint());
+        try (var panache = org.mockito.Mockito.mockStatic(io.quarkus.hibernate.orm.panache.PanacheEntityBase.class);
+             var park = org.mockito.Mockito.mockStatic(CheckoutPoint.class)) {
+            panache.when(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase.find("status = ?1 and closingDate >= ?2 and closingDate < ?3 order by closingDate", Ticket.TicketStatus.CLOSED, from, to)).thenReturn(ticketQuery);
+            panache.when(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase.find("status = ?1 and closingDate >= ?2 and closingDate < ?3 order by closingDate", Ticket.TicketStatus.CLOSED, LocalDateTime.of(2026, 12, 1, 3, 0), LocalDateTime.of(2027, 1, 1, 3, 0))).thenReturn(ticketQuery);
+            panache.when(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase.find("issueDate >= ?1 and issueDate < ?2 order by issueDate", from, to)).thenReturn(invoiceQuery);
+            panache.when(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase.find("orderDate >= ?1 and orderDate < ?2 order by orderDate", from, to)).thenReturn(orderQuery);
+            park.when(CheckoutPoint::listAllOrdered).thenReturn(points);
+            Assertions.assertSame(tickets, service.closedTicketsOf(day));
+            Assertions.assertSame(tickets, service.closedTicketsOfMonth(day));
+            Assertions.assertSame(invoices, service.invoicesOf(day));
+            Assertions.assertSame(orders, service.ordersOf(day));
+            Assertions.assertSame(points, service.checkoutPoints());
+        }
+    }
+
+
+    /** LC-01-03-01: construct one ordered transition of the named operator. */
+    private com.intermarche.edge.domain.session.TechnicalEvent transition(boolean lock, String time) {
+        var event = new com.intermarche.edge.domain.session.TechnicalEvent();
+        event.eventDate = LocalDateTime.parse("2026-03-17T" + time);
+        event.eventType = lock
+                ? com.intermarche.edge.domain.session.TechnicalEvent.EventType.REGISTER_LOCKED
+                : com.intermarche.edge.domain.session.TechnicalEvent.EventType.REGISTER_UNLOCKED;
+        return event;
+    }
+
+    /** LC-01-03-01: subtract completed, duplicate, initial and unfinished pauses; round only the net duration. */
+    @Test
+    void productivitySubtractsEachPauseWithoutDoubleCounting(@TempDir Path directory) throws IOException {
+        var cases = List.of(
+                List.<com.intermarche.edge.domain.session.TechnicalEvent>of(),
+                List.of(transition(true, "09:30:00"), transition(false, "09:50:00")),
+                List.of(transition(true, "09:30:00"), transition(true, "09:40:00"),
+                        transition(false, "09:50:00"), transition(false, "10:00:00")),
+                List.of(transition(true, "10:30:00")),
+                List.of(transition(false, "10:00:00")),
+                List.of(transition(true, "09:00:00"), transition(false, "11:00:00")),
+                List.of(transition(true, "09:00:20"), transition(false, "09:00:50")),
+                List.of(transition(false, "09:00:00"), transition(false, "10:00:00")));
+        long[] expected = {120, 100, 100, 90, 60, 0, 119, 120};
+        for (int index = 0; index < cases.size(); index++) {
+            Ticket sale = ticket("T1", "CA01", 60, "100.00", LocalDateTime.of(2026, 3, 17, 10, 30));
+            sale.cashier = cashier("login-different-from-badge");
+            sale.cashier.badgeId = "B007";
+            sale.session = session("S1", LocalDateTime.of(2026, 3, 17, 9, 0), LocalDateTime.of(2026, 3, 17, 11, 0));
+            var service = org.mockito.Mockito.spy(serviceFor(directory.toString(),
+                    OutboundFlow.CASHIER_PRODUCTIVITY, List.of(sale), List.of()));
+            org.mockito.Mockito.doReturn(cases.get(index)).when(service).pauseEvents("CA01", "B007",
+                    sale.session.openingDate, sale.session.closingDate);
+            var row = Files.readAllLines(service.produce(OutboundFlow.CASHIER_PRODUCTIVITY, DAY)).get(1).split(";");
+            Assertions.assertEquals(String.valueOf(expected[index]), row[7], "case " + index);
+            BigDecimal rate = expected[index] == 0 ? BigDecimal.ZERO.setScale(2)
+                    : new BigDecimal("3600").divide(BigDecimal.valueOf(expected[index]), 2, java.math.RoundingMode.HALF_UP);
+            Assertions.assertEquals(rate.toPlainString(), row[8], "case " + index);
+            Assertions.assertEquals("100.00", row[9]);
+        }
+    }
+
+    /** LC-01-03-01: missing legacy badges retain elapsed time without guessing pause ownership. */
+    @Test
+    void productivityWithBlankBadgeDoesNotQueryUnrelatedOperators(@TempDir Path directory) throws IOException {
+        Ticket sale = ticket("T1", "CA01", 60, "100.00", LocalDateTime.of(2026, 3, 17, 10, 0));
+        sale.cashier = cashier("cashier");
+        sale.cashier.badgeId = " ";
+        sale.session = session("S1", LocalDateTime.of(2026, 3, 17, 9, 0), null);
+        var service = org.mockito.Mockito.spy(serviceFor(directory.toString(),
+                OutboundFlow.CASHIER_PRODUCTIVITY, List.of(sale), List.of()));
+        var row = Files.readAllLines(service.produce(OutboundFlow.CASHIER_PRODUCTIVITY, DAY)).get(1);
+        Assertions.assertTrue(row.contains(";60;60.00;100.00"));
+        sale.cashier = null;
+        var anonymous = Files.readAllLines(service.produce(OutboundFlow.CASHIER_PRODUCTIVITY, DAY)).get(1);
+        Assertions.assertTrue(anonymous.contains(";INCONNU;"));
+        Assertions.assertTrue(anonymous.contains(";60;60.00;100.00"));
+        org.mockito.Mockito.verify(service, org.mockito.Mockito.never()).pauseEvents(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    /** LC-01-03-01: the journal query isolates terminal/badge and shift bounds, ordered chronologically. */
+    @Test
+    void pauseQueryUsesBadgeTerminalAndExactShiftBounds() {
+        var service = new OutboundFlowService();
+        var from = LocalDateTime.of(2026, 3, 17, 9, 0);
+        var to = from.plusHours(2);
+        var events = List.of(transition(true, "09:30:00"));
+        try (var panache = org.mockito.Mockito.mockStatic(io.quarkus.hibernate.orm.panache.PanacheEntityBase.class)) {
+            panache.when(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase.list(
+                    "terminalId = ?1 and operatorBadgeId = ?2 and eventDate >= ?3 and eventDate <= ?4"
+                            + " and eventType in (?5, ?6) order by eventDate, id",
+                    "CA01", "B007", from, to,
+                    com.intermarche.edge.domain.session.TechnicalEvent.EventType.REGISTER_LOCKED,
+                    com.intermarche.edge.domain.session.TechnicalEvent.EventType.REGISTER_UNLOCKED)).thenReturn(events);
+            Assertions.assertSame(events, service.pauseEvents("CA01", "B007", from, to));
+        }
+    }
+
+    /**
+     * BO-03-10-06: the Planexa flow counts per register and per hour slot, the
+     * registers of an excluded island left out, a ticket without closing hour
+     * and without amount counted in an empty slot.
+     */
+    @Test
+    void produceWritesThePlanexaFlow(@TempDir Path directory) throws IOException {
+        Ticket morning = ticket("T1", "CA01", 2, "24.00", LocalDateTime.of(2026, 3, 17, 9, 15));
+        Ticket alsoMorning = ticket("T2", "CA01", 1, "6.00", LocalDateTime.of(2026, 3, 17, 9, 45));
+        Ticket drive = ticket("T3", "DR01", 5, "50.00", LocalDateTime.of(2026, 3, 17, 9, 30));
+        Ticket undated = ticket("T4", "CA02", 0, null, null);
+        OutboundFlowService service = serviceFor(directory.toString(), OutboundFlow.PLANEXA,
+                List.of(morning, alsoMorning, drive, undated),
+                List.of(point("CA01", "AVANT"), point("DR01", "DRIVE")));
+        Path written = service.produce(OutboundFlow.PLANEXA, DAY);
+        Assertions.assertNotNull(written);
+        Assertions.assertEquals("planexa-20260317.csv", written.getFileName().toString());
+        List<String> rows = Files.readAllLines(written);
+        Assertions.assertEquals(List.of(
+                "JOURNEE;TERMINAL;CODE_ILOT;TRANCHE;NB_TICKETS;NB_ARTICLES;TOTAL_TTC",
+                "2026-03-17;CA01;AVANT;09:00;2;3;30.00",
+                "2026-03-17;CA02;;;1;0;0.00",
+                "2026-03-17;TOTAL;;;3;3;30.00"), rows);
+    }
+
+    /** BO-03-10-06: the excluded islands are read from the islands flagged so. */
+    @Test
+    void planexaExcludedIslandsReadsTheFlag() {
+        com.intermarche.edge.domain.store.CheckoutIsland drive = new com.intermarche.edge.domain.store.CheckoutIsland();
+        drive.code = "DRIVE";
+        try (org.mockito.MockedStatic<io.quarkus.hibernate.orm.panache.PanacheEntityBase> panache =
+                org.mockito.Mockito.mockStatic(io.quarkus.hibernate.orm.panache.PanacheEntityBase.class)) {
+            panache.when(() -> com.intermarche.edge.domain.store.CheckoutIsland.list("planexaExcluded = true"))
+                    .thenReturn(List.of(drive));
+            Assertions.assertEquals(java.util.Set.of("DRIVE"), new OutboundFlowService().planexaExcludedIslands());
+        }
+    }
+
+    /**
+     * The REVENUE flow states an exempt line under EXO and a third-party sale
+     * on a COMPTE_TIERS row without VAT, both counted in the total takings and
+     * the third party's VAT kept out of the store's (BO-02-03-26, -43).
+     */
+    @Test
+    void theRevenueFlowSeparatesExemptAndThirdPartyLines(@TempDir Path directory) throws IOException {
+        Ticket ticket = new Ticket();
+        ticket.lines.add(line("0.2000", "12.00", false));
+        TicketLine exempt = line("0.0000", "5.00", false);
+        exempt.vatExempt = true;
+        ticket.lines.add(exempt);
+        TicketLine third = line("0.2000", "6.00", false);
+        third.thirdPartySale = true;
+        ticket.lines.add(third);
+        TicketLine thirdWithoutTotal = line("0.2000", null, false);
+        thirdWithoutTotal.thirdPartySale = true;
+        ticket.lines.add(thirdWithoutTotal);
+        OutboundFlowService service = service(directory.toString(), true, false, List.of(ticket));
+        List<String> rows = Files.readAllLines(service.produce(OutboundFlow.REVENUE, DAY));
+        Assertions.assertTrue(rows.contains("2026-03-17;EXO;5.00;5.00;0.00;1"), rows.toString());
+        Assertions.assertTrue(rows.contains("2026-03-17;COMPTE_TIERS;6.00;6.00;0.00;1"), rows.toString());
+        Assertions.assertEquals("2026-03-17;TOTAL;23.00;21.00;2.00;1", rows.get(rows.size() - 1));
+    }
+
+    /**
+     * The CASH-BOOK flow states the VAT collected for third parties and the
+     * takings net of it; a cancelled third-party line collects nothing
+     * (BO-02-03-43).
+     */
+    @Test
+    void theCashBookStatesTheThirdPartyVat(@TempDir Path directory) throws IOException {
+        Ticket ticket = new Ticket();
+        ticket.payments.add(payment("CASH", "18.00"));
+        ticket.lines.add(line("0.2000", "12.00", false));
+        TicketLine third = line("0.2000", "6.00", false);
+        third.thirdPartySale = true;
+        ticket.lines.add(third);
+        TicketLine cancelled = line("0.2000", "6.00", true);
+        cancelled.thirdPartySale = true;
+        ticket.lines.add(cancelled);
+        OutboundFlowService service = service(directory.toString(), false, true, List.of(ticket));
+        List<String> rows = Files.readAllLines(service.produce(OutboundFlow.CASH_BOOK, DAY));
+        Assertions.assertTrue(rows.contains("2026-03-17;TOTAL;18.00;1"), rows.toString());
+        Assertions.assertTrue(rows.contains("2026-03-17;TVA_COMPTE_TIERS;-1.00;0"), rows.toString());
+        Assertions.assertEquals("2026-03-17;TOTAL_HORS_TVA_TIERS;17.00;1", rows.get(rows.size() - 1));
+    }
+
+    /**
+     * Builds an engine valuation of one line.
+     *
+     * @param ticketId the ticket's id
+     * @param lineUid the line's uid
+     * @param amount the advantage allocated, possibly null
+     * @param offer the offer label, possibly null
+     * @return the valuation
+     */
+    private com.intermarche.edge.domain.sale.TicketLineValuation valuation(Long ticketId, String lineUid,
+            String amount, String offer) {
+        com.intermarche.edge.domain.sale.TicketLineValuation valuation =
+                new com.intermarche.edge.domain.sale.TicketLineValuation();
+        valuation.ticket = new Ticket();
+        valuation.ticket.id = ticketId;
+        valuation.lineUid = lineUid;
+        valuation.advantageAmount = amount == null ? null : new BigDecimal(amount);
+        valuation.offerLabel = offer;
+        return valuation;
+    }
+
+    /**
+     * BO-11-01-08: the immediate discounts the upstream refunds are attributed
+     * to the family of the line the engine allocated them to — only the offers
+     * the store administers, an advantage absent or nil counting nothing, an
+     * offer with no label never matching a prefix.
+     */
+    @Test
+    void theUpstreamDiscountsAreAttributedToTheirFamily(@TempDir Path directory) throws IOException {
+        Ticket ticket = ticket("T1", "CA01", 2, "24.00", null);
+        ticket.id = 5L;
+        TicketLine coffee = saleLine("100", "EPICERIE", "1", "12.00", null, "12.00");
+        coffee.lineUid = "a";
+        TicketLine fruit = saleLine("200", "FRUITS", "1", "12.00", null, "12.00");
+        fruit.lineUid = "b";
+        ticket.lines.addAll(List.of(coffee, fruit));
+        Ticket anonymous = ticket("T2", "CA01", 0, "0.00", null);
+        valuations.add(valuation(5L, "a", "-1.50", "AMONT promo"));
+        valuations.add(valuation(5L, "a", null, "AMONT promo"));
+        valuations.add(valuation(5L, "a", "0.00", "AMONT promo"));
+        valuations.add(valuation(5L, "b", "2.00", "LOCAL promo"));
+        valuations.add(valuation(5L, "b", "3.00", null));
+        PosSettingsService settings = settings(directory.toString(), OutboundFlow.FAMILY_SALES, "");
+        when(settings.exportUpstreamOffers()).thenReturn(List.of("CENTRALE", "AMONT"));
+        OutboundFlowService service = wire(settings, List.of(ticket, anonymous), List.of(point("CA01", "ILE1")));
+        List<String> rows = Files.readAllLines(service.produce(OutboundFlow.FAMILY_SALES, DAY));
+        Assertions.assertEquals("2026-03-17;ILE1;100;EPICERIE;1.000;12.00;10.00;2.00;0.00;1.50;1", rows.get(1));
+        Assertions.assertEquals("2026-03-17;ILE1;200;FRUITS;1.000;12.00;10.00;2.00;0.00;0.00;1", rows.get(2));
+        Assertions.assertEquals("2026-03-17;TOTAL;;;;24.00;20.00;4.00;0.00;1.50;2", rows.get(3));
+        when(settings.exportUpstreamOffers()).thenReturn(List.of());
+        rows = Files.readAllLines(service.produce(OutboundFlow.FAMILY_SALES, DAY));
+        Assertions.assertEquals("2026-03-17;ILE1;200;FRUITS;1.000;12.00;10.00;2.00;0.00;5.00;1", rows.get(2));
+    }
+
+    /**
+     * Builds a payment code read at a till.
+     *
+     * @param code the code, possibly null
+     * @param found whether the system knew it
+     * @return the reading
+     */
+    private com.intermarche.edge.domain.barcode.ScannedBarcode reading(String code, boolean found) {
+        com.intermarche.edge.domain.barcode.ScannedBarcode reading =
+                new com.intermarche.edge.domain.barcode.ScannedBarcode();
+        reading.terminalId = "CA01";
+        reading.code = code;
+        reading.found = found;
+        reading.typeCode = "COUPON";
+        reading.typeLabel = "Coupon GS1";
+        reading.ticketNumber = "T1";
+        reading.amount = new BigDecimal("2.00");
+        reading.scannedAt = LocalDateTime.of(2026, 3, 17, 10, 5);
+        return reading;
+    }
+
+    /**
+     * BO-11-01-18: the GS1 flow lists every code read — GS1 or not, known or
+     * not, burned or not, a number the register extracted from a GS1 payload
+     * flagged GS1 — then every voucher settled on a closed ticket, then a TOTAL
+     * row, every instant to the second.
+     */
+    @Test
+    void produceWritesTheGs1PaymentsFlow(@TempDir Path directory) throws IOException {
+        readings.add(reading("(255)3250390000017", true));
+        com.intermarche.edge.domain.barcode.ScannedBarcode plain = reading("BA123", false);
+        plain.scannedAt = null;
+        readings.add(plain);
+        com.intermarche.edge.domain.barcode.ScannedBarcode extracted = reading("952600013436712345", true);
+        extracted.gs1 = true;
+        extracted.scannedAt = LocalDateTime.of(2026, 3, 17, 10, 7, 12, 345000);
+        readings.add(extracted);
+        when(burns.burnedAmong(java.util.Set.of("(255)3250390000017", "BA123", "952600013436712345")))
+                .thenReturn(java.util.Set.of("(255)3250390000017"));
+        Ticket ticket = ticket("T1", "CA01", 1, "12.00", LocalDateTime.of(2026, 3, 17, 10, 6));
+        com.intermarche.edge.domain.payment.VoucherPayment voucher =
+                new com.intermarche.edge.domain.payment.VoucherPayment(new BigDecimal("2.00"), "Coupon GS1",
+                        "(255)3250390000017");
+        voucher.tenderCode = "COUPON";
+        ticket.payments.add(voucher);
+        ticket.payments.add(payment("CASH", "10.00"));
+        Ticket undated = ticket("T2", "CA01", 1, "1.00", null);
+        com.intermarche.edge.domain.payment.VoucherPayment blank =
+                new com.intermarche.edge.domain.payment.VoucherPayment(null, null, null);
+        undated.payments.add(blank);
+        com.intermarche.edge.domain.payment.VoucherPayment gcn =
+                new com.intermarche.edge.domain.payment.VoucherPayment(new BigDecimal("1.00"), "Bon enseigne",
+                        "952600013436712345");
+        undated.payments.add(gcn);
+        OutboundFlowService service = serviceFor(directory.toString(), OutboundFlow.GS1_PAYMENTS,
+                List.of(ticket, undated), List.of());
+        Path written = service.produce(OutboundFlow.GS1_PAYMENTS, DAY);
+        Assertions.assertEquals("paigs1-20260317.csv", written.getFileName().toString());
+        Assertions.assertEquals(List.of(
+                "JOURNEE;SOURCE;TERMINAL;NUM_TICKET;DATE_HEURE;CODE;GS1;TYPE;LIBELLE;MONTANT;CONNU;BRULE",
+                "2026-03-17;SCAN;CA01;T1;2026-03-17T10:05:00;(255)3250390000017;O;COUPON;Coupon GS1;2.00;O;O",
+                "2026-03-17;SCAN;CA01;T1;;BA123;N;COUPON;Coupon GS1;2.00;N;N",
+                "2026-03-17;SCAN;CA01;T1;2026-03-17T10:07:12;952600013436712345;O;COUPON;Coupon GS1;2.00;O;N",
+                "2026-03-17;REGLEMENT;CA01;T1;2026-03-17T10:06:00;(255)3250390000017;O;COUPON;Coupon GS1;2.00;O;O",
+                "2026-03-17;REGLEMENT;CA01;T2;;;N;;;0.00;O;O",
+                "2026-03-17;REGLEMENT;CA01;T2;;952600013436712345;O;;Bon enseigne;1.00;O;O",
+                "2026-03-17;TOTAL;;;;3;;;;3.00;;3"), Files.readAllLines(written));
+    }
+
+    /** BO-11-01-18: a day without a reading and without a sale writes no GS1 file. */
+    @Test
+    void theGs1FlowProducesNothingForAnEmptyDay(@TempDir Path directory) throws IOException {
+        OutboundFlowService service = serviceFor(directory.toString(), OutboundFlow.GS1_PAYMENTS,
+                List.of(), List.of());
+        Assertions.assertNull(service.produce(OutboundFlow.GS1_PAYMENTS, DAY));
+        readings.add(reading("X", true));
+        Assertions.assertNotNull(service.produce(OutboundFlow.GS1_PAYMENTS, DAY));
+    }
+
+    /** BO-11-01-18: every GS1 marker is recognised, and a plain code is not GS1. */
+    @Test
+    void theGs1MarkersAreRecognised() {
+        Assertions.assertFalse(OutboundFlowService.isGs1(null));
+        Assertions.assertFalse(OutboundFlowService.isGs1(" "));
+        Assertions.assertFalse(OutboundFlowService.isGs1("3250390000017"));
+        Assertions.assertTrue(OutboundFlowService.isGs1("(01)03250390000017"));
+        Assertions.assertTrue(OutboundFlowService.isGs1("0103250390000017\u001d10LOT"));
+        Assertions.assertTrue(OutboundFlowService.isGs1("]d20103250390000017"));
+        Assertions.assertTrue(OutboundFlowService.isGs1("]Q30103250390000017"));
+        Assertions.assertTrue(OutboundFlowService.isGs1("]e00103250390000017"));
+        Assertions.assertTrue(OutboundFlowService.isGs1("]C10103250390000017"));
+        Assertions.assertTrue(OutboundFlowService.isGs1("https://id.gs1.org/01/03250390000017"));
+    }
+
+    /**
+     * Builds a vignette declaration.
+     *
+     * @param terminal the register
+     * @param detail the detail, possibly null
+     * @return the event
+     */
+    private com.intermarche.edge.domain.session.TechnicalEvent declaration(String terminal, String detail) {
+        com.intermarche.edge.domain.session.TechnicalEvent event =
+                new com.intermarche.edge.domain.session.TechnicalEvent();
+        event.terminalId = terminal;
+        event.detail = detail;
+        event.eventType = com.intermarche.edge.domain.session.TechnicalEvent.EventType.VIGNETTES_DECLARED;
+        return event;
+    }
+
+    /**
+     * BO-11-01-20: the vignettes flow states, per register and shift, the
+     * tickets, the theoretical vignettes of the formula, the declared ones and
+     * the gap — a declaration on a shift with no sale making its own row, an
+     * unreadable or negative count counting none, a sale rung on no shift
+     * making none.
+     */
+    @Test
+    void produceWritesTheVignettesFlow(@TempDir Path directory) throws IOException {
+        Ticket big = ticket("T1", "CA01", 3, "25.00", null);
+        big.session = session("S1", null, null);
+        big.cashier = cashier("jdupont");
+        Ticket small = ticket("T2", "CA01", 1, null, null);
+        small.session = session("S1", null, null);
+        Ticket orphan = ticket("T3", "CA02", 1, "9.99", null);
+        declarations.add(declaration("CA01", "session=S1;count=3"));
+        declarations.add(declaration("CA01", "session=S1;count=x"));
+        declarations.add(declaration("CA01", "junk;session=S1;count=-4"));
+        declarations.add(declaration("CA03", "session=S9;count=5"));
+        declarations.add(declaration("CA03", null));
+        OutboundFlowService service = serviceFor(directory.toString(), OutboundFlow.VIGNETTES,
+                List.of(big, small, orphan), List.of());
+        Path written = service.produce(OutboundFlow.VIGNETTES, DAY);
+        Assertions.assertEquals("vignett-20260317.csv", written.getFileName().toString());
+        Assertions.assertEquals(List.of(
+                "JOURNEE;TERMINAL;PRISE_DE_POSTE;CAISSIERE;NB_TICKETS;VIGNETTES_THEORIQUES;VIGNETTES_DECLAREES;ECART",
+                "2026-03-17;CA01;S1;jdupont;2;2;3;1",
+                "2026-03-17;CA03;;;0;0;0;0",
+                "2026-03-17;CA03;S9;;0;0;5;5",
+                "2026-03-17;TOTAL;;;2;2;8;6"), Files.readAllLines(written));
+    }
+
+    /** BO-11-01-20: a day without a sale and without a declaration writes no vignettes file. */
+    @Test
+    void theVignettesFlowProducesNothingForAnEmptyDay(@TempDir Path directory) throws IOException {
+        OutboundFlowService service = serviceFor(directory.toString(), OutboundFlow.VIGNETTES,
+                List.of(), List.of());
+        Assertions.assertNull(service.produce(OutboundFlow.VIGNETTES, DAY));
+        declarations.add(declaration("CA01", "session=S1;count=1"));
+        Assertions.assertNotNull(service.produce(OutboundFlow.VIGNETTES, DAY));
+    }
+
+    /** BO-11-01-20: the formula counts whole steps, and nothing without a total, a positive total or a step. */
+    @Test
+    void theVignetteFormulaCountsWholeSteps() {
+        Assertions.assertEquals(4L, OutboundFlowService.vignettesFor(new BigDecimal("29.99"), new BigDecimal("10"), 2));
+        Assertions.assertEquals(0L, OutboundFlowService.vignettesFor(null, BigDecimal.TEN, 1));
+        Assertions.assertEquals(0L, OutboundFlowService.vignettesFor(new BigDecimal("-5"), BigDecimal.TEN, 1));
+        Assertions.assertEquals(0L, OutboundFlowService.vignettesFor(BigDecimal.TEN, BigDecimal.ZERO, 1));
+    }
+
+    /** The three new loaders read the day's bounds and the given tickets. */
+    @Test
+    void theNewLoadersQueryTheirRows() {
+        var service = new OutboundFlowService();
+        service.accountingDay = new AccountingDay();
+        service.accountingDay.posSettingsService = mock(PosSettingsService.class);
+        var from = LocalDateTime.of(2026, 3, 17, 0, 0);
+        var to = LocalDateTime.of(2026, 3, 18, 0, 0);
+        List<com.intermarche.edge.domain.barcode.ScannedBarcode> scans =
+                List.of(new com.intermarche.edge.domain.barcode.ScannedBarcode());
+        List<com.intermarche.edge.domain.session.TechnicalEvent> events =
+                List.of(new com.intermarche.edge.domain.session.TechnicalEvent());
+        List<com.intermarche.edge.domain.sale.TicketLineValuation> rows =
+                List.of(new com.intermarche.edge.domain.sale.TicketLineValuation());
+        try (var panache = org.mockito.Mockito.mockStatic(io.quarkus.hibernate.orm.panache.PanacheEntityBase.class)) {
+            panache.when(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase.list(
+                    "scannedAt >= ?1 and scannedAt < ?2 order by scannedAt desc, id desc", from, to)).thenReturn(scans);
+            panache.when(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase.list(
+                    "eventType = ?1 and eventDate >= ?2 and eventDate < ?3 order by eventDate, id",
+                    com.intermarche.edge.domain.session.TechnicalEvent.EventType.VIGNETTES_DECLARED, from, to))
+                    .thenReturn(events);
+            panache.when(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase.list("ticket.id in ?1",
+                    List.of(5L))).thenReturn(rows);
+            Assertions.assertSame(scans, service.scannedBarcodesOf(DAY));
+            Assertions.assertSame(events, service.vignetteDeclarationsOf(DAY));
+            Assertions.assertSame(rows, service.lineValuationsOf(List.of(5L)));
+        }
     }
 }

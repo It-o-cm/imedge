@@ -1,13 +1,17 @@
 package com.intermarche.edge.ui.admin;
 
+import com.intermarche.edge.domain.catalog.Price;
 import com.intermarche.edge.domain.catalog.Product;
+import com.intermarche.edge.domain.catalog.ProductFamily;
 import com.intermarche.edge.domain.catalog.ProductType;
+import com.intermarche.edge.domain.util.DateTimeProvider;
 import com.intermarche.edge.domain.catalog.attribute.ProductAttributeCatalog;
 import com.intermarche.edge.domain.catalog.attribute.ProductAttributes;
 import io.quarkus.hibernate.orm.panache.PanacheQuery;
 import jakarta.ws.rs.core.MultivaluedHashMap;
 import jakarta.ws.rs.core.MultivaluedMap;
 
+import java.math.BigDecimal;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -31,6 +35,14 @@ import java.util.Set;
  * an empty criteria matches every article. Following the read-screen doctrine
  * of {@code JournalCriteria}, a value that fails to parse is treated as absent
  * rather than raising: a bad filter narrows nothing, it does not fault.
+ * <p>
+ * <p>
+ * BO-02-03-30/31 widened it to the criteria the chef de rayon asks for: the PLU,
+ * the internal code, the description, the checkout label (libellé TPV), the
+ * supplier and the supplier's article (code or name), the brand, one or several
+ * families or rayons of the nomenclature (a node selects everything filed under
+ * it), a range of the CURRENT sale price and the VAT regime. The free text also
+ * reaches the additional sale codes (BO-02-03-03).
  * <p>
  * Two readings of the SAME criteria, kept side by side on purpose. {@link
  * #matches(Product)} is the reference: a pure predicate over one article, which
@@ -88,6 +100,42 @@ public class ArticleSearchCriteria {
      */
     public Set<String> attributes = new LinkedHashSet<>();
 
+    /** A fragment of the PLU, or null (BO-02-03-30). */
+    public String plu;
+
+    /** A fragment of the internal code, or null (BO-02-03-30). */
+    public String internalCode;
+
+    /** A fragment of the description, or null (BO-02-03-30). */
+    public String description;
+
+    /** A fragment of the checkout label (libellé TPV), or null (BO-02-03-30). */
+    public String checkoutLabel;
+
+    /** A fragment of the supplier's code or name, or null (BO-02-03-30). */
+    public String supplier;
+
+    /** A fragment of the supplier's article code or name, or null (BO-02-03-30). */
+    public String supplierArticle;
+
+    /** A fragment of the brand, or null (BO-02-03-30). */
+    public String brand;
+
+    /**
+     * The codes of the nomenclature nodes (families, rayons, sous-familles) an
+     * article must be filed under, directly or below, never null (BO-02-03-30/31).
+     */
+    public Set<String> families = new LinkedHashSet<>();
+
+    /** The inclusive lower bound of the current sale price, or null (BO-02-03-30/31). */
+    public BigDecimal priceMin;
+
+    /** The inclusive upper bound of the current sale price, or null (BO-02-03-30/31). */
+    public BigDecimal priceMax;
+
+    /** The number of the VAT regime the article falls under, or null (BO-02-03-31). */
+    public Integer vat;
+
     /**
      * Default constructor for an empty (match-everything) criteria.
      */
@@ -131,7 +179,115 @@ public class ArticleSearchCriteria {
                 return false;
             }
         }
-        return true;
+        return matchesFields(product) && matchesSupplier(product) && matchesCatalog(product);
+    }
+
+    /**
+     * The fragment criteria on the article's own fields (BO-02-03-30).
+     *
+     * @param product the candidate product
+     * @return true when every present fragment is found
+     */
+    private boolean matchesFields(Product product) {
+        return (plu == null || contains(product.plu, plu.toLowerCase()))
+                && (internalCode == null || contains(product.internalCode, internalCode.toLowerCase()))
+                && (description == null || contains(product.description, description.toLowerCase()))
+                && (checkoutLabel == null || contains(product.checkoutLabel, checkoutLabel.toLowerCase()))
+                && (brand == null || contains(product.brand, brand.toLowerCase()));
+    }
+
+    /**
+     * The supplier criteria, read from the article's supplier attributes
+     * (BO-02-03-30).
+     *
+     * @param product the candidate product
+     * @return true when every present supplier fragment is found
+     */
+    private boolean matchesSupplier(Product product) {
+        return (supplier == null
+                || containsAttribute(product, supplier, ProductAttributeCatalog.SUPPLIER_CODE, ProductAttributeCatalog.SUPPLIER_NAME))
+                && (supplierArticle == null
+                || containsAttribute(product, supplierArticle, ProductAttributeCatalog.SUPPLIER_ARTICLE_CODE,
+                        ProductAttributeCatalog.SUPPLIER_ARTICLE_NAME));
+    }
+
+    /**
+     * Tells whether one of two attributes of the article contains a fragment.
+     *
+     * @param product the candidate product
+     * @param fragment the fragment, already non-null
+     * @param first the first attribute code
+     * @param second the second attribute code
+     * @return true when either attribute contains the fragment
+     */
+    private boolean containsAttribute(Product product, String fragment, String first, String second) {
+        String lower = fragment.toLowerCase();
+        return contains(ProductAttributes.raw(product, first), lower)
+                || contains(ProductAttributes.raw(product, second), lower);
+    }
+
+    /**
+     * The criteria that read the referential around the article: the
+     * nomenclature, the current price and the VAT regime (BO-02-03-30/31).
+     *
+     * @param product the candidate product
+     * @return true when every present referential criterion holds
+     */
+    private boolean matchesCatalog(Product product) {
+        if (!families.isEmpty() && !filedUnder(product)) {
+            return false;
+        }
+        if (priceMin == null && priceMax == null && vat == null) {
+            return true;
+        }
+        Price current = Price.findCurrentPrice(product.id);
+        if (!priceInRange(current)) {
+            return false;
+        }
+        Integer own = ProductAttributes.vatNumber(product);
+        Integer regime = own != null ? own : current == null ? null : current.vatNumber();
+        return vat == null || vat.equals(regime);
+    }
+
+    /**
+     * Tells whether the article is filed under one of the selected nodes,
+     * directly or below.
+     *
+     * <p>Inside a nomenclature scheme a node's parent is read off its code,
+     * not off the navigation edges, so the code ancestry is climbed too: an
+     * article filed under a sous-famille is found by its famille, its rayon
+     * and its activité (BO-02-03-30/31).
+     *
+     * @param product the candidate product
+     * @return true when one of its families or their ancestors is selected
+     */
+    private boolean filedUnder(Product product) {
+        for (ProductFamily family : ProductFamily.findAllFamiliesForProduct(product)) {
+            for (String code = family.code; code != null; code = family.nomenclature == null
+                    ? null : family.nomenclature.parentCodeOf(code)) {
+                if (families.contains(code)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Tells whether a current price satisfies the price range.
+     *
+     * @param current the current price, or null
+     * @return true when no bound is set, or the price lies within the bounds
+     */
+    private boolean priceInRange(Price current) {
+        if (priceMin == null && priceMax == null) {
+            return true;
+        }
+        if (current == null || current.priceIncludingTax == null) {
+            return false;
+        }
+        return (priceMin == null || current.priceIncludingTax.compareTo(priceMin) >= 0)
+                && (priceMax == null || current.priceIncludingTax.compareTo(priceMax) <= 0);
     }
 
     /**
@@ -166,7 +322,8 @@ public class ArticleSearchCriteria {
             // The three-field OR of matchesText, parenthesised: without the
             // parentheses it would swallow every clause ANDed after it.
             clauses.add("(lower(p.ean) like :text or lower(p.name) like :text"
-                    + " or lower(p.internalCode) like :text)");
+                    + " or lower(p.internalCode) like :text"
+                    + " or p.id in (select s.id from Product s join s.saleCodes sc where lower(sc) like :text))");
         }
         if (type != null) {
             clauses.add("p.productType = :type");
@@ -191,8 +348,92 @@ public class ArticleSearchCriteria {
             clauses.add(attributeClause(code, index));
             index++;
         }
+        addFieldClauses(clauses);
+        addCatalogClauses(clauses);
         return String.join(" and ", clauses);
     }
+
+    /**
+     * The fragment and supplier clauses of BO-02-03-30.
+     *
+     * @param clauses the clauses being collected
+     */
+    private void addFieldClauses(List<String> clauses) {
+        if (plu != null) {
+            clauses.add("lower(p.plu) like :plu");
+        }
+        if (internalCode != null) {
+            clauses.add("lower(p.internalCode) like :internalCode");
+        }
+        if (description != null) {
+            clauses.add("lower(p.description) like :description");
+        }
+        if (checkoutLabel != null) {
+            clauses.add("lower(p.checkoutLabel) like :checkoutLabel");
+        }
+        if (brand != null) {
+            clauses.add("lower(p.brand) like :brand");
+        }
+        if (supplier != null) {
+            clauses.add(textAttributeClause("su", "supplierCodes", "supplier"));
+        }
+        if (supplierArticle != null) {
+            clauses.add(textAttributeClause("sa", "supplierArticleCodes", "supplierArticle"));
+        }
+    }
+
+    /**
+     * The predicate asking that one of several text attributes contain a
+     * fragment.
+     *
+     * @param alias the alias prefix of the sub-select
+     * @param codesParam the parameter naming the attribute codes
+     * @param valueParam the parameter naming the fragment
+     * @return the JPQL predicate over the alias {@code p}
+     */
+    private String textAttributeClause(String alias, String codesParam, String valueParam) {
+        return "p.id in (select " + alias + ".id from Product " + alias + " join " + alias + ".attributes "
+                + alias + "v where key(" + alias + "v) in :" + codesParam + " and lower(" + alias + "v) like :"
+                + valueParam + ")";
+    }
+
+    /**
+     * The nomenclature, price and VAT clauses of BO-02-03-30/31. The CURRENT
+     * price is the valid price no other valid price outranks by priority, which
+     * is what {@code Price.findCurrentPrice} returns.
+     *
+     * @param clauses the clauses being collected
+     */
+    private void addCatalogClauses(List<String> clauses) {
+        if (!families.isEmpty()) {
+            clauses.add("p.id in (select fp.id from ProductFamily f join f.products fp where f.code in :families)");
+        }
+        if (priceMin != null) {
+            clauses.add("p.id in (select pc.product.id from Price pc where " + CURRENT_PRICE
+                    + " and pc.priceIncludingTax >= :priceMin)");
+        }
+        if (priceMax != null) {
+            clauses.add("p.id in (select pc.product.id from Price pc where " + CURRENT_PRICE
+                    + " and pc.priceIncludingTax <= :priceMax)");
+        }
+        if (vat != null) {
+            String own = "select va.id from Product va join va.attributes vv where key(vv) = 'VAT_NUMBER'";
+            clauses.add("(p.id in (" + own + " and vv = :vatText) or (p.id not in (" + own + ")"
+                    + " and p.id in (select pc.product.id from Price pc where " + CURRENT_PRICE
+                    + " and pc.vat.number = :vat)))");
+        }
+    }
+
+    /**
+     * The JPQL condition selecting, over the alias {@code pc}, the price that
+     * is current now: valid at {@code :now} and outranked by no other valid
+     * price of the same article.
+     */
+    private static final String CURRENT_PRICE = "(pc.startDateTime is null or pc.startDateTime <= :now)"
+            + " and (pc.endDateTime is null or pc.endDateTime > :now)"
+            + " and not exists (select po.id from Price po where po.product = pc.product"
+            + " and (po.startDateTime is null or po.startDateTime <= :now)"
+            + " and (po.endDateTime is null or po.endDateTime > :now) and po.priority > pc.priority)";
 
     /**
      * The predicate asking that an article carry one attribute as true.
@@ -266,7 +507,106 @@ public class ArticleSearchCriteria {
             params.put("attr" + index, code);
             index++;
         }
+        putFragment(params, "plu", plu);
+        putFragment(params, "internalCode", internalCode);
+        putFragment(params, "description", description);
+        putFragment(params, "checkoutLabel", checkoutLabel);
+        putFragment(params, "brand", brand);
+        if (supplier != null) {
+            params.put("supplierCodes", List.of(ProductAttributeCatalog.SUPPLIER_CODE, ProductAttributeCatalog.SUPPLIER_NAME));
+            params.put("supplier", like(supplier));
+        }
+        if (supplierArticle != null) {
+            params.put("supplierArticleCodes",
+                    List.of(ProductAttributeCatalog.SUPPLIER_ARTICLE_CODE, ProductAttributeCatalog.SUPPLIER_ARTICLE_NAME));
+            params.put("supplierArticle", like(supplierArticle));
+        }
+        if (!families.isEmpty()) {
+            params.put("families", expandFamilies(families));
+        }
+        putIfPresent(params, "priceMin", priceMin);
+        putIfPresent(params, "priceMax", priceMax);
+        if (vat != null) {
+            params.put("vat", vat);
+            params.put("vatText", String.valueOf(vat));
+        }
+        if (priceMin != null || priceMax != null || vat != null) {
+            params.put("now", DateTimeProvider.now());
+        }
         return params;
+    }
+
+    /**
+     * Binds a containment fragment when present.
+     *
+     * @param params the parameters being collected
+     * @param name the parameter name
+     * @param fragment the fragment, or null
+     */
+    private void putFragment(Map<String, Object> params, String name, String fragment) {
+        if (fragment != null) {
+            params.put(name, like(fragment));
+        }
+    }
+
+    /**
+     * Binds a value when present.
+     *
+     * @param params the parameters being collected
+     * @param name the parameter name
+     * @param value the value, or null
+     */
+    private void putIfPresent(Map<String, Object> params, String name, Object value) {
+        if (value != null) {
+            params.put(name, value);
+        }
+    }
+
+    /**
+     * The LIKE pattern of a containment fragment, lower-cased.
+     *
+     * @param fragment the fragment
+     * @return the pattern
+     */
+    private static String like(String fragment) {
+        return "%" + fragment.toLowerCase() + "%";
+    }
+
+    /**
+     * Expands the selected nomenclature nodes with every node below them, so
+     * selecting a rayon selects its families and their sous-familles.
+     * <p>Both structures are walked: the navigation edges of the shop's own
+     * groups, and, for a node of a nomenclature scheme, the nodes of that
+     * scheme whose code names it as parent (BO-02-03-30/31).
+     *
+     * @param roots the selected node codes
+     * @return the codes of the selected nodes and of their descendants
+     */
+    static Set<String> expandFamilies(Set<String> roots) {
+        Set<String> expanded = new LinkedHashSet<>(roots);
+        List<String> pending = new ArrayList<>(roots);
+        Map<com.intermarche.edge.domain.catalog.Nomenclature, List<ProductFamily>> schemes = new LinkedHashMap<>();
+        while (!pending.isEmpty()) {
+            ProductFamily node = ProductFamily.findByCode(pending.remove(0));
+            if (node == null) {
+                continue;
+            }
+            List<ProductFamily> children = new ArrayList<>(node.productFamilies);
+            if (node.nomenclature != null) {
+                for (ProductFamily member : schemes.computeIfAbsent(node.nomenclature,
+                        ProductFamily::listInNomenclature)) {
+                    if (node.code.equals(member.parentCode())) {
+                        children.add(member);
+                    }
+                }
+            }
+            for (ProductFamily child : children) {
+                if (expanded.add(child.code)) {
+                    pending.add(child.code);
+                }
+            }
+        }
+        return expanded;
     }
 
     /**
@@ -281,7 +621,8 @@ public class ArticleSearchCriteria {
         String lower = needle.toLowerCase();
         return contains(product.ean, lower)
                 || contains(product.name, lower)
-                || contains(product.internalCode, lower);
+                || contains(product.internalCode, lower)
+                || product.saleCodes.stream().anyMatch(code -> contains(code, lower));
     }
 
     /**
@@ -315,7 +656,76 @@ public class ArticleSearchCriteria {
         criteria.eanFrom = blankToNull(params.getFirst("eanFrom"));
         criteria.eanTo = blankToNull(params.getFirst("eanTo"));
         addKnownAttributes(criteria.attributes, params.get("attr"));
+        criteria.plu = blankToNull(params.getFirst("plu"));
+        criteria.internalCode = blankToNull(params.getFirst("internalCode"));
+        criteria.description = blankToNull(params.getFirst("description"));
+        criteria.checkoutLabel = blankToNull(params.getFirst("checkoutLabel"));
+        criteria.supplier = blankToNull(params.getFirst("supplier"));
+        criteria.supplierArticle = blankToNull(params.getFirst("supplierArticle"));
+        criteria.brand = blankToNull(params.getFirst("brand"));
+        addFamilies(criteria.families, params.get("family"));
+        criteria.priceMin = parseAmount(params.getFirst("priceMin"));
+        criteria.priceMax = parseAmount(params.getFirst("priceMax"));
+        criteria.vat = parseVat(params.getFirst("vat"));
         return criteria;
+    }
+
+    /**
+     * Adds the node codes of a raw list, ignoring blanks; a single value may
+     * carry several codes separated by commas or semicolons.
+     *
+     * @param target the set to fill
+     * @param raw the raw values, or null
+     */
+    static void addFamilies(Set<String> target, List<String> raw) {
+        if (raw == null) {
+            return;
+        }
+        for (String value : raw) {
+            for (String code : value == null ? new String[0] : value.split("[,;]")) {
+                String trimmed = blankToNull(code);
+                if (trimmed != null) {
+                    target.add(trimmed);
+                }
+            }
+        }
+    }
+
+    /**
+     * Parses an amount, tolerating a French comma; a blank or malformed value
+     * is no bound.
+     *
+     * @param raw the raw value, or null
+     * @return the amount, or null
+     */
+    static BigDecimal parseAmount(String raw) {
+        String value = blankToNull(raw);
+        if (value == null) {
+            return null;
+        }
+        try {
+            return new BigDecimal(value.replace(',', '.'));
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Parses a VAT regime number; a blank or malformed value is no criterion.
+     *
+     * @param raw the raw value, or null
+     * @return the number, or null
+     */
+    static Integer parseVat(String raw) {
+        String value = blankToNull(raw);
+        if (value == null) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(value);
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     /**
@@ -371,7 +781,42 @@ public class ArticleSearchCriteria {
         for (String code : attributes) {
             append(sb, "attr", code);
         }
+        appendIfPresent(sb, "plu", plu);
+        appendIfPresent(sb, "internalCode", internalCode);
+        appendIfPresent(sb, "description", description);
+        appendIfPresent(sb, "checkoutLabel", checkoutLabel);
+        appendIfPresent(sb, "supplier", supplier);
+        appendIfPresent(sb, "supplierArticle", supplierArticle);
+        appendIfPresent(sb, "brand", brand);
+        for (String code : families) {
+            append(sb, "family", code);
+        }
+        appendIfPresent(sb, "priceMin", priceMin == null ? null : priceMin.toPlainString());
+        appendIfPresent(sb, "priceMax", priceMax == null ? null : priceMax.toPlainString());
+        appendIfPresent(sb, "vat", vat == null ? null : String.valueOf(vat));
         return sb.toString();
+    }
+
+    /**
+     * Appends one pair when its value is present.
+     *
+     * @param sb the query-string builder
+     * @param key the parameter name
+     * @param value the parameter value, or null
+     */
+    private void appendIfPresent(StringBuilder sb, String key, String value) {
+        if (value != null) {
+            append(sb, key, value);
+        }
+    }
+
+    /**
+     * Whether the criteria constrains anything at all.
+     *
+     * @return true when every criterion is absent
+     */
+    public boolean isEmpty() {
+        return toQueryString().isEmpty();
     }
 
     /**

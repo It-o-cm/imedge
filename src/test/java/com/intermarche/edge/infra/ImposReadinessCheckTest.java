@@ -1,7 +1,7 @@
 package com.intermarche.edge.infra;
 
-import com.intermarche.edge.domain.people.Employee;
 import com.intermarche.edge.domain.catalog.Product;
+import com.intermarche.edge.domain.people.Employee;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import org.eclipse.microprofile.health.HealthCheckResponse;
 import org.junit.jupiter.api.Test;

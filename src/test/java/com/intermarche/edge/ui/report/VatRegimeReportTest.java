@@ -98,17 +98,23 @@ class VatRegimeReportTest {
 
     /**
      * BO-02-02-03: every regime comes out with its code, its rate, its
-     * country and the mention it obliges; a zero rate is named exempt.
+     * country and the mention it obliges; an exempt regime is named so.
      */
     @Test
     void everyRegimeComesOutWithItsConformityColumns() {
         VatRegimeReport report = reportCounting(42L);
         try (MockedStatic<VatRate> rates = mockStatic(VatRate.class)) {
+            VatRate exempt = regime(2L, 4, "0.0000", "Exonéré", "PT", null);
+            exempt.exempt = true;
+            VatRate coded = regime(3L, 5, "0.0000", "Isento", "PT", null);
+            coded.exempt = true;
+            coded.exemptionCode = "M07";
+            VatRate zeroRated = regime(4L, 6, "0.0000", "Don", "FR", null);
             rates.when(VatRate::listAllOrdered).thenReturn(List.of(
                     regime(1L, 1, "0.2000", "Taux normal", "FR", "TVA sur les débits"),
-                    regime(2L, 4, "0.0000", "Exonéré", "PT", null)));
+                    exempt, coded, zeroRated));
             List<List<Object>> rows = report.rows(new ReportCriteria());
-            assertEquals(2, rows.size());
+            assertEquals(4, rows.size());
             assertEquals("1", rows.get(0).get(0));
             assertEquals("Taux normal", rows.get(0).get(2));
             assertEquals("FR", rows.get(0).get(3));
@@ -117,6 +123,10 @@ class VatRegimeReportTest {
             assertEquals("Non", rows.get(0).get(6));
             assertEquals("", rows.get(1).get(4));
             assertEquals("Oui", rows.get(1).get(6));
+            // BO-02-02-01: the exemption is the regime's flag, with its code, and a
+            // zero rate alone is not one.
+            assertEquals("Oui (M07)", rows.get(2).get(6));
+            assertEquals("Non", rows.get(3).get(6));
         }
     }
 
@@ -153,5 +163,16 @@ class VatRegimeReportTest {
             rates.when(VatRate::listAllOrdered).thenReturn(List.of());
             assertTrue(report.rows(new ReportCriteria()).isEmpty());
         }
+    }
+
+    /**
+     * The chart draws the prices counted, each bar named by the regime
+     * (BO-06-01-04).
+     */
+    @Test
+    void theChartDrawsThePricesCounted() {
+        VatRegimeReport report = new VatRegimeReport();
+        assertEquals(5, report.chartColumn());
+        assertEquals(2, report.chartLabelColumn());
     }
 }

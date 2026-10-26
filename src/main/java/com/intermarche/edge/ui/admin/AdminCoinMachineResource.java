@@ -1,10 +1,13 @@
 package com.intermarche.edge.ui.admin;
 
+import io.quarkus.security.Authenticated;
+import com.intermarche.edge.security.FeatureAccess;
+import com.intermarche.edge.domain.setting.Feature;
+import com.intermarche.edge.domain.people.CrudOption;
 import com.intermarche.edge.domain.safe.CoinMachine;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
@@ -47,6 +50,9 @@ public class AdminCoinMachineResource {
     /** Technical log of this class. */
     private static final Logger LOGGER = Logger.getLogger(AdminCoinMachineResource.class);
 
+    /** How many of the latest flows the screen shows (BO-05-02-16). */
+    static final int FLOW_LINES = 30;
+
     /** The coin-machine template. */
     @Inject
     @Location("admin-coin-machines")
@@ -64,7 +70,8 @@ public class AdminCoinMachineResource {
      * @return the machines page
      */
     @GET
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.COIN_MACHINE)
     public TemplateInstance list(@QueryParam("notice") String notice,
                                  @QueryParam("noticeOk") @DefaultValue("true") boolean noticeOk) {
         LOGGER.info("Entering method list");
@@ -72,6 +79,7 @@ public class AdminCoinMachineResource {
         LOGGER.info("Exiting method list with " + machines.size() + " machine(s)");
         return adminCoinMachines.data("machines", machines)
                 .data("total", format(totalOf(machines)))
+                .data("flows", com.intermarche.edge.domain.safe.CoinMachineFlow.latest(FLOW_LINES))
                 .data("notice", notice)
                 .data("noticeOk", noticeOk);
     }
@@ -83,7 +91,8 @@ public class AdminCoinMachineResource {
      * @return a 303 back to the list with the notice
      */
     @POST
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.COIN_MACHINE, option = CrudOption.CREATE, updateKey = "id")
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response save(MultivaluedMap<String, String> form) {
@@ -125,7 +134,8 @@ public class AdminCoinMachineResource {
      */
     @POST
     @Path("/count")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.COIN_MACHINE, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response count(MultivaluedMap<String, String> form) {
@@ -144,11 +154,13 @@ public class AdminCoinMachineResource {
         machine.countedAmount = counted;
         machine.countedOn = LocalDateTime.now();
         machine.persist();
+        coinMachineService.journal(machine, com.intermarche.edge.domain.safe.CoinMachineFlow.Kind.COUNT,
+                BigDecimal.ZERO);
         LOGGER.infof("Monnayeur %s compté à %s", machine.code, counted);
         LOGGER.info("Exiting method count");
         return back(machine.isReconciled()
                 ? "Comptage conforme au montant tenu par le logiciel."
-                : "Comptage enregistré, écart de " + machine.getVarianceFormatted() + " €.",
+                : "Comptage enregistré, écart de " + machine.getVarianceFormatted().replace('.', ',') + " €.",
                 machine.isReconciled());
     }
 
@@ -164,7 +176,8 @@ public class AdminCoinMachineResource {
      */
     @POST
     @Path("/align")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.COIN_MACHINE, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response align(MultivaluedMap<String, String> form) {
@@ -175,9 +188,12 @@ public class AdminCoinMachineResource {
             LOGGER.info("Exiting method align: nothing to align on");
             return back("Aucun comptage à reprendre.", false);
         }
+        BigDecimal before = machine.declaredAmount == null ? BigDecimal.ZERO : machine.declaredAmount;
         machine.declaredAmount = machine.countedAmount;
         machine.updatedOn = LocalDateTime.now();
         machine.persist();
+        coinMachineService.journal(machine, com.intermarche.edge.domain.safe.CoinMachineFlow.Kind.REALIGN,
+                machine.countedAmount.subtract(before));
         LOGGER.infof("Monnayeur %s réaligné sur %s", machine.code, machine.countedAmount);
         LOGGER.info("Exiting method align");
         return back("Montant tenu par le logiciel réaligné.", true);
@@ -196,7 +212,8 @@ public class AdminCoinMachineResource {
      */
     @POST
     @Path("/load")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.COIN_MACHINE, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response load(MultivaluedMap<String, String> form) {
@@ -222,7 +239,8 @@ public class AdminCoinMachineResource {
      */
     @GET
     @Path("/export")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.COIN_MACHINE)
     @Produces("text/csv; charset=UTF-8")
     public Response export() {
         LOGGER.info("Entering method export");

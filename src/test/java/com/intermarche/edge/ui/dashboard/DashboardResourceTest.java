@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -75,6 +76,16 @@ class DashboardResourceTest {
         // BO-04-03-01/-03/-15: no administrable tile unless a test asks for one.
         resource.dashboardIndicatorService = mock(DashboardIndicatorService.class);
         when(resource.dashboardIndicatorService.indicators()).thenReturn(List.of());
+        resource.i18n = mock(com.intermarche.edge.ui.admin.BackOfficeMessages.class);
+        // A code without a label reads as itself, as the bundles answer it.
+        when(resource.i18n.code(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(invocation -> String.valueOf((Object) invocation.getArgument(1)));
+        // BO-04-03-01/07/14: the lot 21 collaborators.
+        resource.supervisionJournal = mock(SupervisionJournal.class);
+        resource.controlIndicatorService = mock(ControlIndicatorService.class);
+        resource.liveActivityService = mock(LiveActivityService.class);
+        resource.dashboardControl = mock(Template.class);
+        resource.dashboardLive = mock(Template.class);
         return resource;
     }
 
@@ -197,8 +208,9 @@ class DashboardResourceTest {
     }
 
     /**
-     * BO-04-03-01/-03/-15: the administrable tiles are handed through exactly
-     * as the indicator service computed them — the resource formats nothing.
+     * BO-04-03-01/-03/-15: the administrable tiles are handed through as the
+     * indicator service computed them, their label read in the page's
+     * language — the resource formats nothing else.
      */
     @Test
     void dashboardDataCarriesTheAdministeredIndicators() {
@@ -211,11 +223,41 @@ class DashboardResourceTest {
         tile.put("value", "4");
         tile.put("unit", "");
         when(resource.dashboardIndicatorService.indicators()).thenReturn(List.of(tile));
+        when(resource.i18n.text("Avals manager")).thenReturn("Goedkeuringen manager");
         Map<String, Object> result = resource.dashboardData();
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> indicators = (List<Map<String, Object>>) result.get("indicators");
         assertEquals(1, indicators.size());
         assertSame(tile, indicators.get(0));
+        assertEquals("Goedkeuringen manager", tile.get("label"));
+        assertEquals("4", tile.get("value"));
+    }
+
+    /**
+     * BO-04-03-03: the code a tile's label carries is shown by its own label
+     * in the page's language; a code named without its labels is kept.
+     */
+    @Test
+    void dashboardDataNamesTheCodesOfTheTiles() {
+        DashboardResource resource = newResource();
+        when(resource.dashboardService.buildData()).thenReturn(new HashMap<>());
+        when(resource.supervisorCallRegistry.getPending()).thenReturn(List.of());
+        Map<String, Object> event = new HashMap<>();
+        event.put("label", "Événements CONTROL_ALERT");
+        event.put("subjectPrefix", "t.s21-ev-");
+        event.put("subject", "CONTROL_ALERT");
+        Map<String, Object> orphan = new HashMap<>();
+        orphan.put("label", "Mouvements WITHDRAWAL");
+        orphan.put("subject", "WITHDRAWAL");
+        when(resource.dashboardIndicatorService.indicators()).thenReturn(List.of(event, orphan));
+        when(resource.i18n.text("Événements CONTROL_ALERT")).thenReturn("Gebeurtenissen CONTROL_ALERT");
+        when(resource.i18n.text("Mouvements WITHDRAWAL")).thenReturn("Bewegingen WITHDRAWAL");
+        when(resource.i18n.code("t.s21-ev-", "CONTROL_ALERT")).thenReturn("Kassawaarschuwing");
+        resource.dashboardData();
+        assertEquals("Gebeurtenissen Kassawaarschuwing", event.get("label"));
+        assertFalse(event.containsKey("subject"));
+        assertFalse(event.containsKey("subjectPrefix"));
+        assertEquals("Bewegingen WITHDRAWAL", orphan.get("label"));
     }
 
     /**
@@ -440,6 +482,20 @@ class DashboardResourceTest {
     }
 
     /**
+     * BO-06-03-02: a survey answer coming up the call road is filed as the
+     * customer's answer and never stands on the line board as a call.
+     */
+    @Test
+    void receiveCallFilesASurveyAnswerWithoutCalling() {
+        DashboardResource resource = newResource();
+        resource.token = Optional.empty();
+        DashboardResource.CallDto call = dto("CAISSE1", "Alice", "SONDAGE");
+        Response response = resource.receiveCall("ignored", call);
+        assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
+        verify(resource.supervisorCallRegistry, never()).add(any(), any(), any(), any(), anyInt());
+    }
+
+    /**
      * {@code receiveCall()} registers the call and returns 200 when the presented
      * token matches the configured one (blank half false, mismatch half false).
      */
@@ -613,12 +669,13 @@ class DashboardResourceTest {
         call.status = SupervisorCallRegistry.CallStatus.REFUSED;
         call.refusalReason = "Geste non autorise";
         when(resource.supervisorCallRegistry.getPending()).thenReturn(List.of(call));
+        when(resource.i18n.text("refusée sur le BackOffice")).thenReturn("geweigerd in de back-office");
         Map<String, Object> data = resource.dashboardData();
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> calls = (List<Map<String, Object>>) data.get("calls");
         assertEquals(1, calls.size());
         assertEquals("REFUSED", calls.get(0).get("status"));
-        assertEquals("refusée sur le BackOffice", calls.get(0).get("statusLabel"));
+        assertEquals("geweigerd in de back-office", calls.get(0).get("statusLabel"));
         assertEquals("Geste non autorise", calls.get(0).get("refusalReason"));
         assertEquals(2, calls.get(0).get("severity"));
     }
@@ -638,7 +695,7 @@ class DashboardResourceTest {
         assertEquals(Response.Status.NO_CONTENT.getStatusCode(), response.getStatus());
         verify(resource.registerCommandService).issue("CAISSE1",
                 RegisterCommand.CommandType.SUPERVISOR_GRANTED, "Marie Curie",
-                "Autorisé par Marie Curie");
+                "Marie Curie");
     }
 
     /**
@@ -652,5 +709,200 @@ class DashboardResourceTest {
         assertEquals(Response.Status.NOT_FOUND.getStatusCode(), response.getStatus());
         verify(resource.registerCommandService, never())
                 .issue(any(), eq(RegisterCommand.CommandType.SUPERVISOR_GRANTED), any(), any());
+    }
+    /** BO-04: settled/cancel/ack endpoints independently enforce role, optional token and null DTO guards. */
+    @Test
+    void coverageSupervisorEndpointGuards() {
+        var resource = newResource();
+        resource.role = "register";
+        assertEquals(403, resource.receiveSettled(null, null).getStatus());
+        assertEquals(403, resource.receiveCancel(null, null).getStatus());
+        assertEquals(403, resource.receiveMessageAck(null, null).getStatus());
+        resource.role = "store";
+        resource.token = java.util.Optional.of("TOKEN");
+        assertEquals(401, resource.receiveSettled("wrong", null).getStatus());
+        assertEquals(401, resource.receiveCancel("wrong", null).getStatus());
+        assertEquals(401, resource.receiveMessageAck("wrong", null).getStatus());
+        assertEquals(200, resource.receiveSettled("TOKEN", null).getStatus());
+        assertEquals(200, resource.receiveCancel("TOKEN", null).getStatus());
+        assertEquals(200, resource.receiveMessageAck("TOKEN", null).getStatus());
+        resource.token = java.util.Optional.empty();
+        assertEquals(200, resource.receiveSettled(null, null).getStatus());
+        assertEquals(200, resource.receiveCancel(null, null).getStatus());
+        assertEquals(200, resource.receiveMessageAck(null, new DashboardResource.AckMessageDto()).getStatus());
+    }
+
+    /** BO-03-08: absent and blank acknowledgement text never scans the stored message table. */
+    @Test
+    void coverageMessageAcknowledgementTextGuards() {
+        var resource = newResource();
+        var dto = new DashboardResource.AckMessageDto();
+        try (var messages = org.mockito.Mockito.mockStatic(com.intermarche.edge.domain.setting.StoreMessage.class)) {
+            resource.recordMessageAck(dto);
+            dto.text = " ";
+            resource.recordMessageAck(dto);
+            messages.verifyNoInteractions();
+        }
+    }
+
+    /** LC-03-07: non-surveys, incomplete answers and disappeared questions never fabricate acknowledgement rows. */
+    @Test
+    void coverageSurveyConfirmationGuardsAndPersistence() {
+        var resource = newResource();
+        var dto = new DashboardResource.CallDto();
+        resource.recordMessageConfirmation(null);
+        dto.reason = "OTHER";
+        resource.recordMessageConfirmation(dto);
+        dto.reason = "SONDAGE";
+        resource.recordMessageConfirmation(dto);
+        dto.message = "no separator";
+        resource.recordMessageConfirmation(dto);
+        dto.message = "QUESTION : ANSWER";
+        var query = org.mockito.Mockito.mock(io.quarkus.hibernate.orm.panache.PanacheQuery.class);
+        try (var base = org.mockito.Mockito.mockStatic(io.quarkus.hibernate.orm.panache.PanacheEntityBase.class);
+             var created = org.mockito.Mockito.mockConstruction(com.intermarche.edge.domain.setting.StoreMessageAck.class)) {
+            base.when(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase.find("question", "QUESTION")).thenReturn(query);
+            resource.recordMessageConfirmation(dto);
+            assertTrue(created.constructed().isEmpty());
+            var message = new com.intermarche.edge.domain.setting.StoreMessage();
+            message.id = 8L;
+            org.mockito.Mockito.when(query.firstResult()).thenReturn(message);
+            resource.recordMessageConfirmation(dto);
+            var ack = created.constructed().getFirst();
+            assertEquals(8L, ack.messageId);
+            assertEquals("ANSWER", ack.answer);
+            org.mockito.Mockito.verify(ack).persist();
+        }
+    }
+
+
+    /** LC-01-08-05: an acknowledgement for another notice does not consume or file the still-served message. */
+    @Test
+    void unmatchedAcknowledgementDoesNotConsumeAnotherNotice() {
+        var resource = newResource();
+        var message = new com.intermarche.edge.domain.setting.StoreMessage();
+        message.id = 42L;
+        message.text = "CURRENT";
+        var dto = new DashboardResource.AckMessageDto();
+        dto.terminalId = "C04";
+        dto.text = "OTHER";
+        try (var messages = mockStatic(com.intermarche.edge.domain.setting.StoreMessage.class);
+             var created = org.mockito.Mockito.mockConstruction(com.intermarche.edge.domain.setting.StoreMessageAck.class)) {
+            messages.when(com.intermarche.edge.domain.setting.StoreMessage::listServable).thenReturn(java.util.List.of(message));
+            assertEquals(200, resource.receiveMessageAck("ignored", dto).getStatus());
+            assertTrue(created.constructed().isEmpty());
+        }
+    }
+
+
+    /**
+     * Every decision of the back office is journalled under the register it
+     * is about (BO-04-03-14); an unknown demand journals nothing.
+     */
+    @Test
+    void decisionsAreJournalled() {
+        DashboardResource resource = newResource();
+        SupervisorCallRegistry.Call call = new SupervisorCallRegistry.Call(7L, "C04", "Jean", "Monnaie", "vite");
+        SupervisorCallRegistry.Call bare = new SupervisorCallRegistry.Call(8L, "C05", "Jean", "Monnaie", null);
+        when(resource.supervisorCallRegistry.settle(eq(7L), any(), any(), anyBoolean())).thenReturn(call);
+        when(resource.supervisorCallRegistry.settle(eq(8L), any(), any(), anyBoolean())).thenReturn(bare);
+        resource.sendBackToTill(7L);
+        resource.sendBackToTill(9L);
+        resource.authorise(7L);
+        resource.authorise(8L);
+        resource.refuse(7L, "Non");
+        org.mockito.Mockito.verify(resource.supervisionJournal).handled("C04", "A_TRAITER_EN_CAISSE", "Marie Curie", "Monnaie");
+        org.mockito.Mockito.verify(resource.supervisionJournal).handled("C04", "AUTORISATION", "Marie Curie", "Monnaie vite");
+        org.mockito.Mockito.verify(resource.supervisionJournal).handled("C05", "AUTORISATION", "Marie Curie", "Monnaie");
+        org.mockito.Mockito.verify(resource.supervisionJournal).handled("C04", "REFUS", "Marie Curie", "Monnaie : Non");
+        when(resource.supervisorCallRegistry.find(7L)).thenReturn(call);
+        resource.acknowledge(7L);
+        org.mockito.Mockito.verify(resource.supervisionJournal).handled("C04", "ACQUITTEMENT", "Marie Curie", "Monnaie");
+        resource.forceClose("C06");
+        org.mockito.Mockito.verify(resource.supervisionJournal).handled("C06", "FERMETURE_FORCEE", "Marie Curie", null);
+    }
+
+    /**
+     * The alert every screen shows carries the PENDING demands only, and
+     * nothing when either switch is off (BO-04-02-12).
+     */
+    @Test
+    void alertsCarryThePendingDemands() {
+        DashboardResource resource = newResource();
+        SupervisorCallRegistry.Call pending = new SupervisorCallRegistry.Call(1L, "C04", "Jean", "Monnaie", null);
+        SupervisorCallRegistry.Call settled = new SupervisorCallRegistry.Call(2L, "C05", "Jean", "Pause", "m");
+        settled.status = SupervisorCallRegistry.CallStatus.REFUSED;
+        SupervisorCallRegistry.Call messaged = new SupervisorCallRegistry.Call(3L, "C06", "Jean", "Aval", "REMISE 2");
+        when(resource.supervisorCallRegistry.getPending()).thenReturn(List.of(pending, settled, messaged));
+        when(resource.posSettingsService.globalAlertsEnabled()).thenReturn(true);
+        Map<String, Object> data = resource.alerts();
+        assertEquals(true, data.get("enabled"));
+        List<?> calls = (List<?>) data.get("calls");
+        assertEquals(2, calls.size());
+        assertEquals("", ((Map<?, ?>) calls.get(0)).get("message"));
+        assertEquals("REMISE 2", ((Map<?, ?>) calls.get(1)).get("message"));
+        assertEquals("REMISE 2", ((Map<?, ?>) calls.get(1)).get("gesture"));
+        when(resource.i18n.code("t.s21-act-", "REMISE")).thenReturn("Korting in bedrag");
+        when(resource.i18n.text("Aval")).thenReturn("Goedkeuring");
+        Map<?, ?> worded = (Map<?, ?>) ((List<?>) resource.alerts().get("calls")).get(1);
+        assertEquals("Korting in bedrag 2", worded.get("gesture"));
+        assertEquals("Goedkeuring", worded.get("reasonLabel"));
+        when(resource.posSettingsService.dashboardAlertsEnabled()).thenReturn(false);
+        assertEquals(false, resource.alerts().get("enabled"));
+        assertTrue(((List<?>) resource.alerts().get("calls")).isEmpty());
+        when(resource.posSettingsService.globalAlertsEnabled()).thenReturn(false);
+        assertEquals(false, resource.alerts().get("enabled"));
+    }
+
+    /**
+     * The control indicators page and data; the detail labels are shown in
+     * the page's language (BO-04-03-01).
+     */
+    @Test
+    void controlIndicatorsPageAndData() {
+        DashboardResource resource = newResource();
+        Map<String, Object> data = new java.util.HashMap<>();
+        Map<String, Object> row = new java.util.HashMap<>();
+        row.put("label", "EPICERIE");
+        data.put("detail", List.of(row));
+        when(resource.controlIndicatorService.data()).thenReturn(data);
+        io.quarkus.qute.TemplateInstance instance = mock(io.quarkus.qute.TemplateInstance.class);
+        when(resource.dashboardControl.data("control", data)).thenReturn(instance);
+        assertEquals(instance, resource.controlPage());
+        when(resource.i18n.text("EPICERIE")).thenReturn("KRUIDENIERS");
+        assertEquals("KRUIDENIERS", ((Map<?, ?>) ((List<?>) resource.controlData().get("detail")).get(0)).get("label"));
+    }
+
+    /**
+     * The real-time watch page and its operations, labelled (BO-04-03-07).
+     */
+    @Test
+    void liveWatchPageAndData() {
+        DashboardResource resource = newResource();
+        io.quarkus.qute.TemplateInstance instance = mock(io.quarkus.qute.TemplateInstance.class);
+        when(resource.dashboardLive.instance()).thenReturn(instance);
+        assertEquals(instance, resource.livePage());
+        Map<String, Object> row = new java.util.HashMap<>();
+        row.put("type", "TICKET_CLOSED");
+        row.put("detail", "Ouverture du tiroir");
+        row.put("terminal", "C04");
+        Map<String, Object> signIn = new java.util.HashMap<>();
+        signIn.put("type", "BACK_OFFICE_SIGNED_IN");
+        signIn.put("detail", "connexion admin");
+        signIn.put("terminal", "POS01");
+        when(resource.liveActivityService.after(4L, "C04")).thenReturn(List.of(row, signIn));
+        when(resource.i18n.code(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(call -> String.valueOf((Object) call.getArgument(1)));
+        when(resource.i18n.code("t.s21-ev-", "TICKET_CLOSED")).thenReturn("Vente");
+        when(resource.i18n.text("Ouverture du tiroir")).thenReturn("Lade geopend");
+        when(resource.i18n.get("t.rs21-back-office")).thenReturn("Back-office");
+        when(resource.i18n.get("t.rs21-connexion")).thenReturn("Aanmelding");
+        List<Map<String, Object>> rows = resource.liveData(4L, "C04");
+        Map<String, Object> shown = rows.get(0);
+        assertEquals("Vente", shown.get("label"));
+        assertEquals("Lade geopend", shown.get("detail"));
+        assertEquals("C04", shown.get("terminal"));
+        assertEquals("Back-office", rows.get(1).get("terminal"));
+        assertEquals("Aanmelding admin", rows.get(1).get("detail"));
     }
 }

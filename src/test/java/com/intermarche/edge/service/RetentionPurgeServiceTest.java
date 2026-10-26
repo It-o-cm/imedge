@@ -350,4 +350,28 @@ class RetentionPurgeServiceTest {
         assertEquals(0, service.sweep());
         verifyNoInteractions(service.entityManager);
     }
+
+    /**
+     * The sales and the invoices are never purged before the years kept
+     * online: a shorter delay is raised to them, a longer one is kept, an
+     * unlimited one stays unlimited, and another policy is left as administered
+     * (BO-05-01-06).
+     */
+    @Test
+    void theFiscalPoliciesKeepTheYearsOnline() {
+        RetentionPurgeService service = newService();
+        when(service.posSettingsService.fiscalOnlineRetentionYears()).thenReturn(12);
+        RetentionPurgeService.Policy sales = RetentionPurgeService.CATALOG.get(0);
+        RetentionPurgeService.Policy invoices = RetentionPurgeService.CATALOG.stream()
+                .filter(policy -> policy.requirement().equals("BO-10-08-16")).findFirst().orElseThrow();
+        try (MockedStatic<DateTimeProvider> clock = mockStatic(DateTimeProvider.class)) {
+            clock.when(DateTimeProvider::now).thenReturn(NOW);
+            long floor = java.time.temporal.ChronoUnit.DAYS.between(NOW.toLocalDate().minusYears(12), NOW.toLocalDate());
+            assertEquals(floor, service.fiscalFloor(sales, 30));
+            assertEquals(floor, service.fiscalFloor(invoices, 365));
+            assertEquals(9000, service.fiscalFloor(sales, 9000));
+        }
+        assertEquals(0, service.fiscalFloor(sales, 0));
+        assertEquals(30, service.fiscalFloor(bulkPolicy(), 30));
+    }
 }

@@ -2,30 +2,33 @@
  ! Back-office USER ↔ PROFILE assignment (BO-01-03-02/03). Each employee lists
  ! the profiles bound to it and the echelon each applies to; one form binds a
  ! profile at a chosen scope, several bindings per employee is the normal
- ! case. The fixed role is shown for reference and left untouched.
+ ! case. The echelon is the whole organisation, a country, an enseigne or a
+ ! point of sale (BO-01-03-04); an account assigns only profiles of its level
+ ! or below to accounts strictly below it (BO-01-03-03). The fixed role is
+ ! shown for reference and left untouched.
  ! POST -> 303 -> notice.
 !}
 {#include admin-layout}
 
-{#title}Utilisateurs{/title}
+{#title}{inject:i18n.get('t.utilisateurs')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Utilisateurs</h1>
-        <p class="page-sub">Affectation des profils aux comptes, à un ou plusieurs échelons.</p>
+        <h1>{inject:i18n.get('t.utilisateurs')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.affectation-des-profils-aux-comptes-a-un')}</p>
     </div>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 {#if profiles.isEmpty()}
 <div class="card">
     <div class="empty-state">
-        <p>Aucun profil à affecter.</p>
-        <p class="empty-hint">Définissez d'abord des profils dans <a class="link-strong" href="/admin/profiles">Profils</a>.</p>
+        <p>{inject:i18n.get('t.aucun-profil-a-affecter')}</p>
+        <p class="empty-hint">{inject:i18n.get('t.definissez-d-abord-des-profils-dans')} <a class="link-strong" href="/admin/profiles">{inject:i18n.get('t.profils')}</a>.</p>
     </div>
 </div>
 {#else}
@@ -33,28 +36,28 @@
 <div class="card">
     <div class="card-title-row">
         <h2 class="card-title">{user.fullName}</h2>
-        <span class="badge badge-off">{user.loginName} · {user.role}</span>
+        <span class="badge badge-off">{user.loginName} · {user.role} {inject:i18n.get('t.niveau-3')} {user.hierarchyLevel}</span>
     </div>
     {#if user.bindings.isEmpty()}
-    <p class="col-muted">Aucun profil affecté.</p>
+    <p class="col-muted">{inject:i18n.get('t.aucun-profil-affecte')}</p>
     {#else}
     <table class="data-table">
         <thead>
             <tr>
-                <th>Profil</th>
-                <th>Échelon</th>
-                <th class="col-actions">Actions</th>
+                <th>{inject:i18n.get('t.profil')}</th>
+                <th>{inject:i18n.get('t.echelon-2')}</th>
+                <th class="col-actions">{inject:i18n.get('t.actions')}</th>
             </tr>
         </thead>
         <tbody>
             {#for binding in user.bindings}
             <tr>
                 <td>{binding.profileName}</td>
-                <td>{#if binding.scope == '*'}Tous les échelons{#else}PDV {binding.scope}{/if}</td>
+                <td>{inject:i18n.text(binding.scopeLabel)}{#if binding.central} <span class="badge">{inject:i18n.get('t.central')}</span>{/if}</td>
                 <td class="col-actions">
                     <form method="post" action="/admin/users/unassign" class="app-identity-form">
                         <input type="hidden" name="bindingId" value="{binding.id}">
-                        <button class="btn btn-small btn-danger" type="submit">Retirer</button>
+                        <button class="btn btn-small btn-danger" type="submit">{inject:i18n.get('t.retirer')}</button>
                     </form>
                 </td>
             </tr>
@@ -65,7 +68,7 @@
     <form method="post" action="/admin/users/assign" class="filter-bar" style="margin-top: 10px;">
         <input type="hidden" name="employeeId" value="{user.id}">
         <div class="filter-field">
-            <label class="filter-label" for="p-{user.id}">Profil</label>
+            <label class="filter-label" for="p-{user.id}">{inject:i18n.get('t.profil')}</label>
             <select class="input-control" id="p-{user.id}" name="profileId" required>
                 {#for ref in profiles}
                 <option value="{ref.id}">{ref.name}</option>
@@ -73,11 +76,15 @@
             </select>
         </div>
         <div class="filter-field">
-            <label class="filter-label" for="s-{user.id}">Échelon (PDV ou * pour tous)</label>
-            <input class="input-control" id="s-{user.id}" type="text" name="echelonScope" value="*" maxlength="20">
+            <label class="filter-label" for="s-{user.id}">{inject:i18n.get('t.echelon-2')}</label>
+            <select class="input-control" id="s-{user.id}" name="echelonScope">
+                {#for choice in echelons}
+                <option value="{choice.value}">{inject:i18n.text(choice.label)}</option>
+                {/for}
+            </select>
         </div>
         <div class="filter-actions">
-            <button class="btn btn-small btn-primary" type="submit">Affecter</button>
+            <button class="btn btn-small btn-primary" type="submit">{inject:i18n.get('t.affecter')}</button>
         </div>
     </form>
 </div>
@@ -85,4 +92,4 @@
 {/if}
 {/body}
 
-{#footer}Un profil affecté à un échelon n'agit que sur les nœuds de cet échelon.{/footer}
+{#footer}{inject:i18n.get('t.un-profil-affecte-a-un-echelon-n')}{/footer}

@@ -2090,12 +2090,15 @@ class AdminNomenclatureResourceTest {
     }
 
     /**
-     * A search stops at {@code SEARCH_LIMIT} hits: past it a trailing comma is
-     * left and the scan breaks, so exactly fifty paths are written even though
-     * fifty-one nodes match — the {@code ++found > SEARCH_LIMIT} arm.
+     * A search stops at {@code SEARCH_LIMIT} hits: exactly fifty nodes are
+     * answered although fifty-one match — the break arm — and the answer is a
+     * valid array a real parser reads (the hand-written one left a trailing
+     * comma there).
+     *
+     * @throws Exception when the answer is not valid JSON
      */
     @Test
-    void aSearchStopsAtTheHitLimit() {
+    void aSearchStopsAtTheHitLimit() throws Exception {
         AdminNomenclatureResource resource = newResource();
         Nomenclature itm = scheme("ITM_FR");
         List<ProductFamily> crowd = new ArrayList<>();
@@ -2113,6 +2116,10 @@ class AdminNomenclatureResourceTest {
             assertEquals(AdminNomenclatureResource.SEARCH_LIMIT,
                     body.split("\"path\":", -1).length - 1);
             assertTrue(body.endsWith("]"));
+            com.fasterxml.jackson.databind.JsonNode hits =
+                    new com.fasterxml.jackson.databind.ObjectMapper().readTree(body);
+            assertEquals(AdminNomenclatureResource.SEARCH_LIMIT, hits.size());
+            assertEquals("NODE 0", hits.get(0).get("label").asText());
         }
     }
 
@@ -2486,4 +2493,49 @@ class AdminNomenclatureResourceTest {
             }
         }
     }
+    /** BO-02: moving with a missing upper level or onto the node itself is refused before recoding. */
+    @Test
+    void malformedHierarchyAndSelfParentCannotMoveANode() throws Exception {
+        var resource = new AdminNomenclatureResource();
+        var scheme = mock(com.intermarche.edge.domain.catalog.Nomenclature.class);
+        var placed = new com.intermarche.edge.domain.catalog.NomenclatureLevel();
+        placed.rank = 1;
+        placed.codeLength = 2;
+        when(scheme.levelOfCode("12")).thenReturn(placed);
+        var node = new ProductFamily();
+        node.code = "12";
+        var method = AdminNomenclatureResource.class.getDeclaredMethod("moveNode", com.intermarche.edge.domain.catalog.Nomenclature.class, String.class, String.class);
+        method.setAccessible(true);
+        try (var families = mockStatic(ProductFamily.class)) {
+            families.when(() -> ProductFamily.findByCode("12")).thenReturn(node);
+            assertTrue(((AdminNomenclatureResource.Verdict) method.invoke(resource, scheme, "12", "12")).message.contains("niveau 0"));
+            var above = new com.intermarche.edge.domain.catalog.NomenclatureLevel();
+            above.codeLength = 2;
+            when(scheme.levelAt(0)).thenReturn(above);
+            assertTrue(((AdminNomenclatureResource.Verdict) method.invoke(resource, scheme, "12", "12")).message.contains("sous lui-même"));
+        }
+    }
+
+    /** BO-02: retaining a subtree's own codes does not collide with the same rows in memory or in persistence. */
+    @Test
+    void subtreeMayRetainItsOwnExistingCodes() throws Exception {
+        var resource = new AdminNomenclatureResource();
+        var node = new ProductFamily();
+        node.code = "12";
+        var method = AdminNomenclatureResource.class.getDeclaredMethod("fits", List.class, List.class, String.class, String.class);
+        method.setAccessible(true);
+        try (var families = mockStatic(ProductFamily.class)) {
+            families.when(() -> ProductFamily.findByCode("12")).thenReturn(node);
+            assertEquals(true, method.invoke(resource, List.of(node), List.of(node), "12", "12"));
+        }
+    }
+
+    /** BO-02: breadcrumb properties preserve the parent identifier and its displayed label for Qute navigation. */
+    @org.junit.jupiter.api.Test
+    void breadcrumbPropertiesPreserveTheirNavigationIdentity() {
+        var crumb = new AdminNomenclatureResource.Crumb("10", "Fresh produce");
+        org.junit.jupiter.api.Assertions.assertEquals("10", crumb.getCode());
+        org.junit.jupiter.api.Assertions.assertEquals("Fresh produce", crumb.getLabel());
+    }
+
 }

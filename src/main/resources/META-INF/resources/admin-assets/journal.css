@@ -38,7 +38,15 @@
 
 .journal-range {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
+}
+
+/* A date-time field is wider than half a grid column: the pair wraps
+   rather than spilling over the next field (BO-01-01-05). */
+.journal-range > .input-control {
+    flex: 1 1 140px;
+    min-width: 0;
 }
 
 .journal-fieldset {

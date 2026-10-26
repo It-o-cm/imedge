@@ -1,5 +1,7 @@
 package com.intermarche.edge.domain.session;
 
+import com.intermarche.edge.domain.BaseEntity;
+import com.intermarche.edge.domain.people.Employee;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -9,8 +11,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.Objects;
-import com.intermarche.edge.domain.people.Employee;
-import com.intermarche.edge.domain.BaseEntity;
 
 /**
  * A cash session of one register: opened with an initial float by a cashier,
@@ -147,6 +147,18 @@ public class CashSession extends BaseEntity {
      */
     public static CashSession findOpenByTerminal(String terminalId) {
         return find("terminalId = ?1 and status = ?2", terminalId, SessionStatus.OPEN).firstResult();
+    }
+
+    /**
+     * Finds the most recently closed session of the given register — the one
+     * whose leftover float carries over to the next opening (EXP-02).
+     *
+     * @param terminalId the register identifier
+     * @return the last closed session, or null when none was ever closed here
+     */
+    public static CashSession findLastClosedByTerminal(String terminalId) {
+        return find("terminalId = ?1 and status = ?2 order by closingDate desc",
+                terminalId, SessionStatus.CLOSED).firstResult();
     }
 
     /**

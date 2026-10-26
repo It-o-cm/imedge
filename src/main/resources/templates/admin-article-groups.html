@@ -8,39 +8,39 @@
 !}
 {#include admin-layout}
 
-{#title}Groupes d'articles{/title}
+{#title}{inject:i18n.get('t.groupes-d-articles')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Groupes d'articles</h1>
-        <p class="page-sub">Arborescence des groupes d'articles : création, duplication, rattachement d'articles à l'unité ou en masse, désactivation.</p>
+        <h1>{inject:i18n.get('t.groupes-d-articles')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.arborescence-des-groupes-d-articles-creation-dup')}</p>
     </div>
     <div class="page-actions">
-        <a class="btn btn-ghost" href="/admin/articles">Retour aux articles</a>
+        <a class="btn btn-ghost" href="/admin/articles">{inject:i18n.get('t.retour-aux-articles')}</a>
     </div>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 <div class="card">
-    <h2 class="card-title">Nouveau groupe</h2>
+    <h2 class="card-title">{inject:i18n.get('t.nouveau-groupe')}</h2>
     <form method="post" action="/admin/article-groups">
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="g-code">Code</label>
+                <label class="field-label" for="g-code">{inject:i18n.get('t.code')}</label>
                 <input class="input-control" id="g-code" type="text" name="code" maxlength="50" required>
             </div>
             <div class="field">
-                <label class="field-label" for="g-desc">Description</label>
+                <label class="field-label" for="g-desc">{inject:i18n.get('t.description')}</label>
                 <input class="input-control" id="g-desc" type="text" name="description" maxlength="255">
             </div>
             <div class="field">
-                <label class="field-label" for="g-parent">Groupe parent</label>
+                <label class="field-label" for="g-parent">{inject:i18n.get('t.groupe-parent')}</label>
                 <select class="input-control" id="g-parent" name="parentId">
-                    <option value="">Niveau 0 (racine)</option>
+                    <option value="">{inject:i18n.get('t.niveau-0-racine')}</option>
                     {#for g in groups}
                     <option value="{g.id}">{g.code}</option>
                     {/for}
@@ -48,21 +48,21 @@
             </div>
         </div>
         <div class="page-actions" style="margin-top: 6px;">
-            <button class="btn btn-primary" type="submit">Créer</button>
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.creer-2')}</button>
         </div>
     </form>
 </div>
 
 <div class="card">
-    <h2 class="card-title">Ajouter un article au niveau 0</h2>
-    <p class="page-sub">Un article placé au niveau 0 est disponible en touche caisse sans passer par une touche de groupe.</p>
+    <h2 class="card-title">{inject:i18n.get('t.ajouter-un-article-au-niveau-0')}</h2>
+    <p class="page-sub">{inject:i18n.get('t.un-article-place-au-niveau-0-est')}</p>
     <form method="post" action="/admin/article-groups/level-zero/articles">
         <div class="field">
-            <label class="field-label" for="z-codes">Codes articles (EAN, code interne ou PLU, séparés par des espaces, virgules ou retours ligne)</label>
+            <label class="field-label" for="z-codes">{inject:i18n.get('t.codes-articles-ean-code-interne-ou-plu')}</label>
             <textarea class="input-control" id="z-codes" name="codes" rows="2"></textarea>
         </div>
         <div class="page-actions" style="margin-top: 6px;">
-            <button class="btn btn-primary" type="submit">Ajouter au niveau 0</button>
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.ajouter-au-niveau-0')}</button>
         </div>
     </form>
 </div>
@@ -70,18 +70,18 @@
 <div class="card">
     {#if page.empty}
     <div class="empty-state">
-        <p>Aucun groupe d'articles.</p>
-        <p class="empty-hint">Créez un groupe pour bâtir l'arborescence.</p>
+        <p>{inject:i18n.get('t.aucun-groupe-d-articles')}</p>
+        <p class="empty-hint">{inject:i18n.get('t.creez-un-groupe-pour-batir-l-arborescence')}</p>
     </div>
     {#else}
     <table class="data-table">
         <thead>
             <tr>
-                <th>Code</th>
-                <th>Description</th>
-                <th>Parent</th>
-                <th>Articles</th>
-                <th class="col-actions">Actions</th>
+                <th>{inject:i18n.get('t.code')}</th>
+                <th>{inject:i18n.get('t.description')}</th>
+                <th>{inject:i18n.get('t.parent')}</th>
+                <th>{inject:i18n.get('t.articles')}</th>
+                <th class="col-actions">{inject:i18n.get('t.actions')}</th>
             </tr>
         </thead>
         <tbody>
@@ -89,18 +89,18 @@
             <tr>
                 <td><a class="link-strong" href="/admin/article-groups?edit={g.id}">{g.code}</a></td>
                 <td class="col-muted">{g.description ?: '—'}</td>
-                <td class="col-muted">{g.parentCode ?: 'Niveau 0'}</td>
+                <td class="col-muted">{#if g.parentCode}{g.parentCode}{#else}{inject:i18n.get('t.rc3-niveau-0')}{/if}</td>
                 <td>{g.memberCount}</td>
                 <td class="col-actions">
                     <form method="post" action="/admin/article-groups/duplicate">
                         <input type="hidden" name="sourceId" value="{g.id}">
-                        <input class="input-control" type="text" name="newCode" placeholder="nouveau code" maxlength="50" required>
-                        <button class="btn btn-small" type="submit">Dupliquer</button>
+                        <input class="input-control input-inline" type="text" name="newCode" placeholder="{inject:i18n.get('t.nouveau-code-2')}" maxlength="50" required>
+                        <button class="btn btn-small" type="submit">{inject:i18n.get('t.dupliquer')}</button>
                     </form>
                     <form method="post" action="/admin/article-groups/delete"
-                          onsubmit="return confirm('Supprimer ce groupe ?');">
+                          onsubmit="return confirm('{inject:i18n.js('t.supprimer-ce-groupe')}');">
                         <input type="hidden" name="id" value="{g.id}">
-                        <button class="btn btn-small btn-danger" type="submit">Supprimer</button>
+                        <button class="btn btn-small btn-danger" type="submit">{inject:i18n.get('t.supprimer')}</button>
                     </form>
                 </td>
             </tr>
@@ -110,18 +110,18 @@
     {! La liste dit quelle tranche du résultat elle montre plutôt que de
      ! tronquer en silence. !}
     <div class="pager">
-        <span class="pager-status">Groupes {page.firstIndex} à {page.lastIndex} sur {page.total}</span>
+        <span class="pager-status">{inject:i18n.get('t.groupes')} {page.firstIndex} {inject:i18n.get('t.x21-a')} {page.lastIndex} {inject:i18n.get('t.sur')} {page.total}</span>
         {#if page.pageCount > 1}
         {#if page.first}
-        <span class="btn btn-small btn-muted is-hidden">Précédent</span>
+        <span class="btn btn-small btn-muted is-hidden">{inject:i18n.get('t.precedent')}</span>
         {#else}
-        <a class="btn btn-small btn-muted" href="/admin/article-groups?{baseQuery}page={page.previous}">Précédent</a>
+        <a class="btn btn-small btn-muted" href="/admin/article-groups?{baseQuery}page={page.previous}">{inject:i18n.get('t.precedent')}</a>
         {/if}
-        <span class="pager-status">Page {page.number} / {page.pageCount}</span>
+        <span class="pager-status">{inject:i18n.get('t.page')} {page.number} / {page.pageCount}</span>
         {#if page.last}
-        <span class="btn btn-small btn-muted is-hidden">Suivant</span>
+        <span class="btn btn-small btn-muted is-hidden">{inject:i18n.get('t.suivant')}</span>
         {#else}
-        <a class="btn btn-small btn-muted" href="/admin/article-groups?{baseQuery}page={page.next}">Suivant</a>
+        <a class="btn btn-small btn-muted" href="/admin/article-groups?{baseQuery}page={page.next}">{inject:i18n.get('t.suivant')}</a>
         {/if}
         {/if}
     </div>
@@ -130,19 +130,19 @@
 
 {#if selected}
 <div class="card">
-    <h2 class="card-title">Groupe « {selected.code} »</h2>
+    <h2 class="card-title">{inject:i18n.get('t.groupe')} {selected.code} »</h2>
 
     <form method="post" action="/admin/article-groups">
         <input type="hidden" name="id" value="{selected.id}">
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="e-desc">Description</label>
+                <label class="field-label" for="e-desc">{inject:i18n.get('t.description')}</label>
                 <input class="input-control" id="e-desc" type="text" name="description" maxlength="255" value="{selected.description ?: ''}">
             </div>
             <div class="field">
-                <label class="field-label" for="e-parent">Rattacher sous le groupe</label>
+                <label class="field-label" for="e-parent">{inject:i18n.get('t.rattacher-sous-le-groupe')}</label>
                 <select class="input-control" id="e-parent" name="parentId">
-                    <option value="">— inchangé —</option>
+                    <option value="">{inject:i18n.get('t.inchange')}</option>
                     {#for g in groups}
                     <option value="{g.id}">{g.code}</option>
                     {/for}
@@ -150,58 +150,85 @@
             </div>
         </div>
         <div class="page-actions" style="margin-top: 6px;">
-            <button class="btn btn-primary" type="submit">Enregistrer</button>
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer')}</button>
         </div>
     </form>
 
-    <h3 class="card-title" style="margin-top: 16px;">Ajouter des articles</h3>
+    <h3 class="card-title" style="margin-top: 16px;">{inject:i18n.get('t.ajouter-des-articles')}</h3>
     <form method="post" action="/admin/article-groups/articles">
         <input type="hidden" name="id" value="{selected.id}">
         <div class="field">
-            <label class="field-label" for="a-codes">Codes articles (EAN, code interne ou PLU)</label>
+            <label class="field-label" for="a-codes">{inject:i18n.get('t.codes-articles-ean-code-interne-ou-plu-2')}</label>
             <textarea class="input-control" id="a-codes" name="codes" rows="2"></textarea>
         </div>
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="a-from">Plage EAN — de</label>
+                <label class="field-label" for="a-from">{inject:i18n.get('t.plage-ean-de')}</label>
                 <input class="input-control" id="a-from" type="text" name="eanFrom" maxlength="13">
             </div>
             <div class="field">
-                <label class="field-label" for="a-to">Plage EAN — à</label>
+                <label class="field-label" for="a-to">{inject:i18n.get('t.plage-ean-a')}</label>
                 <input class="input-control" id="a-to" type="text" name="eanTo" maxlength="13">
             </div>
             <div class="field">
-                <label class="field-label" for="a-source">Copier les articles du groupe</label>
+                <label class="field-label" for="a-source">{inject:i18n.get('t.copier-les-articles-du-groupe')}</label>
                 <select class="input-control" id="a-source" name="sourceFamily">
-                    <option value="">— aucun —</option>
+                    <option value="">{inject:i18n.get('t.aucun')}</option>
                     {#for g in groups}
                     <option value="{g.code}">{g.code}</option>
                     {/for}
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="a-label">Libellé contient</label>
+                <label class="field-label" for="a-label">{inject:i18n.get('t.libelle-contient')}</label>
                 <input class="input-control" id="a-label" type="text" name="label">
+            </div>
+            {! BO-03-01-04 : plage de codes internes et famille (sous-familles comprises). !}
+            <div class="field">
+                <label class="field-label" for="a-ifrom">{inject:i18n.get('t.n19-plage-code-interne-de')}</label>
+                <input class="input-control" id="a-ifrom" type="text" name="internalFrom" maxlength="50">
+            </div>
+            <div class="field">
+                <label class="field-label" for="a-ito">{inject:i18n.get('t.n19-plage-code-interne-a')}</label>
+                <input class="input-control" id="a-ito" type="text" name="internalTo" maxlength="50">
+            </div>
+            <div class="field">
+                <label class="field-label" for="a-family">{inject:i18n.get('t.n19-famille-sous-familles-comprises')}</label>
+                <input class="input-control" id="a-family" type="text" name="familyCode" maxlength="50">
             </div>
         </div>
         <div class="page-actions" style="margin-top: 6px;">
-            <button class="btn btn-primary" type="submit">Ajouter au groupe</button>
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.ajouter-au-groupe')}</button>
         </div>
     </form>
 
-    <h3 class="card-title" style="margin-top: 16px;">Articles du groupe</h3>
+    {! BO-03-01-16 : integration en masse d'une liste d'articles (Excel ou CSV). !}
+    <h3 class="card-title" style="margin-top: 16px;">{inject:i18n.get('t.n19-importer-une-liste-d-articles')}</h3>
+    <p class="page-sub">{inject:i18n.get('t.n19-un-code-ean-interne-ou-plu-par-cellule')}</p>
+    <form method="post" action="/admin/article-groups/import" enctype="multipart/form-data">
+        <input type="hidden" name="id" value="{selected.id}">
+        <div class="field">
+            <label class="field-label" for="a-file">{inject:i18n.get('t.n19-fichier-xlsx-ou-csv')}</label>
+            <input class="input-control" id="a-file" type="file" name="file" accept=".xlsx,.csv,.txt" required>
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.n19-importer')}</button>
+        </div>
+    </form>
+
+    <h3 class="card-title" style="margin-top: 16px;">{inject:i18n.get('t.articles-du-groupe')}</h3>
     {#if members.isEmpty()}
     <div class="empty-state">
-        <p>Aucun article dans ce groupe.</p>
+        <p>{inject:i18n.get('t.aucun-article-dans-ce-groupe')}</p>
     </div>
     {#else}
     <table class="data-table">
         <thead>
             <tr>
-                <th>EAN</th>
-                <th>Libellé</th>
-                <th>Statut</th>
-                <th class="col-actions">Actions</th>
+                <th>{inject:i18n.get('t.ean')}</th>
+                <th>{inject:i18n.get('t.libelle')}</th>
+                <th>{inject:i18n.get('t.statut')}</th>
+                <th class="col-actions">{inject:i18n.get('t.actions')}</th>
             </tr>
         </thead>
         <tbody>
@@ -209,17 +236,17 @@
             <tr>
                 <td>{m.ean}</td>
                 <td>{m.name}</td>
-                <td>{#if m.active}Actif{#else}Désactivé{/if}</td>
+                <td>{#if m.active}{inject:i18n.get('t.actif')}{#else}{inject:i18n.get('t.desactive')}{/if}</td>
                 <td class="col-actions">
                     <form method="post" action="/admin/article-groups/articles/toggle">
                         <input type="hidden" name="id" value="{selected.id}">
                         <input type="hidden" name="productId" value="{m.id}">
-                        <button class="btn btn-small" type="submit">{#if m.active}Désactiver{#else}Réactiver{/if}</button>
+                        <button class="btn btn-small" type="submit">{#if m.active}{inject:i18n.get('t.desactiver')}{#else}{inject:i18n.get('t.reactiver')}{/if}</button>
                     </form>
                     <form method="post" action="/admin/article-groups/articles/remove">
                         <input type="hidden" name="id" value="{selected.id}">
                         <input type="hidden" name="productId" value="{m.id}">
-                        <button class="btn btn-small btn-danger" type="submit">Retirer</button>
+                        <button class="btn btn-small btn-danger" type="submit">{inject:i18n.get('t.retirer')}</button>
                     </form>
                 </td>
             </tr>
@@ -231,4 +258,4 @@
 {/if}
 {/body}
 
-{#footer}L'arborescence des groupes d'articles administrée ici alimente les touches caisse au tirage suivant.{/footer}
+{#footer}{inject:i18n.get('t.l-arborescence-des-groupes-d-articles-administre')}{/footer}

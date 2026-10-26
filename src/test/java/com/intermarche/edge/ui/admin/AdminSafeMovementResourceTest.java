@@ -355,4 +355,50 @@ class AdminSafeMovementResourceTest {
         }
         verify(view).data("balance", "0.00");
     }
+
+    /**
+     * An entry beyond the advance ceiling of the employee it pays is refused
+     * before it reaches the ledger (BO-05-02-15).
+     */
+    @Test
+    void anEntryBeyondTheAdvanceCeilingIsRefused() {
+        AdminSafeMovementResource resource = newResource();
+        when(resource.safeService.advanceRefusal(eq(SafeMovementType.EXPENSE), any(), isNull()))
+                .thenReturn("Plafond d'acompte dépassé : 1,00 € autorisés, 0,00 € déjà versés.");
+        Response response = resource.record(form("EXPENSE", "10,00", "Acompte"));
+        assertTrue(response.getLocation().toString().contains("noticeOk=false"));
+        assertTrue(response.getLocation().toString().contains("Plafond"));
+        verify(resource.safeService, org.mockito.Mockito.never()).record(any(), any(), any(), any(), any(),
+                any(), any(), any());
+    }
+
+    /**
+     * A validation the forcing levels refuse says why, and the period
+     * validation leaves those movements to a higher level and counts them,
+     * skipping the movements already validated (BO-05-02-15).
+     */
+    @Test
+    void theForcingLevelsReserveSomeValidations() {
+        AdminSafeMovementResource resource = newResource();
+        SafeMovement guarded = new SafeMovement();
+        SafeMovement done = new SafeMovement();
+        done.status = SafeMovement.MovementStatus.VALIDATED;
+        MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
+        form.add("id", "3");
+        when(resource.safeService.forcingRefusal(eq(guarded), isNull())).thenReturn("niveau");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> SafeMovement.findById(3L)).thenReturn(guarded);
+            Response refused = resource.validate(form);
+            assertTrue(refused.getLocation().toString().contains("niveau"));
+            assertTrue(refused.getLocation().toString().contains("noticeOk=false"));
+        }
+        AccountingPeriod period = new AccountingPeriod();
+        when(resource.safeService.openPeriod()).thenReturn(period);
+        when(resource.safeService.movementsOf(period)).thenReturn(List.of(guarded, done));
+        when(resource.safeService.forcingRefusal(eq(done), isNull())).thenReturn("niveau");
+        String location = java.net.URLDecoder.decode(resource.validateAll().getLocation().toString(),
+                java.nio.charset.StandardCharsets.UTF_8);
+        assertTrue(location.contains("0 mouvement(s) validé(s), 1 réservé(s) à un niveau de forçage supérieur."));
+        verify(resource.safeService).validate(eq(done), isNull());
+    }
 }

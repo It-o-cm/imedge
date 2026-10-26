@@ -1,10 +1,13 @@
 package com.intermarche.edge.ui.admin;
 
+import io.quarkus.security.Authenticated;
+import com.intermarche.edge.security.FeatureAccess;
+import com.intermarche.edge.domain.setting.Feature;
+import com.intermarche.edge.domain.people.CrudOption;
 import com.intermarche.edge.domain.setting.ServiceProvider;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
@@ -39,7 +42,7 @@ import java.util.List;
  * correcting a label does not silently disconnect the provider.
  *
  * <p>Same admin cycle as the other back-office pages: POST &rarr; 303 &rarr; a
- * one-shot notice, {@code @RolesAllowed("ADMIN")} throughout.
+ * one-shot notice, {@code @FeatureAccess} throughout (BO-01-04-01).
  */
 @Path("/admin/providers")
 public class AdminProviderResource {
@@ -63,7 +66,8 @@ public class AdminProviderResource {
      * @return the page
      */
     @GET
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SERVICE_PROVIDER)
     @Produces(MediaType.TEXT_HTML)
     public TemplateInstance providersPage(@QueryParam("notice") String notice,
             @QueryParam("noticeOk") String noticeOk) {
@@ -91,7 +95,8 @@ public class AdminProviderResource {
      */
     @POST
     @Path("/save")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SERVICE_PROVIDER, option = CrudOption.CREATE, updateKey = "code", entity = com.intermarche.edge.domain.setting.ServiceProvider.class)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response saveProvider(MultivaluedMap<String, String> form) {
@@ -166,7 +171,8 @@ public class AdminProviderResource {
      */
     @POST
     @Path("/message/save")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SERVICE_PROVIDER, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response saveProviderMessage(MultivaluedMap<String, String> form) {
@@ -204,7 +210,8 @@ public class AdminProviderResource {
      */
     @POST
     @Path("/message/delete")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SERVICE_PROVIDER, option = CrudOption.DELETE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response deleteProviderMessage(MultivaluedMap<String, String> form) {
@@ -226,7 +233,8 @@ public class AdminProviderResource {
 
     @POST
     @Path("/clear-credential")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SERVICE_PROVIDER, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response clearCredential(MultivaluedMap<String, String> form) {
@@ -249,7 +257,8 @@ public class AdminProviderResource {
      */
     @POST
     @Path("/delete")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SERVICE_PROVIDER, option = CrudOption.DELETE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response deleteProvider(MultivaluedMap<String, String> form) {

@@ -1,10 +1,11 @@
 package com.intermarche.edge.domain.catalog;
 
+import com.intermarche.edge.domain.BaseEntity;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
+
 import java.util.*;
 import java.util.stream.Collectors;
-import com.intermarche.edge.domain.BaseEntity;
 
 /**
  * Entity representing a logical grouping of Products (ProductFamily).
@@ -33,6 +34,14 @@ import com.intermarche.edge.domain.BaseEntity;
 )
 @Cacheable
 public class ProductFamily extends BaseEntity {
+
+    /**
+     * The reserved code of the LEVEL-0 group (BO-03-01-04, BO-03-01-05): the
+     * articles the back office places in it are drawn as direct article touches
+     * on the first screen of the register's direct entry, with no group touch to
+     * open first.
+     */
+    public static final String LEVEL_ZERO_CODE = "NIVEAU-0";
 
     @Column(name = "code", nullable = false, length = 50, unique = true)
     @NotBlank(message = "Family code is mandatory")

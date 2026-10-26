@@ -244,7 +244,12 @@ body {
 .col-targets { max-width: 340px; }
 
 .col-actions { text-align: right; white-space: nowrap; }
+/* A long unbroken cell value (option markers such as TENDER:CHEQUE,CONTROL:BLOCKING)
+   breaks inside its cell rather than pushing the table out of its card. */
+.data-table td.cell-wrap { overflow-wrap: anywhere; }
 .col-actions form { display: inline-block; margin-left: 4px; }
+/* A code typed beside an action button (duplicate a group) keeps the row inside its table (lot 18 recette). */
+.col-actions .input-inline { width: 9em; }
 
 .badge {
     display: inline-block;

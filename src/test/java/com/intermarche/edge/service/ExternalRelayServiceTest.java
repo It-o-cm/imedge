@@ -151,4 +151,21 @@ class ExternalRelayServiceTest {
         ExternalRelayService service = serviceWith(client);
         assertFalse(service.relay(Optional.of("http://issuer.local"), "GET", "/CARD1", null, 1000).reached());
     }
+
+    /** LC-07: a POST with an absent payload still relays an empty body and returns the upstream result. */
+    @Test
+    void nullPostBodyIsRelayedAsEmpty() throws Exception {
+        var client = mock(HttpClient.class);
+        var response = mock(HttpResponse.class);
+        when(response.statusCode()).thenReturn(202);
+        when(response.body()).thenReturn("ACCEPTED");
+        doReturn(response).when(client).send(any(HttpRequest.class), any());
+        var result = serviceWith(client).relay(Optional.of("https://relay.example"), "POST", "/test", null, 1000);
+        assertTrue(result.reached());
+        assertEquals(202, result.status());
+        var request = org.mockito.ArgumentCaptor.forClass(HttpRequest.class);
+        org.mockito.Mockito.verify(client).send(request.capture(), any());
+        assertEquals(0L, request.getValue().bodyPublisher().orElseThrow().contentLength());
+    }
+
 }

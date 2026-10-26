@@ -36,6 +36,25 @@ public enum Feature {
     /** The CHECKOUT ISLAND screen: the register groups as settings-bearing objects (BO-03-10). */
     CHECKOUT_ISLAND("checkout_island", Menu.PARAMETRAGE, "Îlots de caisse", "/admin/checkout-islands"),
 
+    /**
+     * The REGISTER CONFIGURATION screen: the parameters posed on one checkout
+     * point or one island, and the grouped configuration of a set of registers
+     * (BO-03-09, BO-03-10).
+     */
+    REGISTER_CONFIG("register_config", Menu.PARAMETRAGE, "Configuration des caisses",
+            "/admin/register-config"),
+
+    /** The CASH MENU screen: the named menu models a register draws (BO-03-10-16/17). */
+    CASH_MENU("cash_menu", Menu.PARAMETRAGE, "Menus caisse", "/admin/cash-menus"),
+
+    /**
+     * The PROGRAMMED DEPLOYMENTS screen: the date of effect of the back-office
+     * changes, the releases held until their date, their advance and their
+     * cancellation (BO-03-12-03, BO-03-12-04).
+     */
+    REFERENTIAL_RELEASE("referential_release", Menu.PARAMETRAGE, "Déploiements programmés",
+            "/admin/releases"),
+
     /** The TENDER referential screen: the administered settlement methods. */
     TENDER("tender", Menu.PARAMETRAGE, "Règlements", "/admin/tenders"),
 
@@ -45,8 +64,28 @@ public enum Feature {
     /** The DOCUMENT TEMPLATE screen: the administered layouts. */
     TEMPLATE("template", Menu.PARAMETRAGE, "Gabarits", "/admin/templates"),
 
+    /**
+     * The PRINTABLE DOCUMENTS screen (BO-03-04-06, -09, -10 and -14): the
+     * documents the registers offer over a closed ticket, their name, their
+     * nature, their printer and their activation.
+     */
+    PRINTABLE_DOCUMENT("printable_document", Menu.PARAMETRAGE, "Documents imprimables en caisse",
+            "/admin/printable-documents"),
+
     /** The BARCODE screen: coupon patterns and article ranges. */
     COUPON("coupon", Menu.PARAMETRAGE, "Codes-barres", "/admin/coupons"),
+
+    /**
+     * The RETURN TYPE screen (BO-03-13-01 to -04, -11, -12): the types of
+     * return the registers offer, their options, their activation.
+     */
+    RETURN_TYPE("return_type", Menu.PARAMETRAGE, "Types de retour", "/admin/return-types"),
+
+    /**
+     * The PREPAID CARD TYPE screen (BO-03-02-37): the types of prepaid card,
+     * their protocol, provider and ranges.
+     */
+    PREPAID_CARD_TYPE("prepaid_card_type", Menu.PARAMETRAGE, "Cartes prépayées", "/admin/prepaid-cards"),
 
     /** The ARTICLE screen: the catalog and the article sheet. */
     ARTICLE("article", Menu.ARTICLES, "Articles", "/admin/articles"),
@@ -78,8 +117,24 @@ public enum Feature {
     /** The DOCUMENTS issued at the registers (BO-02-04-19). */
     DOCUMENT("document", Menu.SUPERVISION, "Documents de caisse", "/admin/documents"),
 
+    /** The Portuguese SAF-T EXPORT of the store's fiscal documents (BO-10-06-03). */
+    SAFT_EXPORT("saft_export", Menu.SUPERVISION, "Export SAF-T", "/admin/saft"),
+
     /** The CUSTOMER ORDERS recalled at the till by code: quotes, orders, vouchers, click&collect (EXP-90/91/92). */
     CUSTOMER_ORDER("customer_order", Menu.SUPERVISION, "Commandes & devis", "/admin/orders"),
+
+    /**
+     * The E-COMMERCE ORDERS the platform deposited, each with its integration
+     * report and, where archived, the order as sent (BO-10-01-03, -11).
+     */
+    ECOMMERCE_ORDER("ecommerce_order", Menu.SUPERVISION, "Commandes e-commerce", "/admin/ecommerce-orders"),
+
+    /**
+     * The THIRD-PARTY SYSTEMS whose sales the point of sale integrates — the
+     * e-commerce platform, the mobility tools — with their channel, their
+     * point of sale, their virtual register and their token (BO-07-01-01).
+     */
+    THIRD_PARTY_SYSTEM("third_party_system", Menu.SUPERVISION, "Systèmes tiers", "/admin/third-party-systems"),
 
     /** The PROFILES administration screen. */
     PROFILE("profile", Menu.ADMINISTRATION, "Profils", "/admin/profiles"),
@@ -119,11 +174,50 @@ public enum Feature {
     /** The JOURNAL screen: the line's events and movements. */
     JOURNAL("journal", Menu.SUPERVISION, "Journal", "/admin/journal"),
 
+    /**
+     * The ELECTRONIC JOURNAL REGROUPED BY ADHÉRENT, on the central node: the
+     * tickets of every point of sale of an adhérent (BO-02-05-05).
+     */
+    ADHERENT_JOURNAL("adherent_journal", Menu.SUPERVISION, "Journal par adhérent",
+            "/admin/adherent-journal"),
+
     /** The REPORTS surface: the catalogue of states and their exports. */
     REPORT("report", Menu.SUPERVISION, "Rapports", "/admin/reports"),
 
+    /**
+     * The PROMOTIONS screen: the number, label, type and upstream financing of
+     * the promotions the promotional states report on (BO-06-08-01, -02).
+     */
+    PROMOTION("promotion", Menu.ARTICLES, "Promotions", "/admin/promotions"),
+
+    /**
+     * The DETAXE screen: the export sales slips of the welcome desk and the
+     * refund of their VAT (BO-06-07-03).
+     */
+    TAX_REFUND("tax_refund", Menu.FINANCIER, "Détaxe", "/admin/tax-refunds"),
+
     /** The SYNCHRONIZATION supervision screen: the referential feeds. */
     SYNC("sync", Menu.SUPERVISION, "Flux", "/admin/sync"),
+    /** The INTEGRATION console: OK/KO of every integration, the replay of the failed deposits (BO-08-01-17). */
+    INTEGRATION_CONSOLE("integration_console", Menu.SUPERVISION, "Console d'intégration",
+            "/admin/supervision/integration"),
+    /** The ACTIVITY console: health of every node, registers in anomaly (BO-08-04-15/16). */
+    ACTIVITY_CONSOLE("activity_console", Menu.SUPERVISION, "Console d'activité", "/admin/supervision/activity"),
+    /** The INVENTORY dashboard: registers and installed peripherals (BO-08-04-20). */
+    INVENTORY("inventory", Menu.SUPERVISION, "Parc matériel et logiciel", "/admin/supervision/inventory"),
+    /** The FUNCTION USAGE statistics of the registers and the back office (BO-08-02-02). */
+    FUNCTION_USAGE("function_usage", Menu.SUPERVISION, "Usage des fonctions", "/admin/supervision/usage"),
+    /** The REMOTE TAKE-OVER of a point of sale: maintenance orders and their trace (BO-08-04-17). */
+    REMOTE_MAINTENANCE("remote_maintenance", Menu.SUPERVISION, "Prise en main à distance",
+            "/admin/supervision/maintenance"),
+    /** The DEPLOYMENT console: releases, lots, targets, pilot phases (BO-08-03). */
+    DEPLOYMENT("deployment", Menu.SUPERVISION, "Déploiement", "/admin/deployment"),
+    /** The MOBILE page of the register alerts (BO-10-08-02). */
+    MOBILE_ALERTS("mobile_alerts", Menu.SUPERVISION, "Alertes mobiles", "/dashboard/mobile"),
+    /** The real-time CONTROL INDICATORS, shown on every screen to the profiles granted them (BO-04-03-01). */
+    CONTROL_INDICATORS("control_indicators", Menu.SUPERVISION, "Indicateurs de contrôle", "/dashboard/control"),
+    /** The REAL-TIME watch of the registers' operations (BO-04-03-07). */
+    LIVE_ACTIVITY("live_activity", Menu.SUPERVISION, "Surveillance des caisses", "/dashboard/live"),
 
     /** The SAFE MOVEMENTS screen: expenses, receipts and their pointing (BO-05-02-01/02/06). */
     SAFE_MOVEMENT("safe_movement", Menu.FINANCIER, "Mouvements du coffre",
@@ -156,6 +250,21 @@ public enum Feature {
     /** The PAYROLL screen: who may receive an advance or a reimbursement (BO-05-02-15). */
     EMPLOYEE("employee", Menu.FINANCIER, "Salariés", "/admin/employees"),
 
+    /** The RECEIPT FLOWS screen: the existing feeds of takings collected outside the registers (BO-05-02-03). */
+    SAFE_RECEIPT_FLOW("safe_receipt_flow", Menu.FINANCIER, "Flux de recettes", "/admin/safe/receipt-flows"),
+
+    /** The FISCAL ARCHIVES screen: the article 88 archives of the point of sale (BO-05-01-01). */
+    FISCAL_ARCHIVE("fiscal_archive", Menu.FINANCIER, "Archives fiscales", "/admin/fiscal/archives"),
+
+    /** The E-INVOICING screen: the electronic invoices and their life cycle (BO-05-01-02). */
+    E_INVOICING("e_invoicing", Menu.FINANCIER, "Facturation électronique", "/admin/fiscal/e-invoicing"),
+
+    /** The E-REPORTING screen: the transmissions of the transaction data (BO-05-01-03). */
+    E_REPORTING("e_reporting", Menu.FINANCIER, "E-reporting", "/admin/fiscal/e-reporting"),
+
+    /** The TRANSACTIONS EXPORT screen: every ticket and invoice, filtered, totalled and exported (BO-05-01-06). */
+    FISCAL_TRANSACTIONS("fiscal_transactions", Menu.FINANCIER, "Export des transactions", "/admin/fiscal/transactions"),
+
     /** The COIN MACHINE screen: what each machine holds (BO-05-02-16). */
     COIN_MACHINE("coin_machine", Menu.PARAMETRAGE, "Monnayeurs", "/admin/coin-machines"),
 
@@ -173,7 +282,28 @@ public enum Feature {
     STORE_MESSAGE("store_message", Menu.PARAMETRAGE, "Messages aux caisses", "/admin/messages"),
 
     /** The FINANCIAL STATES screen: the X readings and Z documents of the node (X/Z campaign). */
-    FINANCIAL_STATE("financial_state", Menu.FINANCIER, "États financiers X/Z", "/admin/financial-states");
+    FINANCIAL_STATE("financial_state", Menu.FINANCIER, "États financiers X/Z", "/admin/financial-states"),
+
+    /** The ARTICLE ATTRIBUTES screen: the free attributes an article may carry. */
+    ARTICLE_ATTRIBUTE("article_attribute", Menu.ARTICLES, "Attributs article", "/admin/article-attributes"),
+
+    /** The ARTICLE SELECTIONS screen: the named article lists the promotions target. */
+    ARTICLE_SELECTION("article_selection", Menu.ARTICLES, "Sélections d'articles", "/admin/article-selections"),
+
+    /** The MEASURE UNITS screen: the unit codes the articles carry (BO-02-03-17). */
+    MEASURE_UNIT("measure_unit", Menu.ARTICLES, "Unités de mesure", "/admin/measure-units"),
+
+    /** The ARTICLE FIELD RIGHTS screen: which profile may change which datum of the fiche (BO-02-03-33). */
+    ARTICLE_FIELD_RIGHT("article_field_right", Menu.ARTICLES, "Droits de la fiche article", "/admin/article-field-rights"),
+
+    /** The ELECTRONIC SHELF LABEL screen: the EEG providers of the point of sale (BO-02-03-37/38). */
+    EEG_PROVIDER("eeg_provider", Menu.ARTICLES, "Étiquettes électroniques", "/admin/eeg-providers"),
+
+    /**
+     * The ADMINISTRATION LOG screen: every back-office modification, who made
+     * it, on which screen, with which validation (BO-01-01-01, BO-01-01-03).
+     */
+    AUDIT("audit", Menu.ADMINISTRATION, "Journal d'administration", "/admin/audit");
 
     /** The stable storage/form token of this feature. */
     private final String key;

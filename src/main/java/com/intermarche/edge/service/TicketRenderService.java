@@ -295,8 +295,7 @@ public class TicketRenderService {
             // later this receipt is what the account is reconciled against, and an
             // amount owed by nobody cannot be reconciled against anything.
             if (payment instanceof com.intermarche.edge.domain.payment.CreditPayment credit) {
-                String saleDay = ticket.creationDate == null ? ""
-                        : ticket.creationDate.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
+                String saleDay = ticket.creationDate.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"));
                 sb.append("  ").append(saleDay).append("  COMPTE ")
                         .append(credit.accountNumber == null ? "" : credit.accountNumber)
                         .append("\n");

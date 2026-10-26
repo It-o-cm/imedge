@@ -214,7 +214,7 @@ class DocumentTemplateTest {
                 "REFUND_RECEIPT", "INVOICE", "X_REPORT", "Z_REPORT", "WITHDRAWAL_TICKET",
                 "TRANSFER_TICKET", "GIFT_CARD_VOUCHER", "CREDIT_NOTE_VOUCHER", "CARD_RECEIPT",
                 "INVOICE_A4", "LOYALTY_RECEIPT", "EXIT_TICKET", "UNKNOWN_ARTICLE_TICKET",
-                "PARKED_TICKET_RESUME", "PAYMENT_CANCELLATION", "DEPOSIT_RECEIPT",
+                "PARKED_TICKET_RESUME", "PARKED_TICKET", "PAYMENT_CANCELLATION", "DEPOSIT_RECEIPT",
                 "GIFT_CARD_PAYMENT",
                 // BO-10-03-05 with -11, -12 and -13: the four loyalty zones of
                 // a sale — a SECTION of the receipt, one type per case, so the
@@ -241,6 +241,9 @@ class DocumentTemplateTest {
                 DocumentTemplate.DocumentType.valueOf("EXIT_TICKET").getLabel());
         assertEquals("Ticket de reprise",
                 DocumentTemplate.DocumentType.valueOf("PARKED_TICKET_RESUME").getLabel());
+        // BO-03-03-06: the parked ticket, now laid out by a template too.
+        assertEquals("Ticket en attente",
+                DocumentTemplate.DocumentType.valueOf("PARKED_TICKET").getLabel());
         assertEquals("Ticket de vente",
                 DocumentTemplate.DocumentType.valueOf("SALE_RECEIPT").getLabel());
         // BO-03-03-10: the loyalty settlement slip, additional to the receipt.
@@ -447,4 +450,15 @@ class DocumentTemplateTest {
             assertTrue(type.getLabel().startsWith("Portugal"), type.name());
         }
     }
+    /** BO-03-04-24: a blank copy-title setting is ignored without replacing it with a literal blank. */
+    @Test
+    void blankCopyTitlesDoNotNameAnOriginal() {
+        DocumentTemplate template = new DocumentTemplate();
+        template.copyTitles = " ";
+        try (var base = mockStatic(PanacheEntityBase.class)) {
+            base.when(() -> PanacheEntityBase.list("active = true and documentType = ?1 order by priority, code", DocumentTemplate.DocumentType.NC)).thenReturn(List.of(template));
+            assertNull(DocumentTemplate.copyTitleFor(DocumentTemplate.DocumentType.NC, 1));
+        }
+    }
+
 }

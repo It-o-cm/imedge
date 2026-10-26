@@ -1,11 +1,13 @@
 package com.intermarche.edge.ui.admin;
 
 import com.intermarche.edge.domain.people.CrudOption;
+import com.intermarche.edge.domain.people.Employee;
 import com.intermarche.edge.domain.people.EmployeeProfile;
 import com.intermarche.edge.domain.setting.Feature;
 import com.intermarche.edge.domain.people.Menu;
 import com.intermarche.edge.domain.people.Profile;
 import com.intermarche.edge.domain.people.ProfileGrant;
+import com.intermarche.edge.security.FeatureAccess;
 import com.intermarche.edge.service.PermissionService;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
@@ -95,8 +97,10 @@ public class AdminProfileResource {
         public String label;
         /** The four option cells, in declaration order. */
         public List<OptionCell> cells = new ArrayList<>();
-        /** Whether every option of the feature is under validation. */
+        /** Whether an option of the feature is under validation. */
         public boolean requiresValidation;
+        /** The modifying options, each with whether it is under validation (BO-01-04-03). */
+        public List<OptionCell> validationCells = new ArrayList<>();
         /** The chosen validating profile id, or null. */
         public Long validatorId;
     }
@@ -130,6 +134,7 @@ public class AdminProfileResource {
      */
     @GET
     @Authenticated
+    @FeatureAccess(value = Feature.PROFILE, selfGuarded = true)
     public Object listPage(@QueryParam("notice") String notice,
                            @QueryParam("noticeOk") @DefaultValue("true") boolean noticeOk) {
         LOGGER.info("Entering method listPage with notice: " + notice + ", noticeOk: " + noticeOk);
@@ -152,6 +157,7 @@ public class AdminProfileResource {
     @GET
     @Path("/new")
     @Authenticated
+    @FeatureAccess(value = Feature.PROFILE, selfGuarded = true)
     public Object newForm() {
         LOGGER.info("Entering method newForm");
         Response denied = guard(CrudOption.VIEW);
@@ -172,6 +178,7 @@ public class AdminProfileResource {
     @GET
     @Path("/edit")
     @Authenticated
+    @FeatureAccess(value = Feature.PROFILE, selfGuarded = true)
     public Object editForm(@QueryParam("id") Long id) {
         LOGGER.info("Entering method editForm with id: " + id);
         Response denied = guard(CrudOption.VIEW);
@@ -197,6 +204,7 @@ public class AdminProfileResource {
     @POST
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Authenticated
+    @FeatureAccess(value = Feature.PROFILE, option = CrudOption.CREATE, updateKey = "id", selfGuarded = true)
     @Transactional
     public Response save(MultivaluedMap<String, String> form) {
         LOGGER.info("Entering method save with form: " + form);
@@ -227,8 +235,19 @@ public class AdminProfileResource {
             LOGGER.info("Exiting method save");
             return redirect("Un profil porte déjà le nom « " + name + " ».", false);
         }
+        int level = Math.max(AdminForms.integer(form.getFirst("hierarchyLevel"), 0), 0);
+        Employee actor = Employee.findActiveLogin(identity.getPrincipal().getName());
+        if (!creating && !permissionService.mayAssign(actor, profile)) {
+            LOGGER.info("Exiting method save");
+            return redirect("Ce profil est d'un niveau supérieur au vôtre.", false);
+        }
+        if (actor == null || (actor.role != Employee.EmployeeRole.ADMIN && level > actor.hierarchyLevel)) {
+            LOGGER.info("Exiting method save");
+            return redirect("Le niveau du profil ne peut dépasser le vôtre.", false);
+        }
         profile.name = name;
         profile.description = trimmed(form.getFirst("description"));
+        profile.hierarchyLevel = level;
         profile.grants = buildGrants(form);
         if (creating) {
             profile.persist();
@@ -247,6 +266,7 @@ public class AdminProfileResource {
     @Path("/delete")
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Authenticated
+    @FeatureAccess(value = Feature.PROFILE, option = CrudOption.DELETE, selfGuarded = true)
     @Transactional
     public Response delete(MultivaluedMap<String, String> form) {
         LOGGER.info("Entering method delete with form: " + form);
@@ -337,14 +357,18 @@ public class AdminProfileResource {
     }
 
     /**
-     * Stamps a grant with its feature's validation terms, read from the
-     * {@code validate}/{@code validator_<key>} fields.
+     * Stamps a grant with its validation terms, read from the
+     * {@code validate}/{@code validator_<key>} fields: a {@code validate}
+     * token {@code <key>:<OPTION>} submits that option alone (BO-01-04-03), a
+     * bare {@code <key>} every option of the feature.
      *
      * @param grant the grant to stamp
      * @param form the posted form
      */
     private void applyValidation(ProfileGrant grant, MultivaluedMap<String, String> form) {
-        boolean required = safeList(form.get("validate")).contains(grant.featureKey);
+        List<String> validated = safeList(form.get("validate"));
+        boolean required = validated.contains(grant.featureKey)
+                || validated.contains(grant.featureKey + ":" + grant.option.name());
         grant.requiresValidation = required;
         grant.validatingProfileId = required ? parseId(form.getFirst("validator_" + grant.featureKey)) : null;
     }
@@ -408,12 +432,19 @@ public class AdminProfileResource {
             cell.label = option.getLabel();
             ProfileGrant held = profile == null ? null : profile.grant(feature, option);
             cell.checked = held != null;
-            if (held != null) {
-                validationSource = held;
-            }
             row.cells.add(cell);
+            if (option != CrudOption.VIEW) {
+                OptionCell validation = new OptionCell();
+                validation.token = cell.token;
+                validation.label = option.getLabel();
+                validation.checked = held != null && held.requiresValidation;
+                row.validationCells.add(validation);
+                if (validation.checked) {
+                    validationSource = held;
+                }
+            }
         }
-        row.requiresValidation = validationSource != null && validationSource.requiresValidation;
+        row.requiresValidation = validationSource != null;
         row.validatorId = validationSource == null ? null : validationSource.validatingProfileId;
         return row;
     }

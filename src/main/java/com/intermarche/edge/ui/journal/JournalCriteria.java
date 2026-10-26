@@ -23,10 +23,10 @@ import java.util.Set;
  * malformed date) is treated as absent rather than raising: the journal is a
  * read screen, a bad filter narrows nothing, it does not fault.
  * <p>
- * Only the criteria backed by consolidated data are modelled. Criteria whose
- * source data does not exist on the consolidated node (self-scanning flags...)
- * are deliberately NOT fields here: they are reported as residue rather than
- * rendered as dead controls. The card authorization number and the
+ * Only the criteria backed by consolidated data are modelled. Lot 21 opened
+ * the self-scanning channel, the offline sale, the keyed, scanned and
+ * carried-out lines, the cancelled settlements and the unknown codes scanned
+ * (BO-04-01-14/19/34/41/42/43/48), so their criteria are fields too. The card authorization number and the
  * degraded-mode indicator ARE modelled (BO-04-01-08/47/49): the card payment
  * carries both since campaign lot C2 opened the gisement. The cash-movement
  * types ARE modelled too ({@link #movementTypes}, BO-04-01-12/33/35/36/37/40/44):
@@ -69,7 +69,20 @@ public class JournalCriteria {
          * cancellation; combined with the cancelled-article PLU / amount ranges
          * it narrows to a specific cancelled article.
          */
-        CANCELLED_ARTICLE
+        CANCELLED_ARTICLE,
+        /** The ticket is a self-scanning basket loaded at the till (BO-04-01-41). */
+        SELF_SCAN,
+        /** The self-scanning basket's control was decided by the hostess (BO-04-01-42). */
+        SELF_SCAN_CONTROLLED,
+        /** The self-scanning basket's control was decided by the system (BO-04-01-43). */
+        SELF_SCAN_VERIFIED,
+        /**
+         * A card payment of the ticket was accepted by a SECONDARY monetics
+         * server — a sale in degraded mode, for the support desk (BO-04-01-48).
+         */
+        SECONDARY_SERVER,
+        /** A settlement of the ticket was cancelled (BO-04-01-19). */
+        PAYMENT_CANCELLED
     }
 
     /** Free text searched in the article labels, ticket number and fidelity card (BO-04-01-01). */
@@ -176,6 +189,31 @@ public class JournalCriteria {
     /** Inclusive upper bound of the cancelled-article amount range (BO-04-01-16), or null. */
     public BigDecimal cancelAmountMax;
 
+    /**
+     * The event the tickets are extracted by (BO-04-01-14), or null for none.
+     */
+    public JournalEvent event;
+
+    /** Inclusive lower bound of the amount the selected event bears (BO-04-01-14), or null. */
+    public BigDecimal eventAmountMin;
+    /** Inclusive upper bound of the amount the selected event bears (BO-04-01-14), or null. */
+    public BigDecimal eventAmountMax;
+
+    /** Inclusive lower bound of a cancelled settlement's amount (BO-04-01-19), or null. */
+    public BigDecimal paymentCancelMin;
+    /** Inclusive upper bound of a cancelled settlement's amount (BO-04-01-19), or null. */
+    public BigDecimal paymentCancelMax;
+    /** The payment method of a cancelled settlement (BO-04-01-19), or null for all. */
+    public String paymentCancelMethod;
+
+    /** Inclusive lower bound of the unknown code scanned (BO-04-01-34), or null. */
+    public String unknownCodeMin;
+    /** Inclusive upper bound of the unknown code scanned (BO-04-01-34), or null. */
+    public String unknownCodeMax;
+
+    /** The code a functional event carries — a method, a scanned code (BO-04-01-19/34), or null. */
+    public String eventCode;
+
     /** The selected boolean flags (BO-04-01-14/25/31/32/34/46), never null. */
     public Set<Flag> flags = new LinkedHashSet<>();
 
@@ -276,6 +314,15 @@ public class JournalCriteria {
         criteria.cancelAmountMax = parseAmount(params.getFirst("cancelAmountMax"));
         criteria.movementAmountMin = parseAmount(params.getFirst("movementAmountMin"));
         criteria.movementAmountMax = parseAmount(params.getFirst("movementAmountMax"));
+        criteria.event = JournalEvent.of(params.getFirst("event"));
+        criteria.eventAmountMin = parseAmount(params.getFirst("eventAmountMin"));
+        criteria.eventAmountMax = parseAmount(params.getFirst("eventAmountMax"));
+        criteria.paymentCancelMin = parseAmount(params.getFirst("paymentCancelMin"));
+        criteria.paymentCancelMax = parseAmount(params.getFirst("paymentCancelMax"));
+        criteria.paymentCancelMethod = blankToNull(params.getFirst("paymentCancelMethod"));
+        criteria.unknownCodeMin = blankToNull(params.getFirst("unknownCodeMin"));
+        criteria.unknownCodeMax = blankToNull(params.getFirst("unknownCodeMax"));
+        criteria.eventCode = blankToNull(params.getFirst("eventCode"));
         addNonBlank(criteria.methods, params.get("method"));
         addNonBlank(criteria.eventTypes, params.get("eventType"));
         addFlags(criteria.flags, params.get("flag"));

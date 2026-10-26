@@ -1,17 +1,12 @@
 package com.intermarche.edge.imports;
 
+import com.intermarche.edge.domain.catalog.MeasureUnit;
 import com.intermarche.edge.domain.catalog.Product;
-import com.intermarche.edge.domain.catalog.ProductType;
+import com.intermarche.edge.domain.catalog.attribute.ProductAttributeCatalog;
 import com.intermarche.edge.domain.catalog.ProductFamily;
+import com.intermarche.edge.domain.catalog.ProductType;
 import io.quarkus.hibernate.orm.panache.Panache;
-import io.smallrye.common.annotation.RunOnVirtualThread;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.POST;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
 
@@ -31,6 +26,11 @@ import java.util.Set;
  * logic for creating/updating products.
  * <p>
  * It leverages the parent's Staged Fallback algorithm (1000 -> 100 -> 10 -> 1).
+ * <p>
+ * ON A REGISTER the same importer also serves the referential pull: it is
+ * called by {@code RefApplyService} on the raw file the register pulled
+ * through ENGINE_FEEDS. The injection point stays the node — this class
+ * never listens on a port.
  * <p>
  * Place in the POS architecture since the phase 6 centralized referentials:
  * these CSV endpoints exist on every node, but their proper home is the
@@ -52,7 +52,6 @@ import java.util.Set;
 // document and to keep in step, and the permission policy had to name them
 // one by one — an importer forgotten there was a door left open.
 @ApplicationScoped
-@RunOnVirtualThread
 public class ProductCsvResource extends ImporterCsvResource {
 
     private static final Logger LOGGER = Logger.getLogger(ProductCsvResource.class);
@@ -88,7 +87,7 @@ public class ProductCsvResource extends ImporterCsvResource {
     static final String COL_CHECKOUT_LABEL = "CHECKOUT_LABEL";
     /** Header name of the OPTIONAL internal code (code interne, BO-02-03-04). */
     static final String COL_INTERNAL_CODE = "INTERNAL_CODE";
-    /** Header name of the OPTIONAL cashier message carried by the article (BO-02-03-10). */
+    /** Header name of the OPTIONAL cashier message carried by the article (BO-02-03-10, LC-02-03-11). */
     static final String COL_INFO_MESSAGE = "INFO_MESSAGE";
     /**
      * Header name of the OPTIONAL generic attributes column (BO-02-03-18): a
@@ -123,6 +122,39 @@ public class ProductCsvResource extends ImporterCsvResource {
      * article's filing untouched.
      */
     static final String COL_NOMENCLATURE = "NOMENCLATURE";
+
+    /**
+     * Header of the OPTIONAL column of the article's ADDITIONAL sale codes
+     * (BO-02-03-03): every barcode besides the EAN that rings the article,
+     * separated by semicolons. A full integration states the whole list, so a
+     * declared cell REPLACES the article's codes — an empty one removes them —
+     * and a feed that does not carry the column leaves them alone.
+     */
+    static final String COL_SALE_CODES = "SALE_CODES";
+
+    /**
+     * Header of the OPTIONAL checkout-mode column (BO-02-03-05, -21 to -24):
+     * {@code PRICE_CALL}, {@code PRICE_TO_ENTER}, {@code QUANTITY_TO_ENTER},
+     * {@code DECIMAL_QUANTITY_TO_ENTER} or {@code WEIGHED}; an empty cell
+     * withdraws the mode.
+     */
+    static final String COL_CHECKOUT_MODE = "CHECKOUT_MODE";
+
+    /**
+     * Header of the OPTIONAL unit-of-measure code (BO-02-03-17): the code
+     * declared in the back office, whose symbol becomes the article's unit
+     * label when the referential knows it.
+     */
+    static final String COL_UNIT_CODE = "UNIT_CODE";
+
+    /**
+     * Header of the OPTIONAL VAT regime of the article (BO-02-03-27): the
+     * number of a regime of the VAT referential, exempt regimes included.
+     */
+    static final String COL_VAT_NUMBER = "VAT_NUMBER";
+
+    /** Header of the OPTIONAL VAT exemption flag of the article (BO-02-03-26). */
+    static final String COL_VAT_EXEMPT = "VAT_EXEMPT";
 
     /** The columns this importer cannot work without. */
     private static final List<String> REQUIRED_COLUMNS = List.of(
@@ -208,7 +240,9 @@ public class ProductCsvResource extends ImporterCsvResource {
         } else {
             // Update existing if data changed (Checksum Optimization)
             int incomingChecksum = computeIncomingChecksum(data, product);
-            if (product.changedFrom(incomingChecksum)) {
+            if (product.changedFrom(incomingChecksum)
+                    || data.has(COL_INFO_MESSAGE)
+                    && !Objects.equals(product.infoMessage, safeGet(data, COL_INFO_MESSAGE))) {
                 product = Product.findById(product.id);
                 feedProduct(data, product);
                 counters[1]++; // Updated
@@ -253,12 +287,15 @@ public class ProductCsvResource extends ImporterCsvResource {
         product.referenceWeight = safeParseBigDecimal(data, COL_REFERENCE_WEIGHT);
         product.referenceVolume = safeParseBigDecimal(data, COL_REFERENCE_VOLUME);
         product.productType = safeParseProductType(data, COL_PRODUCT_TYPE);
-        product.unitName = safeGet(data, COL_UNIT_NAME);
+        product.unitName = incomingUnitName(data);
         // BO-02-03-10: the message the commercial management attaches to an
         // article. The column, its screen, its diffusion and the warning the
         // register raises at the scan all existed; the FEED was the one road
-        // that did not carry it.
-        product.infoMessage = safeGet(data, COL_INFO_MESSAGE);
+        // that did not carry it. An optional column like the others: a feed
+        // that does not declare it leaves the local message alone (LC-02-03-11).
+        if (data.has(COL_INFO_MESSAGE)) {
+            product.infoMessage = safeGet(data, COL_INFO_MESSAGE);
+        }
         product.active = safeParseBoolean(data, COL_ACTIVE);
         if (data.has(COL_PLU)) {
             String plu = safeGet(data, COL_PLU);
@@ -279,7 +316,9 @@ public class ProductCsvResource extends ImporterCsvResource {
             product.checkoutLabel = safeGet(data, COL_CHECKOUT_LABEL);
         }
         if (data.has(COL_INTERNAL_CODE)) {
-            product.internalCode = safeGet(data, COL_INTERNAL_CODE);
+            // BO-02-03-04: the code is unique, so an article without one holds
+            // NO code rather than an empty one every other article would clash with.
+            product.internalCode = trimOrNull(safeGet(data, COL_INTERNAL_CODE));
         }
         if (data.has(COL_VARIABLE_WEIGHT)) {
             product.variableWeight = safeParseBoolean(data, COL_VARIABLE_WEIGHT);
@@ -290,6 +329,117 @@ public class ProductCsvResource extends ImporterCsvResource {
         if (data.has(COL_ATTRIBUTES)) {
             mergeAttributes(product.attributes, safeGet(data, COL_ATTRIBUTES));
         }
+        mapAttributeColumns(data, product.attributes);
+        if (data.has(COL_SALE_CODES)) {
+            product.saleCodes = incomingSaleCodes(data, product.ean);
+        }
+    }
+
+    /**
+     * Carries the dedicated columns that land in the attribute map: the
+     * checkout mode, the unit code, the VAT regime and the VAT exemption
+     * (BO-02-03-05, -17, -21 to -27). Each is optional and touches its code
+     * only when the feed declares it; an empty cell withdraws the code, so
+     * "no mode", "no unit" and "no regime" each have ONE representation — the
+     * absence of the key.
+     *
+     * @param data the parsed CSV line
+     * @param target the attribute map, mutated in place
+     */
+    private void mapAttributeColumns(LineData data, Map<String, String> target) {
+        if (data.has(COL_CHECKOUT_MODE)) {
+            putOrRemove(target, ProductAttributeCatalog.CHECKOUT_MODE, upperOrNull(safeGet(data, COL_CHECKOUT_MODE)));
+        }
+        if (data.has(COL_UNIT_CODE)) {
+            putOrRemove(target, ProductAttributeCatalog.UNIT_CODE, upperOrNull(safeGet(data, COL_UNIT_CODE)));
+        }
+        if (data.has(COL_VAT_NUMBER)) {
+            putOrRemove(target, ProductAttributeCatalog.VAT_NUMBER, upperOrNull(safeGet(data, COL_VAT_NUMBER)));
+        }
+        if (data.has(COL_VAT_EXEMPT)) {
+            target.put(ProductAttributeCatalog.VAT_EXEMPT,
+                    String.valueOf(safeParseBoolean(data, COL_VAT_EXEMPT)));
+        }
+    }
+
+    /**
+     * Poses a code in an attribute map, or withdraws it when the value is null.
+     *
+     * @param target the attribute map
+     * @param code the attribute code
+     * @param value the value, or null to withdraw the code
+     */
+    private void putOrRemove(Map<String, String> target, String code, String value) {
+        if (value == null) {
+            target.remove(code);
+        } else {
+            target.put(code, value);
+        }
+    }
+
+    /**
+     * Trims and upper-cases a cell, null when it is null or blank.
+     *
+     * @param raw the raw cell
+     * @return the normalized value, or null
+     */
+    private String upperOrNull(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        return raw.trim().toUpperCase(java.util.Locale.ROOT);
+    }
+
+    /**
+     * Trims a cell, null when it is null or blank.
+     *
+     * @param raw the raw cell
+     * @return the trimmed value, or null
+     */
+    private String trimOrNull(String raw) {
+        return raw == null || raw.isBlank() ? null : raw.trim();
+    }
+
+    /**
+     * The unit label the line gives the article (BO-02-03-17): the symbol of the
+     * declared unit when the line names a unit code the referential knows,
+     * otherwise the line's own UNIT_NAME, exactly as before the code existed.
+     *
+     * @param data the parsed CSV line
+     * @return the unit label, or null
+     */
+    private String incomingUnitName(LineData data) {
+        if (data.has(COL_UNIT_CODE)) {
+            MeasureUnit unit = MeasureUnit.findByCode(safeGet(data, COL_UNIT_CODE));
+            if (unit != null) {
+                return unit.symbol;
+            }
+        }
+        return safeGet(data, COL_UNIT_NAME);
+    }
+
+    /**
+     * Reads the additional sale codes of one line (BO-02-03-03): split on
+     * semicolons, trimmed, blanks and the article's own EAN dropped, each code
+     * once.
+     *
+     * @param data the parsed CSV line
+     * @param ean the article's EAN, never repeated as a sale code of itself
+     * @return the codes, in code order
+     */
+    private java.util.TreeSet<String> incomingSaleCodes(LineData data, String ean) {
+        java.util.TreeSet<String> codes = new java.util.TreeSet<>();
+        String raw = safeGet(data, COL_SALE_CODES);
+        if (raw == null) {
+            return codes;
+        }
+        for (String entry : raw.split(";")) {
+            String code = entry.trim();
+            if (!code.isEmpty() && !code.equals(ean)) {
+                codes.add(code);
+            }
+        }
+        return codes;
     }
 
     /**
@@ -362,6 +512,7 @@ public class ProductCsvResource extends ImporterCsvResource {
         if (data.has(COL_ATTRIBUTES)) {
             mergeAttributes(attributes, safeGet(data, COL_ATTRIBUTES));
         }
+        mapAttributeColumns(data, attributes);
         return attributes;
     }
 
@@ -385,11 +536,13 @@ public class ProductCsvResource extends ImporterCsvResource {
         String checkoutLabel = data.has(COL_CHECKOUT_LABEL)
                 ? safeGet(data, COL_CHECKOUT_LABEL) : existing.checkoutLabel;
         String internalCode = data.has(COL_INTERNAL_CODE)
-                ? safeGet(data, COL_INTERNAL_CODE) : existing.internalCode;
+                ? trimOrNull(safeGet(data, COL_INTERNAL_CODE)) : existing.internalCode;
         boolean variableWeight = data.has(COL_VARIABLE_WEIGHT)
                 ? safeParseBoolean(data, COL_VARIABLE_WEIGHT) : existing.variableWeight;
         String egalimRegime = data.has(COL_EGALIM_REGIME)
                 ? egalimRegime(data) : existing.egalimRegime;
+        java.util.Set<String> saleCodes = data.has(COL_SALE_CODES)
+                ? incomingSaleCodes(data, data.code) : existing.saleCodes;
         return Objects.hash(
                 data.code,                                      // ean
                 plu == null ? "" : plu,                         // plu
@@ -399,14 +552,15 @@ public class ProductCsvResource extends ImporterCsvResource {
                 safeParseBigDecimal(data, COL_REFERENCE_WEIGHT),// referenceWeight
                 safeParseBigDecimal(data, COL_REFERENCE_VOLUME),// referenceVolume
                 safeParseProductType(data, COL_PRODUCT_TYPE),   // productType
-                safeGet(data, COL_UNIT_NAME),                   // unitName
+                incomingUnitName(data),                         // unitName (BO-02-03-17)
                 safeParseBoolean(data, COL_ACTIVE),             // active
                 forbidden,                                      // forbiddenToSale
                 checkoutLabel,                                  // checkoutLabel
                 internalCode,                                   // internalCode
                 variableWeight,                                 // variableWeight
                 egalimRegime,                                   // egalimRegime
-                incomingAttributes(data, existing)              // attributes (BO-02-03-18)
+                incomingAttributes(data, existing),             // attributes (BO-02-03-18)
+                saleCodes                                       // saleCodes (BO-02-03-03)
         );
     }
 

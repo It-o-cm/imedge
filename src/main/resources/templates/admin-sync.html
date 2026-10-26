@@ -7,35 +7,35 @@
 !}
 {#include admin-layout}
 
-{#title}Supervision des flux{/title}
+{#title}{inject:i18n.get('t.supervision-des-flux')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Supervision des flux</h1>
-        <p class="page-sub">État local des flux sortants de ce nœud — flux moteur, tirage référentiel, outbox magasin. Ce nœud ne connaît que lui-même.</p>
+        <h1>{inject:i18n.get('t.supervision-des-flux')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.etat-local-des-flux-sortants-de-ce')}</p>
     </div>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 <div class="sync-health {#if view.healthy}sync-health-ok{#else}sync-health-warn{/if}" role="status">
-    {#if view.healthy}Nœud synchronisé — aucune erreur de flux, outbox vide, rien en attente au fil de l'eau.{#else}Anomalie de synchronisation — {#if view.engineError}au moins un flux moteur en erreur. {/if}{#if view.outboxCount > 0}{view.outboxCount} élément(s) en attente dans l'outbox. {/if}{#if view.streamPending > 0}{view.streamPending} événement(s) non diffusé(s) au fil de l'eau.{/if}{/if}
+    {#if view.healthy}{inject:i18n.get('t.nud-synchronise-aucune-erreur-de-flux-outbox')}{#else}{inject:i18n.get('t.anomalie-de-synchronisation')} {#if view.engineError}{inject:i18n.get('t.au-moins-un-flux-moteur-en-erreur')} {/if}{#if view.outboxCount > 0}{view.outboxCount} {inject:i18n.get('t.element-s-en-attente-dans-l-outbox')} {/if}{#if view.streamPending > 0}{view.streamPending} {inject:i18n.get('t.evenement-s-non-diffuse-s-au-fil')}{/if}{/if}
 </div>
 
 <div class="card">
     <div class="card-head">
-        <h2 class="card-title">Flux moteur (valuation)</h2>
+        <h2 class="card-title">{inject:i18n.get('t.flux-moteur-valuation')}</h2>
         <form method="post" action="/admin/sync/deliver" class="card-action">
-            <button class="btn btn-primary" type="submit">Relancer la livraison</button>
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.relancer-la-livraison')}</button>
         </form>
     </div>
-    <p class="card-sub">Livraison automatique toutes les {view.deliverySeconds} s. État rafraîchi toutes les 2 s.</p>
+    <p class="card-sub">{inject:i18n.get('t.livraison-automatique-toutes-les')} {view.deliverySeconds} {inject:i18n.get('t.s-etat-rafraichi-toutes-les-2-s')}</p>
     <table class="sync-table">
         <thead>
-            <tr><th>Code</th><th>Version</th><th>Appliquée</th><th>Version moteur</th><th>Reçu</th><th>Appliqué</th><th>Dernière erreur</th><th>Action</th></tr>
+            <tr><th>{inject:i18n.get('t.code')}</th><th>{inject:i18n.get('t.version')}</th><th>{inject:i18n.get('t.appliquee')}</th><th>{inject:i18n.get('t.version-moteur')}</th><th>{inject:i18n.get('t.recu')}</th><th>{inject:i18n.get('t.applique')}</th><th>{inject:i18n.get('t.derniere-erreur')}</th><th>{inject:i18n.get('t.action')}</th></tr>
         </thead>
         <tbody id="sync-feeds" data-refresh-url="/admin/sync/feeds">
             {#fragment id=feeds}
@@ -43,21 +43,21 @@
             <tr class="{#if feed.lastError}row-error{/if}">
                 <td>{feed.code}</td>
                 <td class="mono">{feed.version}</td>
-                <td>{#if feed.applied}oui{#else}non{/if}</td>
+                <td>{#if feed.applied}{inject:i18n.get('t.oui')}{#else}{inject:i18n.get('t.non')}{/if}</td>
                 <td class="mono">{feed.appliedVersion}</td>
                 <td>{feed.receivedAt}</td>
                 <td>{feed.appliedAt}</td>
                 <td class="cell-error">{#if feed.lastError}{feed.lastError}{#else}—{/if}</td>
                 <td class="cell-action">
                     <form method="post" action="/admin/sync/deliver/{feed.code}" class="card-action"
-                          data-confirm="{#if feed.lastError}Rejouer{#else}Livrer maintenant{/if} le flux {feed.code} ?">
-                        <button class="btn btn-small" type="submit">{#if feed.lastError}Rejouer{#else}Livrer maintenant{/if}</button>
+                          data-confirm="{#if feed.lastError}{inject:i18n.get('t.rejouer')}{#else}{inject:i18n.get('t.livrer-maintenant')}{/if} {inject:i18n.get('t.le-flux')} {feed.code} ?">
+                        <button class="btn btn-small" type="submit">{#if feed.lastError}{inject:i18n.get('t.rejouer')}{#else}{inject:i18n.get('t.livrer-maintenant')}{/if}</button>
                     </form>
                 </td>
             </tr>
             {/for}
             {#if view.feeds.isEmpty()}
-            <tr><td colspan="8" class="cell-empty">Aucun flux moteur reçu sur ce nœud.</td></tr>
+            <tr><td colspan="8" class="cell-empty">{inject:i18n.get('t.aucun-flux-moteur-recu-sur-ce-nud')}</td></tr>
             {/if}
             {/fragment}
         </tbody>
@@ -66,15 +66,15 @@
 
 <div class="card">
     <div class="card-head">
-        <h2 class="card-title">Tirage référentiel</h2>
+        <h2 class="card-title">{inject:i18n.get('t.tirage-referentiel')}</h2>
         <form method="post" action="/admin/sync/pull" class="card-action">
-            <button class="btn btn-primary" type="submit">Relancer le tirage</button>
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.relancer-le-tirage')}</button>
         </form>
     </div>
-    <p class="card-sub">Tirage automatique toutes les {view.pullSeconds} s. Dernier tirage réussi : {view.lastPull}.</p>
+    <p class="card-sub">{inject:i18n.get('t.tirage-automatique-toutes-les')} {view.pullSeconds} {inject:i18n.get('t.s-dernier-tirage-reussi')} {view.lastPull}.</p>
     <table class="sync-table">
         <thead>
-            <tr><th>Domaine</th><th>Empreinte appliquée</th><th>Appliqué</th><th>Dernière erreur</th></tr>
+            <tr><th>{inject:i18n.get('t.domaine')}</th><th>{inject:i18n.get('t.empreinte-appliquee')}</th><th>{inject:i18n.get('t.applique')}</th><th>{inject:i18n.get('t.derniere-erreur')}</th></tr>
         </thead>
         <tbody id="sync-pulls" data-refresh-url="/admin/sync/pulls">
             {#fragment id=pulls}
@@ -87,7 +87,7 @@
             </tr>
             {/for}
             {#if view.pulls.isEmpty()}
-            <tr><td colspan="4" class="cell-empty">Aucun référentiel appliqué (nœud fraîchement démarré).</td></tr>
+            <tr><td colspan="4" class="cell-empty">{inject:i18n.get('t.aucun-referentiel-applique-nud-fraichement-demar')}</td></tr>
             {/if}
             {/fragment}
         </tbody>
@@ -95,12 +95,12 @@
 </div>
 
 <div class="card">
-    <h2 class="card-title">Audit des mises à jour du référentiel</h2>
+    <h2 class="card-title">{inject:i18n.get('t.audit-des-mises-a-jour-du-referentiel')}</h2>
     {#if view.auditEnabled}
-    <p class="card-sub">Les {view.audits.size} dernières intégrations, la plus récente en tête.</p>
+    <p class="card-sub">{inject:i18n.get('t.les')} {view.audits.size} {inject:i18n.get('t.dernieres-integrations-la-plus-recente-en-tete')}</p>
     <table class="sync-table">
         <thead>
-            <tr><th>Domaine</th><th>Empreinte</th><th>Horodatage</th><th>Résultat</th><th>Détail</th></tr>
+            <tr><th>{inject:i18n.get('t.domaine')}</th><th>{inject:i18n.get('t.empreinte')}</th><th>{inject:i18n.get('t.horodatage')}</th><th>{inject:i18n.get('t.resultat')}</th><th>{inject:i18n.get('t.detail')}</th></tr>
         </thead>
         <tbody>
             {#for audit in view.audits}
@@ -113,21 +113,21 @@
             </tr>
             {/for}
             {#if view.audits.isEmpty()}
-            <tr><td colspan="5" class="cell-empty">Aucune intégration tracée depuis l'activation.</td></tr>
+            <tr><td colspan="5" class="cell-empty">{inject:i18n.get('t.aucune-integration-tracee-depuis-l-activation')}</td></tr>
             {/if}
         </tbody>
     </table>
     {#else}
-    <p class="card-sub">Traçage désactivé. Activez « Tracer les intégrations de référentiel » dans les paramètres pour conserver l'historique daté de chaque intégration.</p>
+    <p class="card-sub">{inject:i18n.get('t.tracage-desactive-activez-tracer-les-integration')}</p>
     {/if}
 </div>
 
 <div class="card">
-    <h2 class="card-title">Outbox magasin</h2>
-    <p class="card-sub">Purge automatique toutes les {view.pushSeconds} s. {view.outboxCount} élément(s) en attente.</p>
+    <h2 class="card-title">{inject:i18n.get('t.outbox-magasin')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.purge-automatique-toutes-les')} {view.pushSeconds} s. {view.outboxCount} {inject:i18n.get('t.element-s-en-attente')}</p>
     <table class="sync-table">
         <thead>
-            <tr><th>Type</th><th>En attente</th><th>Tentatives max</th><th>Dernière erreur</th></tr>
+            <tr><th>{inject:i18n.get('t.type')}</th><th>{inject:i18n.get('t.en-attente')}</th><th>{inject:i18n.get('t.tentatives-max')}</th><th>{inject:i18n.get('t.derniere-erreur')}</th></tr>
         </thead>
         <tbody id="sync-outbox" data-refresh-url="/admin/sync/outbox">
             {#fragment id=backlog}
@@ -140,7 +140,7 @@
             </tr>
             {/for}
             {#if view.backlog.isEmpty()}
-            <tr><td colspan="4" class="cell-empty">Outbox vide — nœud entièrement synchronisé.</td></tr>
+            <tr><td colspan="4" class="cell-empty">{inject:i18n.get('t.outbox-vide-nud-entierement-synchronise')}</td></tr>
             {/if}
             {/fragment}
         </tbody>
@@ -152,70 +152,78 @@
  ! regarde. Rien n'est jamais abandonné : un événement non livré garde sa place
  ! et son rang, et compte ses tentatives jusqu'à ce qu'il passe. !}
 <div class="card">
-    <h2 class="card-title">Fil de l'eau</h2>
+    <h2 class="card-title">{inject:i18n.get('t.fil-de-l-eau')}</h2>
     {#if view.streamEnabled}
-    <p class="card-sub">Diffusion des ventes, retours et tickets monétiques aux fournisseurs de service abonnés, toutes les {view.streamSeconds} s. {view.streamPending} événement(s) en attente. Les destinataires se déclarent dans <a href="/admin/providers">Fournisseurs de service</a>.</p>
+    <p class="card-sub">{inject:i18n.get('t.diffusion-des-ventes-retours-et-tickets-monetiqu')} {view.streamSeconds} s. {view.streamPending} {inject:i18n.get('t.evenement-s-en-attente-les-destinataires-se')} <a href="/admin/providers">{inject:i18n.get('t.fournisseurs-de-service')}</a>.</p>
     {#else}
-    <p class="card-sub">Diffusion au fil de l'eau désactivée sur cet échelon : rien n'est mis en file. L'activation est un paramètre, les destinataires se déclarent dans <a href="/admin/providers">Fournisseurs de service</a>.</p>
+    <p class="card-sub">{inject:i18n.get('t.diffusion-au-fil-de-l-eau-desactivee')} <a href="/admin/providers">{inject:i18n.get('t.fournisseurs-de-service')}</a>.</p>
     {/if}
     <table class="sync-table">
         <thead>
-            <tr><th>Abonné</th><th>En attente</th><th>Tentatives max</th><th>Dernière erreur</th><th>État</th></tr>
+            <tr><th>{inject:i18n.get('t.abonne')}</th><th>{inject:i18n.get('t.en-attente')}</th><th>{inject:i18n.get('t.tentatives-max')}</th><th>{inject:i18n.get('t.derniere-erreur')}</th><th>{inject:i18n.get('t.etat')}</th></tr>
         </thead>
         <tbody>
             {#for row in view.stream}
             <tr class="{#if row.lastError}row-error{/if}">
-                <td>{row.label}</td>
+                <td>{inject:i18n.text(row.label)}</td>
                 <td>{row.pending}</td>
                 <td>{row.maxAttempts}</td>
                 <td class="cell-error">{#if row.lastError}{row.lastError}{#else}—{/if}</td>
-                <td>{#if row.reachable}<span class="badge badge-ok">Joignable</span>{#else}<span class="badge badge-off">Injoignable</span>{/if}</td>
+                <td>{#if row.reachable}<span class="badge badge-ok">{inject:i18n.get('t.joignable')}</span>{#else}<span class="badge badge-off">{inject:i18n.get('t.injoignable')}</span>{/if}</td>
             </tr>
             {/for}
             {#if view.stream.isEmpty()}
-            <tr><td colspan="5" class="cell-empty">Rien en attente — tous les abonnés sont à jour.</td></tr>
+            <tr><td colspan="5" class="cell-empty">{inject:i18n.get('t.rien-en-attente-tous-les-abonnes-sont')}</td></tr>
             {/if}
         </tbody>
     </table>
     <form method="post" action="/admin/sync/stream">
-        <button class="btn btn-ghost" type="submit">Relancer la diffusion</button>
+        <button class="btn btn-ghost" type="submit">{inject:i18n.get('t.relancer-la-diffusion')}</button>
     </form>
 </div>
 
 <div class="card">
-    <h2 class="card-title">Flux sortants</h2>
-    <p class="card-sub">Onze flux : chiffre d'affaires, livre de caisse, CA par famille et par îlot, détail des transactions, synthèse de clôture, productivité des caisses, factures clients en compte (fichier plat), factures du jour vers l'ERP, ventilation TVA des commandes, panels marketing (archive) — et la conso fidélité par TVA, seul flux mensuel. Activation flux par flux, répertoire de dépôt et heure de bascule comptable s'administrent dans le paramétrage, par échelon. La régénération réécrit les mêmes fichiers : un flux est une fonction de sa période, pas un envoi qu'on rejoue.</p>
+    <h2 class="card-title">{inject:i18n.get('t.flux-sortants')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.onze-flux-chiffre-d-affaires-livre-de')}</p>
     <form method="post" action="/admin/sync/export" class="sync-schedule-form">
         <label class="sync-schedule-field">
-            <span>Journée comptable</span>
+            <span>{inject:i18n.get('t.journee-comptable')}</span>
             <input type="date" name="day">
         </label>
-        <button class="btn btn-primary" type="submit">Régénérer les flux</button>
+        <button class="btn btn-primary" type="submit">{inject:i18n.get('t.regenerer-les-flux')}</button>
     </form>
 </div>
 
 <div class="card">
-    <h2 class="card-title">Planifications</h2>
-    <p class="card-sub">Livraisons différées : la boucle de livraison les exécute à son réveil (précision à la minute). Une planification en attente reste annulable.</p>
+    <h2 class="card-title">{inject:i18n.get('t21.flux-d-integration')}</h2>
+    <p class="card-sub">{inject:i18n.get('t21.flux-d-integration-aide')}</p>
+    <form method="post" action="/admin/sync/integration-pull" class="sync-schedule-form">
+        <button class="btn btn-primary" type="submit">{inject:i18n.get('t21.recuperer-maintenant')}</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.planifications')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.livraisons-differees-la-boucle-de-livraison-les')}</p>
     <form method="post" action="/admin/sync/schedule" class="sync-schedule-form">
         <label class="sync-schedule-field">
-            <span>Flux</span>
+            <span>{inject:i18n.get('t.flux')}</span>
             <select name="feedCode">
-                <option value="">Tous les flux</option>
+                <option value="">{inject:i18n.get('t.tous-les-flux')}</option>
                 {#for code in view.feedCodes}
                 <option value="{code}">{code}</option>
                 {/for}
             </select>
         </label>
         <label class="sync-schedule-field">
-            <span>Date et heure</span>
+            <span>{inject:i18n.get('t.date-et-heure')}</span>
             <input type="datetime-local" name="scheduledAt" required>
         </label>
-        <button class="btn btn-primary" type="submit">Planifier</button>
+        <button class="btn btn-primary" type="submit">{inject:i18n.get('t.planifier')}</button>
     </form>
     <table class="sync-table">
         <thead>
-            <tr><th>Flux</th><th>Échéance</th><th>Demandé par</th><th>État</th><th>Message</th><th>Action</th></tr>
+            <tr><th>{inject:i18n.get('t.flux')}</th><th>{inject:i18n.get('t.echeance')}</th><th>{inject:i18n.get('t.demande-par')}</th><th>{inject:i18n.get('t.etat')}</th><th>{inject:i18n.get('t.message')}</th><th>{inject:i18n.get('t.action')}</th></tr>
         </thead>
         <tbody>
             {#for row in view.schedules}
@@ -228,33 +236,33 @@
                 <td class="cell-action">
                     {#if row.pending}
                     <form method="post" action="/admin/sync/schedule/{row.id}/cancel" class="card-action"
-                          data-confirm="Annuler la planification du flux {row.feedCode} ?">
-                        <button class="btn btn-small btn-danger" type="submit">Annuler</button>
+                          data-confirm="{inject:i18n.get('t.annuler-la-planification-du-flux')} {row.feedCode} ?">
+                        <button class="btn btn-small btn-danger" type="submit">{inject:i18n.get('t.annuler')}</button>
                     </form>
                     {#else}—{/if}
                 </td>
             </tr>
             {/for}
             {#if view.schedules.isEmpty()}
-            <tr><td colspan="6" class="cell-empty">Aucune livraison planifiée.</td></tr>
+            <tr><td colspan="6" class="cell-empty">{inject:i18n.get('t.aucune-livraison-planifiee')}</td></tr>
             {/if}
         </tbody>
     </table>
 </div>
 
 <div class="card">
-    <h2 class="card-title">Session locale</h2>
+    <h2 class="card-title">{inject:i18n.get('t.session-locale')}</h2>
     {#if sessionOpen}
-    <p class="card-sub">Une session est ouverte sur ce nœud. Le forçage la clôture sans caissier de clôture ni comptage — recours quand le poste est resté ouvert.</p>
+    <p class="card-sub">{inject:i18n.get('t.une-session-est-ouverte-sur-ce-nud')}</p>
     <form method="post" action="/admin/sync/force-close" class="card-action">
-        <button class="btn btn-danger" type="submit">Forcer la clôture de la session</button>
+        <button class="btn btn-danger" type="submit">{inject:i18n.get('t.forcer-la-cloture-de-la-session')}</button>
     </form>
     {#else}
-    <p class="card-sub">Aucune session ouverte sur ce nœud.</p>
+    <p class="card-sub">{inject:i18n.get('t.aucune-session-ouverte-sur-ce-nud')}</p>
     {/if}
 </div>
 <script src="/admin-assets/confirm.js"></script>
 <script src="/admin-assets/sync-refresh.js"></script>
 {/body}
 
-{#footer}La supervision est locale à ce nœud : elle n'affiche jamais l'état d'une autre caisse (une caisse coupée du réseau continue de vendre).{/footer}
+{#footer}{inject:i18n.get('t.la-supervision-est-locale-a-ce-nud')}{/footer}

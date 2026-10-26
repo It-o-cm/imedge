@@ -1,5 +1,9 @@
 package com.intermarche.edge.ui.admin;
 
+import io.quarkus.security.Authenticated;
+import com.intermarche.edge.security.FeatureAccess;
+import com.intermarche.edge.domain.setting.Feature;
+import com.intermarche.edge.domain.people.CrudOption;
 import com.intermarche.edge.domain.people.Employee;
 import com.intermarche.edge.domain.store.CheckoutIsland;
 import com.intermarche.edge.domain.store.CheckoutPoint;
@@ -9,7 +13,6 @@ import com.intermarche.edge.domain.store.TpvType;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
@@ -45,6 +48,10 @@ public class AdminCheckoutPointResource {
     /** The redirect target, equal to the resource path. */
     private static final String PAGE = "/admin/checkout-points";
 
+    /** The echelon engine the point's own menu is mirrored into (BO-03-10-09). */
+    @Inject
+    com.intermarche.edge.service.EchelonSettingService echelonSettings;
+
     /** The checkout-points page template. */
     @Inject
     @Location("admin-checkout-points")
@@ -58,7 +65,8 @@ public class AdminCheckoutPointResource {
      * @return the page
      */
     @GET
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.CHECKOUT_POINT)
     @Transactional
     public TemplateInstance pointsPage(@QueryParam("notice") String notice,
                                        @QueryParam("noticeOk") @DefaultValue("true") boolean noticeOk) {
@@ -73,6 +81,9 @@ public class AdminCheckoutPointResource {
                 .data("scaleProtocols", com.intermarche.edge.domain.store.ScaleProtocol.values())
                 .data("coinProtocols",
                         com.intermarche.edge.domain.store.CoinMachineProtocol.values())
+                .data("hostesses", Employee.list("role = ?1 and active = true order by lastName",
+                        Employee.EmployeeRole.TECHNICAL_HOSTESS))
+                .data("menus", com.intermarche.edge.domain.store.CashMenu.listActive())
                 .data("notice", notice)
                 .data("noticeOk", noticeOk);
     }
@@ -88,7 +99,8 @@ public class AdminCheckoutPointResource {
      */
     @POST
     @Path("/save")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.CHECKOUT_POINT, option = CrudOption.CREATE, updateKey = "terminalId", entity = com.intermarche.edge.domain.store.CheckoutPoint.class)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response savePoint(MultivaluedMap<String, String> form) {
@@ -109,9 +121,30 @@ public class AdminCheckoutPointResource {
             return AdminForms.redirect(PAGE, "Point de vente inconnu : " + pdvNumber, false);
         }
         String hostessBadge = AdminForms.text(form, "technicalHostessBadge");
-        if (hostessBadge != null && Employee.find("badgeId", hostessBadge).firstResult() == null) {
+        TpvType tpvType = TpvType.fromName(AdminForms.text(form, "tpvType"));
+        if (hostessBadge != null) {
+            // BO-03-09-08: the hostess is chosen IN THE LIST of the technical
+            // hostesses, and only for a self-service point.
+            Employee hostess = Employee.find("badgeId", hostessBadge).firstResult();
+            if (hostess == null) {
+                LOGGER.info("Exiting method savePoint");
+                return AdminForms.redirect(PAGE, "Hôtesse inconnue (badge " + hostessBadge + ").", false);
+            }
+            if (hostess.role != Employee.EmployeeRole.TECHNICAL_HOSTESS) {
+                LOGGER.info("Exiting method savePoint");
+                return AdminForms.redirect(PAGE, "Le badge " + hostessBadge
+                        + " n'est pas celui d'une hôtesse technique.", false);
+            }
+            if (tpvType == null || !tpvType.isSelfService()) {
+                LOGGER.info("Exiting method savePoint");
+                return AdminForms.redirect(PAGE,
+                        "Une hôtesse technique ne s'affecte qu'à une caisse libre-service.", false);
+            }
+        }
+        String menuCode = AdminForms.text(form, "menuTemplateCode");
+        if (menuCode != null && com.intermarche.edge.domain.store.CashMenu.findByCode(menuCode) == null) {
             LOGGER.info("Exiting method savePoint");
-            return AdminForms.redirect(PAGE, "Hôtesse inconnue (badge " + hostessBadge + ").", false);
+            return AdminForms.redirect(PAGE, "Menu caisse inconnu : " + menuCode, false);
         }
         CheckoutPoint existing = CheckoutPoint.findByTerminal(terminalId);
         CheckoutPoint point = existing;
@@ -124,7 +157,6 @@ public class AdminCheckoutPointResource {
         point.pdvNumber = pdvNumber;
         point.islandCode = islandCode;
         point.active = AdminForms.checkbox(form, "active");
-        TpvType tpvType = TpvType.fromName(AdminForms.text(form, "tpvType"));
         point.tpvType = tpvType == null ? TpvType.CASH_REGISTER : tpvType;
         point.technicalHostessBadge = hostessBadge;
         point.cashierDisplayType = display(AdminForms.text(form, "cashierDisplayType"));
@@ -141,7 +173,16 @@ public class AdminCheckoutPointResource {
         point.coinMachineProtocol = coinProtocol(AdminForms.text(form, "coinMachineProtocol"));
         point.coinMachineAddress = AdminForms.text(form, "coinMachineAddress");
         point.coinMachinePort = port(AdminForms.text(form, "coinMachinePort"));
-        point.menuTemplateCode = AdminForms.text(form, "menuTemplateCode");
+        point.menuTemplateCode = menuCode;
+        // BO-03-10-09: the menu of the point is also its echelon value, so the
+        // grouped configuration and the register read the same thing.
+        if (menuCode == null) {
+            echelonSettings.clear(com.intermarche.edge.domain.setting.EchelonLevel.CHECKOUT_POINT,
+                    terminalId, "menu.code");
+        } else {
+            echelonSettings.set(com.intermarche.edge.domain.setting.EchelonLevel.CHECKOUT_POINT,
+                    terminalId, "menu.code", menuCode);
+        }
         LOGGER.info("Exiting method savePoint");
         return AdminForms.redirect(PAGE, existing == null ? "Point de caisse créé." : "Point de caisse enregistré.", true);
     }
@@ -154,7 +195,8 @@ public class AdminCheckoutPointResource {
      */
     @POST
     @Path("/delete")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.CHECKOUT_POINT, option = CrudOption.DELETE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response deletePoint(MultivaluedMap<String, String> form) {

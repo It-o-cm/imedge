@@ -33,6 +33,17 @@ public class RefundReport implements ReportDefinition {
     private static final Logger LOGGER = Logger.getLogger(RefundReport.class);
 
     /** The persistence session the query runs on. */
+    /**
+     * The French names of the refund methods: a state never shows a bare
+     * technical key (CASH, VOUCHER).
+     */
+    static final java.util.Map<String, String> METHOD_NAMES = java.util.Map.of(
+            "CASH", "Espèces",
+            "CARD", "Carte bancaire",
+            "VOUCHER", "Bon d'achat",
+            "LOYALTY", "Fidélité",
+            "CREDIT", "Crédit client");
+
     @Inject EntityManager entityManager;
 
     /**
@@ -109,22 +120,20 @@ public class RefundReport implements ReportDefinition {
         LOGGER.info("Entering method rows");
         StringBuilder jpql = new StringBuilder(
                 "select r.creationDate, r.terminalId, r.refundNumber, r.refundMethod,"
-                        + " r.originalTicketId, size(r.lines), r.totalAmount,"
+                        + " (select t.ticketNumber from Ticket t where t.id = r.originalTicketId),"
+                        + " size(r.lines), r.totalAmount,"
                         + " r.cashierBadgeId, r.supervisorBadgeId, r.returnTypeCode,"
                         + " r.returnTypeLabel, r.returnReasonCode, r.returnReason"
                         + " from Refund r where r.status = :closed"
                         + " and r.creationDate >= :from and r.creationDate < :to");
-        if (!criteria.terminals.isEmpty()) {
-            jpql.append(" and r.terminalId in :terminals");
-        }
+        // BO-03-09-01: the registers chosen, and the deactivated ones left out.
+        jpql.append(criteria.terminalFilter("r.terminalId"));
         jpql.append(" order by r.creationDate");
         var query = entityManager.createQuery(jpql.toString(), Object[].class)
                 .setParameter("closed", com.intermarche.edge.domain.sale.Refund.RefundStatus.CLOSED)
                 .setParameter("from", criteria.from())
                 .setParameter("to", criteria.to());
-        if (!criteria.terminals.isEmpty()) {
-            query.setParameter("terminals", criteria.terminals);
-        }
+        criteria.bindTerminals(query);
         List<List<Object>> rows = new ArrayList<>();
         for (Object[] line : query.getResultList()) {
             rows.add(Arrays.asList(
@@ -135,7 +144,7 @@ public class RefundReport implements ReportDefinition {
                     line[8] == null ? "" : line[8],
                     line[9] == null ? "" : line[9],
                     line[10] == null ? "" : line[10],
-                    line[3] == null ? "" : String.valueOf(line[3]),
+                    line[3] == null ? "" : methodLabel(String.valueOf(line[3])),
                     line[11] == null ? "" : line[11],
                     line[12] == null ? "" : line[12],
                     line[4] == null ? "" : String.valueOf(line[4]),
@@ -144,5 +153,15 @@ public class RefundReport implements ReportDefinition {
         }
         LOGGER.info("Exiting method rows with " + rows.size() + " row(s)");
         return rows;
+    }
+
+    /**
+     * Names a refund method in French.
+     *
+     * @param method the method's technical key
+     * @return its French name, the key itself for a method this state does not know
+     */
+    static String methodLabel(String method) {
+        return METHOD_NAMES.getOrDefault(method, method);
     }
 }

@@ -128,4 +128,99 @@ class ReportDataTest {
         assertTrue(data(ReportFixture.standard().rows(null)).hasTotals());
         assertEquals(2, data(ReportFixture.standard().rows(null)).size());
     }
+
+    /**
+     * A broken report closes each group with its subtotal, named in the break
+     * column, the totalled columns summed and the others empty; the grand
+     * total and the data rows leave the subtotals out; a row too short for
+     * the break column is a group of its own.
+     */
+    @Test
+    void aBrokenReportClosesEachGroup() {
+        List<List<Object>> rows = new java.util.ArrayList<>();
+        rows.add(java.util.Arrays.asList("CASH", "A", 1L, new BigDecimal("2.00"), null, null));
+        rows.add(java.util.Arrays.asList("CASH", "B", 2L, new BigDecimal("3.00"), null, null));
+        rows.add(java.util.Arrays.asList("CARD", "C", 4L, new BigDecimal("5.00"), null, null));
+        rows.add(List.of());
+        ReportFixture fixture = new ReportFixture(-1, rows) {
+            /**
+             * {@inheritDoc}
+             *
+             * @return the type column
+             */
+            @Override
+            public String breakKey() {
+                return "k";
+            }
+        };
+        ReportData data = new ReportData(fixture, rows);
+        assertEquals(7, data.rows.size());
+        List<Object> cash = data.rows.get(2);
+        assertTrue(ReportData.isSubtotal(cash));
+        assertEquals("Sous-total CASH", cash.get(0));
+        assertEquals(null, cash.get(1));
+        assertEquals(3L, cash.get(2));
+        assertEquals(new BigDecimal("5.00"), cash.get(3));
+        assertEquals("Sous-total CARD", data.rows.get(4).get(0));
+        assertEquals("Sous-total ", data.rows.get(6).get(0));
+        assertEquals(4, data.dataRows().size());
+        assertEquals(7L, data.totals.get(2));
+        assertFalse(ReportData.isSubtotal(data.rows.get(0)));
+    }
+
+    /**
+     * A break key naming no column breaks nothing.
+     */
+    @Test
+    void anUnknownBreakKeyBreaksNothing() {
+        List<List<Object>> rows = List.of(java.util.Arrays.asList("CASH", "A", 1L, BigDecimal.ONE, null, null));
+        ReportFixture fixture = new ReportFixture(-1, rows) {
+            /**
+             * {@inheritDoc}
+             *
+             * @return a key no column carries
+             */
+            @Override
+            public String breakKey() {
+                return "nope";
+            }
+        };
+        assertEquals(1, new ReportData(fixture, rows).rows.size());
+    }
+
+    /**
+     * A broken report without rows writes no subtotal.
+     */
+    @Test
+    void anEmptyBrokenReportWritesNoSubtotal() {
+        ReportFixture fixture = new ReportFixture(-1, List.of()) {
+            /**
+             * {@inheritDoc}
+             *
+             * @return the type column
+             */
+            @Override
+            public String breakKey() {
+                return "k";
+            }
+        };
+        assertTrue(new ReportData(fixture, List.of()).rows.isEmpty());
+    }
+
+    /**
+     * A subtotal the report wrote itself — a mean row — is left out of the
+     * grand total.
+     */
+    @Test
+    void aReportsOwnSubtotalIsNotTotalled() {
+        List<List<Object>> rows = new java.util.ArrayList<>();
+        rows.add(java.util.Arrays.asList("CASH", "A", 1L, new BigDecimal("2.00"), null, null));
+        ReportData.Subtotal mean = new ReportData.Subtotal();
+        mean.addAll(java.util.Arrays.asList("Moyenne", "", 1L, new BigDecimal("2.00"), null, null));
+        rows.add(mean);
+        ReportFixture fixture = new ReportFixture(-1, rows);
+        ReportData data = new ReportData(fixture, rows);
+        assertEquals(1L, data.totals.get(2));
+        assertEquals(new BigDecimal("2.00"), data.totals.get(3));
+    }
 }

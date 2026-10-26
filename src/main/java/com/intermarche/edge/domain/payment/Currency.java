@@ -23,9 +23,9 @@ import java.util.List;
  * counter, but it turns every conversion into a division, and a division is where
  * the rounding arguments start.
  *
- * <p>CHANGE IS ALWAYS GIVEN IN EUROS. A till holds a euro float; it does not hold a
- * Swiss float, so it cannot give Swiss change. Nothing here carries a change
- * currency because there is no decision to make.
+ * <p>CHANGE IS GIVEN IN EUROS UNLESS THE SHOP SAYS OTHERWISE (BO-03-02-39): a
+ * frontier store whose drawer holds francs may give the change of a franc
+ * settlement in francs, which is what {@link #changeTenderCode} administers.
  */
 @Entity
 @Table(name = "currencies")
@@ -125,5 +125,17 @@ public class Currency extends PanacheEntity {
      */
     public String displayUnit() {
         return symbol != null && !symbol.isBlank() ? symbol : code;
+    }
+
+    /**
+     * Tells whether the change of a settlement in this currency is given back
+     * in this currency rather than in euros (BO-03-02-39): the change tender
+     * names a drawer other than the euro cash one.
+     *
+     * @return true when a change tender other than the cash is administered
+     */
+    public boolean changeInCurrency() {
+        return changeTenderCode != null && !changeTenderCode.isBlank()
+                && !"CASH".equalsIgnoreCase(changeTenderCode.trim());
     }
 }

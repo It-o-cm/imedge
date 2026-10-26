@@ -8,28 +8,28 @@
 !}
 {#include admin-layout}
 
-{#title}Fiche client{/title}
+{#title}{inject:i18n.get('t.fiche-client')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Fiche client</h1>
-        <p class="page-sub">Client en compte : coordonnées, conditions de crédit et champs libres.</p>
+        <h1>{inject:i18n.get('t.fiche-client')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.client-en-compte-coordonnees-conditions-de-credi')}</p>
     </div>
     <div class="page-actions">
-        <a class="btn btn-ghost" href="/admin/customers">Retour à la liste</a>
+        <a class="btn btn-ghost" href="/admin/customers">{inject:i18n.get('t.retour-a-la-liste')}</a>
     </div>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 {#if !customer}
 <div class="card">
     <div class="empty-state">
-        <p>Client inconnu.</p>
-        <p class="empty-hint">La fiche a peut-être été supprimée depuis l'ouverture de la liste.</p>
+        <p>{inject:i18n.get('t.client-inconnu')}</p>
+        <p class="empty-hint">{inject:i18n.get('t.la-fiche-a-peut-etre-ete-supprimee')}</p>
     </div>
 </div>
 {#else}
@@ -40,40 +40,52 @@
 <div class="card">
     <h2 class="card-title">{customer.companyName}</h2>
     <p class="card-sub">
-        Numéro {customer.accountNumber} ·
-        {#if customer.origin.name == 'INTEGRATED'}intégré de la gestion commerciale{#else if customer.origin.name == 'BACK_OFFICE'}ouvert au back-office{#else}créé en caisse{/if}
-        {#if customer.blocked} · <strong>compte bloqué</strong>{/if}
+        {inject:i18n.get('t.numero')} {customer.accountNumber} ·
+        {#if customer.origin.name == 'INTEGRATED'}{inject:i18n.get('t.integre-de-la-gestion-commerciale')}{#else if customer.origin.name == 'BACK_OFFICE'}{inject:i18n.get('t.ouvert-au-back-office')}{#else}{inject:i18n.get('t.cree-en-caisse')}{/if}
+        {#if customer.blocked} · <strong>{inject:i18n.get('t.compte-bloque')}</strong>{/if}
     </p>
     <dl class="field-grid">
         <div class="field">
-            <dt class="field-label">Encours</dt>
-            <dd>{customer.creditBalance} € sur {customer.creditLimit ?: '—'} €</dd>
+            <dt class="field-label">{inject:i18n.get('t.encours')}</dt>
+            <dd>{inject:i18n.money(customer.creditBalance)} {inject:i18n.get('t.sur-2')} {#if customer.creditLimit != null}{inject:i18n.money(customer.creditLimit)}{#else}—{/if} €</dd>
         </div>
         <div class="field">
-            <dt class="field-label">Crédit disponible</dt>
-            <dd>{customer.creditAvailable} €</dd>
+            <dt class="field-label">{inject:i18n.get('t.credit-disponible')}</dt>
+            <dd>{inject:i18n.money(customer.creditAvailable)} €</dd>
         </div>
         <div class="field">
-            <dt class="field-label">Dernier règlement crédit</dt>
-            <dd>{#if lastMovement}{lastMovement.date} — {lastMovement.amount} €{#else}Aucun{/if}</dd>
+            <dt class="field-label">{inject:i18n.get('t.dernier-reglement-credit')}</dt>
+            <dd>{#if lastMovement}{lastMovement.date.format('dd/MM/yyyy HH:mm')} — {inject:i18n.money(lastMovement.amount)} €{#else}{inject:i18n.get('t.aucun-2')}{/if}</dd>
+        </div>
+        {! BO-02-04-13 : où en est la remontée de la fiche vers la gestion
+         ! commerciale — acquittée, ou en attente avec ses tentatives. !}
+        <div class="field">
+            <dt class="field-label">{inject:i18n.get('t.q-remontee-gestion-commerciale')}</dt>
+            <dd id="customer-uplink">{#if !uplink}{inject:i18n.get('t.q-aucune-modification-a-remonter')}{#else if uplink.acknowledgedAt}{inject:i18n.get('t.q-acquittee-le')} {uplink.acknowledgedAt.format('dd/MM/yyyy HH:mm')}{#else}{inject:i18n.get('t.q-en-attente-d-acquittement')} — {uplink.attempts} {inject:i18n.get('t.q-tentative-s')}{#if uplink.lastError} ({inject:i18n.text(uplink.lastError)}){/if}{/if}</dd>
         </div>
     </dl>
+    {#if uplink && !uplink.acknowledgedAt}
+    <form method="post" action="/admin/customers/uplink/replay" class="page-actions">
+        <input type="hidden" name="id" value="{customer.id}">
+        <button class="btn btn-ghost" type="submit">{inject:i18n.get('t.q-rejouer-la-remontee')}</button>
+    </form>
+    {/if}
 </div>
 {/if}
 
 <div class="card">
     {#if creating}
-    <h2 class="card-title">Ouverture d'un compte client</h2>
-    <p class="card-sub">Le n° de compte est saisi ici et ne pourra plus être corrigé.</p>
+    <h2 class="card-title">{inject:i18n.get('t.ouverture-d-un-compte-client')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.le-n-de-compte-est-saisi-ici')}</p>
     {#else}
-    <h2 class="card-title">Correction de la fiche</h2>
-    <p class="card-sub">La gestion commerciale réécrit ces champs à chaque intégration.</p>
+    <h2 class="card-title">{inject:i18n.get('t.correction-de-la-fiche')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.la-gestion-commerciale-reecrit-ces-champs-a')}</p>
     {/if}
     <form method="post" action="{#if creating}/admin/customers/new{#else}/admin/customers/edit{/if}">
         {#if creating}
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="f-number">N° de compte</label>
+                <label class="field-label" for="f-number">{inject:i18n.get('t.n-de-compte')}</label>
                 <input class="input-control" id="f-number" type="text" name="accountNumber" value="" required>
             </div>
         </div>
@@ -82,89 +94,118 @@
         {/if}
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="f-company">Raison sociale</label>
+                <label class="field-label" for="f-company">{inject:i18n.get('t.raison-sociale')}</label>
                 <input class="input-control" id="f-company" type="text" name="companyName" value="{customer.companyName}" required>
             </div>
             <div class="field">
-                <label class="field-label" for="f-civility">Civilité</label>
+                <label class="field-label" for="f-civility">{inject:i18n.get('t.civilite')}</label>
                 <input class="input-control" id="f-civility" type="text" name="civility" value="{customer.civility ?: ''}">
             </div>
             <div class="field">
-                <label class="field-label" for="f-first">Prénom du contact</label>
+                <label class="field-label" for="f-first">{inject:i18n.get('t.prenom-du-contact')}</label>
                 <input class="input-control" id="f-first" type="text" name="firstName" value="{customer.firstName ?: ''}">
             </div>
             <div class="field">
-                <label class="field-label" for="f-last">Nom du contact</label>
+                <label class="field-label" for="f-last">{inject:i18n.get('t.nom-du-contact')}</label>
                 <input class="input-control" id="f-last" type="text" name="lastName" value="{customer.lastName ?: ''}">
             </div>
             <div class="field">
-                <label class="field-label" for="f-street">Adresse</label>
+                <label class="field-label" for="f-street">{inject:i18n.get('t.adresse')}</label>
                 <input class="input-control" id="f-street" type="text" name="street" value="{customer.address.streetLine1 ?: ''}">
             </div>
             <div class="field">
-                <label class="field-label" for="f-postal">Code postal</label>
+                <label class="field-label" for="f-postal">{inject:i18n.get('t.code-postal')}</label>
                 <input class="input-control" id="f-postal" type="text" name="postalCode" value="{customer.address.postalCode ?: ''}">
             </div>
             <div class="field">
-                <label class="field-label" for="f-city">Ville</label>
+                <label class="field-label" for="f-city">{inject:i18n.get('t.ville')}</label>
                 <input class="input-control" id="f-city" type="text" name="city" value="{customer.address.city ?: ''}">
             </div>
             <div class="field">
-                <label class="field-label" for="f-siret">SIRET</label>
+                <label class="field-label" for="f-siret">{inject:i18n.get('t.siret')}</label>
                 <input class="input-control" id="f-siret" type="text" name="siret" value="{customer.siret ?: ''}">
             </div>
             <div class="field">
-                <label class="field-label" for="f-vat">N° TVA intracommunautaire</label>
+                <label class="field-label" for="f-vat">{inject:i18n.get('t.n-tva-intracommunautaire')}</label>
                 <input class="input-control" id="f-vat" type="text" name="vatNumber" value="{customer.vatNumber ?: ''}">
             </div>
             <div class="field">
-                <label class="field-label" for="f-nif">Numéro fiscal (NIF)</label>
+                <label class="field-label" for="f-nif">{inject:i18n.get('t.numero-fiscal-nif')}</label>
                 <input class="input-control" id="f-nif" type="text" name="taxId" value="{customer.taxId ?: ''}">
             </div>
             <div class="field">
-                <label class="field-label" for="f-phone">Téléphone</label>
+                <label class="field-label" for="f-phone">{inject:i18n.get('t.telephone-2')}</label>
                 <input class="input-control" id="f-phone" type="text" name="phone" value="{customer.phone ?: ''}">
             </div>
             <div class="field">
-                <label class="field-label" for="f-email">Courriel</label>
+                <label class="field-label" for="f-email">{inject:i18n.get('t.courriel')}</label>
                 <input class="input-control" id="f-email" type="text" name="email" value="{customer.email ?: ''}">
             </div>
             <div class="field">
-                <label class="field-label" for="f-due">Date d'échéance</label>
+                <label class="field-label" for="f-profession">{inject:i18n.get('t.r21v-profession')}</label>
+                <input class="input-control" id="f-profession" type="text" name="profession" value="{customer.profession ?: ''}" maxlength="60">
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-billing-type">{inject:i18n.get('t.r21v-type-de-facturation')}</label>
+                <select class="input-control" id="f-billing-type" name="billingType">
+                    <option value="">—</option>
+                    <option value="AMOUNT" {#if customer.billingType == 'AMOUNT'}selected{/if}>{inject:i18n.get('t.r21v-montant')}</option>
+                    <option value="PERCENT" {#if customer.billingType == 'PERCENT'}selected{/if}>{inject:i18n.get('t.r21v-pourcentage')}</option>
+                    <option value="SUPPLEMENT" {#if customer.billingType == 'SUPPLEMENT'}selected{/if}>{inject:i18n.get('t.r21v-code-supplement')}</option>
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-supplement">{inject:i18n.get('t.r21v-code-supplement')}</label>
+                <input class="input-control" id="f-supplement" type="text" name="supplementCode" value="{customer.supplementCode ?: ''}" maxlength="20">
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-billing-street">{inject:i18n.get('t.r21v-adresse-de-facturation')}</label>
+                <input class="input-control" id="f-billing-street" type="text" name="billingStreet" value="{customer.billingAddress.streetLine1 ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-billing-postal">{inject:i18n.get('t.r21v-code-postal-de-facturation')}</label>
+                <input class="input-control" id="f-billing-postal" type="text" name="billingPostalCode" value="{customer.billingAddress.postalCode ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-billing-city">{inject:i18n.get('t.r21v-ville-de-facturation')}</label>
+                <input class="input-control" id="f-billing-city" type="text" name="billingCity" value="{customer.billingAddress.city ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-due">{inject:i18n.get('t.date-d-echeance')}</label>
                 <input class="input-control" id="f-due" type="date" name="dueDate" value="{customer.dueDate ?: ''}">
             </div>
             <div class="field">
-                <label class="field-label" for="f-discount">Remise accordée (%)</label>
+                <label class="field-label" for="f-discount">{inject:i18n.get('t.remise-accordee')}</label>
                 <input class="input-control" id="f-discount" type="text" name="discountPercent" value="{customer.discountPercent ?: ''}">
             </div>
             <div class="field">
-                <label class="field-label" for="f-limit">Plafond de crédit (€)</label>
+                <label class="field-label" for="f-limit">{inject:i18n.get('t.plafond-de-credit')}</label>
                 <input class="input-control" id="f-limit" type="text" name="creditLimit" value="{customer.creditLimit ?: ''}">
             </div>
             <div class="field field-check">
-                <label class="field-label"><input type="checkbox" name="blocked" {#if customer.blocked}checked{/if}> Compte bloqué au passage en caisse</label>
+                <label class="field-label"><input type="checkbox" name="blocked" {#if customer.blocked}checked{/if}> {inject:i18n.get('t.compte-bloque-au-passage-en-caisse')}</label>
             </div>
         </div>
         <div class="page-actions" style="margin-top: 6px;">
-            <button class="btn btn-primary" type="submit">Enregistrer</button>
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer')}</button>
         </div>
     </form>
 </div>
 
 <div class="card">
-    <h2 class="card-title">Champs libres</h2>
-    <p class="card-sub">Réserve renseignée par la gestion commerciale, en lecture seule ici.</p>
+    <h2 class="card-title">{inject:i18n.get('t.champs-libres')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.reserve-renseignee-par-la-gestion-commerciale-en')}</p>
     {#if customer.freeFields.isEmpty()}
     <div class="empty-state">
-        <p>Aucun champ libre.</p>
+        <p>{inject:i18n.get('t.aucun-champ-libre')}</p>
     </div>
     {#else}
     <table class="data-table">
         <thead>
             <tr>
                 <th>N°</th>
-                <th>Libellé</th>
-                <th>Valeur</th>
+                <th>{inject:i18n.get('t.libelle')}</th>
+                <th>{inject:i18n.get('t.valeur')}</th>
             </tr>
         </thead>
         <tbody>
@@ -182,4 +223,4 @@
 {/if}
 {/body}
 
-{#footer}Aucune création ici : un client en compte entre par l'intégration de la gestion commerciale.{/footer}
+{#footer}{inject:i18n.get('t.aucune-creation-ici-un-client-en-compte')}{/footer}

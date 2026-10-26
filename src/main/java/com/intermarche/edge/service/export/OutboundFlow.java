@@ -18,10 +18,9 @@ import java.time.format.DateTimeFormatter;
  *
  * <p>Only the flows the node can compute from what it already holds are listed. A
  * flow absent from this enum is absent for a stated reason, never for lack of a
- * builder: the vignettes (BO-11-01-20) need a cash-side capture that does not
- * exist, and Catalina, SAFT, NEXO and the electronic labels are third-party
- * protocols — each its own chantier, and each declaring its provider in the
- * provider table rather than in a flow.
+ * builder: Catalina, SAFT, NEXO and the electronic labels are third-party
+ * protocols spoken at the flow or on demand, each declaring its receiver in the
+ * provider table rather than writing a file.
  *
  * <p>The stems {@code tranca3}, {@code tranfc} and {@code clifact} are the ones
  * the RFP names and must not be prettified, as are the three members of the panel
@@ -52,7 +51,7 @@ public enum OutboundFlow {
      * the park as the back office administers it and not a list written here.
      */
     FAMILY_SALES("BO-11-01-08", "cafamil", "export.family-sales-enabled",
-            "CA par famille et par ilot", Period.DAY, Shape.CSV),
+            "CA par famille et par îlot", Period.DAY, Shape.CSV),
 
     /**
      * The day's transactions, line by line (BO-11-01-14): the detail the
@@ -61,7 +60,7 @@ public enum OutboundFlow {
      * cashier took back, which a filtered file can no longer do.
      */
     DAILY_TRANSACTIONS("BO-11-01-14", "trandet", "export.transactions-enabled",
-            "Detail quotidien des transactions", Period.DAY, Shape.CSV),
+            "Détail quotidien des transactions", Period.DAY, Shape.CSV),
 
     /**
      * The closing synthesis, per register (BO-11-01-17): the counts and the
@@ -69,7 +68,7 @@ public enum OutboundFlow {
      * no ticket of the day is missing — sales and non-sales alike.
      */
     PERIOD_SUMMARY("BO-11-01-17", "transyn", "export.period-summary-enabled",
-            "Synthese des transactions de cloture", Period.DAY, Shape.CSV),
+            "Synthèse des transactions de clôture", Period.DAY, Shape.CSV),
 
     /**
      * Checkout productivity (BO-11-01-21), per cashier and per SHIFT — the cash
@@ -77,13 +76,16 @@ public enum OutboundFlow {
      * two lines, which is what a productivity indicator is read on.
      */
     CASHIER_PRODUCTIVITY("BO-11-01-21", "prodcai", "export.productivity-enabled",
-            "Productivite des caisses", Period.DAY, Shape.CSV),
+            "Productivité des caisses", Period.DAY, Shape.CSV),
 
     /**
      * Customer-account invoices for accounting and the gestion commerciale
-     * (BO-11-01-12), the file the RFP calls {@code clifact.dat}: a FLAT,
-     * positioned-field record per invoice followed by one per billed line, with
-     * the civility, the coordinates and the eco-tax (BO-10-04-14).
+     * (BO-11-01-12): the FOUR flat files the RFP names, written together —
+     * {@code clifact.dat} the invoice and its customer's civility and
+     * coordinates, {@code clilfact.dat} the billed article lines,
+     * {@code cliregl.dat} the settlements and {@code clitva.dat} the VAT lines,
+     * followed by the eco-tax line where the store administers it
+     * (BO-10-04-14).
      *
      * <p>Its activation is the one BO-11-01-06 asks for "at the Country /
      * Enseigne / Point of Sale scale", which is what an administered key gives.
@@ -106,7 +108,7 @@ public enum OutboundFlow {
      * an accounting day the engine can round to.
      */
     FIDELITY_VAT("BO-11-01-13", "fidtva", "export.fidelity-vat-enabled",
-            "Conso fidelite ventilee par TVA", Period.MONTH, Shape.CSV),
+            "Conso fidélité ventilée par TVA", Period.MONTH, Shape.CSV),
 
     /**
      * The VAT ventilation of the day's ORDERS (BO-11-01-23): what the accounting
@@ -114,6 +116,14 @@ public enum OutboundFlow {
      */
     ORDER_VAT("BO-11-01-23", "tvacmde", "export.order-vat-enabled",
             "Ventilation TVA des commandes", Period.DAY, Shape.CSV),
+    /**
+     * The Planexa file (BO-03-10-06): the transactions per register and per
+     * hour slot the hostesses' planning is built from, the registers of the
+     * islands excluded from Planexa left out. A HOUSE stem, to be confirmed
+     * against Planexa's own annex.
+     */
+    PLANEXA("BO-03-10-06", "planexa", "export.planexa-enabled",
+            "Planning hôtesses (Planexa)", Period.DAY, Shape.CSV),
 
     /**
      * The marketing-scan panels (BO-11-01-19): THREE files the RFP names —
@@ -123,7 +133,25 @@ public enum OutboundFlow {
      * a file.
      */
     PANELS("BO-11-01-19", "MS", "export.panels-enabled",
-            "Panels marketing (scan)", Period.DAY, Shape.ARCHIVE);
+            "Panels marketing (scan)", Period.DAY, Shape.ARCHIVE),
+
+    /**
+     * The GS1 payments and the vouchers scanned at the tills (BO-11-01-18):
+     * every payment code read — GS1 symbols included, DataMatrix and QR codes
+     * among them — with its register, its ticket and its amount, and every
+     * voucher settled on a closed ticket, each one marked as BURNED once a sale
+     * of the shop consumed it. A HOUSE stem.
+     */
+    GS1_PAYMENTS("BO-11-01-18", "paigs1", "export.gs1-payments-enabled",
+            "Paiements GS1 et bons scannés", Period.DAY, Shape.CSV),
+
+    /**
+     * The vignettes (BO-11-01-20): per register and per shift, the vignettes the
+     * administered formula says were due and the ones the cashier declared,
+     * and their gap. A HOUSE stem.
+     */
+    VIGNETTES("BO-11-01-20", "vignett", "export.vignettes-enabled",
+            "Vignettes théoriques et déclarées", Period.DAY, Shape.CSV);
 
     /** The span a flow covers: nearly all of them a day, the fidelity one a month. */
     public enum Period {

@@ -45,9 +45,12 @@ import static org.mockito.Mockito.when;
  * <p>
  * Branch enumeration (every arm exercised): both methods cover the
  * account-resolved and account-null arms; {@code favoritesPage} covers the
- * viewable/non-viewable feature arms, the first-of-menu true/false arms and
- * the hidden/shown arms; {@code save} covers the null-selection arm and, on a
- * present selection, the unknown-key, non-viewable and persisted arms.
+ * viewable/non-viewable feature arms, a menu left without viewable feature,
+ * the first-of-menu true/false arms, the hidden/shown, starred and hidden-menu
+ * arms, and the report types offered or not (BO-01-04-08); {@code save} covers
+ * the null-selection arm and, on a present selection, the unknown-key,
+ * non-viewable and persisted arms of features and favorites, a known and an
+ * unknown menu, a known and an unknown report type.
  */
 class AdminFavoriteResourceTest {
 
@@ -60,6 +63,9 @@ class AdminFavoriteResourceTest {
 
     /** The mocked permission layer. */
     private PermissionService permissionService;
+
+    /** The mocked report catalog. */
+    private com.intermarche.edge.ui.report.ReportCatalog catalog;
 
     /**
      * Wires a resource with a mocked template, permission layer and identity.
@@ -75,6 +81,15 @@ class AdminFavoriteResourceTest {
         when(principal.getName()).thenReturn("mcurie");
         when(identity.getPrincipal()).thenReturn(principal);
         resource.identity = identity;
+        resource.reportService = mock(com.intermarche.edge.ui.report.ReportService.class);
+        catalog = mock(com.intermarche.edge.ui.report.ReportCatalog.class);
+        when(resource.reportService.catalog()).thenReturn(catalog);
+        com.intermarche.edge.ui.report.ReportDefinition report = mock(com.intermarche.edge.ui.report.ReportDefinition.class);
+        when(report.code()).thenReturn("RCA");
+        when(report.label()).thenReturn("Chiffre d'affaires");
+        when(report.family()).thenReturn(com.intermarche.edge.ui.report.ReportFamily.values()[0]);
+        when(catalog.all()).thenReturn(List.of(report));
+        when(catalog.find("RCA")).thenReturn(report);
     }
 
     /**
@@ -140,23 +155,54 @@ class AdminFavoriteResourceTest {
     }
 
     /**
-     * {@code favoritesPage} renders the viewable features, one hidden and the
-     * rest shown, skipping the non-viewable ones and marking menu breaks.
+     * {@code favoritesPage} renders the viewable features menu by menu, one
+     * hidden, one starred, a hidden menu, the report types; a menu without any
+     * viewable feature is left out, and without the report right no report
+     * type is offered.
      */
     @Test
+    @SuppressWarnings("unchecked")
     void favoritesPageRendersViewableFeatures() {
         TemplateInstance instance = wire();
         when(permissionService.isAllowed(anyString(), any(Feature.class), eq(CrudOption.VIEW)))
                 .thenReturn(true);
         when(permissionService.isAllowed(anyString(), eq(Feature.PROFILE), eq(CrudOption.VIEW)))
                 .thenReturn(false);
+        for (Feature feature : com.intermarche.edge.domain.people.Menu.FINANCIER.features()) {
+            when(permissionService.isAllowed(anyString(), eq(feature), eq(CrudOption.VIEW))).thenReturn(false);
+        }
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
             stubEmployee(panache, employee());
-            UserFavorite hiddenRow = new UserFavorite();
-            hiddenRow.employeeId = 7L;
-            hiddenRow.featureKey = "settings";
-            panache.when(() -> UserFavorite.list("employeeId", 7L)).thenReturn(List.of(hiddenRow));
+            List<UserFavorite> tokens = new java.util.ArrayList<>();
+            for (String key : new String[]{"settings", "STAR:store", "MENU:ARTICLES", "REPORT:RCA"}) {
+                UserFavorite row = new UserFavorite();
+                row.employeeId = 7L;
+                row.featureKey = key;
+                tokens.add(row);
+            }
+            panache.when(() -> UserFavorite.list("employeeId", 7L)).thenReturn(tokens);
             assertEquals(instance, resource.favoritesPage("hi", true));
+            org.mockito.ArgumentCaptor<Object> menus = org.mockito.ArgumentCaptor.forClass(Object.class);
+            verify(resource.adminFavorites).data(eq("menus"), menus.capture());
+            List<AdminFavoriteResource.MenuRow> rows = (List<AdminFavoriteResource.MenuRow>) menus.getValue();
+            assertTrue(rows.stream().noneMatch(row -> "FINANCIER".equals(row.name)));
+            AdminFavoriteResource.MenuRow parametrage = rows.get(0);
+            assertEquals("PARAMETRAGE", parametrage.name);
+            assertTrue(parametrage.features.get(0).firstOfMenu);
+            assertTrue(parametrage.features.get(0).hidden);
+            assertTrue(parametrage.features.get(1).starred);
+            assertTrue(!parametrage.features.get(1).firstOfMenu);
+            assertTrue(rows.stream().anyMatch(row -> row.hidden && "ARTICLES".equals(row.name)));
+            org.mockito.ArgumentCaptor<Object> reports = org.mockito.ArgumentCaptor.forClass(Object.class);
+            verify(instance).data(eq("reports"), reports.capture());
+            AdminFavoriteResource.ReportRow report = ((List<AdminFavoriteResource.ReportRow>) reports.getValue()).get(0);
+            assertEquals("RCA", report.code);
+            assertTrue(report.hidden);
+            assertEquals(com.intermarche.edge.ui.report.ReportFamily.values()[0].getLabel(), report.family);
+            assertEquals("Chiffre d'affaires", report.label);
+            when(permissionService.isAllowed(anyString(), eq(Feature.REPORT), eq(CrudOption.VIEW))).thenReturn(false);
+            resource.favoritesPage(null, true);
+            verify(instance).data("reports", List.of());
         }
     }
 
@@ -206,6 +252,34 @@ class AdminFavoriteResourceTest {
             UserFavorite built = construction.constructed().get(0);
             assertEquals("settings", built.featureKey);
             verify(built).persist();
+        }
+    }
+
+    /**
+     * {@code save} records the favorites, the hidden menus and report types:
+     * a viewable favorite is kept, an unknown or non-viewable one skipped, an
+     * unknown menu or report type ignored.
+     */
+    @Test
+    void savePersistsEveryPreference() {
+        when(permissionService.isAllowed(anyString(), any(Feature.class), eq(CrudOption.VIEW)))
+                .thenReturn(true);
+        when(permissionService.isAllowed(anyString(), eq(Feature.PROFILE), eq(CrudOption.VIEW)))
+                .thenReturn(false);
+        MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
+        form.add("star", "store");
+        form.add("star", "ghost");
+        form.add("star", "profile");
+        form.add("hideMenu", "ARTICLES");
+        form.add("hideMenu", "NOWHERE");
+        form.add("hideReport", "RCA");
+        form.add("hideReport", "UNKNOWN");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
+             MockedConstruction<UserFavorite> construction = mockConstruction(UserFavorite.class)) {
+            stubEmployee(panache, employee());
+            assertRedirect(resource.save(form), "enregistr");
+            assertEquals(List.of("STAR:store", "MENU:ARTICLES", "REPORT:RCA"),
+                    construction.constructed().stream().map(row -> row.featureKey).toList());
         }
     }
 }

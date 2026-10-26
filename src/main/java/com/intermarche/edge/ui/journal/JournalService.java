@@ -3,6 +3,7 @@ package com.intermarche.edge.ui.journal;
 import com.intermarche.edge.domain.payment.PaymentTypes;
 import com.intermarche.edge.domain.session.CashMovement;
 import com.intermarche.edge.domain.payment.CardPayment;
+import com.intermarche.edge.domain.payment.ChequePayment;
 import com.intermarche.edge.domain.sale.Ticket;
 import com.intermarche.edge.domain.sale.TicketLine;
 import com.intermarche.edge.domain.payment.TicketPayment;
@@ -18,6 +19,7 @@ import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.jboss.logging.Logger;
@@ -58,8 +60,23 @@ public class JournalService {
     /** French time format for the list and export. */
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HH:mm");
 
+    /**
+     * The headings of the CSV export, in French: the export writes them in the
+     * language of the page that asks for it (BO-04-01-50).
+     */
+    static final List<String> CSV_HEADINGS = List.of("TPV", "Transaction", "Caissière", "Date", "Heure",
+            "Montant", "Articles", "École", "Autonome", "TVA");
+
     @Inject
     EntityManager entityManager;
+
+    /** The reprint rule of invoices and delivery notes, shared with the reports (BO-04-01-53, BO-06-04-03). */
+    @Inject
+    com.intermarche.edge.ui.report.InvoiceDuplicateService invoiceDuplicateService;
+
+    /** The secondary monetics servers the support desk searches (BO-04-01-48). */
+    @Inject
+    com.intermarche.edge.service.PosSettingsService posSettingsService;
 
     // --------------------------------------------------
     // Transactional journal
@@ -157,14 +174,192 @@ public class JournalService {
         appendFamilyRange(query, criteria);
         if (criteria.vatRate != null) {
             query.and("exists (select l from t.lines l where l.cancelled = false and l.vatRate = :vatRate)");
-            query.bind("vatRate", criteria.vatRate);
+            query.bind("vatRate", vatFraction(criteria.vatRate));
         }
         appendReductionRange(query, criteria);
         appendAuthorizationRange(query, criteria);
         appendRefundArticleRange(query, criteria);
         appendCancelledArticleRange(query, criteria);
         appendFlags(query, criteria);
+        appendEvent(query, criteria);
+        appendPaymentCancellation(query, criteria);
+        appendUnknownCodeRange(query, criteria);
         return query;
+    }
+
+    /**
+     * Appends the selected EVENT (BO-04-01-14) and the range of amounts it
+     * bears: the ticket's for a cancelled or negative ticket, the line's for a
+     * line event, the reduction for a remise, the refund for a return, the
+     * payment for a voucher or a coupon. The training sales and the drawers
+     * opened outside a sale are read from their own sources by
+     * {@link #search}, so they add nothing here.
+     *
+     * @param query the query under construction
+     * @param criteria the parsed criteria
+     */
+    private void appendEvent(JournalQuery query, JournalCriteria criteria) {
+        JournalEvent event = criteria.event;
+        if (event == null || event == JournalEvent.TRAINING || event == JournalEvent.NO_SALE) {
+            return;
+        }
+        boolean ranged = event.isAmountRange()
+                && (criteria.eventAmountMin != null || criteria.eventAmountMax != null);
+        String clause = switch (event) {
+            case CANCELLED -> "t.status = :eventCancelled" + range("t.totalIncludingTax", ranged, criteria);
+            case NEGATIVE -> "t.totalIncludingTax < 0" + range("t.totalIncludingTax", ranged, criteria);
+            case DEDUCTION -> line("l.appliedTareKg > 0", ranged, criteria);
+            case FORCED_PRICE -> line("l.modifierType = :eventForced", ranged, criteria);
+            case PRICE_ENTERED -> line("l.priceEntered = true", ranged, criteria);
+            case SCANNED -> line("l.scanned = true", ranged, criteria);
+            case CARRIED_OUT -> line("l.carriedOut = true", ranged, criteria);
+            case VAT_EXEMPT -> line("l.vatExempt = true", ranged, criteria);
+            case DISCOUNT -> "((t.globalDiscountApplied > 0" + range("t.globalDiscountApplied", ranged, criteria)
+                    + ") or exists (select l from t.lines l where l.cancelled = false"
+                    + " and l.modifierType in :eventReductions"
+                    + range("(l.originalUnitPrice * l.quantity - l.totalPrice)", ranged, criteria) + "))";
+            case RETURN -> "exists (select r from Refund r where r.originalTicketId = t.id"
+                    + range("r.totalAmount", ranged, criteria) + ")";
+            case STORE_VOUCHER -> "exists (select p from t.payments p where type(p) = :eventPaymentType"
+                    + range("p.amount", ranged, criteria) + ")";
+            case VENDOR_COUPON -> "exists (select p from t.payments p where type(p) = :eventPaymentType"
+                    + range("p.amount", ranged, criteria) + ")";
+            default -> "t.offline = true";
+        };
+        query.and(clause);
+        if (event == JournalEvent.CANCELLED) {
+            query.bind("eventCancelled", Ticket.TicketStatus.CANCELLED);
+        }
+        if (event == JournalEvent.FORCED_PRICE) {
+            query.bind("eventForced", com.intermarche.edge.ui.PriceModType.FORCE_PRICE);
+        }
+        if (event == JournalEvent.DISCOUNT) {
+            query.bind("eventReductions", List.of(com.intermarche.edge.ui.PriceModType.REMISE,
+                    com.intermarche.edge.ui.PriceModType.DISCOUNT));
+        }
+        if (event == JournalEvent.STORE_VOUCHER) {
+            query.bind("eventPaymentType", VoucherPayment.class);
+        }
+        if (event == JournalEvent.VENDOR_COUPON) {
+            query.bind("eventPaymentType", com.intermarche.edge.domain.payment.SogecPayment.class);
+        }
+        if (ranged) {
+            bindEventRange(query, criteria);
+        }
+    }
+
+    /**
+     * A line-scoped event: a sold line meeting the condition, its total in the range.
+     *
+     * @param condition the line condition
+     * @param ranged whether the amount range applies
+     * @param criteria the parsed criteria
+     * @return the clause
+     */
+    private String line(String condition, boolean ranged, JournalCriteria criteria) {
+        return "exists (select l from t.lines l where l.cancelled = false and " + condition
+                + range("l.totalPrice", ranged, criteria) + ")";
+    }
+
+    /**
+     * The bounds of the event amount on one expression.
+     *
+     * @param expression the amount the event bears
+     * @param ranged whether the amount range applies
+     * @param criteria the parsed criteria
+     * @return the bounds clause, empty when no range applies
+     */
+    private String range(String expression, boolean ranged, JournalCriteria criteria) {
+        if (!ranged) {
+            return "";
+        }
+        StringBuilder bounds = new StringBuilder();
+        if (criteria.eventAmountMin != null) {
+            bounds.append(" and ").append(expression).append(" >= :eventAmountMin");
+        }
+        if (criteria.eventAmountMax != null) {
+            bounds.append(" and ").append(expression).append(" <= :eventAmountMax");
+        }
+        return bounds.toString();
+    }
+
+    /**
+     * Binds the event amount bounds that are set.
+     *
+     * @param query the query under construction
+     * @param criteria the parsed criteria
+     */
+    private void bindEventRange(JournalQuery query, JournalCriteria criteria) {
+        if (criteria.eventAmountMin != null) {
+            query.bind("eventAmountMin", criteria.eventAmountMin);
+        }
+        if (criteria.eventAmountMax != null) {
+            query.bind("eventAmountMax", criteria.eventAmountMax);
+        }
+    }
+
+    /**
+     * Appends the settlement-cancellation criterion (BO-04-01-19): a settlement
+     * of the ticket was cancelled — of the selected method, or of any — its
+     * amount within the range. The cancellation is read in the journal, where
+     * the register recorded each settlement it gave back with its method and
+     * amount, joined to the ticket by its number and register.
+     *
+     * @param query the query under construction
+     * @param criteria the parsed criteria
+     */
+    private void appendPaymentCancellation(JournalQuery query, JournalCriteria criteria) {
+        if (!criteria.flags.contains(JournalCriteria.Flag.PAYMENT_CANCELLED)
+                && criteria.paymentCancelMin == null && criteria.paymentCancelMax == null
+                && criteria.paymentCancelMethod == null) {
+            return;
+        }
+        StringBuilder inner = new StringBuilder("exists (select e from TechnicalEvent e"
+                + " where e.eventType = :paymentCancelledType and e.ticketNumber = t.ticketNumber"
+                + " and e.terminalId = t.terminalId");
+        query.bind("paymentCancelledType", TechnicalEvent.EventType.PAYMENT_CANCELLED);
+        if (criteria.paymentCancelMin != null) {
+            inner.append(" and e.amount >= :paymentCancelMin");
+            query.bind("paymentCancelMin", criteria.paymentCancelMin);
+        }
+        if (criteria.paymentCancelMax != null) {
+            inner.append(" and e.amount <= :paymentCancelMax");
+            query.bind("paymentCancelMax", criteria.paymentCancelMax);
+        }
+        if (criteria.paymentCancelMethod != null) {
+            inner.append(" and e.code = :paymentCancelMethod");
+            query.bind("paymentCancelMethod", criteria.paymentCancelMethod);
+        }
+        inner.append(")");
+        query.and(inner.toString());
+    }
+
+    /**
+     * Appends the range of the unknown codes scanned during the ticket
+     * (BO-04-01-34), read in the journal where the register kept each code
+     * nothing answered.
+     *
+     * @param query the query under construction
+     * @param criteria the parsed criteria
+     */
+    private void appendUnknownCodeRange(JournalQuery query, JournalCriteria criteria) {
+        if (criteria.unknownCodeMin == null && criteria.unknownCodeMax == null) {
+            return;
+        }
+        StringBuilder inner = new StringBuilder("exists (select u from TechnicalEvent u"
+                + " where u.eventType = :unknownRangeType and u.ticketNumber = t.ticketNumber"
+                + " and u.terminalId = t.terminalId");
+        query.bind("unknownRangeType", TechnicalEvent.EventType.UNKNOWN_ARTICLE_SCANNED);
+        if (criteria.unknownCodeMin != null) {
+            inner.append(" and u.code >= :unknownCodeMin");
+            query.bind("unknownCodeMin", criteria.unknownCodeMin);
+        }
+        if (criteria.unknownCodeMax != null) {
+            inner.append(" and u.code <= :unknownCodeMax");
+            query.bind("unknownCodeMax", criteria.unknownCodeMax);
+        }
+        inner.append(")");
+        query.and(inner.toString());
     }
 
     /**
@@ -425,8 +620,32 @@ public class JournalService {
             query.and("exists (select l from t.lines l where l.cancelled = false and l.totalPrice = 0)");
         }
         if (criteria.flags.contains(JournalCriteria.Flag.UNKNOWN_ITEM)) {
-            query.and("exists (select l from t.lines l"
-                    + " where l.cancelled = false and l.product is null and l.deposit = false)");
+            // BO-04-01-34: an unknown article SOLD, or an unknown code SCANNED
+            // that rang nothing — the register journals the code it read.
+            query.and("(exists (select l from t.lines l"
+                    + " where l.cancelled = false and l.product is null and l.deposit = false)"
+                    + " or exists (select u from TechnicalEvent u where u.eventType = :unknownType"
+                    + " and u.ticketNumber = t.ticketNumber and u.terminalId = t.terminalId))");
+            query.bind("unknownType", TechnicalEvent.EventType.UNKNOWN_ARTICLE_SCANNED);
+        }
+        if (criteria.flags.contains(JournalCriteria.Flag.SELF_SCAN)) {
+            query.and("t.selfScanning = true");
+        }
+        if (criteria.flags.contains(JournalCriteria.Flag.SELF_SCAN_CONTROLLED)) {
+            query.and("t.selfScanControlled = true");
+        }
+        if (criteria.flags.contains(JournalCriteria.Flag.SELF_SCAN_VERIFIED)) {
+            query.and("t.selfScanVerified = true");
+        }
+        if (criteria.flags.contains(JournalCriteria.Flag.SECONDARY_SERVER)) {
+            // BO-04-01-48: the servers the store names as secondary; none named, none matches.
+            List<String> servers = posSettingsService.secondaryMoneticServers();
+            if (servers.isEmpty()) {
+                query.and("1 = 0");
+            } else {
+                query.and("exists (select p from t.payments p where p.moneticServer in :secondaryServers)");
+                query.bind("secondaryServers", servers);
+            }
         }
         if (criteria.flags.contains(JournalCriteria.Flag.CANCELLED_ARTICLE)) {
             query.and("exists (select l from t.lines l where l.cancelled = true)");
@@ -463,6 +682,14 @@ public class JournalService {
      */
     public JournalPage<JournalRow> search(JournalCriteria criteria) {
         LOGGER.info("Entering method search with criteria: " + criteria);
+        if (criteria.event == JournalEvent.TRAINING) {
+            LOGGER.info("Exiting method search");
+            return searchTraining(criteria);
+        }
+        if (criteria.event == JournalEvent.NO_SALE) {
+            LOGGER.info("Exiting method search");
+            return searchNoSale(criteria);
+        }
         JournalQuery query = buildTicketQuery(criteria);
         long total = count("select count(t.id) from Ticket t" + query.whereClause(), query);
         int number = clampPage(criteria.page, total, PAGE_SIZE);
@@ -486,7 +713,7 @@ public class JournalService {
         JournalSort sort = JournalSort.fromKey(criteria.sort);
         String direction = criteria.descending ? "desc" : "asc";
         String jpql = "select t.id, t.terminalId, t.ticketNumber, t.cashier.badgeId,"
-                + " t.creationDate, t.totalIncludingTax, t.itemCount from Ticket t"
+                + " t.creationDate, t.totalIncludingTax, t.itemCount, t.selfScanning from Ticket t"
                 + query.whereClause()
                 + " order by " + sort.path + " " + direction + ", t.id asc";
         TypedQuery<Object[]> typed = entityManager.createQuery(jpql, Object[].class);
@@ -496,17 +723,266 @@ public class JournalService {
         List<JournalRow> rows = new ArrayList<>();
         for (Object[] row : typed.getResultList()) {
             LocalDateTime creation = (LocalDateTime) row[4];
-            rows.add(new JournalRow(
+            // BO-04-01-50: a consolidated ticket is a real sale, never a training
+            // one (those live in their own table); « Autonome » is its channel.
+            JournalRow mapped = new JournalRow(
                     (Long) row[0],
                     (String) row[1],
                     (String) row[2],
-                    (String) row[3],
+                    row[3] == null ? "" : (String) row[3],
                     creation.format(DATE),
                     creation.format(TIME),
                     formatAmount((BigDecimal) row[5]),
                     (Integer) row[6],
                     "N",
-                    "N"));
+                    Boolean.TRUE.equals(row[7]) ? "O" : "N");
+            mapped.detailUrl = "/admin/journal/ticket/" + mapped.id;
+            rows.add(mapped);
+        }
+        fillVat(rows);
+        return rows;
+    }
+
+    /**
+     * Writes the VAT ventilation of each ticket of a window (BO-04-01-55): per
+     * rate, the base and the tax of its sold lines, read in one grouped query.
+     *
+     * @param rows the window's rows, ticket rows carrying their id
+     */
+    private void fillVat(List<JournalRow> rows) {
+        if (rows.isEmpty()) {
+            return;
+        }
+        Map<Long, JournalRow> byId = new java.util.HashMap<>();
+        for (JournalRow row : rows) {
+            byId.put(row.id, row);
+        }
+        List<Object[]> rates = entityManager.createQuery(
+                        "select t.id, l.vatRate, sum(l.totalPrice) from Ticket t join t.lines l"
+                                + " where t.id in :ids and l.cancelled = false"
+                                + " group by t.id, l.vatRate order by t.id, l.vatRate", Object[].class)
+                .setParameter("ids", new ArrayList<>(byId.keySet()))
+                .getResultList();
+        for (Object[] rate : rates) {
+            JournalRow row = byId.get((Long) rate[0]);
+            VatRow vat = vatRow((BigDecimal) rate[1], (BigDecimal) rate[2]);
+            row.vat = (row.vat.isEmpty() ? "" : row.vat + " | ") + vat.rate + " % HT " + vat.base + " TVA " + vat.tax;
+        }
+    }
+
+    /**
+     * One rate of a VAT ventilation, written the French way (BO-04-01-55).
+     *
+     * @param rate the rate in percent, written
+     * @param base the amount excluding tax, written
+     * @param tax the tax, written
+     * @param total the amount including tax, written
+     */
+    public record VatRow(String rate, String base, String tax, String total) {
+    }
+
+    /**
+     * Reads the VAT rate keyed in the journal form (BO-04-01-55) as the lines
+     * store it: the operator keys a percent (« 20 », « 5,5 »), the lines carry
+     * a fraction (0.2000); a value of at most 1 is already a fraction.
+     *
+     * @param keyed the rate keyed
+     * @return the fraction compared with the lines
+     */
+    static BigDecimal vatFraction(BigDecimal keyed) {
+        return keyed.compareTo(BigDecimal.ONE) > 0 ? keyed.movePointLeft(2) : keyed;
+    }
+
+    /**
+     * Ventilates an amount including tax at one rate (BO-04-01-55).
+     *
+     * @param rate the rate as the line stores it, a fraction (0.2000 for 20 %), null read as zero
+     * @param total the amount including tax, null read as zero
+     * @return the written rate, base, tax and total
+     */
+    static VatRow vatRow(BigDecimal rate, BigDecimal total) {
+        BigDecimal fraction = rate == null ? BigDecimal.ZERO : rate;
+        BigDecimal ttc = total == null ? BigDecimal.ZERO : total;
+        BigDecimal base = ttc.divide(BigDecimal.ONE.add(fraction), 2, RoundingMode.HALF_UP);
+        return new VatRow(fraction.movePointRight(2).stripTrailingZeros().toPlainString().replace(".", ","),
+                base.toPlainString().replace(".", ","),
+                ttc.subtract(base).setScale(2, RoundingMode.HALF_UP).toPlainString().replace(".", ","),
+                ttc.setScale(2, RoundingMode.HALF_UP).toPlainString().replace(".", ","));
+    }
+
+    /**
+     * The training-mode sales matching the register and period criteria
+     * (BO-04-01-14 « mode école », BO-04-01-50 « Mode école = O »), one page.
+     *
+     * @param criteria the parsed criteria
+     * @return the page of rows
+     */
+    JournalPage<JournalRow> searchTraining(JournalCriteria criteria) {
+        JournalQuery query = trainingQuery(criteria);
+        long total = count("select count(x.id) from TrainingTicket x" + query.whereClause(), query);
+        int number = clampPage(criteria.page, total, PAGE_SIZE);
+        return new JournalPage<>(trainingRows(query, (number - 1) * PAGE_SIZE, PAGE_SIZE), number, PAGE_SIZE, total);
+    }
+
+    /**
+     * The where clause of the training sales: register range and period.
+     *
+     * @param criteria the parsed criteria
+     * @return the query fragment
+     */
+    private JournalQuery trainingQuery(JournalCriteria criteria) {
+        JournalQuery query = new JournalQuery();
+        if (criteria.terminalMin != null) {
+            query.and("x.terminalId >= :terminalMin");
+            query.bind("terminalMin", criteria.terminalMin);
+        }
+        if (criteria.terminalMax != null) {
+            query.and("x.terminalId <= :terminalMax");
+            query.bind("terminalMax", criteria.terminalMax);
+        }
+        if (criteria.dateFrom != null) {
+            query.and("x.issuedAt >= :dateFrom");
+            query.bind("dateFrom", criteria.dateFrom);
+        }
+        if (criteria.dateTo != null) {
+            query.and("x.issuedAt <= :dateTo");
+            query.bind("dateTo", criteria.dateTo);
+        }
+        // The cashier range reads the badge, which the training ticket names by its holder's login.
+        if (criteria.cashierMin != null) {
+            query.and("x.cashierLogin in (select e.loginName from Employee e where e.badgeId >= :cashierMin)");
+            query.bind("cashierMin", criteria.cashierMin);
+        }
+        if (criteria.cashierMax != null) {
+            query.and("x.cashierLogin in (select e.loginName from Employee e where e.badgeId <= :cashierMax)");
+            query.bind("cashierMax", criteria.cashierMax);
+        }
+        if (criteria.amountMin != null) {
+            query.and("x.totalIncludingTax >= :amountMin");
+            query.bind("amountMin", criteria.amountMin);
+        }
+        if (criteria.amountMax != null) {
+            query.and("x.totalIncludingTax <= :amountMax");
+            query.bind("amountMax", criteria.amountMax);
+        }
+        return query;
+    }
+
+    /**
+     * Reads one window of training sales as journal rows.
+     *
+     * @param query the where clause
+     * @param offset the first row
+     * @param limit the window size
+     * @return the rows, « Mode école » = O
+     */
+    private List<JournalRow> trainingRows(JournalQuery query, int offset, int limit) {
+        TypedQuery<com.intermarche.edge.domain.sale.TrainingTicket> typed = entityManager.createQuery(
+                "select x from TrainingTicket x" + query.whereClause() + " order by x.issuedAt desc, x.id asc",
+                com.intermarche.edge.domain.sale.TrainingTicket.class);
+        bind(typed, query);
+        typed.setFirstResult(offset);
+        typed.setMaxResults(limit);
+        List<JournalRow> rows = new ArrayList<>();
+        List<com.intermarche.edge.domain.sale.TrainingTicket> found = typed.getResultList();
+        Map<String, String> badges = badges(found);
+        for (com.intermarche.edge.domain.sale.TrainingTicket training : found) {
+            LocalDateTime issued = training.issuedAt == null ? LocalDateTime.MIN : training.issuedAt;
+            JournalRow row = new JournalRow(training.id, training.terminalId, "",
+                    training.cashierLogin == null ? "" : badges.getOrDefault(training.cashierLogin, training.cashierLogin),
+                    training.issuedAt == null ? "" : issued.format(DATE),
+                    training.issuedAt == null ? "" : issued.format(TIME),
+                    formatAmount(training.totalIncludingTax), training.itemCount, "O", "N");
+            row.detailUrl = "/admin/journal/training/" + training.id;
+            rows.add(row);
+        }
+        return rows;
+    }
+
+    /**
+     * The badges of the holders the training sales name by their login, so the
+     * « N° caissière » column reads the same number as for the sales.
+     *
+     * @param trainings the training sales of the page
+     * @return the badge by login, empty when none is named
+     */
+    private Map<String, String> badges(List<com.intermarche.edge.domain.sale.TrainingTicket> trainings) {
+        java.util.Set<String> logins = new java.util.HashSet<>();
+        for (com.intermarche.edge.domain.sale.TrainingTicket training : trainings) {
+            if (training.cashierLogin != null) {
+                logins.add(training.cashierLogin);
+            }
+        }
+        Map<String, String> badges = new HashMap<>();
+        if (logins.isEmpty()) {
+            return badges;
+        }
+        for (Object[] holder : entityManager.createQuery(
+                        "select e.loginName, e.badgeId from Employee e where e.loginName in :logins", Object[].class)
+                .setParameter("logins", logins).getResultList()) {
+            if (holder[1] != null) {
+                badges.put((String) holder[0], (String) holder[1]);
+            }
+        }
+        return badges;
+    }
+
+    /**
+     * The drawers opened outside any sale (BO-04-01-14 « pas de vente »): read
+     * in the journal, where the register recorded each forced opening, by
+     * register, cashier, period and the amount the event bears.
+     *
+     * @param criteria the parsed criteria
+     * @return the page of rows
+     */
+    JournalPage<JournalRow> searchNoSale(JournalCriteria criteria) {
+        JournalQuery query = noSaleQuery(criteria);
+        long total = count("select count(e.id) from TechnicalEvent e" + query.whereClause(), query);
+        int number = clampPage(criteria.page, total, PAGE_SIZE);
+        return new JournalPage<>(noSaleRows(query, (number - 1) * PAGE_SIZE, PAGE_SIZE), number, PAGE_SIZE, total);
+    }
+
+    /**
+     * The where clause of the drawers opened outside a sale.
+     *
+     * @param criteria the parsed criteria
+     * @return the query fragment
+     */
+    private JournalQuery noSaleQuery(JournalCriteria criteria) {
+        JournalCriteria scoped = new JournalCriteria();
+        scoped.eventTypes.add(TechnicalEvent.EventType.DRAWER_FORCED_OPEN.name());
+        scoped.cashierMin = criteria.cashierMin;
+        scoped.cashierMax = criteria.cashierMax;
+        scoped.terminalMin = criteria.terminalMin;
+        scoped.terminalMax = criteria.terminalMax;
+        scoped.dateFrom = criteria.dateFrom;
+        scoped.dateTo = criteria.dateTo;
+        scoped.eventAmountMin = criteria.eventAmountMin;
+        scoped.eventAmountMax = criteria.eventAmountMax;
+        return buildEventQuery(scoped);
+    }
+
+    /**
+     * Reads one window of drawers opened outside a sale as journal rows.
+     *
+     * @param query the where clause
+     * @param offset the first row
+     * @param limit the window size
+     * @return the rows
+     */
+    private List<JournalRow> noSaleRows(JournalQuery query, int offset, int limit) {
+        TypedQuery<TechnicalEvent> typed = entityManager.createQuery(
+                "select e from TechnicalEvent e" + query.whereClause() + " order by e.eventDate desc, e.id asc",
+                TechnicalEvent.class);
+        bind(typed, query);
+        typed.setFirstResult(offset);
+        typed.setMaxResults(limit);
+        List<JournalRow> rows = new ArrayList<>();
+        for (TechnicalEvent event : typed.getResultList()) {
+            rows.add(new JournalRow(event.id, event.terminalId, event.ticketNumber == null ? "" : event.ticketNumber,
+                    event.operatorBadgeId == null ? "" : event.operatorBadgeId,
+                    event.eventDate.format(DATE), event.eventDate.format(TIME),
+                    formatAmount(event.amount), 0, "N", "N"));
         }
         return rows;
     }
@@ -587,13 +1063,17 @@ public class JournalService {
             // ticket push so the back office reads a contactless tap apart
             // from a PIN entry on this card state.
             String entryMode = payment instanceof CardPayment card ? card.cardEntryMode : null;
+            // BO-03-02-24: a guaranteed cheque shows the authorization the
+            // guarantee service gave it, and who gave it.
+            ChequePayment cheque = payment instanceof ChequePayment c ? c : null;
             payments.add(new JournalTicketDetail.Payment(
                     payment.getMethodKey(),
                     formatAmount(payment.amount),
-                    entryMode));
+                    entryMode,
+                    cheque == null ? null : cheque.guaranteeAuthorization,
+                    cheque == null ? null : cheque.guaranteeProvider));
         }
-        LOGGER.info("Exiting method buildDetail");
-        return new JournalTicketDetail(
+        JournalTicketDetail detail = new JournalTicketDetail(
                 ticket.ticketNumber,
                 ticket.terminalId,
                 ticket.status.name(),
@@ -609,6 +1089,61 @@ public class JournalService {
                 lines,
                 payments,
                 fidelityGroups(ticket));
+        enrich(detail, ticket);
+        LOGGER.info("Exiting method buildDetail");
+        return detail;
+    }
+
+    /**
+     * Completes a ticket's detail with what the journal reads beside it: the
+     * VAT ventilation by rate (BO-04-01-55), the « Mode école » and
+     * « Autonome » columns and who decided a self-scanning control
+     * (BO-04-01-41/42/43/50), the offline sale (BO-04-01-14), the codes scanned
+     * that no article answered (BO-04-01-34), the settlements cancelled
+     * (BO-04-01-19) and the invoices and delivery notes issued for it, which
+     * the back office reprints as duplicates (BO-04-01-53).
+     *
+     * @param detail the detail under construction
+     * @param ticket the ticket it describes
+     */
+    private void enrich(JournalTicketDetail detail, Ticket ticket) {
+        java.util.TreeMap<BigDecimal, BigDecimal> byRate = new java.util.TreeMap<>();
+        for (TicketLine line : ticket.lines) {
+            if (!line.cancelled && line.totalPrice != null) {
+                BigDecimal rate = line.vatRate == null ? BigDecimal.ZERO : line.vatRate;
+                byRate.merge(rate, line.totalPrice, BigDecimal::add);
+            }
+        }
+        for (Map.Entry<BigDecimal, BigDecimal> entry : byRate.entrySet()) {
+            detail.vatRows.add(vatRow(entry.getKey(), entry.getValue()));
+        }
+        detail.trainingMode = "N";
+        detail.autonomous = ticket.selfScanning ? "O" : "N";
+        detail.selfScanControlled = ticket.selfScanControlled;
+        detail.selfScanVerified = ticket.selfScanVerified;
+        detail.offline = ticket.offline;
+        for (TechnicalEvent event : entityManager.createQuery(
+                        "select e from TechnicalEvent e where e.ticketNumber = :number and e.terminalId = :terminal"
+                                + " and e.eventType in :types order by e.eventDate, e.id", TechnicalEvent.class)
+                .setParameter("number", ticket.ticketNumber)
+                .setParameter("terminal", ticket.terminalId)
+                .setParameter("types", List.of(TechnicalEvent.EventType.UNKNOWN_ARTICLE_SCANNED,
+                        TechnicalEvent.EventType.PAYMENT_CANCELLED))
+                .getResultList()) {
+            if (event.eventType == TechnicalEvent.EventType.UNKNOWN_ARTICLE_SCANNED) {
+                detail.unknownCodes.add(event.code);
+            } else {
+                detail.cancelledPayments.add(event.code + " " + formatAmount(event.amount));
+            }
+        }
+        for (com.intermarche.edge.domain.sale.Invoice document : entityManager.createQuery(
+                        "select d from Invoice d where d.ticketNumber = :number order by d.issueDate, d.id",
+                        com.intermarche.edge.domain.sale.Invoice.class)
+                .setParameter("number", ticket.ticketNumber)
+                .getResultList()) {
+            detail.documents.add(new JournalTicketDetail.Document(document.id, document.documentNumber,
+                    document.documentType.getTitle()));
+        }
     }
 
     /**
@@ -682,6 +1217,95 @@ public class JournalService {
         return result;
     }
 
+    /**
+     * An invoice or delivery note reprinted from the back office as a
+     * DUPLICATE (BO-04-01-53): its identity, its customer block, the lines of
+     * the sale it states, its VAT and its totals, and the number of times it
+     * was printed, this reprint included.
+     *
+     * @param number the document number
+     * @param title FACTURE or BON DE LIVRAISON
+     * @param issuedAt when it was issued, written
+     * @param terminal the register that issued it
+     * @param ticketNumber the ticket it states
+     * @param customerName the customer's name
+     * @param customerAccount the customer's account number
+     * @param customerAddress the customer's address, one line
+     * @param customerSiret the customer's SIRET
+     * @param customerVatNumber the customer's intracommunity VAT number
+     * @param lines the sold lines
+     * @param vatRows the VAT ventilation
+     * @param totalExcludingTax the total excluding tax, written
+     * @param totalVat the VAT, written
+     * @param totalIncludingTax the total including tax, written
+     * @param printCount how many times it was printed
+     */
+    public record Duplicate(String number, String title, String issuedAt, String terminal, String ticketNumber,
+                            String customerName, String customerAccount, String customerAddress,
+                            String customerSiret, String customerVatNumber, List<DuplicateLine> lines,
+                            List<VatRow> vatRows, String totalExcludingTax, String totalVat,
+                            String totalIncludingTax, int printCount) {
+    }
+
+    /**
+     * One sold line of a duplicate (BO-04-01-53).
+     *
+     * @param label the article's label
+     * @param quantity the quantity, written
+     * @param total the line total, written
+     */
+    public record DuplicateLine(String label, String quantity, String total) {
+    }
+
+    /**
+     * Reprints an invoice or a delivery note as a DUPLICATE from the back
+     * office (BO-04-01-53): the document counts one more print, and the
+     * reprint is journalled like a duplicate printed at a till, by the rule
+     * the PDF reprint of the reports shares (BO-06-04-03).
+     *
+     * @param id the document's id on this node
+     * @return the duplicate, or null when the id names no document
+     */
+    @jakarta.transaction.Transactional
+    public Duplicate duplicate(Long id) {
+        LOGGER.info("Entering method duplicate with id: " + id);
+        com.intermarche.edge.domain.sale.Invoice document =
+                entityManager.find(com.intermarche.edge.domain.sale.Invoice.class, id);
+        if (document == null) {
+            LOGGER.info("Exiting method duplicate: unknown document");
+            return null;
+        }
+        // One reprint rule for the journal and the report frame (BO-06-04-03).
+        invoiceDuplicateService.countReprint(document);
+        List<DuplicateLine> lines = new ArrayList<>();
+        java.util.TreeMap<BigDecimal, BigDecimal> byRate = new java.util.TreeMap<>();
+        if (document.ticket != null) {
+            for (TicketLine line : document.ticket.lines) {
+                if (!line.cancelled) {
+                    lines.add(new DuplicateLine(line.productLabel, formatQuantity(line.quantity),
+                            formatAmount(line.totalPrice)));
+                    byRate.merge(line.vatRate == null ? BigDecimal.ZERO : line.vatRate,
+                            line.totalPrice == null ? BigDecimal.ZERO : line.totalPrice, BigDecimal::add);
+                }
+            }
+        }
+        List<VatRow> vatRows = new ArrayList<>();
+        for (Map.Entry<BigDecimal, BigDecimal> entry : byRate.entrySet()) {
+            vatRows.add(vatRow(entry.getKey(), entry.getValue()));
+        }
+        com.intermarche.edge.domain.store.Address address = document.customerAddress;
+        String where = address == null ? "" : String.join(" ", java.util.stream.Stream.of(
+                address.streetLine1, address.postalCode, address.city)
+                .filter(part -> part != null && !part.isBlank()).toList());
+        LOGGER.info("Exiting method duplicate");
+        return new Duplicate(document.documentNumber, document.documentType.getTitle(),
+                document.issueDate == null ? "" : document.issueDate.format(DATE) + " " + document.issueDate.format(TIME),
+                document.terminalId, document.ticketNumber, document.customerName, document.customerAccountNumber,
+                where, document.customerSiret, document.customerVatNumber, lines, vatRows,
+                formatAmount(document.totalExcludingTax), formatAmount(document.totalVat),
+                formatAmount(document.totalIncludingTax), document.printCount);
+    }
+
     // --------------------------------------------------
     // Functional journal
     // --------------------------------------------------
@@ -747,6 +1371,20 @@ public class JournalService {
             query.and("lower(e.detail) like :text");
             query.bind("text", "%" + criteria.text.toLowerCase() + "%");
         }
+        // BO-04-01-19/34: the amount an event bears and the code it carries
+        // (the settlement's method, the code scanned).
+        if (criteria.eventAmountMin != null) {
+            query.and("e.amount >= :eventAmountMin");
+            query.bind("eventAmountMin", criteria.eventAmountMin);
+        }
+        if (criteria.eventAmountMax != null) {
+            query.and("e.amount <= :eventAmountMax");
+            query.bind("eventAmountMax", criteria.eventAmountMax);
+        }
+        if (criteria.eventCode != null) {
+            query.and("e.code = :eventCode");
+            query.bind("eventCode", criteria.eventCode);
+        }
         return query;
     }
 
@@ -771,13 +1409,17 @@ public class JournalService {
         typed.setMaxResults(PAGE_SIZE);
         List<JournalEventRow> rows = new ArrayList<>();
         for (TechnicalEvent event : typed.getResultList()) {
-            rows.add(new JournalEventRow(
+            JournalEventRow row = new JournalEventRow(
                     event.terminalId,
                     event.operatorBadgeId,
                     event.eventType.name(),
                     event.eventDate.format(DATE),
                     event.eventDate.format(TIME),
-                    event.detail));
+                    event.detail);
+            row.code = event.code == null ? "" : event.code;
+            row.amount = event.amount == null ? "" : formatAmount(event.amount);
+            row.ticketNumber = event.ticketNumber == null ? "" : event.ticketNumber;
+            rows.add(row);
         }
         LOGGER.info("Exiting method searchEvents");
         return new JournalPage<>(rows, number, PAGE_SIZE, total);
@@ -893,13 +1535,17 @@ public class JournalService {
      * but over the WHOLE result set rather than the displayed page: an extract
      * an auditor works from is complete or it is worthless.
      *
+     * <p>The headings are written in the language of the page that asked for
+     * the export; the values stay as the screen writes them.
+     *
      * @param criteria the parsed search criteria
+     * @param translate the translation of a French heading into the page's language
      * @return the CSV document
      */
-    public String exportCsv(JournalCriteria criteria) {
+    public String exportCsv(JournalCriteria criteria, java.util.function.UnaryOperator<String> translate) {
         LOGGER.info("Entering method exportCsv with criteria: " + criteria);
         LOGGER.info("Exiting method exportCsv");
-        return exportCsv(criteria, EXPORT_CHUNK);
+        return exportCsv(criteria, EXPORT_CHUNK, translate);
     }
 
     /**
@@ -908,14 +1554,21 @@ public class JournalService {
      *
      * @param criteria the parsed search criteria
      * @param chunkSize the number of rows read per query, strictly positive
+     * @param translate the translation of a French heading into the page's language
      * @return the CSV document covering every matching row
      */
-    String exportCsv(JournalCriteria criteria, int chunkSize) {
-        JournalQuery query = buildTicketQuery(criteria);
-        StringBuilder csv = new StringBuilder(
-                "TPV;Transaction;Caissiere;Date;Heure;Montant;Articles;Ecole;Autonome\n");
+    String exportCsv(JournalCriteria criteria, int chunkSize, java.util.function.UnaryOperator<String> translate) {
+        JournalQuery query = criteria.event == JournalEvent.TRAINING ? trainingQuery(criteria)
+                : criteria.event == JournalEvent.NO_SALE ? noSaleQuery(criteria) : buildTicketQuery(criteria);
+        // The byte order mark tells a spreadsheet the file is UTF-8, so the
+        // accented headings and labels open as written.
+        List<String> headings = new ArrayList<>();
+        for (String heading : CSV_HEADINGS) {
+            headings.add(translate.apply(heading));
+        }
+        StringBuilder csv = new StringBuilder("\uFEFF" + String.join(";", headings) + "\n");
         int offset = 0;
-        List<JournalRow> chunk = ticketRows(criteria, query, offset, chunkSize);
+        List<JournalRow> chunk = window(criteria, query, offset, chunkSize);
         while (!chunk.isEmpty()) {
             for (JournalRow row : chunk) {
                 csv.append(row.terminal).append(';')
@@ -926,15 +1579,35 @@ public class JournalService {
                         .append(row.amount).append(';')
                         .append(row.itemCount).append(';')
                         .append(row.trainingMode).append(';')
-                        .append(row.autonomous).append('\n');
+                        .append(row.autonomous).append(';')
+                        .append(String.join(" | ", row.getVatParts().stream().map(translate).toList())).append('\n');
             }
             if (chunk.size() < chunkSize) {
                 break;
             }
             offset += chunkSize;
-            chunk = ticketRows(criteria, query, offset, chunkSize);
+            chunk = window(criteria, query, offset, chunkSize);
         }
         return csv.toString();
+    }
+
+    /**
+     * Reads one window of the export from the event's own source.
+     *
+     * @param criteria the parsed criteria
+     * @param query the built where clause
+     * @param offset the first row
+     * @param limit the window size
+     * @return the rows
+     */
+    private List<JournalRow> window(JournalCriteria criteria, JournalQuery query, int offset, int limit) {
+        if (criteria.event == JournalEvent.TRAINING) {
+            return trainingRows(query, offset, limit);
+        }
+        if (criteria.event == JournalEvent.NO_SALE) {
+            return noSaleRows(query, offset, limit);
+        }
+        return ticketRows(criteria, query, offset, limit);
     }
 
     /**

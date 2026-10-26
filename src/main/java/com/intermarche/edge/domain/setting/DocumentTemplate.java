@@ -126,6 +126,20 @@ public class DocumentTemplate extends PanacheEntity {
     public String copyTitles;
 
     /**
+     * The echelon this template is posed at ({@code BO-02-05-02},
+     * {@code BO-02-05-04}), written like every echelon scope —
+     * {@code COUNTRY:PT}, {@code ENSEIGNE:IF}, {@code PDV:07039} — or null
+     * for every point of sale.
+     *
+     * <p>A point of sale receives, for each document, the templates of the
+     * most specific echelon that covers it: its own, its enseigne's, its
+     * country's, the organisation's. That is what makes a document model an
+     * inherited parameter rather than a row every till receives alike.
+     */
+    @Column(name = "echelon_scope", length = 60)
+    public String echelonScope;
+
+    /**
      * Tells whether the template carries a source worth rendering.
      *
      * <p>A row saved with an empty source is not an error and not a reason to
@@ -443,6 +457,17 @@ public class DocumentTemplate extends PanacheEntity {
          * difference is exactly what a dispute two hours later turns on.
          */
         PARKED_TICKET_RESUME("Ticket de reprise"),
+
+        /**
+         * The PARKED ticket (BO-03-03-06, LC-04-01-02): the slip a register
+         * prints when a sale is put aside.
+         *
+         * <p>Its whole purpose is to be scanned back, so what a layout reads is
+         * the title, the barcode directive, the number in clear, the moment it
+         * was printed and the ticket number — and, where the shop details it,
+         * the articles put aside and their total.
+         */
+        PARKED_TICKET("Ticket en attente"),
 
         /**
          * The slip of a CANCELLED settlement (BO-03-02-35).

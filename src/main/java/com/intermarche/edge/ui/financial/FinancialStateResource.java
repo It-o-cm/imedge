@@ -14,6 +14,7 @@ import com.intermarche.edge.ui.report.ReportWriter;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.security.Authenticated;
+import com.intermarche.edge.security.FeatureAccess;
 import io.quarkus.security.identity.SecurityIdentity;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
@@ -71,6 +72,7 @@ public class FinancialStateResource {
      */
     @GET
     @Authenticated
+    @FeatureAccess(value = Feature.FINANCIAL_STATE, selfGuarded = true)
     public Object listPage(@QueryParam("notice") String notice,
                            @QueryParam("noticeOk") @jakarta.ws.rs.DefaultValue("true") boolean noticeOk) {
         LOGGER.info("Entering method listPage");
@@ -108,6 +110,7 @@ public class FinancialStateResource {
     @GET
     @Path("/x")
     @Authenticated
+    @FeatureAccess(value = Feature.FINANCIAL_STATE, selfGuarded = true)
     public Object readX(@QueryParam("scope") String scope,
                         @QueryParam("period") String period,
                         @QueryParam("cashier") String cashierLogin) {
@@ -133,6 +136,7 @@ public class FinancialStateResource {
     @GET
     @Path("/{id}")
     @Authenticated
+    @FeatureAccess(value = Feature.FINANCIAL_STATE, selfGuarded = true)
     public Object show(@PathParam("id") Long id) {
         LOGGER.info("Entering method show with id: " + id);
         Response denied = guard(CrudOption.VIEW);
@@ -161,6 +165,7 @@ public class FinancialStateResource {
     @POST
     @Path("/emit")
     @Authenticated
+    @FeatureAccess(value = Feature.FINANCIAL_STATE, option = CrudOption.CREATE, selfGuarded = true)
     public Response emit(@QueryParam("scope") String scope,
                          @QueryParam("period") String period,
                          @QueryParam("cashier") String cashierLogin) {
@@ -189,6 +194,7 @@ public class FinancialStateResource {
     @GET
     @Path("/{id}/export")
     @Authenticated
+    @FeatureAccess(value = Feature.FINANCIAL_STATE, selfGuarded = true)
     public Response export(@PathParam("id") Long id,
                            @QueryParam("section") String sectionName,
                            @QueryParam("format") String format) {

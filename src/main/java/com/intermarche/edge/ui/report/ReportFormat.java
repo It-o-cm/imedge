@@ -48,6 +48,7 @@ public final class ReportFormat {
         }
         return switch (column.kind()) {
             case AMOUNT -> amount(value);
+            case DECIMAL -> group(decimal(value).setScale(2, RoundingMode.HALF_UP));
             case PERCENT -> percent(value);
             case INTEGER -> integer(value);
             case DATE -> date(value);

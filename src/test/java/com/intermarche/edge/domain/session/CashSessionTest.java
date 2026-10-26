@@ -16,9 +16,10 @@ import static org.mockito.Mockito.when;
  * Unit tests for {@link CashSession}, targeting 100% branch coverage.
  * <p>
  * The only branching method is {@code getOpeningFloatFormatted} (its null
- * guard). {@code findOpenByTerminal} resolves the Panache static finder, which
- * under plain {@code mvn test} falls back to {@link PanacheEntityBase}, so it is
- * intercepted with {@link org.mockito.Mockito#mockStatic}. {@code getChecksum},
+ * guard). {@code findOpenByTerminal} and {@code findLastClosedByTerminal}
+ * resolve the Panache static finder, which under plain {@code mvn test} falls
+ * back to {@link PanacheEntityBase}, so they are intercepted with
+ * {@link org.mockito.Mockito#mockStatic}. {@code getChecksum},
  * the default field initializer and the {@link CashSession.SessionStatus} enum
  * are exercised for line coverage. Every test is fully isolated and asserts
  * absolute expected values.
@@ -151,5 +152,34 @@ class CashSessionTest {
                 CashSession.SessionStatus.valueOf("OPEN"));
         Assertions.assertEquals(CashSession.SessionStatus.CLOSED,
                 CashSession.SessionStatus.valueOf("CLOSED"));
+    }
+
+    /**
+     * findLastClosedByTerminal queries the most recently closed session of the
+     * register (EXP-02) and returns the finder's first result.
+     */
+    @Test
+    void findLastClosedByTerminalReturnsTheLastClosedSession() {
+        CashSession closed = new CashSession();
+        PanacheQuery<CashSession> query = query(closed);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> CashSession.find("terminalId = ?1 and status = ?2 order by closingDate desc",
+                    "C04", CashSession.SessionStatus.CLOSED)).thenReturn(query);
+            Assertions.assertSame(closed, CashSession.findLastClosedByTerminal("C04"));
+        }
+    }
+
+    /**
+     * findLastClosedByTerminal returns null when the register never closed a
+     * session.
+     */
+    @Test
+    void findLastClosedByTerminalReturnsNullWhenNoneClosed() {
+        PanacheQuery<CashSession> query = query(null);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> CashSession.find("terminalId = ?1 and status = ?2 order by closingDate desc",
+                    "C09", CashSession.SessionStatus.CLOSED)).thenReturn(query);
+            Assertions.assertNull(CashSession.findLastClosedByTerminal("C09"));
+        }
     }
 }

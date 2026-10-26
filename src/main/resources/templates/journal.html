@@ -13,137 +13,141 @@
 !}
 {#include admin-layout}
 
-{#title}Journal électronique{/title}
+{#title}{inject:i18n.get('t.journal-electronique')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Journal électronique</h1>
-        <p class="page-sub">Recherche multicritères sur les documents consolidés de ce nœud.</p>
+        <h1>{inject:i18n.get('t.journal-electronique')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.recherche-multicriteres-sur-les-documents-consol')}</p>
     </div>
 </div>
 
 <nav class="journal-tabs">
-    <a href="/admin/journal" class="journal-tab {#if tab == 'transactional'}is-active{/if}">Journal transactionnel</a>
-    <a href="/admin/journal/functional" class="journal-tab {#if tab == 'functional'}is-active{/if}">Journal fonctionnel</a>
-    <a href="/admin/journal/movements" class="journal-tab {#if tab == 'movements'}is-active{/if}">Mouvements de caisse</a>
+    <a href="/admin/journal" class="journal-tab {#if tab == 'transactional'}is-active{/if}">{inject:i18n.get('t.journal-transactionnel')}</a>
+    <a href="/admin/journal/functional" class="journal-tab {#if tab == 'functional'}is-active{/if}">{inject:i18n.get('t.journal-fonctionnel')}</a>
+    <a href="/admin/journal/movements" class="journal-tab {#if tab == 'movements'}is-active{/if}">{inject:i18n.get('t.mouvements-de-caisse')}</a>
+    <a href="/admin/journal/training" class="journal-tab">{inject:i18n.get('t.transactions-ecole')}</a>
+    <a href="/admin/journal/parked" class="journal-tab">{inject:i18n.get('t.tickets-en-attente')}</a>
+    <a href="/admin/journal/barcodes-issued" class="journal-tab">{inject:i18n.get('t.codes-barres-imprimes')}</a>
+    <a href="/admin/journal/barcodes-scanned" class="journal-tab">{inject:i18n.get('t.codes-barres-passes')}</a>
 </nav>
 
 {#if tab == 'transactional'}
 <form method="get" action="/admin/journal" class="card journal-form">
     <div class="field-grid">
         <div class="field">
-            <label class="field-label" for="f-text">Texte libre</label>
+            <label class="field-label" for="f-text">{inject:i18n.get('t.texte-libre')}</label>
             <input class="input-control" id="f-text" type="text" name="text" value="{criteria.text ?: ''}" maxlength="120">
         </div>
         <div class="field">
-            <label class="field-label" for="f-cashier-min">N° caissière (de / à)</label>
+            <label class="field-label" for="f-cashier-min">{inject:i18n.get('t.n-caissiere-de-a')}</label>
             <div class="journal-range">
                 <input class="input-control" id="f-cashier-min" type="text" name="cashierMin" value="{criteria.cashierMin ?: ''}">
                 <input class="input-control" type="text" name="cashierMax" value="{criteria.cashierMax ?: ''}">
             </div>
         </div>
         <div class="field">
-            <label class="field-label" for="f-tpv-min">N° TPV (de / à)</label>
+            <label class="field-label" for="f-tpv-min">{inject:i18n.get('t.n-tpv-de-a')}</label>
             <div class="journal-range">
                 <input class="input-control" id="f-tpv-min" type="text" name="terminalMin" value="{criteria.terminalMin ?: ''}">
                 <input class="input-control" type="text" name="terminalMax" value="{criteria.terminalMax ?: ''}">
             </div>
         </div>
         <div class="field">
-            <label class="field-label" for="f-tx-min">N° transaction (de / à)</label>
+            <label class="field-label" for="f-tx-min">{inject:i18n.get('t.n-transaction-de-a')}</label>
             <div class="journal-range">
                 <input class="input-control" id="f-tx-min" type="text" name="txMin" value="{criteria.txMin ?: ''}">
                 <input class="input-control" type="text" name="txMax" value="{criteria.txMax ?: ''}">
             </div>
         </div>
         <div class="field">
-            <label class="field-label" for="f-amount-min">Montant (de / à)</label>
+            <label class="field-label" for="f-amount-min">{inject:i18n.get('t.montant-de-a')}</label>
             <div class="journal-range">
                 <input class="input-control" id="f-amount-min" type="text" name="amountMin" value="{criteria.amountMin ?: ''}">
                 <input class="input-control" type="text" name="amountMax" value="{criteria.amountMax ?: ''}">
             </div>
         </div>
         <div class="field">
-            <label class="field-label" for="f-gross-min">Montant hors remise (de / à)</label>
+            <label class="field-label" for="f-gross-min">{inject:i18n.get('t.montant-hors-remise-de-a')}</label>
             <div class="journal-range">
                 <input class="input-control" id="f-gross-min" type="text" name="grossMin" value="{criteria.grossMin ?: ''}">
                 <input class="input-control" type="text" name="grossMax" value="{criteria.grossMax ?: ''}">
             </div>
         </div>
         <div class="field">
-            <label class="field-label" for="f-date-from">Période (du / au)</label>
+            <label class="field-label" for="f-date-from">{inject:i18n.get('t.periode-du-au')}</label>
             <div class="journal-range">
                 <input class="input-control" id="f-date-from" type="datetime-local" name="dateFrom" value="{criteria.dateFrom ?: ''}">
                 <input class="input-control" type="datetime-local" name="dateTo" value="{criteria.dateTo ?: ''}">
             </div>
         </div>
         <div class="field">
-            <label class="field-label" for="f-hour-from">Plage horaire (de / à, 0-23)</label>
+            <label class="field-label" for="f-hour-from">{inject:i18n.get('t.plage-horaire-de-a-0-23')}</label>
             <div class="journal-range">
                 <input class="input-control" id="f-hour-from" type="number" min="0" max="23" name="hourFrom" value="{criteria.hourFrom ?: ''}">
                 <input class="input-control" type="number" min="0" max="23" name="hourTo" value="{criteria.hourTo ?: ''}">
             </div>
         </div>
         <div class="field">
-            <label class="field-label" for="f-plu-min">N° PLU article (de / à)</label>
+            <label class="field-label" for="f-plu-min">{inject:i18n.get('t.n-plu-article-de-a')}</label>
             <div class="journal-range">
                 <input class="input-control" id="f-plu-min" type="text" name="pluMin" value="{criteria.pluMin ?: ''}">
                 <input class="input-control" type="text" name="pluMax" value="{criteria.pluMax ?: ''}">
             </div>
         </div>
         <div class="field">
-            <label class="field-label" for="f-family-min">Nomenclature famille (de / à)</label>
+            <label class="field-label" for="f-family-min">{inject:i18n.get('t.nomenclature-famille-de-a')}</label>
             <div class="journal-range">
                 <input class="input-control" id="f-family-min" type="text" name="familyMin" value="{criteria.familyMin ?: ''}">
                 <input class="input-control" type="text" name="familyMax" value="{criteria.familyMax ?: ''}">
             </div>
         </div>
         <div class="field">
-            <label class="field-label" for="f-family-codes">Familles précises (codes séparés par des virgules)</label>
+            <label class="field-label" for="f-family-codes">{inject:i18n.get('t.familles-precises-codes-separes-par-des-virgules')}</label>
             <input class="input-control" id="f-family-codes" type="text" name="familyCodes" value="{criteria.familiesAsText}">
         </div>
         <div class="field">
-            <label class="field-label" for="f-reduction-min">Réduction manuelle (de / à)</label>
+            <label class="field-label" for="f-reduction-min">{inject:i18n.get('t.reduction-manuelle-de-a')}</label>
             <div class="journal-range">
                 <input class="input-control" id="f-reduction-min" type="text" name="reductionMin" value="{criteria.reductionMin ?: ''}">
                 <input class="input-control" type="text" name="reductionMax" value="{criteria.reductionMax ?: ''}">
             </div>
         </div>
         <div class="field">
-            <label class="field-label" for="f-vat">Taux de TVA</label>
+            <label class="field-label" for="f-vat">{inject:i18n.get('t.taux-de-tva')}</label>
             <input class="input-control" id="f-vat" type="text" name="vatRate" value="{criteria.vatRate ?: ''}">
         </div>
         <div class="field">
-            <label class="field-label" for="f-auth-min">N° d'autorisation (de / à)</label>
+            <label class="field-label" for="f-auth-min">{inject:i18n.get('t.n-d-autorisation-de-a')}</label>
             <div class="journal-range">
                 <input class="input-control" id="f-auth-min" type="text" name="authMin" value="{criteria.authMin ?: ''}">
                 <input class="input-control" type="text" name="authMax" value="{criteria.authMax ?: ''}">
             </div>
         </div>
         <div class="field">
-            <label class="field-label" for="f-refund-plu-min">Remboursement article - N° PLU (de / à)</label>
+            <label class="field-label" for="f-refund-plu-min">{inject:i18n.get('t.remboursement-article-n-plu-de-a')}</label>
             <div class="journal-range">
                 <input class="input-control" id="f-refund-plu-min" type="text" name="refundPluMin" value="{criteria.refundPluMin ?: ''}">
                 <input class="input-control" type="text" name="refundPluMax" value="{criteria.refundPluMax ?: ''}">
             </div>
         </div>
         <div class="field">
-            <label class="field-label" for="f-refund-amount-min">Remboursement article - Montant (de / à)</label>
+            <label class="field-label" for="f-refund-amount-min">{inject:i18n.get('t.remboursement-article-montant-de-a')}</label>
             <div class="journal-range">
                 <input class="input-control" id="f-refund-amount-min" type="text" name="refundAmountMin" value="{criteria.refundAmountMin ?: ''}">
                 <input class="input-control" type="text" name="refundAmountMax" value="{criteria.refundAmountMax ?: ''}">
             </div>
         </div>
         <div class="field">
-            <label class="field-label" for="f-cancel-plu-min">Annulation article - N° PLU (de / à)</label>
+            <label class="field-label" for="f-cancel-plu-min">{inject:i18n.get('t.annulation-article-n-plu-de-a')}</label>
             <div class="journal-range">
                 <input class="input-control" id="f-cancel-plu-min" type="text" name="cancelPluMin" value="{criteria.cancelPluMin ?: ''}">
                 <input class="input-control" type="text" name="cancelPluMax" value="{criteria.cancelPluMax ?: ''}">
             </div>
         </div>
         <div class="field">
-            <label class="field-label" for="f-cancel-amount-min">Annulation article - Montant (de / à)</label>
+            <label class="field-label" for="f-cancel-amount-min">{inject:i18n.get('t.annulation-article-montant-de-a')}</label>
             <div class="journal-range">
                 <input class="input-control" id="f-cancel-amount-min" type="text" name="cancelAmountMin" value="{criteria.cancelAmountMin ?: ''}">
                 <input class="input-control" type="text" name="cancelAmountMax" value="{criteria.cancelAmountMax ?: ''}">
@@ -152,65 +156,111 @@
     </div>
 
     <fieldset class="journal-fieldset">
-        <legend>Mode de règlement</legend>
+        <legend>{inject:i18n.get('t.mode-de-reglement')}</legend>
         <div class="journal-checks">
             {#for key in paymentKeys}
-            <label class="journal-check"><input type="checkbox" name="method" value="{key}" {#if criteria.methods.contains(key)}checked{/if}> {key}</label>
+            <label class="journal-check"><input type="checkbox" name="method" value="{key}" {#if criteria.methods.contains(key)}checked{/if}> {inject:i18n.code('t.s21-pm-', key)}</label>
             {/for}
         </div>
     </fieldset>
 
     <fieldset class="journal-fieldset">
-        <legend>Événements</legend>
+        <legend>{inject:i18n.get('t.s21-evenement')}</legend>
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="f-event">{inject:i18n.get('t.s21-evenement')}</label>
+                <select class="input-control" id="f-event" name="event">
+                    <option value="">{inject:i18n.get('t.s21-tous-les-evenements')}</option>
+                    {#for e in journalEvents}
+                    <option value="{e}" data-range="{e.amountRange}" {#if criteria.event == e}selected{/if}>{inject:i18n.code('t.s21-event-', e)}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field" id="f-event-range">
+                <label class="field-label" for="f-event-amount-min">{inject:i18n.get('t.s21-montant-evenement-de-a')}</label>
+                <div class="journal-range">
+                    <input class="input-control" id="f-event-amount-min" type="text" name="eventAmountMin" value="{criteria.eventAmountMin ?: ''}">
+                    <input class="input-control" type="text" name="eventAmountMax" value="{criteria.eventAmountMax ?: ''}">
+                </div>
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-pc-min">{inject:i18n.get('t.s21-annulation-reglement-montant-de-a')}</label>
+                <div class="journal-range">
+                    <input class="input-control" id="f-pc-min" type="text" name="paymentCancelMin" value="{criteria.paymentCancelMin ?: ''}">
+                    <input class="input-control" type="text" name="paymentCancelMax" value="{criteria.paymentCancelMax ?: ''}">
+                </div>
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-pc-method">{inject:i18n.get('t.s21-annulation-reglement-mode')}</label>
+                <select class="input-control" id="f-pc-method" name="paymentCancelMethod">
+                    <option value="">{inject:i18n.get('t.s21-tous-les-modes')}</option>
+                    {#for key in paymentKeys}
+                    <option value="{key}" {#if criteria.paymentCancelMethod == key}selected{/if}>{inject:i18n.code('t.s21-pm-', key)}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-unknown-min">{inject:i18n.get('t.s21-code-inconnu-de-a')}</label>
+                <div class="journal-range">
+                    <input class="input-control" id="f-unknown-min" type="text" name="unknownCodeMin" value="{criteria.unknownCodeMin ?: ''}">
+                    <input class="input-control" type="text" name="unknownCodeMax" value="{criteria.unknownCodeMax ?: ''}">
+                </div>
+            </div>
+        </div>
+    </fieldset>
+
+    <fieldset class="journal-fieldset">
+        <legend>{inject:i18n.get('t.evenements')}</legend>
         <div class="journal-checks">
             {#for flag in ticketFlags}
-            <label class="journal-check"><input type="checkbox" name="flag" value="{flag}" {#if criteria.flags.contains(flag)}checked{/if}> {flag}</label>
+            <label class="journal-check"><input type="checkbox" name="flag" value="{flag}" {#if criteria.flags.contains(flag)}checked{/if}> {inject:i18n.code('t.s21-flag-', flag)}</label>
             {/for}
         </div>
     </fieldset>
 
     <div class="filter-bar">
         <div class="filter-field">
-            <label class="filter-label" for="f-sort">Tri</label>
+            <label class="filter-label" for="f-sort">{inject:i18n.get('t.tri')}</label>
             <select class="input-control" id="f-sort" name="sort">
                 {#for s in sorts}
-                <option value="{s.key}" {#if criteria.sort == s.key}selected{/if}>{s.key}</option>
+                <option value="{s.key}" {#if criteria.sort == s.key}selected{/if}>{inject:i18n.code('t.journal-sort-', s.key)}</option>
                 {/for}
             </select>
         </div>
         <div class="filter-field">
-            <label class="filter-label" for="f-dir">Sens</label>
+            <label class="filter-label" for="f-dir">{inject:i18n.get('t.sens')}</label>
             <select class="input-control" id="f-dir" name="dir">
-                <option value="asc" {#if !criteria.descending}selected{/if}>Croissant</option>
-                <option value="desc" {#if criteria.descending}selected{/if}>Décroissant</option>
+                <option value="asc" {#if !criteria.descending}selected{/if}>{inject:i18n.get('t.croissant')}</option>
+                <option value="desc" {#if criteria.descending}selected{/if}>{inject:i18n.get('t.decroissant')}</option>
             </select>
         </div>
         <div class="filter-actions">
-            <button class="btn btn-primary" type="submit">Rechercher</button>
-            <button class="btn btn-ghost" type="submit" formaction="/admin/journal/export">Exporter CSV</button>
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.rechercher')}</button>
+            <button class="btn btn-ghost" type="submit" formaction="/admin/journal/export">{inject:i18n.get('t.exporter-csv')}</button>
         </div>
     </div>
 </form>
 
 <div class="card">
-    <h2 class="card-title">Résultats ({tickets.total})</h2>
+    <h2 class="card-title">{inject:i18n.get('t.resultats')}{tickets.total})</h2>
     {#if tickets.empty}
-    <p class="col-muted">Aucun ticket ne correspond aux critères.</p>
+    <p class="col-muted">{inject:i18n.get('t.aucun-ticket-ne-correspond-aux-criteres')}</p>
     {#else}
-    <p class="journal-count">Tickets {tickets.firstIndex} à {tickets.lastIndex} sur {tickets.total} — page {tickets.number} sur {tickets.pageCount}. L'export CSV porte sur la totalité des {tickets.total} tickets.</p>
+    <p class="journal-count">{inject:i18n.get('t.tickets')} {tickets.firstIndex} {inject:i18n.get('t.x21-a')} {tickets.lastIndex} {inject:i18n.get('t.sur')} {tickets.total} {inject:i18n.get('t.page-2')} {tickets.number} {inject:i18n.get('t.sur')} {tickets.pageCount}{inject:i18n.get('t.l-export-csv-porte-sur-la-totalite')} {tickets.total} {inject:i18n.get('t.tickets-2')}</p>
     <table class="data-table">
         <thead>
             <tr>
-                <th>N° TPV</th>
-                <th>N° transaction</th>
-                <th>N° caissière</th>
-                <th>Date</th>
-                <th>Heure</th>
-                <th>Montant</th>
-                <th>Nb articles</th>
-                <th>École</th>
-                <th>Autonome</th>
-                <th class="col-actions">Détail</th>
+                <th>{inject:i18n.get('t.n-tpv')}</th>
+                <th>{inject:i18n.get('t.n-transaction')}</th>
+                <th>{inject:i18n.get('t.n-caissiere')}</th>
+                <th>{inject:i18n.get('t.date')}</th>
+                <th>{inject:i18n.get('t.heure')}</th>
+                <th>{inject:i18n.get('t.montant-2')}</th>
+                <th>{inject:i18n.get('t.nb-articles')}</th>
+                <th>{inject:i18n.get('t.ecole')}</th>
+                <th>{inject:i18n.get('t.autonome')}</th>
+                <th>{inject:i18n.get('t.s21-tva-par-taux')}</th>
+                <th class="col-actions">{inject:i18n.get('t.detail')}</th>
             </tr>
         </thead>
         <tbody>
@@ -225,7 +275,8 @@
                 <td>{row.itemCount}</td>
                 <td>{row.trainingMode}</td>
                 <td>{row.autonomous}</td>
-                <td class="col-actions"><a class="btn btn-small" href="/admin/journal/ticket/{row.id}">Ouvrir</a></td>
+                <td class="journal-vat">{#for part in row.vatParts}{#if part_index > 0} | {/if}{inject:i18n.text(part)}{/for}</td>
+                <td class="col-actions">{#if row.detailUrl}<a class="btn btn-small" href="{row.detailUrl}">{inject:i18n.get('t.ouvrir')}</a>{/if}</td>
             </tr>
             {/for}
         </tbody>
@@ -233,15 +284,15 @@
     {#if tickets.pageCount > 1}
     <nav class="journal-pager">
         {#if tickets.first}
-        <span class="btn btn-small is-disabled">Précédent</span>
+        <span class="btn btn-small is-disabled">{inject:i18n.get('t.precedent')}</span>
         {#else}
-        <a class="btn btn-small" href="/admin/journal?{baseQuery}page={tickets.previous}">Précédent</a>
+        <a class="btn btn-small" href="/admin/journal?{baseQuery}page={tickets.previous}">{inject:i18n.get('t.precedent')}</a>
         {/if}
-        <span class="journal-pager-pos">Page {tickets.number} / {tickets.pageCount}</span>
+        <span class="journal-pager-pos">{inject:i18n.get('t.page')} {tickets.number} / {tickets.pageCount}</span>
         {#if tickets.last}
-        <span class="btn btn-small is-disabled">Suivant</span>
+        <span class="btn btn-small is-disabled">{inject:i18n.get('t.suivant')}</span>
         {#else}
-        <a class="btn btn-small" href="/admin/journal?{baseQuery}page={tickets.next}">Suivant</a>
+        <a class="btn btn-small" href="/admin/journal?{baseQuery}page={tickets.next}">{inject:i18n.get('t.suivant')}</a>
         {/if}
     </nav>
     {/if}
@@ -250,75 +301,92 @@
 {#else if tab == 'functional'}
 <form method="get" action="/admin/journal/functional" class="card journal-form">
     <fieldset class="journal-fieldset">
-        <legend>Type d'événement</legend>
+        <legend>{inject:i18n.get('t.type-d-evenement')}</legend>
         <div class="journal-checks">
             {#for type in eventTypes}
-            <label class="journal-check"><input type="checkbox" name="eventType" value="{type}" {#if criteria.eventTypes.contains(type.name)}checked{/if}> {type}</label>
+            <label class="journal-check"><input type="checkbox" name="eventType" value="{type}" {#if criteria.eventTypes.contains(type.name)}checked{/if}> {inject:i18n.code('t.s21-ev-', type)}</label>
             {/for}
         </div>
     </fieldset>
 
     <div class="field-grid">
         <div class="field">
-            <label class="field-label" for="e-cashier-min">N° caissière (de / à)</label>
+            <label class="field-label" for="e-cashier-min">{inject:i18n.get('t.n-caissiere-de-a')}</label>
             <div class="journal-range">
                 <input class="input-control" id="e-cashier-min" type="text" name="cashierMin" value="{criteria.cashierMin ?: ''}">
                 <input class="input-control" type="text" name="cashierMax" value="{criteria.cashierMax ?: ''}">
             </div>
         </div>
         <div class="field">
-            <label class="field-label" for="e-tpv-min">N° TPV (de / à)</label>
+            <label class="field-label" for="e-tpv-min">{inject:i18n.get('t.n-tpv-de-a')}</label>
             <div class="journal-range">
                 <input class="input-control" id="e-tpv-min" type="text" name="terminalMin" value="{criteria.terminalMin ?: ''}">
                 <input class="input-control" type="text" name="terminalMax" value="{criteria.terminalMax ?: ''}">
             </div>
         </div>
         <div class="field">
-            <label class="field-label" for="e-date-from">Période (du / au)</label>
+            <label class="field-label" for="e-date-from">{inject:i18n.get('t.periode-du-au')}</label>
             <div class="journal-range">
                 <input class="input-control" id="e-date-from" type="datetime-local" name="dateFrom" value="{criteria.dateFrom ?: ''}">
                 <input class="input-control" type="datetime-local" name="dateTo" value="{criteria.dateTo ?: ''}">
             </div>
         </div>
         <div class="field">
-            <label class="field-label" for="e-text">Détail (texte libre)</label>
+            <label class="field-label" for="e-text">{inject:i18n.get('t.detail-texte-libre')}</label>
             <input class="input-control" id="e-text" type="text" name="text" value="{criteria.text ?: ''}" maxlength="120">
+        </div>
+        <div class="field">
+            <label class="field-label" for="e-amount-min">{inject:i18n.get('t.montant-de-a')}</label>
+            <div class="journal-range">
+                <input class="input-control" id="e-amount-min" type="text" name="eventAmountMin" value="{criteria.eventAmountMin ?: ''}">
+                <input class="input-control" type="text" name="eventAmountMax" value="{criteria.eventAmountMax ?: ''}">
+            </div>
+        </div>
+        <div class="field">
+            <label class="field-label" for="e-code">{inject:i18n.get('t.s21-code-mode-ou-code-scanne')}</label>
+            <input class="input-control" id="e-code" type="text" name="eventCode" value="{criteria.eventCode ?: ''}" maxlength="120">
         </div>
     </div>
 
     <div class="filter-bar">
         <div class="filter-actions">
-            <button class="btn btn-primary" type="submit">Rechercher</button>
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.rechercher')}</button>
         </div>
     </div>
 </form>
 
 <div class="card">
-    <h2 class="card-title">Événements ({events.total})</h2>
+    <h2 class="card-title">{inject:i18n.get('t.evenements-2')}{events.total})</h2>
     {#if events.empty}
-    <p class="col-muted">Aucun événement ne correspond aux critères.</p>
+    <p class="col-muted">{inject:i18n.get('t.aucun-evenement-ne-correspond-aux-criteres')}</p>
     {#else}
-    <p class="journal-count">Événements {events.firstIndex} à {events.lastIndex} sur {events.total} — page {events.number} sur {events.pageCount}.</p>
+    <p class="journal-count">{inject:i18n.get('t.evenements')} {events.firstIndex} {inject:i18n.get('t.x21-a')} {events.lastIndex} {inject:i18n.get('t.sur')} {events.total} {inject:i18n.get('t.page-2')} {events.number} {inject:i18n.get('t.sur')} {events.pageCount}.</p>
     <table class="data-table">
         <thead>
             <tr>
-                <th>N° TPV</th>
-                <th>N° caissière</th>
-                <th>Type</th>
-                <th>Date</th>
-                <th>Heure</th>
-                <th>Détail</th>
+                <th>{inject:i18n.get('t.n-tpv')}</th>
+                <th>{inject:i18n.get('t.n-caissiere')}</th>
+                <th>{inject:i18n.get('t.type')}</th>
+                <th>{inject:i18n.get('t.date')}</th>
+                <th>{inject:i18n.get('t.heure')}</th>
+                <th>{inject:i18n.get('t.ticket')}</th>
+                <th>{inject:i18n.get('t.s21-code')}</th>
+                <th>{inject:i18n.get('t.montant-2')}</th>
+                <th>{inject:i18n.get('t.detail')}</th>
             </tr>
         </thead>
         <tbody>
             {#for event in events.rows}
             <tr>
-                <td>{event.terminal}</td>
+                <td>{inject:eventWording.terminal(event.type, event.terminal)}</td>
                 <td>{event.cashier}</td>
-                <td>{event.type}</td>
+                <td>{inject:i18n.code('t.s21-ev-', event.type)}</td>
                 <td>{event.date}</td>
                 <td>{event.time}</td>
-                <td>{event.detail}</td>
+                <td>{event.ticketNumber}</td>
+                <td>{inject:eventWording.code(event.type, event.code)}</td>
+                <td>{event.amount}</td>
+                <td>{inject:eventWording.detail(event.type, event.detail)}</td>
             </tr>
             {/for}
         </tbody>
@@ -326,15 +394,15 @@
     {#if events.pageCount > 1}
     <nav class="journal-pager">
         {#if events.first}
-        <span class="btn btn-small is-disabled">Précédent</span>
+        <span class="btn btn-small is-disabled">{inject:i18n.get('t.precedent')}</span>
         {#else}
-        <a class="btn btn-small" href="/admin/journal/functional?{baseQuery}page={events.previous}">Précédent</a>
+        <a class="btn btn-small" href="/admin/journal/functional?{baseQuery}page={events.previous}">{inject:i18n.get('t.precedent')}</a>
         {/if}
-        <span class="journal-pager-pos">Page {events.number} / {events.pageCount}</span>
+        <span class="journal-pager-pos">{inject:i18n.get('t.page')} {events.number} / {events.pageCount}</span>
         {#if events.last}
-        <span class="btn btn-small is-disabled">Suivant</span>
+        <span class="btn btn-small is-disabled">{inject:i18n.get('t.suivant')}</span>
         {#else}
-        <a class="btn btn-small" href="/admin/journal/functional?{baseQuery}page={events.next}">Suivant</a>
+        <a class="btn btn-small" href="/admin/journal/functional?{baseQuery}page={events.next}">{inject:i18n.get('t.suivant')}</a>
         {/if}
     </nav>
     {/if}
@@ -343,38 +411,38 @@
 {#else}
 <form method="get" action="/admin/journal/movements" class="card journal-form">
     <fieldset class="journal-fieldset">
-        <legend>Type de mouvement</legend>
+        <legend>{inject:i18n.get('t.type-de-mouvement')}</legend>
         <div class="journal-checks">
             {#for type in movementTypes}
-            <label class="journal-check"><input type="checkbox" name="movementType" value="{type}" {#if criteria.movementTypes.contains(type)}checked{/if}> {type}</label>
+            <label class="journal-check"><input type="checkbox" name="movementType" value="{type}" {#if criteria.movementTypes.contains(type)}checked{/if}> {inject:i18n.code('t.s21-mv-', type)}</label>
             {/for}
         </div>
     </fieldset>
 
     <div class="field-grid">
         <div class="field">
-            <label class="field-label" for="m-cashier-min">N° caissière (de / à)</label>
+            <label class="field-label" for="m-cashier-min">{inject:i18n.get('t.n-caissiere-de-a')}</label>
             <div class="journal-range">
                 <input class="input-control" id="m-cashier-min" type="text" name="cashierMin" value="{criteria.cashierMin ?: ''}">
                 <input class="input-control" type="text" name="cashierMax" value="{criteria.cashierMax ?: ''}">
             </div>
         </div>
         <div class="field">
-            <label class="field-label" for="m-tpv-min">N° TPV (de / à)</label>
+            <label class="field-label" for="m-tpv-min">{inject:i18n.get('t.n-tpv-de-a')}</label>
             <div class="journal-range">
                 <input class="input-control" id="m-tpv-min" type="text" name="terminalMin" value="{criteria.terminalMin ?: ''}">
                 <input class="input-control" type="text" name="terminalMax" value="{criteria.terminalMax ?: ''}">
             </div>
         </div>
         <div class="field">
-            <label class="field-label" for="m-date-from">Période (du / au)</label>
+            <label class="field-label" for="m-date-from">{inject:i18n.get('t.periode-du-au')}</label>
             <div class="journal-range">
                 <input class="input-control" id="m-date-from" type="datetime-local" name="dateFrom" value="{criteria.dateFrom ?: ''}">
                 <input class="input-control" type="datetime-local" name="dateTo" value="{criteria.dateTo ?: ''}">
             </div>
         </div>
         <div class="field">
-            <label class="field-label" for="m-amount-min">Montant (de / à)</label>
+            <label class="field-label" for="m-amount-min">{inject:i18n.get('t.montant-de-a')}</label>
             <div class="journal-range">
                 <input class="input-control" id="m-amount-min" type="text" name="movementAmountMin" value="{criteria.movementAmountMin ?: ''}">
                 <input class="input-control" type="text" name="movementAmountMax" value="{criteria.movementAmountMax ?: ''}">
@@ -384,28 +452,28 @@
 
     <div class="filter-bar">
         <div class="filter-actions">
-            <button class="btn btn-primary" type="submit">Rechercher</button>
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.rechercher')}</button>
         </div>
     </div>
 </form>
 
 <div class="card">
-    <h2 class="card-title">Mouvements ({movements.total})</h2>
+    <h2 class="card-title">{inject:i18n.get('t.mouvements-2')}{movements.total})</h2>
     {#if movements.empty}
-    <p class="col-muted">Aucun mouvement ne correspond aux critères.</p>
+    <p class="col-muted">{inject:i18n.get('t.aucun-mouvement-ne-correspond-aux-criteres')}</p>
     {#else}
-    <p class="journal-count">Mouvements {movements.firstIndex} à {movements.lastIndex} sur {movements.total} — page {movements.number} sur {movements.pageCount}.</p>
+    <p class="journal-count">{inject:i18n.get('t.mouvements')} {movements.firstIndex} {inject:i18n.get('t.x21-a')} {movements.lastIndex} {inject:i18n.get('t.sur')} {movements.total} {inject:i18n.get('t.page-2')} {movements.number} {inject:i18n.get('t.sur')} {movements.pageCount}.</p>
     <table class="data-table">
         <thead>
             <tr>
-                <th>N° TPV</th>
-                <th>N° caissière</th>
-                <th>Type</th>
-                <th>Date</th>
-                <th>Heure</th>
-                <th>Montant</th>
-                <th>Motif</th>
-                <th>Aval</th>
+                <th>{inject:i18n.get('t.n-tpv')}</th>
+                <th>{inject:i18n.get('t.n-caissiere')}</th>
+                <th>{inject:i18n.get('t.type')}</th>
+                <th>{inject:i18n.get('t.date')}</th>
+                <th>{inject:i18n.get('t.heure')}</th>
+                <th>{inject:i18n.get('t.montant-2')}</th>
+                <th>{inject:i18n.get('t.motif')}</th>
+                <th>{inject:i18n.get('t.aval')}</th>
             </tr>
         </thead>
         <tbody>
@@ -413,7 +481,7 @@
             <tr>
                 <td>{movement.terminal}</td>
                 <td>{movement.cashier}</td>
-                <td>{movement.type}</td>
+                <td>{inject:i18n.code('t.s21-mv-', movement.type)}</td>
                 <td>{movement.date}</td>
                 <td>{movement.time}</td>
                 <td>{movement.amount}</td>
@@ -426,21 +494,38 @@
     {#if movements.pageCount > 1}
     <nav class="journal-pager">
         {#if movements.first}
-        <span class="btn btn-small is-disabled">Précédent</span>
+        <span class="btn btn-small is-disabled">{inject:i18n.get('t.precedent')}</span>
         {#else}
-        <a class="btn btn-small" href="/admin/journal/movements?{baseQuery}page={movements.previous}">Précédent</a>
+        <a class="btn btn-small" href="/admin/journal/movements?{baseQuery}page={movements.previous}">{inject:i18n.get('t.precedent')}</a>
         {/if}
-        <span class="journal-pager-pos">Page {movements.number} / {movements.pageCount}</span>
+        <span class="journal-pager-pos">{inject:i18n.get('t.page')} {movements.number} / {movements.pageCount}</span>
         {#if movements.last}
-        <span class="btn btn-small is-disabled">Suivant</span>
+        <span class="btn btn-small is-disabled">{inject:i18n.get('t.suivant')}</span>
         {#else}
-        <a class="btn btn-small" href="/admin/journal/movements?{baseQuery}page={movements.next}">Suivant</a>
+        <a class="btn btn-small" href="/admin/journal/movements?{baseQuery}page={movements.next}">{inject:i18n.get('t.suivant')}</a>
         {/if}
     </nav>
     {/if}
     {/if}
 </div>
 {/if}
+{|<script>
+/* BO-04-01-14 : la plage de montants suit le choix de l'evenement, sauf pour
+   le mode ecole et la vente deconnectee qui n'en ont pas. */
+(function () {
+    var select = document.getElementById('f-event');
+    var range = document.getElementById('f-event-range');
+    if (!select || !range) {
+        return;
+    }
+    function refresh() {
+        var option = select.options[select.selectedIndex];
+        range.hidden = !option || option.value === '' || option.getAttribute('data-range') !== 'true';
+    }
+    select.addEventListener('change', refresh);
+    refresh();
+})();
+</script>|}
 {/body}
 
-{#footer}Le journal ne produit aucune donnée : il ouvre en lecture les documents remontés par l'outbox de consolidation.{/footer}
+{#footer}{inject:i18n.get('t.le-journal-ne-produit-aucune-donnee-il')}{/footer}

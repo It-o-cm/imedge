@@ -33,3 +33,115 @@
 .grant-validation select {
     max-width: 200px;
 }
+
+@media (max-width: 900px) {
+    .grant-grid th,
+    .grant-grid td {
+        padding-left: 8px;
+        padding-right: 8px;
+    }
+
+    .grant-validation {
+        min-width: 0;
+        white-space: normal;
+    }
+
+    .grant-validation select {
+        max-width: 140px;
+    }
+}
+
+/* ---------- Validation pop-up (BO-01-04-03, BO-01-04-05) ---------- */
+
+.validation-overlay {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(16, 18, 23, .45);
+    z-index: 50;
+}
+
+.validation-panel {
+    width: 100%;
+    max-width: 420px;
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.grant-validation-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 10px;
+}
+
+.grant-validation-options .toggle {
+    height: auto;
+    gap: 4px;
+}
+
+.grant-validation-options .toggle span {
+    font-size: 12px;
+}
+
+/* ---------- Accounts (BO-01-01, BO-01-02) ---------- */
+
+.account-scopes {
+    min-height: 120px;
+}
+
+.account-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+
+.account-actions form {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin: 0;
+}
+
+.account-actions select {
+    width: auto;
+    padding: 5px 8px;
+    font-size: 13px;
+}
+
+.account-table td {
+    vertical-align: top;
+}
+
+.credentials-sheet {
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 16px;
+    max-width: 360px;
+    text-align: center;
+}
+
+.credentials-sheet .mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+@media print {
+    .app-header, .app-footer, .page-actions, .page-head { display: none; }
+}
+
+/* ---------- Administration log (BO-01-01-03) ---------- */
+
+.audit-table td {
+    vertical-align: top;
+}
+
+.audit-path {
+    word-break: break-all;
+    font-size: 13px;
+}

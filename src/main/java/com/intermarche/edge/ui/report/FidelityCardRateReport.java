@@ -41,10 +41,10 @@ public class FidelityCardRateReport implements ReportDefinition {
     private static final Logger LOGGER = Logger.getLogger(FidelityCardRateReport.class);
 
     /** The detail level that breaks the day down cashier by cashier. */
-    static final String BY_CASHIER = "Par caissière";
+    static final String BY_CASHIER = "CASHIER";
 
     /** The detail level that keeps one line per day for the whole store. */
-    static final String BY_STORE = "Total point de vente";
+    static final String BY_STORE = "STORE";
 
     /** The persistence session the query runs on. */
     @Inject EntityManager entityManager;
@@ -106,7 +106,27 @@ public class FidelityCardRateReport implements ReportDefinition {
      */
     @Override
     public List<String> optionChoices() {
-        return List.of(BY_CASHIER, BY_STORE);
+        return List.of(BY_CASHIER + ":Par caissière", BY_STORE + ":Total point de vente");
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * @return the column the chart draws (BO-06-01-04)
+     */
+    @Override
+    public int chartColumn() {
+        return 5;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * @return the column naming each bar
+     */
+    @Override
+    public int chartLabelColumn() {
+        return 2;
     }
 
     /**
@@ -117,7 +137,7 @@ public class FidelityCardRateReport implements ReportDefinition {
     @Override
     public List<ReportColumn> columns() {
         return List.of(
-                ReportColumn.text("date", "Date"),
+                new ReportColumn("date", "Date", ReportColumn.Kind.DATE, false),
                 ReportColumn.text("badge", "N° caissière"),
                 ReportColumn.text("name", "Nom de la caissière"),
                 ReportColumn.count("customers", "Nb total de clients"),
@@ -139,17 +159,14 @@ public class FidelityCardRateReport implements ReportDefinition {
                 "select t.closingDate, t.cashier, t.fidelityCard from Ticket t"
                         + " where t.status = :closed and t.closingDate >= :from"
                         + " and t.closingDate < :to");
-        if (!criteria.terminals.isEmpty()) {
-            jpql.append(" and t.terminalId in :terminals");
-        }
+        // BO-03-09-01: the registers chosen, and the deactivated ones left out.
+        jpql.append(criteria.terminalFilter("t.terminalId"));
         jpql.append(" order by t.closingDate");
         var query = entityManager.createQuery(jpql.toString(), Object[].class)
                 .setParameter("closed", Ticket.TicketStatus.CLOSED)
                 .setParameter("from", criteria.from())
                 .setParameter("to", criteria.to());
-        if (!criteria.terminals.isEmpty()) {
-            query.setParameter("terminals", criteria.terminals);
-        }
+        criteria.bindTerminals(query);
         Map<String, long[]> counts = new LinkedHashMap<>();
         Map<String, Employee> holders = new LinkedHashMap<>();
         Map<String, LocalDate> days = new LinkedHashMap<>();
@@ -175,7 +192,7 @@ public class FidelityCardRateReport implements ReportDefinition {
             long total = entry.getValue()[0];
             long carried = entry.getValue()[1];
             rows.add(Arrays.asList(
-                    days.get(entry.getKey()).toString(),
+                    days.get(entry.getKey()),
                     cashier == null ? "" : cashier.badgeId,
                     cashier == null ? "Tous" : cashier.getFullName(),
                     total,

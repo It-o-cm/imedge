@@ -8,43 +8,43 @@
 !}
 {#include admin-layout}
 
-{#title}Fin de journee{/title}
+{#title}{inject:i18n.get('t.fin-de-journee')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Fin de journee</h1>
-        <p class="page-sub">Ce que la fin de periode va trouver, et de quoi la lancer sans l'attendre. La fermeture demandee ici est la meme que l'automatique : une caisse en pleine vente n'est pas fermee sous le client, elle prend l'ordre des qu'elle est au repos.</p>
+        <h1>{inject:i18n.get('t.fin-de-journee')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.ce-que-la-fin-de-periode-va')}</p>
     </div>
-    <form method="post" action="/admin/day-end/launch" onsubmit="return confirm('Lancer la fin de journee maintenant ?');">
-        <button class="btn btn-primary" type="submit">Lancer la fin de journee</button>
+    <form method="post" action="/admin/day-end/launch" onsubmit="return confirm('{inject:i18n.js('t.lancer-la-fin-de-journee-maintenant')}');">
+        <button class="btn btn-primary" type="submit">{inject:i18n.get('t.lancer-la-fin-de-journee')}</button>
     </form>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 <div class="card">
-    <h2 class="card-title">Le compte a rebours</h2>
+    <h2 class="card-title">{inject:i18n.get('t.le-compte-a-rebours')}</h2>
     {#if state.autoEnabled}
-    <p class="page-sub">Fin de periode a <strong>{state.endOfPeriod}</strong>.
-        {#if state.countdownMinutes >= 0}Il reste <strong>{state.countdownMinutes} min</strong>.{#else}Elle n'est pas encore dans l'horizon d'alerte.{/if}</p>
+    <p class="page-sub">{inject:i18n.get('t.fin-de-periode-a')} <strong>{state.endOfPeriod}</strong>.
+        {#if state.countdownMinutes >= 0}{inject:i18n.get('t.il-reste')} <strong>{state.countdownMinutes} {inject:i18n.get('t.min')}</strong>.{#else}{inject:i18n.get('t.elle-n-est-pas-encore-dans-l')}{/if}</p>
     {#else}
-    <p class="page-sub">La fermeture automatique des caisses est <strong>desactivee</strong> : rien ne se fermera tout seul ce soir. Le bouton ci-dessus reste le seul chemin.</p>
+    <p class="page-sub">{inject:i18n.get('t.la-fermeture-automatique-des-caisses-est')} <strong>{inject:i18n.get('t.desactivee')}</strong> {inject:i18n.get('t.rien-ne-se-fermera-tout-seul-ce')}</p>
     {/if}
     {#if state.alerting && state.hasAlert()}
-    <div class="alert alert-error" role="alert">La fin de periode approche et {state.openRegisters.size()} caisse(s) sont ouvertes, {state.offlineRegisters.size()} deconnectee(s), {state.parkedCarts.size()} ticket(s) en attente.</div>
+    <div class="alert alert-error" role="alert">{inject:i18n.get('t.la-fin-de-periode-approche-et')} {state.openRegisters.size()} {inject:i18n.get('t.caisse-s-sont-ouvertes')} {state.offlineRegisters.size()} {inject:i18n.get('t.deconnectee-s')} {state.parkedCarts.size()} {inject:i18n.get('t.ticket-s-en-attente')}</div>
     {/if}
 </div>
 
 <div class="card">
-    <h2 class="card-title">Caisses ouvertes</h2>
+    <h2 class="card-title">{inject:i18n.get('t.caisses-ouvertes')}</h2>
     {#if state.openRegisters.isEmpty()}
-    <p class="page-sub">Aucune caisse n'est ouverte.</p>
+    <p class="page-sub">{inject:i18n.get('t.aucune-caisse-n-est-ouverte')}</p>
     {#else}
     <table class="admin-table">
-        <thead><tr><th>Caisse</th><th>Session</th><th>Ouverte par</th></tr></thead>
+        <thead><tr><th>{inject:i18n.get('t.caisse')}</th><th>{inject:i18n.get('t.session')}</th><th>{inject:i18n.get('t.ouverte-par')}</th></tr></thead>
         <tbody>
             {#for register in state.openRegisters}
             <tr><td class="mono">{register.terminalId}</td><td class="mono">{register.sessionNumber}</td><td>{register.cashier}</td></tr>
@@ -55,20 +55,20 @@
 </div>
 
 <div class="card">
-    <h2 class="card-title">Connectivite des caisses</h2>
-    <p class="card-sub">Chaque caisse vient chercher ses ordres sur ce noeud ; la date ci-dessous est celle de son dernier passage. Au-dela de {offlineMinutes} minutes de silence, elle est declaree deconnectee.</p>
+    <h2 class="card-title">{inject:i18n.get('t.connectivite-des-caisses')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.chaque-caisse-vient-chercher-ses-ordres-sur')} {offlineMinutes} {inject:i18n.get('t.minutes-de-silence-elle-est-declaree-deconnectee')}</p>
     {#if registers.isEmpty()}
-    <p class="page-sub">Aucune caisse ne s'est encore adressee a ce noeud.</p>
+    <p class="page-sub">{inject:i18n.get('t.aucune-caisse-ne-s-est-encore-adressee')}</p>
     {#else}
     <table class="admin-table">
-        <thead><tr><th>Caisse</th><th>Dernier signe de vie</th><th>Silence</th><th>Etat</th></tr></thead>
+        <thead><tr><th>{inject:i18n.get('t.caisse')}</th><th>{inject:i18n.get('t.dernier-signe-de-vie')}</th><th>{inject:i18n.get('t.silence')}</th><th>{inject:i18n.get('t.etat-2')}</th></tr></thead>
         <tbody>
             {#for register in registers}
             <tr class="{#if !register.online}row-muted{/if}">
                 <td class="mono">{register.terminalId}</td>
-                <td>{register.lastSeenAt}</td>
-                <td>{register.silentMinutes} min</td>
-                <td>{#if register.online}en ligne{#else}<strong>deconnectee</strong>{/if}</td>
+                <td>{#if register.lastSeenAt}{register.lastSeenAt.format('dd/MM/yyyy HH:mm')}{#else}—{/if}</td>
+                <td>{register.silentMinutes} {inject:i18n.get('t.min')}</td>
+                <td>{#if register.online}{inject:i18n.get('t.en-ligne')}{#else}<strong>{inject:i18n.get('t.deconnectee')}</strong>{/if}</td>
             </tr>
             {/for}
         </tbody>
@@ -77,25 +77,103 @@
 </div>
 
 <div class="card">
-    <h2 class="card-title">Tickets en attente</h2>
-    <p class="card-sub">Un ticket laisse en attente est annule par la cloture de sa caisse. Ce que la caisse en fait au moment de la cloture se regle par le point de controle « cloture avec des tickets en attente » dans les <a class="link-strong" href="/admin/settings">Parametres</a>.</p>
+    <h2 class="card-title">{inject:i18n.get('t.tickets-en-attente')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.un-ticket-laisse-en-attente-est-annule')} <a class="link-strong" href="/admin/settings">{inject:i18n.get('t.parametres')}</a>.</p>
     {#if state.parkedCarts.isEmpty()}
-    <p class="page-sub">Aucun ticket n'est en attente.</p>
+    <p class="page-sub">{inject:i18n.get('t.aucun-ticket-n-est-en-attente')}</p>
     {#else}
     <table class="admin-table">
-        <thead><tr><th>Caisse</th><th>Ticket</th><th>Caissiere</th><th>Montant</th></tr></thead>
+        <thead><tr><th>{inject:i18n.get('t.caisse')}</th><th>{inject:i18n.get('t.ticket')}</th><th>{inject:i18n.get('t.caissiere')}</th><th>{inject:i18n.get('t.montant-2')}</th><th>{inject:i18n.get('t.r20-raz')}</th></tr></thead>
         <tbody>
             {#for cart in state.parkedCarts}
-            <tr><td class="mono">{cart.terminalId}</td><td class="mono">{cart.ticketNumber}</td><td>{cart.cashier}</td><td>{cart.amount}</td></tr>
+            <tr><td class="mono">{cart.terminalId}</td><td class="mono">{cart.ticketNumber}</td><td>{cart.cashier}</td><td>{inject:i18n.money(cart.amount)}</td>
+                <td><form method="post" action="/admin/day-end/parked-raz" onsubmit="return confirm('{inject:i18n.js('t.r20-raz-confirmer')}');"><input type="hidden" name="terminal" value="{cart.terminalId}"><button class="btn btn-muted" type="submit">{inject:i18n.get('t.r20-raz-de-la-caisse')}</button></form></td></tr>
             {/for}
         </tbody>
     </table>
+    {! BO-09-01-08 : la RAZ des tickets en attente depuis le back-office. !}
+    <form method="post" action="/admin/day-end/parked-raz" class="page-actions" onsubmit="return confirm('{inject:i18n.js('t.r20-raz-confirmer')}');">
+        <button class="btn btn-primary" type="submit">{inject:i18n.get('t.r20-raz-de-tous-les-tickets-en-attente')}</button>
+    </form>
+    {/if}
+</div>
+
+{! BO-09-03 : ce que la fin de periode est parametree a faire. !}
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.r20-traitement-de-fin-de-periode')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.r20-traitement-aide')} <a class="link-strong" href="/admin/settings">{inject:i18n.get('t.parametres')}</a>.</p>
+    <table class="admin-table">
+        <tbody>
+            <tr><td>{inject:i18n.get('t.r20-lancement-automatique')}</td><td><strong>{#if autoLaunch}{inject:i18n.get('t.r20-active')}{#else}{inject:i18n.get('t.r20-desactive')}{/if}</strong></td></tr>
+            <tr><td>{inject:i18n.get('t.r20-enregistrement-des-tickets-en-attente')}</td><td>{#if parkedRecord}{inject:i18n.get('t.r20-active')}{#else}{inject:i18n.get('t.r20-desactive')}{/if}</td></tr>
+            <tr><td>{inject:i18n.get('t.r20-raz-automatique')}</td><td>{#if parkedRaz}{inject:i18n.get('t.r20-active')}{#else}{inject:i18n.get('t.r20-desactive')}{/if}</td></tr>
+            <tr><td>{inject:i18n.get('t.r20-verification-caisse-serveur')}</td><td>{#if registerCheck}{inject:i18n.get('t.r20-active')}{#else}{inject:i18n.get('t.r20-desactive')}{/if}</td></tr>
+            <tr><td>{inject:i18n.get('t.r20-declaration-auto-hotes-cls')}</td><td>{#if scoAutoDeclaration}{inject:i18n.get('t.r20-active')}{#else}{inject:i18n.get('t.r20-desactive')}{/if}</td></tr>
+            <tr><td>{inject:i18n.get('t.r20-ticket-technique')}</td><td>{#if forcedCloseTicket}{inject:i18n.get('t.r20-active')}{#else}{inject:i18n.get('t.r20-desactive')}{/if}</td></tr>
+            <tr><td>{inject:i18n.get('t.r20-points-d-entree-techniques')}</td><td>{#if hooksEnabled}{inject:i18n.get('t.r20-active')}{#else}{inject:i18n.get('t.r20-desactive')}{/if}</td></tr>
+            <tr><td>{inject:i18n.get('t.r20-imprimante-des-etats')}</td><td class="mono">{#if reportsPrinter}{reportsPrinter}{#else}&mdash;{/if}</td></tr>
+        </tbody>
+    </table>
+</div>
+
+{! BO-09-01-05 / BO-09-02-01 / BO-09-01-08 : les tickets en attente enregistres a la cloture. !}
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.r20-tickets-en-attente-enregistres')}</h2>
+    {#if parkedRecords.isEmpty()}
+    <p class="page-sub">{inject:i18n.get('t.r20-aucun-ticket-en-attente-enregistre')}</p>
+    {#else}
+    <div style="overflow-x: auto;">
+    <table class="data-table">
+        <thead><tr><th>{inject:i18n.get('t.k19-jour')}</th><th>{inject:i18n.get('t.caisse')}</th><th>{inject:i18n.get('t.ticket')}</th><th>{inject:i18n.get('t.caissiere')}</th><th>{inject:i18n.get('t.lignes')}</th><th>{inject:i18n.get('t.montant-2')}</th><th>{inject:i18n.get('t.r20-sort')}</th><th>{inject:i18n.get('t.r20-par')}</th></tr></thead>
+        <tbody>
+        {#for record in parkedRecords}
+        <tr>
+            <td class="mono">{record.closeDay.format('dd/MM/yyyy')}</td>
+            <td class="mono">{record.terminalId}</td>
+            <td class="mono">{record.ticketNumber}<details><summary>{inject:i18n.get('t.detail')}</summary><pre class="preview-pane" style="white-space: pre-wrap;">{record.content ?: ''}</pre></details></td>
+            <td>{record.cashier}</td>
+            <td>{record.itemCount}</td>
+            <td class="mono">{inject:i18n.money(record.amount)}</td>
+            <td>{#if record.fate.name() == 'RAZ_ORDERED'}{inject:i18n.get('t.r20-raz-demandee')}{#else}{inject:i18n.get('t.r20-enregistre')}{/if}</td>
+            <td>{inject:i18n.text(record.recordedBy)}</td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+    </div>
+    {/if}
+</div>
+
+{! BO-09-02-04 : les points d'entree techniques avant et apres la fin de periode. !}
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.r20-points-d-entree-techniques')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.r20-points-d-entree-aide')}</p>
+    {#if hookRuns.isEmpty()}
+    <p class="page-sub">{inject:i18n.get('t.r20-aucun-script-execute')}</p>
+    {#else}
+    <div style="overflow-x: auto;">
+    <table class="data-table">
+        <thead><tr><th>{inject:i18n.get('t.k19-jour')}</th><th>{inject:i18n.get('t.r20-phase')}</th><th>{inject:i18n.get('t.r20-script')}</th><th>{inject:i18n.get('t.r20-code-retour')}</th><th>{inject:i18n.get('t.r20-duree-ms')}</th><th>{inject:i18n.get('t.r20-sortie')}</th></tr></thead>
+        <tbody>
+        {#for run in hookRuns}
+        <tr>
+            <td class="mono">{run.periodDay.format('dd/MM/yyyy')}</td>
+            <td>{#if run.phase.name() == 'BEFORE'}{inject:i18n.get('t.r20-avant')}{#else}{inject:i18n.get('t.r20-apres')}{/if}</td>
+            <td class="mono">{run.script}</td>
+            <td>{#if run.succeeded}{run.exitCode}{#else}<strong>{run.exitCode}</strong>{/if}</td>
+            <td>{run.durationMs}</td>
+            <td><pre class="preview-pane" style="white-space: pre-wrap; word-break: break-all;">{inject:i18n.text(run.output)}</pre></td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+    </div>
     {/if}
 </div>
 {! BO-09-01-07 : ce que la nuit qui vient ferme vraiment. !}
 <div class="card">
-    <h2 class="card-title">Fin de periode</h2>
-    <p class="card-sub">Periodes fermees par la journee d'aujourd'hui : <strong>{periodEnds}</strong>. Le jour de fin de semaine, le quantieme de fin de mois et la date de fin d'annee se reglent dans les <a class="link-strong" href="/admin/settings">Parametres</a>.</p>
+    <h2 class="card-title">{inject:i18n.get('t.fin-de-periode')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.periodes-fermees-par-la-journee-d-aujourd')} <strong>{#for end in periodEnds}{inject:i18n.code('t.x21-fs-period-', end)}{#if end_hasNext}, {/if}{#else}—{/for}</strong>{inject:i18n.get('t.le-jour-de-fin-de-semaine-le')} <a class="link-strong" href="/admin/settings">{inject:i18n.get('t.parametres')}</a>.</p>
 </div>
 
 {! BO-09-01-10 / BO-09-01-11 : la programmation des etats edites
@@ -103,51 +181,76 @@
  ! periode ont produit. L'ordre des editions est celui du catalogue : une
  ! liste de cases a cocher ne sait pas exprimer un ordre. !}
 <div class="card">
-    <h2 class="card-title">Etats edites en fin de periode</h2>
-    <p class="card-sub">Les etats coches sont edites automatiquement a la fin de chaque periode, sur la journee qui se ferme, et conserves ici. Aucun etat coche : aucune edition automatique.</p>
+    <h2 class="card-title">{inject:i18n.get('t.etats-edites-en-fin-de-periode')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.les-etats-coches-sont-edites-automatiquement-a')}</p>
     <form method="post" action="/admin/day-end/reports">
         <div class="field-grid">
             {#for report in reports}
             <div class="field">
-                <label class="field-label" for="rep-{report.code}">{report.label}</label>
+                <label class="field-label" for="rep-{report.code}">{inject:i18n.text(report.label)}</label>
                 <input id="rep-{report.code}" type="checkbox" name="report" value="{report.code}"{#if programmed.contains(report)} checked{/if}>
             </div>
             {/for}
         </div>
         <div class="field">
-            <label class="field-label" for="repfmt">Format</label>
+            <label class="field-label" for="repfmt">{inject:i18n.get('t.format')}</label>
             <select class="input-control" id="repfmt" name="format">
-                <option value="pdf"{#if reportFormat == 'pdf'} selected{/if}>PDF</option>
-                <option value="xlsx"{#if reportFormat == 'xlsx'} selected{/if}>XLSX</option>
-                <option value="csv"{#if reportFormat == 'csv'} selected{/if}>CSV</option>
+                <option value="pdf"{#if reportFormat == 'pdf'} selected{/if}>{inject:i18n.get('t.pdf')}</option>
+                <option value="xlsx"{#if reportFormat == 'xlsx'} selected{/if}>{inject:i18n.get('t.xlsx')}</option>
+                <option value="csv"{#if reportFormat == 'csv'} selected{/if}>{inject:i18n.get('t.csv')}</option>
             </select>
         </div>
-        <button class="btn btn-primary" type="submit">Enregistrer la programmation</button>
+        <button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer-la-programmation')}</button>
     </form>
 </div>
 
 <div class="card">
-    <h2 class="card-title">Dernieres editions automatiques</h2>
+    <h2 class="card-title">{inject:i18n.get('t.dernieres-editions-automatiques')}</h2>
     {#if runs.isEmpty()}
-    <p class="page-sub">Aucune edition automatique n'a encore ete produite.</p>
+    <p class="page-sub">{inject:i18n.get('t.aucune-edition-automatique-n-a-encore-ete')}</p>
     {#else}
     <table class="admin-table">
-        <thead><tr><th>Periode</th><th>Etat</th><th>Format</th><th>Lignes</th><th>Issue</th><th>Document</th></tr></thead>
+        <thead><tr><th>{inject:i18n.get('t.periode-2')}</th><th>{inject:i18n.get('t.etat-2')}</th><th>{inject:i18n.get('t.format')}</th><th>{inject:i18n.get('t.lignes')}</th><th>{inject:i18n.get('t.issue')}</th><th>{inject:i18n.get('t.r20-impression')}</th><th>{inject:i18n.get('t.document')}</th></tr></thead>
         <tbody>
             {#for run in runs}
             <tr>
-                <td class="mono">{run.periodEnd}</td>
-                <td>{run.reportLabel}</td>
+                <td class="mono">{run.periodEnd.format('dd/MM/yyyy')}</td>
+                <td>{inject:i18n.text(run.reportLabel)}</td>
                 <td class="mono">{run.format}</td>
                 <td>{run.rowCount}</td>
-                <td>{#if run.succeeded}editee{#else}<strong>echec : {run.failure}</strong>{/if}</td>
-                <td>{#if run.succeeded}<a class="link-strong" href="/admin/day-end/report/{run.id}">telecharger</a>{#else}&mdash;{/if}</td>
+                <td>{#if run.succeeded}{inject:i18n.get('t.editee')}{#else}<strong>{inject:i18n.get('t.echec')} {run.failure}</strong>{/if}</td>
+                <td>{#if run.printedAt}{inject:i18n.get('t.r20-imprime-le')} {run.printedAt.format('dd/MM/yyyy HH:mm')}{#else if run.printFailure}<strong>{inject:i18n.get('t.echec')} {run.printFailure}</strong>{#else}&mdash;{/if}</td>
+                <td>{#if run.succeeded}<a class="link-strong" href="/admin/day-end/report/{run.id}">{inject:i18n.get('t.telecharger')}</a>{#else}&mdash;{/if}</td>
             </tr>
             {/for}
         </tbody>
     </table>
     {/if}
 </div>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.k19-clotures-consolidees')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.k19-clotures-consolidees-aide')}</p>
+    {#if closes.isEmpty()}
+    <p class="page-sub">{inject:i18n.get('t.k19-aucune-cloture-consolidee')}</p>
+    {#else}
+    <table class="data-table">
+        <thead><tr><th>{inject:i18n.get('t.k19-jour')}</th><th>{inject:i18n.get('t.k19-statut')}</th><th>{inject:i18n.get('t.k19-caisses-ouvertes')}</th><th>{inject:i18n.get('t.k19-tickets')}</th><th>{inject:i18n.get('t.k19-ca-ttc')}</th><th>{inject:i18n.get('t.k19-actions-enchainees')}</th></tr></thead>
+        <tbody>
+        {#for close in closes}
+        <tr>
+            <td class="mono">{close.closeDate.format('dd/MM/yyyy')}</td>
+            <td>{#if close.status.name() == 'CLOSED_DAY'}{inject:i18n.get('t.k19-jour-ferme')}{#else}{inject:i18n.get('t.k19-cloturee')}{/if}</td>
+            <td>{close.openRegisters}</td>
+            <td>{close.ticketCount}</td>
+            <td class="mono">{inject:i18n.money(close.totalIncludingTax)}</td>
+            <td>{#for line in close.actionLines}{inject:i18n.text(line)}<br>{/for}</td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
 {/body}
 
-{#footer}Chaque lancement, chaque caisse fermee, chaque caisse deconnectee, chaque ticket en attente et chaque etat edite automatiquement est ecrit au journal electronique.{/footer}
+{#footer}{inject:i18n.get('t.chaque-lancement-chaque-caisse-fermee-chaque-cai')}{/footer}

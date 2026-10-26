@@ -287,18 +287,21 @@ class RefPayloadsTest {
     }
 
     /**
-     * An {@link RefPayloads.EchelonSettingDto} stores and returns its five
-     * fields, the effect date defaulting to null.
+     * An {@link RefPayloads.EchelonSettingDto} stores and returns its six
+     * fields, the pending value and the effect date defaulting to null.
      */
     @Test
     void echelonSettingDtoHoldsItsFields() {
         RefPayloads.EchelonSettingDto dto = new RefPayloads.EchelonSettingDto();
         assertNull(dto.effectiveDate);
+        assertNull(dto.pendingValue);
         dto.level = "ENSEIGNE";
         dto.echelonCode = "ITM";
         dto.settingKey = "discount.enabled";
         dto.settingValue = "false";
+        dto.pendingValue = "true";
         dto.effectiveDate = "2026-03-01";
+        assertEquals("true", dto.pendingValue);
         assertEquals("ENSEIGNE", dto.level);
         assertEquals("ITM", dto.echelonCode);
         assertEquals("discount.enabled", dto.settingKey);

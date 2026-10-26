@@ -55,10 +55,11 @@ public class EngineFeedService {
      * carries. Delivering the ceilings first makes the administered figure the
      * one that computes, from the very first basket.
      *
-     * <p>BUDGET_GROUPS comes BEFORE OFFERS: an offer may reference its budget
-     * group by code, so a group unknown to the engine when the offer arrives
-     * rejects that offer line. This feed is PROJECTED from the node's campaigns
-     * (the node is the BO maître of campaigns), not imported from a file.
+     * <p>BUDGET_GROUPS comes BEFORE OFFERS by the same rule: an offer references
+     * the budget group (campaign) it is rattached to, by code, so the group must
+     * exist on the engine before the offer that names it, or the offer line is
+     * rejected. This feed is PROJECTED from the node's campaigns (the node is the
+     * BO maître of campaigns), not imported from a file.
      */
     public static final List<FeedDef> CATALOG = List.of(
             new FeedDef("STORES", "/stores/import"),
@@ -193,10 +194,35 @@ public class EngineFeedService {
         feed.content = content;
         feed.version = version;
         feed.receivedAt = LocalDateTime.now();
+        // A new file starts unstamped: the stamps of the previous one do not
+        // describe it (BO-02-03-33).
+        feed.baseFingerprint = null;
+        feed.resultFingerprint = null;
         feed.persist();
         LOGGER.infof("Flux moteur %s enregistré (version %s)", code, version.substring(0, 12));
         LOGGER.info("Exiting method store");
         return version;
+    }
+
+    /**
+     * Records the state of the referential a file was integrated over and the
+     * state it left (BO-02-03-33): the register applies the file only from
+     * the first, and records the second.
+     *
+     * @param code the feed code
+     * @param base the fingerprint before the integration, empty for an empty referential
+     * @param result the fingerprint after the integration
+     */
+    @Transactional
+    public void stamp(String code, String base, String result) {
+        LOGGER.info("Entering method stamp with code: " + code);
+        EngineFeed feed = EngineFeed.findByCode(code);
+        if (feed != null) {
+            feed.baseFingerprint = base;
+            feed.resultFingerprint = result;
+            feed.persist();
+        }
+        LOGGER.info("Exiting method stamp");
     }
 
     /**

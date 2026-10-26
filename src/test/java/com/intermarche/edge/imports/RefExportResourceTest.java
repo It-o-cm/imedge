@@ -60,7 +60,7 @@ class RefExportResourceTest {
     void versionsForbiddenWhenRoleNotStore() {
         RefExportService service = mock(RefExportService.class);
         RefExportResource resource = resource("register", Optional.empty(), service);
-        Response response = resource.versions(null, null);
+        Response response = resource.versions(null, null, null);
         assertEquals(403, response.getStatus());
         assertEquals("Ce nœud n'a pas le rôle store ou central", response.getEntity());
         verifyNoInteractions(service);
@@ -76,9 +76,9 @@ class RefExportResourceTest {
     void versionsReturnsFingerprintsWhenAllowed() {
         RefExportService service = mock(RefExportService.class);
         Map<String, String> fingerprints = Map.of("PRODUCTS", "abc");
-        when(service.getFingerprints(RefPayloads.DOMAINS, null)).thenReturn(fingerprints);
+        when(service.getFingerprints(RefPayloads.DOMAINS, null, null)).thenReturn(fingerprints);
         RefExportResource resource = resource("store", Optional.empty(), service);
-        Response response = resource.versions(null, null);
+        Response response = resource.versions(null, null, null);
         assertEquals(200, response.getStatus());
         assertSame(fingerprints, response.getEntity());
     }
@@ -92,9 +92,9 @@ class RefExportResourceTest {
     void versionsReturnsEchelonFingerprintsForCentralRole() {
         RefExportService service = mock(RefExportService.class);
         Map<String, String> fingerprints = Map.of("COUNTRIES", "abc");
-        when(service.getFingerprints(RefPayloads.ECHELON_DOMAINS, null)).thenReturn(fingerprints);
+        when(service.getFingerprints(RefPayloads.ECHELON_DOMAINS, null, null)).thenReturn(fingerprints);
         RefExportResource resource = resource("central", Optional.empty(), service);
-        Response response = resource.versions(null, null);
+        Response response = resource.versions(null, null, null);
         assertEquals(200, response.getStatus());
         assertSame(fingerprints, response.getEntity());
     }
@@ -107,7 +107,7 @@ class RefExportResourceTest {
     void versionsUnauthorizedWhenTokenMismatch() {
         RefExportService service = mock(RefExportService.class);
         RefExportResource resource = resource("store", Optional.of("secret"), service);
-        Response response = resource.versions("wrong", null);
+        Response response = resource.versions("wrong", null, null);
         assertEquals(401, response.getStatus());
         assertEquals("Jeton invalide", response.getEntity());
         verifyNoInteractions(service);
@@ -121,9 +121,9 @@ class RefExportResourceTest {
     void versionsAllowedWhenTokenMatches() {
         RefExportService service = mock(RefExportService.class);
         Map<String, String> fingerprints = Map.of("PRODUCTS", "abc");
-        when(service.getFingerprints(RefPayloads.DOMAINS, null)).thenReturn(fingerprints);
+        when(service.getFingerprints(RefPayloads.DOMAINS, null, null)).thenReturn(fingerprints);
         RefExportResource resource = resource("store", Optional.of("secret"), service);
-        Response response = resource.versions("secret", null);
+        Response response = resource.versions("secret", null, null);
         assertEquals(200, response.getStatus());
         assertSame(fingerprints, response.getEntity());
     }
@@ -136,7 +136,7 @@ class RefExportResourceTest {
     void pageForbiddenWhenRoleNotStore() {
         RefExportService service = mock(RefExportService.class);
         RefExportResource resource = resource("register", Optional.empty(), service);
-        Response response = resource.page(null, null, "products", 0, 100);
+        Response response = resource.page(null, null, null, "products", 0, 100);
         assertEquals(403, response.getStatus());
         assertEquals("Ce nœud n'a pas le rôle store ou central", response.getEntity());
         verifyNoInteractions(service);
@@ -151,12 +151,12 @@ class RefExportResourceTest {
     void pageUsesDefaultSizeWhenSizeNonPositive() {
         RefExportService service = mock(RefExportService.class);
         List<?> payload = List.of("row");
-        doReturn(payload).when(service).getPage("PRODUCTS", 0, 1000, null);
+        doReturn(payload).when(service).getPage("PRODUCTS", 0, 1000, null, null);
         RefExportResource resource = resource("store", Optional.empty(), service);
-        Response response = resource.page(null, null, "products", -5, 0);
+        Response response = resource.page(null, null, null, "products", -5, 0);
         assertEquals(200, response.getStatus());
         assertSame(payload, response.getEntity());
-        verify(service).getPage("PRODUCTS", 0, 1000, null);
+        verify(service).getPage("PRODUCTS", 0, 1000, null, null);
     }
 
     /**
@@ -168,12 +168,12 @@ class RefExportResourceTest {
     void pageUsesDefaultSizeWhenSizeTooLarge() {
         RefExportService service = mock(RefExportService.class);
         List<?> payload = List.of("row");
-        doReturn(payload).when(service).getPage("PRODUCTS", 1, 1000, null);
+        doReturn(payload).when(service).getPage("PRODUCTS", 1, 1000, null, null);
         RefExportResource resource = resource("store", Optional.empty(), service);
-        Response response = resource.page(null, null, "products", 1, 6000);
+        Response response = resource.page(null, null, null, "products", 1, 6000);
         assertEquals(200, response.getStatus());
         assertSame(payload, response.getEntity());
-        verify(service).getPage("PRODUCTS", 1, 1000, null);
+        verify(service).getPage("PRODUCTS", 1, 1000, null, null);
     }
 
     /**
@@ -184,12 +184,12 @@ class RefExportResourceTest {
     void pageUsesProvidedSizeWhenWithinBounds() {
         RefExportService service = mock(RefExportService.class);
         List<?> payload = List.of("row");
-        doReturn(payload).when(service).getPage("PRODUCTS", 2, 200, null);
+        doReturn(payload).when(service).getPage("PRODUCTS", 2, 200, null, null);
         RefExportResource resource = resource("store", Optional.empty(), service);
-        Response response = resource.page(null, null, "products", 2, 200);
+        Response response = resource.page(null, null, null, "products", 2, 200);
         assertEquals(200, response.getStatus());
         assertSame(payload, response.getEntity());
-        verify(service).getPage("PRODUCTS", 2, 200, null);
+        verify(service).getPage("PRODUCTS", 2, 200, null, null);
     }
 
     /**
@@ -199,10 +199,10 @@ class RefExportResourceTest {
     @Test
     void pageReturnsBadRequestWhenServiceRejectsDomain() {
         RefExportService service = mock(RefExportService.class);
-        when(service.getPage(eq("UNKNOWN"), eq(0), eq(1000), isNull()))
+        when(service.getPage(eq("UNKNOWN"), eq(0), eq(1000), isNull(), isNull()))
                 .thenThrow(new IllegalArgumentException("Domaine inconnu"));
         RefExportResource resource = resource("store", Optional.empty(), service);
-        Response response = resource.page(null, null, "unknown", 0, 0);
+        Response response = resource.page(null, null, null, "unknown", 0, 0);
         assertEquals(400, response.getStatus());
         assertEquals("Domaine inconnu", response.getEntity());
     }
@@ -216,12 +216,12 @@ class RefExportResourceTest {
     void versionsPassesTheAskingTerminalThrough() {
         RefExportService service = mock(RefExportService.class);
         Map<String, String> fingerprints = Map.of("SETTINGS", "abc");
-        when(service.getFingerprints(RefPayloads.DOMAINS, "POS07")).thenReturn(fingerprints);
+        when(service.getFingerprints(RefPayloads.DOMAINS, "POS07", null)).thenReturn(fingerprints);
         RefExportResource resource = resource("store", Optional.empty(), service);
-        Response response = resource.versions(null, "POS07");
+        Response response = resource.versions(null, "POS07", null);
         assertEquals(200, response.getStatus());
         assertSame(fingerprints, response.getEntity());
-        verify(service).getFingerprints(RefPayloads.DOMAINS, "POS07");
+        verify(service).getFingerprints(RefPayloads.DOMAINS, "POS07", null);
     }
 
     /**
@@ -234,10 +234,43 @@ class RefExportResourceTest {
     void pagePassesTheAskingTerminalThrough() {
         RefExportService service = mock(RefExportService.class);
         List<Object> payload = List.of();
-        doReturn(payload).when(service).getPage("SETTINGS", 0, 1000, "POS07");
+        doReturn(payload).when(service).getPage("SETTINGS", 0, 1000, "POS07", null);
         RefExportResource resource = resource("store", Optional.empty(), service);
-        Response response = resource.page(null, "POS07", "settings", 0, 0);
+        Response response = resource.page(null, "POS07", null, "settings", 0, 0);
         assertEquals(200, response.getStatus());
-        verify(service).getPage("SETTINGS", 0, 1000, "POS07");
+        verify(service).getPage("SETTINGS", 0, 1000, "POS07", null);
+    }
+
+    /**
+     * BO-01-01-03: the point of sale a store names reaches the export, for the
+     * fingerprints and for the pages of the accounts the centre hands it.
+     */
+    @Test
+    void theAskingPointOfSaleReachesTheExport() {
+        RefExportResource resource = new RefExportResource();
+        resource.role = "central";
+        resource.token = java.util.Optional.empty();
+        RefExportService service = mock(RefExportService.class);
+        resource.refExportService = service;
+        Map<String, String> fingerprints = Map.of("ACCOUNTS", "f");
+        when(service.getFingerprints(RefPayloads.ECHELON_DOMAINS, null, "07039")).thenReturn(fingerprints);
+        assertEquals(200, resource.versions(null, null, "07039").getStatus());
+        List<Object> payload = List.of("account");
+        doReturn(payload).when(service).getPage("ACCOUNTS", 0, 1000, null, "07039");
+        assertEquals(payload, resource.page(null, null, "07039", "accounts", 0, 0).getEntity());
+    }
+
+    /**
+     * BO-03-12-01: the change stamp is answered as text to an allowed node and
+     * gated like the rest otherwise.
+     */
+    @Test
+    void stampAnswersTheChangeStampWhenAllowed() {
+        RefExportService service = mock(RefExportService.class);
+        when(service.changeStamp()).thenReturn(42L);
+        Response allowed = resource("store", Optional.empty(), service).stamp(null);
+        assertEquals(200, allowed.getStatus());
+        assertEquals("42", allowed.getEntity());
+        assertEquals(403, resource("register", Optional.empty(), service).stamp(null).getStatus());
     }
 }

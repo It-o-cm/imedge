@@ -124,17 +124,14 @@ public class SettlementReport implements ReportDefinition {
         StringBuilder jpql = new StringBuilder(
                 "select type(p), count(p), sum(p.amount) from Ticket t join t.payments p"
                         + " where t.status = :closed and t.closingDate >= :from and t.closingDate < :to");
-        if (!criteria.terminals.isEmpty()) {
-            jpql.append(" and t.terminalId in :terminals");
-        }
+        // BO-03-09-01: the registers chosen, and the deactivated ones left out.
+        jpql.append(criteria.terminalFilter("t.terminalId"));
         jpql.append(" group by type(p)");
         var query = entityManager.createQuery(jpql.toString(), Object[].class)
                 .setParameter("closed", Ticket.TicketStatus.CLOSED)
                 .setParameter("from", criteria.from())
                 .setParameter("to", criteria.to());
-        if (!criteria.terminals.isEmpty()) {
-            query.setParameter("terminals", criteria.terminals);
-        }
+        criteria.bindTerminals(query);
         List<List<Object>> rows = new ArrayList<>();
         for (Object[] line : query.getResultList()) {
             String key = keyOf(line[0]);
@@ -143,14 +140,17 @@ public class SettlementReport implements ReportDefinition {
             // group of its own, named by the method. Grouping it under an
             // empty heading would pile every ungrouped method into one
             // meaningless sub-total.
+            // A method nobody administered reads by its French name, never by
+            // its bare technical key (CASH, CARD, VOUCHER).
+            String label = tender == null || tender.label == null || tender.label.isBlank()
+                    ? CashierActivity.TENDER_NAMES.getOrDefault(key, key) : tender.label;
             String groupLabel = tender == null || tender.groupLabel == null || tender.groupLabel.isBlank()
-                    ? (tender == null || tender.label == null || tender.label.isBlank() ? key : tender.label)
-                    : tender.groupLabel;
+                    ? label : tender.groupLabel;
             rows.add(List.of(
                     groupLabel,
                     key,
                     tender == null || tender.functionalId == null ? "" : tender.functionalId,
-                    tender == null || tender.label == null || tender.label.isBlank() ? key : tender.label,
+                    label,
                     ((Number) line[1]).longValue(),
                     line[2] == null ? BigDecimal.ZERO : (BigDecimal) line[2]));
         }
@@ -168,36 +168,29 @@ public class SettlementReport implements ReportDefinition {
     }
 
     /**
-     * Inserts the sub-total of each group and the total of the state
-     * ({@code BO-06-06-09}).
+     * Inserts the sub-total of each group ({@code BO-06-06-09}).
      *
      * <p>Produced here and not by the screen, because an export carries the
-     * rows and nothing else — an accountant reading the XLSX must find the
-     * same totals as the person reading the page. A group holding a single
-     * method gets NO sub-total: it would repeat the line above it word for
-     * word.
+     * rows — an accountant reading the XLSX must find the same sub-totals as
+     * the person reading the page. A group holding a single method gets NO
+     * sub-total: it would repeat the line above it word for word. Each
+     * sub-total is a {@link ReportData.Subtotal}, so the frame's TOTAL row —
+     * the total of the state, on the page and in every export — and the chart
+     * never count it a second time.
      *
      * @param rows the method rows, already sorted by group
-     * @return the rows with their sub-totals and the total, empty for empty
+     * @return the rows with their sub-totals, empty for empty
      */
     private List<List<Object>> withTotals(List<List<Object>> rows) {
-        if (rows.isEmpty()) {
-            return rows;
-        }
         List<List<Object>> totalled = new ArrayList<>();
         String group = null;
         long groupCount = 0L;
         BigDecimal groupAmount = BigDecimal.ZERO;
         int groupLines = 0;
-        long count = 0L;
-        BigDecimal amount = BigDecimal.ZERO;
         for (List<Object> row : rows) {
             String current = String.valueOf(row.get(0));
             if (group != null && !group.equals(current)) {
-                if (groupLines > 1) {
-                    totalled.add(java.util.Arrays.asList(group, "", "", "Total " + group,
-                            groupCount, groupAmount));
-                }
+                addSubtotal(totalled, group, groupLines, groupCount, groupAmount);
                 groupCount = 0L;
                 groupAmount = BigDecimal.ZERO;
                 groupLines = 0;
@@ -207,15 +200,27 @@ public class SettlementReport implements ReportDefinition {
             groupLines++;
             groupCount += ((Number) row.get(4)).longValue();
             groupAmount = groupAmount.add((BigDecimal) row.get(5));
-            count += ((Number) row.get(4)).longValue();
-            amount = amount.add((BigDecimal) row.get(5));
         }
-        if (groupLines > 1) {
-            totalled.add(java.util.Arrays.asList(group, "", "", "Total " + group,
-                    groupCount, groupAmount));
-        }
-        totalled.add(java.util.Arrays.asList("", "", "", "Total", count, amount));
+        addSubtotal(totalled, group, groupLines, groupCount, groupAmount);
         return totalled;
+    }
+
+    /**
+     * Closes a group with its sub-total row, when it holds more than one method.
+     *
+     * @param totalled the rows produced so far
+     * @param group the group's label, null before the first row
+     * @param lines the number of methods in the group
+     * @param count the group's settlement count
+     * @param amount the group's net value
+     */
+    private static void addSubtotal(List<List<Object>> totalled, String group, int lines, long count,
+                                    BigDecimal amount) {
+        if (lines > 1) {
+            ReportData.Subtotal subtotal = new ReportData.Subtotal();
+            subtotal.addAll(java.util.Arrays.asList(group, "", "", "Total " + group, count, amount));
+            totalled.add(subtotal);
+        }
     }
 
     /**

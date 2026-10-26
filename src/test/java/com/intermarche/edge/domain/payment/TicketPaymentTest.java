@@ -1,10 +1,11 @@
 package com.intermarche.edge.domain.payment;
 
-import java.math.BigDecimal;
-import java.util.Objects;
 import jakarta.persistence.DiscriminatorValue;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+
+import java.math.BigDecimal;
+import java.util.Objects;
 
 /**
  * Unit tests for the abstract {@link TicketPayment}, targeting 100% branch

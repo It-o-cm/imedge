@@ -94,6 +94,50 @@ public class OrderRecallResource {
     }
 
     /**
+     * Recalls the latest recallable document of a kind issued for a customer
+     * (BO-10-01-18), for a register that identifies the self-scanning baskets
+     * by the customer number.
+     *
+     * @param number the customer number keyed at the till
+     * @param kind the kind looked for, by name
+     * @param presentedToken the shared token presented by the register
+     * @return 200 with the order JSON, 404 when nothing recallable, 400 on an
+     *         unknown kind, 401 on a bad token, 403 off-role
+     */
+    @GET
+    @Path("/customer/{number}")
+    @PermitAll
+    @Produces(MediaType.APPLICATION_JSON)
+    @Transactional
+    public Response recallByCustomer(@PathParam("number") String number,
+                                     @jakarta.ws.rs.QueryParam("kind") String kind,
+                                     @HeaderParam("X-Sync-Token") String presentedToken) {
+        LOGGER.info("Entering method recallByCustomer with kind: " + kind);
+        if (!"store".equalsIgnoreCase(role)) {
+            LOGGER.info("Exiting method recallByCustomer: off-role");
+            return Response.status(Response.Status.FORBIDDEN).entity("Ce nœud n'a pas le rôle store").build();
+        }
+        String expectedToken = token.orElse("");
+        if (!expectedToken.isBlank() && !expectedToken.equals(presentedToken)) {
+            LOGGER.info("Exiting method recallByCustomer: bad token");
+            return Response.status(Response.Status.UNAUTHORIZED).entity("Jeton invalide").build();
+        }
+        com.intermarche.edge.domain.sale.OrderKind orderKind =
+                com.intermarche.edge.domain.sale.OrderKind.fromName(kind);
+        if (orderKind == null) {
+            LOGGER.info("Exiting method recallByCustomer: unknown kind");
+            return Response.status(Response.Status.BAD_REQUEST).entity("Type de document inconnu").build();
+        }
+        CustomerOrder order = customerOrderService.recallByCustomer(number, orderKind);
+        if (order == null) {
+            LOGGER.info("Exiting method recallByCustomer: nothing recallable");
+            return Response.status(Response.Status.NOT_FOUND).entity("Aucune commande rappelable").build();
+        }
+        LOGGER.info("Exiting method recallByCustomer");
+        return Response.ok(toJson(order)).build();
+    }
+
+    /**
      * Ingests the order a register just created at its till (LC-06-03-01).
      *
      * <p>The register serialized its own recalled-document shape — kind, code,
@@ -126,20 +170,168 @@ public class OrderRecallResource {
             LOGGER.info("Exiting method ingest: bad token");
             return Response.status(Response.Status.UNAUTHORIZED).entity("Jeton invalide").build();
         }
-        if (dto == null || dto.code == null || dto.code.isBlank()
-                || com.intermarche.edge.domain.sale.OrderKind.fromName(dto.kind) == null) {
+        if (!readable(dto)) {
             LOGGER.info("Exiting method ingest: unreadable push");
             return Response.status(Response.Status.BAD_REQUEST).entity("Commande illisible").build();
         }
-        CustomerOrder order = customerOrderService.createFromTill(dto.code,
-                com.intermarche.edge.domain.sale.OrderKind.fromName(dto.kind),
-                dto.totalAmount, dto.depositVatDetail, toOrderLines(dto.lines));
+        CustomerOrder order = store(customerOrderService, dto);
         if (order == null) {
             LOGGER.info("Exiting method ingest: refused");
             return Response.status(Response.Status.BAD_REQUEST).entity("Commande refusée").build();
         }
         LOGGER.info("Exiting method ingest: order " + order.code + " stored");
         return Response.ok("OK").build();
+    }
+
+    /**
+     * Tells whether a pushed document can be stored: a code, a known kind, a
+     * known deposit rule and a known control request.
+     *
+     * @param dto the pushed document, possibly null
+     * @return true when readable
+     */
+    public static boolean readable(OrderPushDto dto) {
+        return dto != null && dto.code != null && !dto.code.isBlank()
+                && com.intermarche.edge.domain.sale.OrderKind.fromName(dto.kind) != null
+                && knownDepositRule(dto.depositRule) && knownControl(dto.control);
+    }
+
+    /**
+     * Stores a readable pushed document — the one write the register's push,
+     * the commercial management tool's deposit and the node's own pull of that
+     * tool's documents (BO-10-01-25) share. Runs in the caller's transaction.
+     *
+     * @param service the shared recall-by-code mechanism
+     * @param dto the readable pushed document
+     * @return the created or refreshed order, or null when refused
+     */
+    public static CustomerOrder store(CustomerOrderService service, OrderPushDto dto) {
+        CustomerOrder order = service.createFromTill(dto.code,
+                com.intermarche.edge.domain.sale.OrderKind.fromName(dto.kind),
+                dto.totalAmount, dto.depositVatDetail, toOrderLines(dto.lines), dto.label,
+                dto.depositRule == null || dto.depositRule.isBlank() ? null : dto.depositRule.trim());
+        if (order == null) {
+            return null;
+        }
+        // LC-06-05-02 / -04 / -05: what a selfscanning device states on its basket,
+        // the control it asks for and the vouchers it recorded.
+        order.controlRequest = dto.control == null || dto.control.isBlank() ? null : dto.control.trim();
+        order.vouchers = toVouchers(dto.vouchers);
+        // BO-10-01-18 / -39: the customer a basket was built for, and what a
+        // mobility device already collected on its transaction.
+        order.customerAccountNumber = dto.customerNumber == null || dto.customerNumber.isBlank()
+                ? null : dto.customerNumber.trim();
+        order.payments = toPayments(dto.payments);
+        return order;
+    }
+
+    /**
+     * Records the deposit a register took on a document (LC-06-02-04, -07): the
+     * document is updated — its deposit VAT, its status — for the back office and
+     * the commercial management tool that issued it, which reads it back on this
+     * same surface.
+     *
+     * @param code the document's code
+     * @param presentedToken the shared token presented by the register
+     * @param dto the deposit: its amount and its per-rate VAT
+     * @return 200 when recorded, 404 when the store holds no such code, 409 when
+     *         the document can no longer be paid, 400 on an unreadable deposit,
+     *         401 on a bad token, 403 off-role
+     */
+    @POST
+    @Path("/{code}/deposits")
+    @PermitAll
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.TEXT_PLAIN)
+    @Transactional
+    public Response deposit(@PathParam("code") String code,
+                            @HeaderParam("X-Sync-Token") String presentedToken, OrderDepositDto dto) {
+        LOGGER.info("Entering method deposit with code: " + code);
+        if (!"store".equalsIgnoreCase(role)) {
+            LOGGER.info("Exiting method deposit: off-role");
+            return Response.status(Response.Status.FORBIDDEN).entity("Ce nœud n'a pas le rôle store").build();
+        }
+        String expectedToken = token.orElse("");
+        if (!expectedToken.isBlank() && !expectedToken.equals(presentedToken)) {
+            LOGGER.info("Exiting method deposit: bad token");
+            return Response.status(Response.Status.UNAUTHORIZED).entity("Jeton invalide").build();
+        }
+        if (dto == null || dto.amount == null || dto.amount.signum() <= 0) {
+            LOGGER.info("Exiting method deposit: unreadable deposit");
+            return Response.status(Response.Status.BAD_REQUEST).entity("Acompte illisible").build();
+        }
+        CustomerOrder order = CustomerOrder.findByCode(code);
+        if (order == null) {
+            LOGGER.info("Exiting method deposit: unknown code");
+            return Response.status(Response.Status.NOT_FOUND).entity("Commande inconnue").build();
+        }
+        boolean recorded = customerOrderService.recordTillDeposit(order, dto.vatDetail);
+        LOGGER.info("Exiting method deposit (" + recorded + ")");
+        return recorded ? Response.ok("OK").build()
+                : Response.status(Response.Status.CONFLICT).entity("Commande non réglable").build();
+    }
+
+    /**
+     * Tells whether a control request is one a selfscanning basket may state
+     * (LC-06-05-04, -05).
+     *
+     * @param control the control pushed, possibly null or blank for none
+     * @return true when absent or NONE, PARTIAL or TOTAL
+     */
+    private static boolean knownControl(String control) {
+        return control == null || control.isBlank()
+                || java.util.List.of("NONE", "PARTIAL", "TOTAL").contains(control.trim());
+    }
+
+    /**
+     * Reads the pushed vouchers of a selfscanning basket (LC-06-05-02), keeping
+     * only those with a strictly positive amount.
+     *
+     * @param vouchers the pushed vouchers, possibly null
+     * @return the embedded vouchers, never null
+     */
+    private static List<CustomerOrder.OrderVoucher> toVouchers(List<OrderPushVoucherDto> vouchers) {
+        List<CustomerOrder.OrderVoucher> result = new ArrayList<>();
+        if (vouchers == null) {
+            return result;
+        }
+        for (OrderPushVoucherDto voucher : vouchers) {
+            if (voucher != null && voucher.amount != null && voucher.amount.signum() > 0) {
+                result.add(new CustomerOrder.OrderVoucher(voucher.code, voucher.label, voucher.amount));
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Reads the pushed settlements of a mobility transaction (BO-10-01-39),
+     * keeping only those with a strictly positive amount.
+     *
+     * @param payments the pushed settlements, possibly null
+     * @return the embedded settlements, never null
+     */
+    private static List<CustomerOrder.OrderPayment> toPayments(List<OrderPushPaymentDto> payments) {
+        List<CustomerOrder.OrderPayment> result = new ArrayList<>();
+        if (payments == null) {
+            return result;
+        }
+        for (OrderPushPaymentDto payment : payments) {
+            if (payment != null && payment.amount != null && payment.amount.signum() > 0) {
+                result.add(new CustomerOrder.OrderPayment(payment.tender, payment.amount));
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Tells whether a deposit rule is one the documents may state.
+     *
+     * @param rule the rule pushed, possibly null or blank for none
+     * @return true when absent or NONE, OPTIONAL or MANDATORY
+     */
+    private static boolean knownDepositRule(String rule) {
+        return rule == null || rule.isBlank()
+                || java.util.List.of("NONE", "OPTIONAL", "MANDATORY").contains(rule.trim());
     }
 
     /**
@@ -187,7 +379,7 @@ public class OrderRecallResource {
      * @param lines the pushed lines, possibly null
      * @return the embedded order lines, never null
      */
-    private List<CustomerOrder.OrderLine> toOrderLines(List<OrderPushLineDto> lines) {
+    private static List<CustomerOrder.OrderLine> toOrderLines(List<OrderPushLineDto> lines) {
         List<CustomerOrder.OrderLine> orderLines = new ArrayList<>();
         if (lines == null) {
             return orderLines;
@@ -202,8 +394,11 @@ public class OrderRecallResource {
                     ? java.math.BigDecimal.ZERO : line.unitPrice;
             java.math.BigDecimal totalPrice = unitPrice.multiply(quantity)
                     .setScale(2, java.math.RoundingMode.HALF_UP);
-            orderLines.add(new CustomerOrder.OrderLine(line.ean, line.label,
-                    quantity, unitPrice, line.vatRate, totalPrice));
+            CustomerOrder.OrderLine orderLine = new CustomerOrder.OrderLine(line.ean, line.label,
+                    quantity, unitPrice, line.vatRate, totalPrice);
+            // LC-06-02-02 / -12: the quantity delivered beside the one ordered.
+            orderLine.deliveredQuantity = line.deliveredQuantity;
+            orderLines.add(orderLine);
         }
         return orderLines;
     }
@@ -226,8 +421,53 @@ public class OrderRecallResource {
         /** The per-rate VAT of the deposit taken, or null. */
         public String depositVatDetail;
 
+        /** The document's label, as the commercial management tool names it, or null. */
+        public String label;
+
+        /** The deposit rule the document states: NONE, OPTIONAL, MANDATORY, or null for none. */
+        public String depositRule;
+
         /** The order's article lines, never null. */
         public List<OrderPushLineDto> lines = new ArrayList<>();
+
+        /** The control a selfscanning device asks for: NONE, PARTIAL, TOTAL, or null. */
+        public String control;
+
+        /** The reduction vouchers a selfscanning device recorded, possibly null. */
+        public List<OrderPushVoucherDto> vouchers;
+
+        /** The customer number the document is for, or null (BO-10-01-18). */
+        public String customerNumber;
+
+        /** What a mobility device already collected, possibly null (BO-10-01-39). */
+        public List<OrderPushPaymentDto> payments;
+    }
+
+    /**
+     * One settlement of a pushed mobility transaction (BO-10-01-39).
+     */
+    public static class OrderPushPaymentDto {
+
+        /** The settlement key the device used (CASH, CARD...), or null. */
+        public String tender;
+
+        /** The amount paid, TTC. */
+        public java.math.BigDecimal amount;
+    }
+
+    /**
+     * One reduction voucher of a pushed selfscanning basket (LC-06-05-02).
+     */
+    public static class OrderPushVoucherDto {
+
+        /** The voucher's code, or null. */
+        public String code;
+
+        /** The voucher's label. */
+        public String label;
+
+        /** The voucher's amount, TTC. */
+        public java.math.BigDecimal amount;
     }
 
     /**
@@ -249,6 +489,21 @@ public class OrderRecallResource {
 
         /** The VAT rate of the line. */
         public java.math.BigDecimal vatRate;
+
+        /** The quantity delivered, when the document states it, or null. */
+        public java.math.BigDecimal deliveredQuantity;
+    }
+
+    /**
+     * A deposit a register took on a document (LC-06-02-04).
+     */
+    public static class OrderDepositDto {
+
+        /** The deposit, TTC. */
+        public java.math.BigDecimal amount;
+
+        /** The deposit's per-rate VAT, compact form, or null. */
+        public String vatDetail;
     }
 
     /**
@@ -276,6 +531,7 @@ public class OrderRecallResource {
             l.put("quantity", line.quantity);
             l.put("unitPrice", line.unitPrice);
             l.put("vatRate", line.vatRate);
+            l.put("deliveredQuantity", line.deliveredQuantity);
             lines.add(l);
         }
         json.put("lines", lines);
@@ -284,6 +540,36 @@ public class OrderRecallResource {
         // null on an order no till ventilated, and the register prints
         // nothing then.
         json.put("depositVatDetail", order.depositVatDetail);
+        // LC-06-02-02 / -04: the document's own label and its deposit rule.
+        json.put("label", order.label);
+        json.put("depositRule", order.depositRule);
+        // LC-06-05-02 / -04 / -05: a selfscanning basket's control and vouchers.
+        json.put("control", order.controlRequest);
+        List<Map<String, Object>> vouchers = new ArrayList<>();
+        for (CustomerOrder.OrderVoucher voucher : order.vouchers) {
+            Map<String, Object> v = new LinkedHashMap<>();
+            v.put("code", voucher.code);
+            v.put("label", voucher.label);
+            v.put("amount", voucher.amount);
+            vouchers.add(v);
+        }
+        json.put("vouchers", vouchers);
+        // BO-10-03-17: the order date, which the register sends on to the
+        // promotion engine where administered; null on an undated order.
+        // BO-10-01-18 / -39 / -40: the customer, the settlements a mobility device
+        // collected and the business date a sale voucher is judged on.
+        json.put("customerNumber", order.customerAccountNumber);
+        json.put("orderDate", order.orderDate == null ? null
+                : order.orderDate.truncatedTo(java.time.temporal.ChronoUnit.SECONDS)
+                        .format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+        List<Map<String, Object>> payments = new ArrayList<>();
+        for (CustomerOrder.OrderPayment payment : order.payments) {
+            Map<String, Object> p = new LinkedHashMap<>();
+            p.put("tender", payment.tender);
+            p.put("amount", payment.amount);
+            payments.add(p);
+        }
+        json.put("payments", payments);
         // Back-office extras, ignored by the register's lenient deserializer. The
         // remaining is recomputed against the full acompte (deposit + till acomptes
         // imputed by order reference), never negative, so it stays consistent with

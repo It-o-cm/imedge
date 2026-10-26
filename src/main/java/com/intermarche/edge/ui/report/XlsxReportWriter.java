@@ -50,6 +50,9 @@ public class XlsxReportWriter implements ReportWriter {
     /** Style index of a percentage cell. */
     private static final int STYLE_PERCENT = 3;
 
+    /** Style index of a decimal figure that is not money. */
+    private static final int STYLE_DECIMAL = 8;
+
     /** Style index of a whole-number cell. */
     private static final int STYLE_INTEGER = 4;
 
@@ -102,14 +105,16 @@ public class XlsxReportWriter implements ReportWriter {
     @Override
     public byte[] write(ReportData data, ReportCriteria criteria) {
         LOGGER.info("Entering method write for report: " + data.definition.code());
+        com.intermarche.edge.ui.admin.BackOfficeMessages messages =
+                com.intermarche.edge.ui.admin.BackOfficeMessages.in(criteria.language);
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         try (ZipOutputStream zip = new ZipOutputStream(bytes)) {
             put(zip, "[Content_Types].xml", contentTypes());
             put(zip, "_rels/.rels", rootRelations());
-            put(zip, "xl/workbook.xml", workbook(data.definition.label()));
+            put(zip, "xl/workbook.xml", workbook(messages.text(data.definition.label())));
             put(zip, "xl/_rels/workbook.xml.rels", workbookRelations());
             put(zip, "xl/styles.xml", styles());
-            put(zip, "xl/worksheets/sheet1.xml", sheet(data, criteria));
+            put(zip, "xl/worksheets/sheet1.xml", sheet(data, criteria, messages));
         } catch (IOException impossible) {
             // A ByteArrayOutputStream does not fail on write; the checked
             // exception exists for streams that reach a device.
@@ -213,7 +218,7 @@ public class XlsxReportWriter implements ReportWriter {
                 <borders count="1"><border/></borders>
                 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
                 <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
-                <cellXfs count="8">
+                <cellXfs count="9">
                 <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
                 <xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>
                 <xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
@@ -222,19 +227,22 @@ public class XlsxReportWriter implements ReportWriter {
                 <xf numFmtId="167" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
                 <xf numFmtId="168" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
                 <xf numFmtId="169" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
+                <xf numFmtId="4" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
                 </cellXfs>
                 </styleSheet>""";
     }
 
     /**
      * Writes the sheet: a title row naming the period, a header row, the rows,
-     * and the total row when there is one.
+     * and the total row when there is one; the texts in the edition's language.
      *
      * @param data the executed report
      * @param criteria the edition parameters
+     * @param messages the language of the edition
      * @return the worksheet part
      */
-    private String sheet(ReportData data, ReportCriteria criteria) {
+    private String sheet(ReportData data, ReportCriteria criteria,
+                         com.intermarche.edge.ui.admin.BackOfficeMessages messages) {
         List<ReportColumn> columns = data.definition.columns();
         StringBuilder xml = new StringBuilder("""
                 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -242,21 +250,32 @@ public class XlsxReportWriter implements ReportWriter {
         int line = 1;
         xml.append("<row r=\"").append(line).append("\">");
         xml.append(inline("A" + line, STYLE_BOLD,
-                data.definition.label() + " — " + ReportHeading.period(criteria)));
+                messages.text(data.definition.label()) + " — " + ReportHeading.period(criteria, messages)));
         xml.append("</row>");
+        for (String note : data.definition.preamble(criteria)) {
+            line++;
+            xml.append("<row r=\"").append(line).append("\">").append(inline("A" + line, 0, messages.text(note)))
+                    .append("</row>");
+        }
         line++;
         xml.append("<row r=\"").append(line).append("\">");
         for (int c = 0; c < columns.size(); c++) {
-            xml.append(inline(reference(c, line), STYLE_BOLD, columns.get(c).label()));
+            xml.append(inline(reference(c, line), STYLE_BOLD, messages.text(columns.get(c).label())));
         }
         xml.append("</row>");
         for (List<Object> row : data.rows) {
             line++;
-            xml.append(row(columns, row, line, 0));
+            xml.append(row(columns, row, line, ReportData.isSubtotal(row) ? STYLE_BOLD : 0, messages));
         }
         if (data.hasTotals()) {
             line++;
-            xml.append(row(columns, data.totals, line, STYLE_BOLD));
+            xml.append(row(columns, data.totals, line, STYLE_BOLD, messages));
+        }
+        if (data.definition.signature() != null) {
+            line += 2;
+            xml.append("<row r=\"").append(line).append("\">")
+                    .append(inline("A" + line, STYLE_BOLD, messages.text(data.definition.signature()) + " :"))
+                    .append("</row>");
         }
         xml.append("</sheetData></worksheet>");
         return xml.toString();
@@ -269,16 +288,18 @@ public class XlsxReportWriter implements ReportWriter {
      * @param row the values
      * @param line the 1-based row number
      * @param textStyle the style a textual cell takes, so a total row is bold
+     * @param messages the language of the edition, for the textual cells
      * @return the row's XML
      */
-    private String row(List<ReportColumn> columns, List<Object> row, int line, int textStyle) {
+    private String row(List<ReportColumn> columns, List<Object> row, int line, int textStyle,
+                       com.intermarche.edge.ui.admin.BackOfficeMessages messages) {
         StringBuilder xml = new StringBuilder("<row r=\"" + line + "\">");
         for (int c = 0; c < columns.size(); c++) {
             Object value = c < row.size() ? row.get(c) : null;
             if (value == null) {
                 continue;
             }
-            xml.append(cell(columns.get(c), value, reference(c, line), textStyle));
+            xml.append(cell(columns.get(c), value, reference(c, line), textStyle, messages));
         }
         return xml.append("</row>").toString();
     }
@@ -290,18 +311,21 @@ public class XlsxReportWriter implements ReportWriter {
      * @param value the raw value, never null
      * @param reference the cell's A1 reference
      * @param textStyle the style a textual cell takes
+     * @param messages the language of the edition, for a textual cell
      * @return the cell's XML
      */
-    private String cell(ReportColumn column, Object value, String reference, int textStyle) {
+    private String cell(ReportColumn column, Object value, String reference, int textStyle,
+                        com.intermarche.edge.ui.admin.BackOfficeMessages messages) {
         return switch (column.kind()) {
             case AMOUNT -> number(reference, STYLE_AMOUNT, ReportFormat.decimal(value));
             case PERCENT -> number(reference, STYLE_PERCENT, ReportFormat.decimal(value));
+            case DECIMAL -> number(reference, STYLE_DECIMAL, ReportFormat.decimal(value));
             case INTEGER -> number(reference, STYLE_INTEGER,
                     ReportFormat.decimal(value).setScale(0, java.math.RoundingMode.HALF_UP));
             case DATE -> serial(reference, STYLE_DATE, value);
             case DATETIME -> serial(reference, STYLE_DATETIME, value);
             case TIME -> serial(reference, STYLE_TIME, value);
-            case TEXT -> inline(reference, textStyle, String.valueOf(value));
+            case TEXT -> inline(reference, textStyle, messages.text(value));
         };
     }
 

@@ -637,33 +637,132 @@ class AdminProductFamilyResourceTest {
     }
 
     /**
-     * {@code duplicate} copies the description, flags and members into a new
-     * group and persists it (success arm).
+     * BO-03-01-03: {@code duplicate} reproduces the tree — the copy hangs under
+     * the source's parent, the sub-tree is copied under derived codes, a
+     * sub-group reached by two paths is copied once, and each copy carries its
+     * original's description, flags, members and touch configuration (a group
+     * without one gets none).
      */
     @Test
-    void duplicateCopiesGroup() {
+    void duplicateCopiesTheGroupWithItsTree() {
         AdminProductFamilyResource resource = newResource();
+        ProductFamily rayon = family(1L, "RAYON");
         ProductFamily source = family(2L, "FRUITS");
         source.description = "Fruits";
         source.flags = "SEASONAL";
         Product member = product(9L, "1", "pomme");
         source.products.add(member);
-        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+        ProductFamily apples = family(3L, "POMMES");
+        ProductFamily pears = family(4L, "POIRES");
+        ProductFamily bio = family(5L, "BIO");
+        source.productFamilies.add(apples);
+        source.productFamilies.add(pears);
+        apples.productFamilies.add(bio);
+        pears.productFamilies.add(bio);
+        com.intermarche.edge.domain.setting.TouchGroupSetting touch =
+                new com.intermarche.edge.domain.setting.TouchGroupSetting();
+        touch.familyCode = "FRUITS";
+        touch.pinned = true;
+        touch.buttonSize = "LARGE";
+        touch.displayOrder = 3;
+        touch.salesVolume = 40L;
+        touch.islandCodes = "I1";
+        touch.terminalIds = "C04";
+        touch.tpvTypes = "STANDARD";
+        touch.labels = "nl=Fruit";
+        PanacheQuery<com.intermarche.edge.domain.setting.TouchGroupSetting> withTouch = touchQuery(touch);
+        PanacheQuery<com.intermarche.edge.domain.setting.TouchGroupSetting> noTouch = touchQuery(null);
+        PanacheQuery<ProductFamily> parents = listQuery(List.of(rayon));
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
+             MockedConstruction<ProductFamily> construction = mockConstruction(ProductFamily.class,
+                    (mockFamily, context) -> {
+                        mockFamily.products = new HashSet<>();
+                        mockFamily.productFamilies = new HashSet<>();
+                    });
+             MockedConstruction<com.intermarche.edge.domain.setting.TouchGroupSetting> touches =
+                    mockConstruction(com.intermarche.edge.domain.setting.TouchGroupSetting.class)) {
             panache.when(() -> ProductFamily.findById(2L)).thenReturn(source);
-            panache.when(() -> ProductFamily.count("code", "FRUITS2")).thenReturn(0L);
-            try (MockedConstruction<ProductFamily> construction = mockConstruction(ProductFamily.class,
-                    (mockFamily, context) -> mockFamily.products = new HashSet<>())) {
-                Response response = resource.duplicate(form("sourceId", "2", "newCode", "FRUITS2"));
-                assertEquals(303, response.getStatus());
-                assertTrue(response.getLocation().toString().contains("noticeOk=true"));
-                ProductFamily copy = construction.constructed().get(0);
-                assertEquals("FRUITS2", copy.code);
-                assertEquals("Fruits", copy.description);
-                assertEquals("SEASONAL", copy.flags);
-                assertTrue(copy.products.contains(member));
+            panache.when(() -> ProductFamily.count(eq("code"), any(Object[].class))).thenReturn(0L);
+            panache.when(() -> com.intermarche.edge.domain.setting.TouchGroupSetting.find(
+                    eq("familyCode"), any(Object[].class))).thenReturn(noTouch);
+            panache.when(() -> com.intermarche.edge.domain.setting.TouchGroupSetting.find(
+                    "familyCode", "FRUITS")).thenReturn(withTouch);
+            panache.when(() -> ProductFamily.find(
+                    "select p from ProductFamily p join p.productFamilies c where c.id = ?1", 2L))
+                    .thenReturn(parents);
+            Response response = resource.duplicate(form("sourceId", "2", "newCode", "FRUITS2"));
+            assertTrue(response.getLocation().toString().contains("noticeOk=true"));
+            assertTrue(java.net.URLDecoder.decode(response.getLocation().toString(),
+                    java.nio.charset.StandardCharsets.UTF_8).contains("avec 3 sous-groupe(s)"));
+            assertEquals(4, construction.constructed().size());
+            java.util.Map<String, ProductFamily> copies = new java.util.HashMap<>();
+            for (ProductFamily copy : construction.constructed()) {
+                copies.put(copy.code, copy);
                 verify(copy).persist();
             }
+            ProductFamily root = copies.get("FRUITS2");
+            assertEquals("Fruits", root.description);
+            assertEquals("SEASONAL", root.flags);
+            assertTrue(root.products.contains(member));
+            assertTrue(rayon.productFamilies.contains(root));
+            assertTrue(root.productFamilies.contains(copies.get("FRUITS2-POMMES")));
+            assertTrue(root.productFamilies.contains(copies.get("FRUITS2-POIRES")));
+            ProductFamily bioCopy = copies.values().stream()
+                    .filter(copy -> copy.code.endsWith("-BIO")).findFirst().orElseThrow();
+            assertTrue(copies.get("FRUITS2-POMMES").productFamilies.contains(bioCopy));
+            assertTrue(copies.get("FRUITS2-POIRES").productFamilies.contains(bioCopy));
+            assertEquals(1, touches.constructed().size());
+            com.intermarche.edge.domain.setting.TouchGroupSetting copiedTouch = touches.constructed().get(0);
+            assertEquals("FRUITS2", copiedTouch.familyCode);
+            assertTrue(copiedTouch.pinned);
+            assertEquals("LARGE", copiedTouch.buttonSize);
+            assertEquals(3, copiedTouch.displayOrder);
+            assertEquals(40L, copiedTouch.salesVolume);
+            assertEquals("I1", copiedTouch.islandCodes);
+            assertEquals("C04", copiedTouch.terminalIds);
+            assertEquals("STANDARD", copiedTouch.tpvTypes);
+            assertEquals("nl=Fruit", copiedTouch.labels);
+            verify(copiedTouch).persist();
         }
+    }
+
+    /**
+     * BO-03-01-03: a derived sub-group code already taken, or longer than the
+     * column, refuses the whole duplication before anything is written.
+     */
+    @Test
+    void duplicateRefusesADerivedCodeTakenOrTooLong() {
+        AdminProductFamilyResource resource = newResource();
+        ProductFamily source = family(2L, "FRUITS");
+        source.productFamilies.add(family(3L, "POMMES"));
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
+             MockedConstruction<ProductFamily> construction = mockConstruction(ProductFamily.class)) {
+            panache.when(() -> ProductFamily.findById(2L)).thenReturn(source);
+            panache.when(() -> ProductFamily.count("code", "F2")).thenReturn(0L);
+            panache.when(() -> ProductFamily.count("code", "F2-POMMES")).thenReturn(1L);
+            Response taken = resource.duplicate(form("sourceId", "2", "newCode", "F2"));
+            assertTrue(taken.getLocation().toString().contains("noticeOk=false"));
+            String longCode = "X".repeat(45);
+            panache.when(() -> ProductFamily.count("code", longCode)).thenReturn(0L);
+            Response tooLong = resource.duplicate(form("sourceId", "2", "newCode", longCode));
+            assertTrue(java.net.URLDecoder.decode(tooLong.getLocation().toString(),
+                    java.nio.charset.StandardCharsets.UTF_8).contains("dépasse 50 caractères"));
+            assertTrue(construction.constructed().isEmpty());
+        }
+    }
+
+    /**
+     * Builds a touch-configuration query answering one row.
+     *
+     * @param result the row, or null
+     * @return the query mock
+     */
+    @SuppressWarnings("unchecked")
+    private PanacheQuery<com.intermarche.edge.domain.setting.TouchGroupSetting> touchQuery(
+            com.intermarche.edge.domain.setting.TouchGroupSetting result) {
+        PanacheQuery<com.intermarche.edge.domain.setting.TouchGroupSetting> query = mock(PanacheQuery.class);
+        when(query.firstResult()).thenReturn(result);
+        return query;
     }
 
     // ----------------------------------------------------------------
@@ -832,6 +931,160 @@ class AdminProductFamilyResourceTest {
             Response response = resource.addArticles(form("id", "10", "label", "Pomme"));
             assertEquals(303, response.getStatus());
             assertTrue(target.products.contains(byLabel));
+        }
+    }
+
+    /**
+     * BO-03-01-04: {@code addArticles} adds every article of an internal-code
+     * range, a half range being ignored (both legs of the guard).
+     */
+    @Test
+    void addArticlesByInternalCodeRange() {
+        AdminProductFamilyResource resource = newResource();
+        ProductFamily target = family(10L, "PROMO");
+        Product ranged = product(3L, "150", "milieu");
+        PanacheQuery<Product> rangeQuery = listQuery(List.of(ranged));
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> ProductFamily.findById(10L)).thenReturn(target);
+            panache.when(() -> Product.find("internalCode >= ?1 and internalCode <= ?2 order by internalCode",
+                    "A100", "A200")).thenReturn(rangeQuery);
+            assertTrue(resource.addArticles(form("id", "10", "internalFrom", "A100"))
+                    .getLocation().toString().contains("noticeOk=false"));
+            resource.addArticles(form("id", "10", "internalFrom", "A100", "internalTo", "A200"));
+            assertTrue(target.products.contains(ranged));
+        }
+    }
+
+    /**
+     * BO-03-01-04: a FAMILY of a nomenclature brings the articles of every
+     * node under it, read by code prefix within its scheme.
+     */
+    @Test
+    void addArticlesByNomenclatureFamily() {
+        AdminProductFamilyResource resource = newResource();
+        ProductFamily target = family(10L, "PROMO");
+        ProductFamily famille = family(30L, "0102");
+        famille.nomenclature = new com.intermarche.edge.domain.catalog.Nomenclature();
+        famille.nomenclature.id = 7L;
+        Product filed = product(5L, "500", "yaourt");
+        PanacheQuery<Product> query = listQuery(List.of(filed));
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
+             MockedStatic<ProductFamily> families = mockStatic(ProductFamily.class)) {
+            panache.when(() -> ProductFamily.findById(10L)).thenReturn(target);
+            families.when(() -> ProductFamily.findByCode("0102")).thenReturn(famille);
+            panache.when(() -> Product.find("select distinct p from ProductFamily pf join pf.products p"
+                    + " where pf.nomenclature.id = ?1 and pf.code like ?2 order by p.ean", 7L, "0102%"))
+                    .thenReturn(query);
+            resource.addArticles(form("id", "10", "familyCode", "0102"));
+            assertTrue(target.products.contains(filed));
+        }
+    }
+
+    /**
+     * BO-03-01-04: a shop's own group named as a family brings its articles
+     * and its sub-groups', a group reached twice walked once; an unknown
+     * family brings nothing.
+     */
+    @Test
+    void addArticlesByOwnGroupFamilyWalksItsSubGroups() {
+        AdminProductFamilyResource resource = newResource();
+        ProductFamily target = family(10L, "PROMO");
+        ProductFamily top = family(40L, "TOP");
+        ProductFamily left = family(41L, "LEFT");
+        ProductFamily right = family(42L, "RIGHT");
+        ProductFamily shared = family(43L, "SHARED");
+        top.productFamilies.add(left);
+        top.productFamilies.add(right);
+        left.productFamilies.add(shared);
+        right.productFamilies.add(shared);
+        Product topArticle = product(1L, "1", "a");
+        Product deepArticle = product(2L, "2", "b");
+        top.products.add(topArticle);
+        shared.products.add(deepArticle);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
+             MockedStatic<ProductFamily> families = mockStatic(ProductFamily.class)) {
+            panache.when(() -> ProductFamily.findById(10L)).thenReturn(target);
+            families.when(() -> ProductFamily.findByCode("TOP")).thenReturn(top);
+            families.when(() -> ProductFamily.findByCode("NONE")).thenReturn(null);
+            resource.addArticles(form("id", "10", "familyCode", "TOP"));
+            assertEquals(2, target.products.size());
+            assertTrue(target.products.contains(deepArticle));
+            assertTrue(resource.addArticles(form("id", "10", "familyCode", "NONE"))
+                    .getLocation().toString().contains("noticeOk=false"));
+        }
+    }
+
+    /**
+     * Builds an upload form.
+     *
+     * @param id the posted group id
+     * @param content the file content, or null for no file
+     * @return the form
+     */
+    private AdminProductFamilyResource.ImportForm upload(String id, String content) {
+        AdminProductFamilyResource.ImportForm form = new AdminProductFamilyResource.ImportForm();
+        form.id = id;
+        form.file = content == null ? null
+                : new java.io.ByteArrayInputStream(content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        return form;
+    }
+
+    /**
+     * BO-03-01-16: an upload naming no form, no group or an unknown group is
+     * refused.
+     */
+    @Test
+    void importArticlesRefusesAnUnknownGroup() {
+        AdminProductFamilyResource resource = newResource();
+        assertTrue(resource.importArticles(null).getLocation().toString().contains("noticeOk=false"));
+        assertTrue(resource.importArticles(upload(null, "1")).getLocation().toString().contains("noticeOk=false"));
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> ProductFamily.findById(10L)).thenReturn(null);
+            assertTrue(resource.importArticles(upload("10", "1")).getLocation().toString()
+                    .contains("noticeOk=false"));
+        }
+    }
+
+    /**
+     * BO-03-01-16: the articles a CSV list names are added to the group, its
+     * heading skipped and an unknown code counted and not refused.
+     */
+    @Test
+    void importArticlesAddsTheKnownCodesAndCountsTheOthers() {
+        AdminProductFamilyResource resource = newResource();
+        ProductFamily target = family(10L, "PROMO");
+        Product apple = product(1L, "3000000000017", "pomme");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
+             MockedStatic<Product> products = mockStatic(Product.class)) {
+            panache.when(() -> ProductFamily.findById(10L)).thenReturn(target);
+            products.when(() -> Product.findByEan("3000000000017")).thenReturn(apple);
+            Response response = resource.importArticles(upload("10", "Code article\n3000000000017\n999\n"));
+            String notice = java.net.URLDecoder.decode(response.getLocation().toString(),
+                    java.nio.charset.StandardCharsets.UTF_8);
+            assertTrue(notice.contains("noticeOk=true"));
+            assertTrue(notice.contains("1 article(s) importé(s) dans le groupe « PROMO », 1 code(s) inconnu(s)."));
+            assertTrue(target.products.contains(apple));
+        }
+    }
+
+    /**
+     * BO-03-01-16: a list naming no known article, and a workbook that cannot
+     * be read, are refused and leave the group as it was.
+     */
+    @Test
+    void importArticlesRefusesAnEmptyOrUnreadableList() {
+        AdminProductFamilyResource resource = newResource();
+        ProductFamily target = family(10L, "PROMO");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
+             MockedStatic<Product> products = mockStatic(Product.class)) {
+            panache.when(() -> ProductFamily.findById(10L)).thenReturn(target);
+            assertTrue(java.net.URLDecoder.decode(resource.importArticles(upload("10", "999")).getLocation()
+                    .toString(), java.nio.charset.StandardCharsets.UTF_8).contains("Aucun article reconnu"));
+            assertTrue(java.net.URLDecoder.decode(resource.importArticles(upload("10", "EAN")).getLocation()
+                    .toString(), java.nio.charset.StandardCharsets.UTF_8).contains("Aucun article reconnu"));
+            assertTrue(java.net.URLDecoder.decode(resource.importArticles(upload("10", "PK-broken")).getLocation()
+                    .toString(), java.nio.charset.StandardCharsets.UTF_8).contains("Fichier illisible."));
+            assertTrue(target.products.isEmpty());
         }
     }
 

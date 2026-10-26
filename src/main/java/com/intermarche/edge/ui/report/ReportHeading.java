@@ -48,4 +48,18 @@ public final class ReportHeading {
         }
         return criteria.period.getLabel() + " : du " + MOMENT.format(from) + " au " + MOMENT.format(to);
     }
+
+    /**
+     * Renders the covered period in a language (BO-06-01-02): the period's
+     * label and the range words translated, the dates kept as they are written.
+     *
+     * @param criteria the edition parameters
+     * @param messages the messages of the language to write in
+     * @return the sentence naming the period, in that language
+     */
+    public static String period(ReportCriteria criteria, com.intermarche.edge.ui.admin.BackOfficeMessages messages) {
+        String label = criteria.period.getLabel();
+        String dates = period(criteria).substring(label.length() + " : ".length());
+        return messages.text(label) + " : " + messages.text(dates);
+    }
 }

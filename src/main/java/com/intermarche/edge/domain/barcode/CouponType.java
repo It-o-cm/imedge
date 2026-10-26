@@ -137,6 +137,50 @@ public class CouponType extends PanacheEntity {
     public String islandCodes;
 
     /**
+     * The administered TENDER a code of this range is settled as, by its
+     * settlement key (BO-03-06-08): {@code VOUCHER} for a purchase voucher,
+     * {@code TR} for a paper meal voucher. Null keeps the purchase voucher every
+     * range was settled as before the column existed.
+     */
+    @Column(name = "tender_code", length = 20)
+    public String tenderCode;
+
+    /**
+     * The kind of instrument this register ISSUES under this range, as a
+     * stored-value kind name ({@code CREDIT_NOTE} or {@code GIFT_CARD}), or null
+     * when the range is only read (BO-03-06-30 to -38). The register then
+     * composes the number it prints from the range's own fields — register
+     * number, ticket number, time, date, amount, sequence — so the code it
+     * prints is the code the same range recognises.
+     */
+    @Column(name = "issued_kind", length = 20)
+    public String issuedKind;
+
+    /** The card protocol of a prepaid range activated by a third party (BO-03-02-37). */
+    public static final String PROTOCOL_NEXO = "NEXO";
+
+    /** The card protocol of a prepaid range the register handles on its own (BO-03-02-37). */
+    public static final String PROTOCOL_LOCAL = "LOCAL";
+
+    /** The card protocols a prepaid range may name (BO-03-02-37). */
+    public static final List<String> CARD_PROTOCOLS = List.of(PROTOCOL_NEXO, PROTOCOL_LOCAL);
+
+    /**
+     * The PROTOCOL a PREPAID CARD of this range is spoken in (BO-03-02-37):
+     * {@link #PROTOCOL_NEXO} for gift cards and gift boxes activated, paid
+     * and consulted through the third-party payment hub, {@link #PROTOCOL_LOCAL}
+     * for cards the register handles without it, or null on a range that is
+     * not a prepaid card range.
+     *
+     * <p>On the RANGE, because that is what the questionnaire asks: "les plages
+     * de cartes prépayées nécessitant une activation via un système tiers". A
+     * card is recognised by its prefix and length like any other code, and the
+     * range it falls in says whom to ask.
+     */
+    @Column(name = "card_protocol", length = 16)
+    public String cardProtocol;
+
+    /**
      * The administered positions of the range, ordered by offset.
      */
     @OneToMany(mappedBy = "couponType", cascade = CascadeType.ALL, orphanRemoval = true)
@@ -380,6 +424,26 @@ public class CouponType extends PanacheEntity {
     }
 
     /**
+     * Returns the card protocol of the prepaid range a card number falls in
+     * (BO-03-02-37), the first active range by priority that names a protocol.
+     *
+     * @param number the card number, scanned or keyed, possibly null
+     * @return the protocol, upper case, or null when no prepaid range claims the number
+     */
+    public static String protocolOf(String number) {
+        if (number == null || number.isBlank()) {
+            return null;
+        }
+        List<CouponType> ranges = list("active = true and cardProtocol is not null order by priority");
+        for (CouponType range : ranges) {
+            if (range.matches(number.trim())) {
+                return range.cardProtocol.trim().toUpperCase(java.util.Locale.ROOT);
+            }
+        }
+        return null;
+    }
+
+    /**
      * Returns the active voucher type carrying that code.
      *
      * <p>Used where the back office names a type by its code rather than by a scanned
@@ -394,6 +458,21 @@ public class CouponType extends PanacheEntity {
         return code == null || code.isBlank()
                 ? null
                 : find("code = ?1 and active = true", code.trim()).firstResult();
+    }
+
+    /**
+     * Finds the range under which the register ISSUES an instrument of the
+     * given kind (BO-03-06-30 to -38): the first active registry range, by
+     * priority, administered for that kind.
+     *
+     * @param kind the stored-value kind name, CREDIT_NOTE or GIFT_CARD
+     * @return the range, or null when none is administered for that kind
+     */
+    public static CouponType findIssuingRange(String kind) {
+        return kind == null
+                ? null
+                : find("issuedKind = ?1 and active = true and amountSource = ?2 order by priority, code",
+                        kind, AmountSource.REGISTRY).firstResult();
     }
 
     /**

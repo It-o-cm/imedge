@@ -22,11 +22,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.*;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.verify;
@@ -123,7 +125,7 @@ class StoreCsvResourceTest {
         StoreCsvResource resource = new StoreCsvResource();
         Response response = resource.importStores(stream("CODE|NAME|STREET_LINE1|STREET_LINE2|POSTAL_CODE|CITY|COUNTRY\n"));
         assertEquals(200, response.getStatus());
-        assertEquals("{\"createdCount\":0, \"updatedCount\":0}", response.getEntity());
+        assertEquals("{\"createdCount\":0,\"updatedCount\":0}", response.getEntity());
     }
 
     /**

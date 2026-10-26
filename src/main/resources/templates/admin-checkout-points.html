@@ -3,24 +3,24 @@
  ! via formaction; a new-point form sits at the bottom. Mirrors admin-vat-rates. !}
 {#include admin-layout}
 
-{#title}Points de caisse{/title}
+{#title}{inject:i18n.get('t.points-de-caisse')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Points de caisse</h1>
-        <p class="page-sub">La caisse vue du back-office : activation, rattachement à un îlot, type de TPV, hôtesse technique pour le libre-service, afficheurs et modèle de menu (BO-03-09).</p>
+        <h1>{inject:i18n.get('t.points-de-caisse')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.la-caisse-vue-du-back-office-activation')}</p>
     </div>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 <div class="card">
-    <h2 class="card-title">Points de caisse</h2>
+    <h2 class="card-title">{inject:i18n.get('t.points-de-caisse')}</h2>
     {#if points.isEmpty()}
-    <p class="page-sub">Aucun point de caisse n'est administré.</p>
+    <p class="page-sub">{inject:i18n.get('t.aucun-point-de-caisse-n-est-administre')}</p>
     {#else}
     {#for point in points}
     <form method="post" action="/admin/checkout-points/save" class="field-grid">
@@ -29,20 +29,20 @@
             <span class="field-label">{point.terminalId}</span>
         </div>
         <div class="field">
-            <label class="field-label" for="pl-{point.terminalId}">Libellé</label>
+            <label class="field-label" for="pl-{point.terminalId}">{inject:i18n.get('t.libelle')}</label>
             <input class="input-control" id="pl-{point.terminalId}" type="text" name="label" maxlength="100" value="{point.label ?: ''}">
         </div>
         <div class="field">
-            <label class="field-label" for="pi-{point.terminalId}">Îlot</label>
+            <label class="field-label" for="pi-{point.terminalId}">{inject:i18n.get('t.ilot')}</label>
             <select class="input-control" id="pi-{point.terminalId}" name="islandCode">
                 <option value="">—</option>
                 {#for island in islands}
-                <option value="{island.code}" {#if point.islandCode == island.code}selected{/if}>{island.code} — {island.label}</option>
+                <option value="{island.code}" {#if point.islandCode == island.code}selected{/if}>{island.code} — {inject:i18n.text(island.label)}</option>
                 {/for}
             </select>
         </div>
         <div class="field">
-            <label class="field-label" for="pp-{point.terminalId}">Point de vente</label>
+            <label class="field-label" for="pp-{point.terminalId}">{inject:i18n.get('t.point-de-vente')}</label>
             <select class="input-control" id="pp-{point.terminalId}" name="pdvNumber">
                 <option value="">—</option>
                 {#for pdv in pdvs}
@@ -51,84 +51,95 @@
             </select>
         </div>
         <div class="field">
-            <label class="field-label" for="pt-{point.terminalId}">Type de TPV</label>
+            <label class="field-label" for="pt-{point.terminalId}">{inject:i18n.get('t.type-de-tpv')}</label>
             <select class="input-control" id="pt-{point.terminalId}" name="tpvType">
                 {#for type in tpvTypes}
-                <option value="{type}" {#if point.tpvType == type}selected{/if}>{type.label}</option>
+                <option value="{type}" {#if point.tpvType == type}selected{/if}>{inject:i18n.text(type.label)}</option>
                 {/for}
             </select>
         </div>
         <div class="field">
-            <label class="field-label" for="ph-{point.terminalId}">Hôtesse technique (badge)</label>
-            <input class="input-control" id="ph-{point.terminalId}" type="text" name="technicalHostessBadge" maxlength="20" value="{point.technicalHostessBadge ?: ''}">
+            <label class="field-label" for="ph-{point.terminalId}">{inject:i18n.get('t.hotesse-technique-badge')}</label>
+            <select class="input-control" id="ph-{point.terminalId}" name="technicalHostessBadge">
+                <option value="">—</option>
+                {#for hostess in hostesses}
+                <option value="{hostess.badgeId}" {#if point.technicalHostessBadge == hostess.badgeId}selected{/if}>{hostess.badgeId} — {hostess.firstName} {hostess.lastName}</option>
+                {/for}
+            </select>
         </div>
         <div class="field">
-            <label class="field-label" for="pcd-{point.terminalId}">Afficheur caissière</label>
+            <label class="field-label" for="pcd-{point.terminalId}">{inject:i18n.get('t.afficheur-caissiere')}</label>
             <select class="input-control" id="pcd-{point.terminalId}" name="cashierDisplayType">
                 {#for type in displayTypes}
-                <option value="{type}" {#if point.cashierDisplayType == type}selected{/if}>{type.label}</option>
+                <option value="{type}" {#if point.cashierDisplayType == type}selected{/if}>{inject:i18n.text(type.label)}</option>
                 {/for}
             </select>
         </div>
         <div class="field">
-            <label class="field-label" for="pcr-{point.terminalId}">Résolution caissière</label>
+            <label class="field-label" for="pcr-{point.terminalId}">{inject:i18n.get('t.resolution-caissiere')}</label>
             <input class="input-control" id="pcr-{point.terminalId}" type="text" name="cashierDisplayResolution" maxlength="32" value="{point.cashierDisplayResolution ?: ''}">
         </div>
         <div class="field">
-            <label class="field-label" for="pkd-{point.terminalId}">Afficheur client</label>
+            <label class="field-label" for="pkd-{point.terminalId}">{inject:i18n.get('t.afficheur-client')}</label>
             <select class="input-control" id="pkd-{point.terminalId}" name="customerDisplayType">
                 {#for type in displayTypes}
-                <option value="{type}" {#if point.customerDisplayType == type}selected{/if}>{type.label}</option>
+                <option value="{type}" {#if point.customerDisplayType == type}selected{/if}>{inject:i18n.text(type.label)}</option>
                 {/for}
             </select>
         </div>
         <div class="field">
-            <label class="field-label" for="pkr-{point.terminalId}">Résolution client</label>
+            <label class="field-label" for="pkr-{point.terminalId}">{inject:i18n.get('t.resolution-client')}</label>
             <input class="input-control" id="pkr-{point.terminalId}" type="text" name="customerDisplayResolution" maxlength="32" value="{point.customerDisplayResolution ?: ''}">
         </div>
         <div class="field">
-            <label class="field-label" for="psp-{point.terminalId}">Balance : protocole</label>
+            <label class="field-label" for="psp-{point.terminalId}">{inject:i18n.get('t.balance-protocole')}</label>
             <select class="input-control" id="psp-{point.terminalId}" name="scaleProtocol">
                 {#for protocol in scaleProtocols}
-                <option value="{protocol}" {#if point.scaleProtocol == protocol}selected{/if}>{protocol.label}</option>
+                <option value="{protocol}" {#if point.scaleProtocol == protocol}selected{/if}>{inject:i18n.text(protocol.label)}</option>
                 {/for}
             </select>
         </div>
         <div class="field">
-            <label class="field-label" for="psa-{point.terminalId}">Balance : adresse</label>
+            <label class="field-label" for="psa-{point.terminalId}">{inject:i18n.get('t.balance-adresse')}</label>
             <input class="input-control" id="psa-{point.terminalId}" type="text" name="scaleAddress" maxlength="100" value="{point.scaleAddress ?: ''}">
         </div>
         <div class="field">
-            <label class="field-label" for="pso-{point.terminalId}">Balance : port</label>
+            <label class="field-label" for="pso-{point.terminalId}">{inject:i18n.get('t.balance-port')}</label>
             <input class="input-control" id="pso-{point.terminalId}" type="number" name="scalePort" min="1" max="65535" value="{point.scalePort ?: ''}">
         </div>
         <div class="field">
-            <label class="field-label" for="pmp-{point.terminalId}">Monnayeur : protocole</label>
+            <label class="field-label" for="pmp-{point.terminalId}">{inject:i18n.get('t.monnayeur-protocole')}</label>
             <select class="input-control" id="pmp-{point.terminalId}" name="coinMachineProtocol">
                 {#for protocol in coinProtocols}
-                <option value="{protocol}" {#if point.coinMachineProtocol == protocol}selected{/if}>{protocol.label}</option>
+                <option value="{protocol}" {#if point.coinMachineProtocol == protocol}selected{/if}>{inject:i18n.text(protocol.label)}</option>
                 {/for}
             </select>
         </div>
         <div class="field">
-            <label class="field-label" for="pma-{point.terminalId}">Monnayeur : adresse</label>
+            <label class="field-label" for="pma-{point.terminalId}">{inject:i18n.get('t.monnayeur-adresse')}</label>
             <input class="input-control" id="pma-{point.terminalId}" type="text" name="coinMachineAddress" maxlength="100" value="{point.coinMachineAddress ?: ''}">
         </div>
         <div class="field">
-            <label class="field-label" for="pmo-{point.terminalId}">Monnayeur : port</label>
+            <label class="field-label" for="pmo-{point.terminalId}">{inject:i18n.get('t.monnayeur-port')}</label>
             <input class="input-control" id="pmo-{point.terminalId}" type="number" name="coinMachinePort" min="1" max="65535" value="{point.coinMachinePort ?: ''}">
         </div>
         <div class="field">
-            <label class="field-label" for="pm-{point.terminalId}">Modèle de menu</label>
-            <input class="input-control" id="pm-{point.terminalId}" type="text" name="menuTemplateCode" maxlength="50" value="{point.menuTemplateCode ?: ''}">
+            <label class="field-label" for="pm-{point.terminalId}">{inject:i18n.get('t.modele-de-menu')}</label>
+            <select class="input-control" id="pm-{point.terminalId}" name="menuTemplateCode">
+                <option value="">—</option>
+                {#for menu in menus}
+                <option value="{menu.code}" {#if point.menuTemplateCode == menu.code}selected{/if}>{menu.code} — {menu.label}</option>
+                {/for}
+            </select>
         </div>
         <div class="field">
-            <label class="field-label" for="pa-{point.terminalId}">Actif</label>
+            <label class="field-label" for="pa-{point.terminalId}">{inject:i18n.get('t.actif')}</label>
             <input id="pa-{point.terminalId}" type="checkbox" name="active" {#if point.active}checked{/if}>
         </div>
         <div class="page-actions">
-            <button class="btn btn-primary" type="submit">Enregistrer</button>
-            <button class="btn btn-muted" type="submit" formaction="/admin/checkout-points/delete">Supprimer</button>
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer')}</button>
+            <button class="btn btn-muted" type="submit" formaction="/admin/checkout-points/delete">{inject:i18n.get('t.supprimer')}</button>
+            <a class="btn btn-ghost" href="/admin/register-config?level=CHECKOUT_POINT&code={point.terminalId}">{inject:i18n.get('t.k19-configurer')}</a>
         </div>
     </form>
     {/for}
@@ -136,38 +147,38 @@
 </div>
 
 <div class="card">
-    <h2 class="card-title">Nouveau point de caisse</h2>
+    <h2 class="card-title">{inject:i18n.get('t.nouveau-point-de-caisse')}</h2>
     <form method="post" action="/admin/checkout-points/save" class="field-grid">
         <div class="field">
-            <label class="field-label" for="new-term">Identifiant terminal</label>
+            <label class="field-label" for="new-term">{inject:i18n.get('t.identifiant-terminal')}</label>
             <input class="input-control" id="new-term" type="text" name="terminalId" maxlength="50" required>
         </div>
         <div class="field">
-            <label class="field-label" for="new-plabel">Libellé</label>
+            <label class="field-label" for="new-plabel">{inject:i18n.get('t.libelle')}</label>
             <input class="input-control" id="new-plabel" type="text" name="label" maxlength="100">
         </div>
         <div class="field">
-            <label class="field-label" for="new-pisland">Îlot</label>
+            <label class="field-label" for="new-pisland">{inject:i18n.get('t.ilot')}</label>
             <select class="input-control" id="new-pisland" name="islandCode">
                 <option value="">—</option>
                 {#for island in islands}
-                <option value="{island.code}">{island.code} — {island.label}</option>
+                <option value="{island.code}">{island.code} — {inject:i18n.text(island.label)}</option>
                 {/for}
             </select>
         </div>
         <div class="field">
-            <label class="field-label" for="new-ptype">Type de TPV</label>
+            <label class="field-label" for="new-ptype">{inject:i18n.get('t.type-de-tpv')}</label>
             <select class="input-control" id="new-ptype" name="tpvType">
                 {#for type in tpvTypes}
-                <option value="{type}">{type.label}</option>
+                <option value="{type}">{inject:i18n.text(type.label)}</option>
                 {/for}
             </select>
         </div>
         <div class="field">
-            <label class="field-label" for="new-pactive">Actif</label>
+            <label class="field-label" for="new-pactive">{inject:i18n.get('t.actif')}</label>
             <input id="new-pactive" type="checkbox" name="active" checked>
         </div>
-        <div class="page-actions"><button class="btn btn-primary" type="submit">Créer le point</button></div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.creer-le-point')}</button></div>
     </form>
 </div>
 {/body}

@@ -27,6 +27,12 @@ import java.util.Map;
  */
 public final class ProductAttributeCatalog {
 
+    /** Whether the article message refuses registration after acknowledgement (LC-02-03-11). */
+    public static final String INFO_MESSAGE_BLOCKING = "INFO_MESSAGE_BLOCKING";
+
+    /** EAN of the automatically registered companion article (LC-02-03-04). */
+    public static final String LINKED_ARTICLE_EAN = "LINKED_ARTICLE_EAN";
+
     /** Whether discounts and rebates are forbidden on the article (BO-02-03-09). */
     public static final String DISCOUNT_FORBIDDEN = "DISCOUNT_FORBIDDEN";
 
@@ -38,6 +44,12 @@ public final class ProductAttributeCatalog {
 
     /** The lot numbers of the article that are under recall (LC-02-03-12/13). */
     public static final String RECALL_LOTS = "RECALL_LOTS";
+
+    /** The message the register shows when it refuses the article for a forbidden sale or a recall (BO-10-07-20). */
+    public static final String FORBIDDEN_SALE_MESSAGE = "FORBIDDEN_SALE_MESSAGE";
+
+    /** Whether the article code accompanies the label on the screens and the ticket (BO-10-02-34/35). */
+    public static final String CODE_ON_SCREEN = "CODE_ARTICLE_ON_SCREEN";
 
     /** Whether the article is eligible for meal-voucher tender (BO-02-03-06). */
     public static final String MEAL_VOUCHER_ELIGIBLE = "MEAL_VOUCHER_ELIGIBLE";
@@ -63,6 +75,9 @@ public final class ProductAttributeCatalog {
     /** The unit eco-tax borne by the article, carried into the invoice extractions (BO-10-04-14). */
     public static final String ECO_TAX = "ECO_TAX";
 
+    /** The software tare in kilograms sent to the scale when this article is weighed, replacing the default tare (LC-14-01-07). */
+    public static final String TARE = "TARE";
+
     /** Whether the article is a dematerialised product whose activation code must be scanned after its EAN (BO-03-06-44). */
     public static final String ACTIVATION_REQUIRED = "ACTIVATION_REQUIRED";
 
@@ -77,6 +92,71 @@ public final class ProductAttributeCatalog {
 
     /** The article's label in other languages, as {@code lang=libellé} pairs (BO-03-01-20). */
     public static final String TRANSLATED_LABELS = "TRANSLATED_LABELS";
+
+    /**
+     * The checkout mode (mode de passage en caisse) integrated from the Gestion
+     * Commerciale (BO-02-03-05, -21 to -24): one of the {@code MODE_*} values.
+     */
+    public static final String CHECKOUT_MODE = "CHECKOUT_MODE";
+
+    /** Checkout mode: the price is called from the referential and nothing else (BO-02-03-05). */
+    public static final String MODE_PRICE_CALL = "PRICE_CALL";
+
+    /** Checkout mode: the price is keyed by the cashier (BO-02-03-21). */
+    public static final String MODE_PRICE_TO_ENTER = "PRICE_TO_ENTER";
+
+    /** Checkout mode: a whole positive quantity is keyed by the cashier (BO-02-03-22). */
+    public static final String MODE_QUANTITY_TO_ENTER = "QUANTITY_TO_ENTER";
+
+    /** Checkout mode: a decimal quantity is keyed by the cashier (BO-02-03-23). */
+    public static final String MODE_DECIMAL_QUANTITY_TO_ENTER = "DECIMAL_QUANTITY_TO_ENTER";
+
+    /** Checkout mode: the article must be weighed (BO-02-03-24). */
+    public static final String MODE_WEIGHED = "WEIGHED";
+
+    /** The checkout modes the register understands, in display order. */
+    public static final List<String> CHECKOUT_MODES = List.of(MODE_PRICE_CALL, MODE_PRICE_TO_ENTER,
+            MODE_QUANTITY_TO_ENTER, MODE_DECIMAL_QUANTITY_TO_ENTER, MODE_WEIGHED);
+
+    /** Whether a decimal quantity must be entered at the register for this article (BO-02-03-23). */
+    public static final String DECIMAL_QUANTITY_TO_ENTER = "DECIMAL_QUANTITY_TO_ENTER";
+
+    /** Whether the article must be weighed when it is scanned or keyed (BO-02-03-24). */
+    public static final String WEIGHED = "WEIGHED";
+
+    /** How many companion articles are added per unit of the principal (BO-02-03-15). */
+    public static final String LINKED_ARTICLE_QUANTITY = "LINKED_ARTICLE_QUANTITY";
+
+    /** The EANs of the complementary articles suggested when this one is sold, semicolon-separated (BO-02-03-16). */
+    public static final String COMPLEMENTARY_EANS = "COMPLEMENTARY_EANS";
+
+    /** The code of the article's unit of measure, as declared in the back office (BO-02-03-17). */
+    public static final String UNIT_CODE = "UNIT_CODE";
+
+    /** The number of the article's VAT regime, integrated from the Gestion Commerciale (BO-02-03-27). */
+    public static final String VAT_NUMBER = "VAT_NUMBER";
+
+    /** Whether the article is sold on behalf of a third party, the "TVA vente prestation" (BO-02-03-41 to -43). */
+    public static final String THIRD_PARTY_SALE = "THIRD_PARTY_SALE";
+
+    /**
+     * Whether the article is a SERVICE (prestation de services) rather than
+     * goods: its collected amounts are the payment data of the e-reporting
+     * (BO-05-01-03).
+     */
+    public static final String SERVICE = "SERVICE";
+
+    /** The code of the article's supplier (BO-02-03-30). */
+    public static final String SUPPLIER_CODE = "SUPPLIER_CODE";
+
+    /** The name of the article's supplier (BO-02-03-30). */
+    public static final String SUPPLIER_NAME = "SUPPLIER_NAME";
+
+    /** The supplier's own code of the article (BO-02-03-30). */
+    public static final String SUPPLIER_ARTICLE_CODE = "SUPPLIER_ARTICLE_CODE";
+
+    /** The supplier's own name of the article (BO-02-03-30). */
+    public static final String SUPPLIER_ARTICLE_NAME = "SUPPLIER_ARTICLE_NAME";
 
     /**
      * The declared well-known attributes, in admin-render order. Each entry is
@@ -107,6 +187,8 @@ public final class ProductAttributeCatalog {
                     "Soumis à la garantie légale de conformité", "false"),
             new ProductAttributeDef(ECO_TAX, ProductAttributeType.DECIMAL,
                     "Éco-taxe unitaire", "0"),
+            new ProductAttributeDef(TARE, ProductAttributeType.DECIMAL,
+                    "Tare logicielle article (kg)", "0"),
             new ProductAttributeDef(ACTIVATION_REQUIRED, ProductAttributeType.BOOL,
                     "Produit dématérialisé : code d'activation à scanner", "false"),
             new ProductAttributeDef(ACTIVATION_PROVIDER, ProductAttributeType.TEXT,
@@ -116,7 +198,39 @@ public final class ProductAttributeCatalog {
             new ProductAttributeDef(DISABLED_TERMINALS, ProductAttributeType.TEXT,
                     "Caisses où l'article n'est pas vendu", ""),
             new ProductAttributeDef(TRANSLATED_LABELS, ProductAttributeType.TEXT,
-                    "Libellés traduits (langue=libellé)", ""));
+                    "Libellés traduits (langue=libellé)", ""),
+            new ProductAttributeDef(INFO_MESSAGE_BLOCKING, ProductAttributeType.BOOL,
+                    "Message article bloquant (article non enregistré)", "false"),
+            new ProductAttributeDef(LINKED_ARTICLE_EAN, ProductAttributeType.TEXT,
+                    "Article lié automatiquement (EAN)", ""),
+            new ProductAttributeDef(FORBIDDEN_SALE_MESSAGE, ProductAttributeType.TEXT,
+                    "Message de vente interdite / rappel", ""),
+            new ProductAttributeDef(CHECKOUT_MODE, ProductAttributeType.TEXT,
+                    "Mode de passage en caisse", ""),
+            new ProductAttributeDef(DECIMAL_QUANTITY_TO_ENTER, ProductAttributeType.BOOL,
+                    "Quantité décimale à saisir en caisse", "false"),
+            new ProductAttributeDef(WEIGHED, ProductAttributeType.BOOL,
+                    "Article à peser obligatoirement", "false"),
+            new ProductAttributeDef(LINKED_ARTICLE_QUANTITY, ProductAttributeType.DECIMAL,
+                    "Quantité d'article lié par unité", "1"),
+            new ProductAttributeDef(COMPLEMENTARY_EANS, ProductAttributeType.TEXT,
+                    "Articles complémentaires (EAN)", ""),
+            new ProductAttributeDef(UNIT_CODE, ProductAttributeType.TEXT,
+                    "Code de l'unité de mesure", ""),
+            new ProductAttributeDef(VAT_NUMBER, ProductAttributeType.TEXT,
+                    "Code TVA de l'article", ""),
+            new ProductAttributeDef(THIRD_PARTY_SALE, ProductAttributeType.BOOL,
+                    "TVA vente prestation (vente pour compte de tiers)", "false"),
+            new ProductAttributeDef(SUPPLIER_CODE, ProductAttributeType.TEXT,
+                    "Code fournisseur", ""),
+            new ProductAttributeDef(SUPPLIER_NAME, ProductAttributeType.TEXT,
+                    "Nom fournisseur", ""),
+            new ProductAttributeDef(SUPPLIER_ARTICLE_CODE, ProductAttributeType.TEXT,
+                    "Code article fournisseur", ""),
+            new ProductAttributeDef(SUPPLIER_ARTICLE_NAME, ProductAttributeType.TEXT,
+                    "Nom article fournisseur", ""),
+            new ProductAttributeDef(SERVICE, ProductAttributeType.BOOL,
+                    "Prestation de services (e-reporting des paiements)", "false"));
 
     /** Fast lookup of a definition by its code, preserving catalog order. */
     private static final Map<String, ProductAttributeDef> BY_CODE = index();

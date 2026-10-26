@@ -99,4 +99,28 @@ class ParkedTicketLocatorResourceTest {
             assertEquals("PARKED", json.get("status"));
         }
     }
+    /** LC-04-01: authenticated parked-ticket lookup handles blank numbers and a stored ticket without fidelity identity. */
+    @Test
+    void authenticatedLookupHandlesBlankNumbersAndMissingFidelityCard() {
+        var resource = new ParkedTicketLocatorResource();
+        resource.role = "store";
+        resource.token = java.util.Optional.of("TOKEN");
+        assertEquals(404, resource.locate(" ", "TOKEN").getStatus());
+        assertEquals(404, resource.locate(null, "TOKEN").getStatus());
+        var ticket = new com.intermarche.edge.domain.sale.Ticket();
+        ticket.ticketNumber = "PARKED";
+        ticket.status = com.intermarche.edge.domain.sale.Ticket.TicketStatus.PARKED;
+        ticket.fidelityCard = null;
+        var lookup = org.mockito.Mockito.mock(io.quarkus.hibernate.orm.panache.PanacheQuery.class);
+        org.mockito.Mockito.when(lookup.firstResult()).thenReturn(ticket);
+        try (var base = org.mockito.Mockito.mockStatic(io.quarkus.hibernate.orm.panache.PanacheEntityBase.class)) {
+            base.when(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase.find("ticketNumber = ?1 and status = ?2", "PARKED", com.intermarche.edge.domain.sale.Ticket.TicketStatus.PARKED)).thenReturn(lookup);
+            var response = resource.locate("PARKED", "TOKEN");
+            assertEquals(200, response.getStatus());
+            assertEquals("", ((java.util.Map<?, ?>) response.getEntity()).get("fidelityCard"));
+            ticket.fidelityCard = "CARD";
+            assertEquals("CARD", ((java.util.Map<?, ?>) resource.locate("PARKED", "TOKEN").getEntity()).get("fidelityCard"));
+        }
+    }
+
 }

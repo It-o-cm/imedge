@@ -87,18 +87,19 @@ class RefundReportTest {
         TypedQuery<Object[]> query = typedQueryMock();
         LocalDateTime when = LocalDateTime.of(2026, 9, 26, 10, 15);
         stubQuery(entityManager, query, Collections.singletonList(new Object[]{
-                when, "CAISSE1", "C04-R000012", Refund.RefundMethod.CASH, 42L, 3, new BigDecimal("12.50"),
+                when, "CAISSE1", "C04-R000012", Refund.RefundMethod.CASH, "POS01-00000042", 3, new BigDecimal("12.50"),
                 "C123", "S900", "ECH", "Échange", "PERIME", "Article périmé"}));
         ReportCriteria criteria = new ReportCriteria();
         criteria.terminals.add("CAISSE1");
         List<List<Object>> rows = reportWith(entityManager).rows(criteria);
         assertEquals(1, rows.size());
         assertEquals(Arrays.asList(when, "CAISSE1", "C04-R000012", "C123", "S900", "ECH", "Échange",
-                        "CASH", "PERIME", "Article périmé", "42", 3L, new BigDecimal("12.50")),
+                        "Espèces", "PERIME", "Article périmé", "POS01-00000042", 3L, new BigDecimal("12.50")),
                 rows.get(0));
         ArgumentCaptor<String> jpql = ArgumentCaptor.forClass(String.class);
         verify(entityManager).createQuery(jpql.capture(), eq(Object[].class));
         assertTrue(jpql.getValue().contains("and r.terminalId in :terminals"));
+        assertTrue(jpql.getValue().contains("(select t.ticketNumber from Ticket t where t.id = r.originalTicketId)"));
         verify(query).setParameter("terminals", criteria.terminals);
     }
 
@@ -113,12 +114,12 @@ class RefundReportTest {
         TypedQuery<Object[]> query = typedQueryMock();
         LocalDateTime when = LocalDateTime.of(2026, 9, 26, 8, 0);
         stubQuery(entityManager, query, Collections.singletonList(new Object[]{
-                when, "CAISSE2", "C04-R000013", Refund.RefundMethod.VOUCHER, 7L, 1, new BigDecimal("4.00"),
+                when, "CAISSE2", "C04-R000013", Refund.RefundMethod.VOUCHER, "POS01-00000007", 1, new BigDecimal("4.00"),
                 "C200", null, "SIMPLE", "Retour simple", null, null}));
         List<List<Object>> rows = reportWith(entityManager).rows(new ReportCriteria());
         assertEquals(1, rows.size());
         assertEquals(Arrays.asList(when, "CAISSE2", "C04-R000013", "C200", "", "SIMPLE", "Retour simple",
-                        "VOUCHER", "", "", "7", 1L, new BigDecimal("4.00")),
+                        "Bon d'achat", "", "", "POS01-00000007", 1L, new BigDecimal("4.00")),
                 rows.get(0));
         ArgumentCaptor<String> jpql = ArgumentCaptor.forClass(String.class);
         verify(entityManager).createQuery(jpql.capture(), eq(Object[].class));
@@ -216,5 +217,19 @@ class RefundReportTest {
         assertEquals(ReportColumn.Kind.INTEGER, columns.get(11).kind());
         assertEquals("amount", columns.get(12).key());
         assertEquals(ReportColumn.Kind.AMOUNT, columns.get(12).kind());
+    }
+
+    /**
+     * Every refund method reads by its French name, and a key the state does
+     * not know shows itself rather than nothing.
+     */
+    @Test
+    void methodLabelNamesEveryMethod() {
+        assertEquals("Espèces", RefundReport.methodLabel("CASH"));
+        assertEquals("Carte bancaire", RefundReport.methodLabel("CARD"));
+        assertEquals("Bon d'achat", RefundReport.methodLabel("VOUCHER"));
+        assertEquals("Fidélité", RefundReport.methodLabel("LOYALTY"));
+        assertEquals("Crédit client", RefundReport.methodLabel("CREDIT"));
+        assertEquals("NEW_METHOD", RefundReport.methodLabel("NEW_METHOD"));
     }
 }

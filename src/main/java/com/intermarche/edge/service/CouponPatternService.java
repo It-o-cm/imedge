@@ -136,6 +136,11 @@ public class CouponPatternService {
         if (range.valueDecimals < 0 || range.valueDecimals > range.valueLength) {
             problems.add("Le nombre de décimales de la valeur est hors de la zone lue.");
         }
+        // BO-03-06-59: a function range names a function the register knows, or none.
+        if (range.functionCode != null
+                && com.intermarche.edge.domain.barcode.RegisterFunction.byName(range.functionCode) == null) {
+            problems.add("Fonction caisse inconnue : " + range.functionCode + ".");
+        }
         LOGGER.info("Exiting method validateRange");
         return problems;
     }

@@ -91,6 +91,13 @@ public final class StreamPayloads {
         /** How {@link #image} is encoded: plain, or gzip then Base64. */
         public String imageEncoding;
 
+        /**
+         * The language the ticket was printed in — the customer's, chosen or
+         * retrieved from the loyalty base (LC-13-06-14) — or null when it ran in
+         * the register's language.
+         */
+        public String language;
+
         /** The lines, in ring order, cancelled ones marked. */
         public List<LineEvent> lines = new ArrayList<>();
 
@@ -222,5 +229,158 @@ public final class StreamPayloads {
 
         /** Whether the terminal answered in degraded mode. */
         public boolean degradedMode;
+    }
+
+    /**
+     * A closed sale as the Catalina servers receive it (BO-11-01-07): the store,
+     * the lane, the transaction, the loyalty card, the items and the tenders.
+     */
+    public static class CatalinaTransaction {
+
+        /** The store identifier: this node's point of sale number. */
+        public String storeId;
+
+        /** The lane: the register that rang the sale. */
+        public String laneId;
+
+        /** The transaction number: the ticket number. */
+        public String transactionId;
+
+        /** When the sale was closed, ISO-8601. */
+        public String transactionDateTime;
+
+        /** The cashier's login, or null. */
+        public String cashierId;
+
+        /** The loyalty card presented, or null. */
+        public String loyaltyCardNumber;
+
+        /** The tax-included total. */
+        public BigDecimal totalAmount;
+
+        /** The tax. */
+        public BigDecimal taxAmount;
+
+        /** The items sold, cancelled ones left out. */
+        public List<CatalinaItem> items = new ArrayList<>();
+
+        /** The tenders that settled the sale. */
+        public List<CatalinaTender> tenders = new ArrayList<>();
+    }
+
+    /** One item of a Catalina transaction. */
+    public static class CatalinaItem {
+
+        /** The UPC/EAN of the item. */
+        public String upc;
+
+        /** The item description. */
+        public String description;
+
+        /** The department: the product family code. */
+        public String departmentCode;
+
+        /** The quantity sold. */
+        public BigDecimal quantity;
+
+        /** The unit price charged. */
+        public BigDecimal unitPrice;
+
+        /** The extended price: the line total. */
+        public BigDecimal extendedPrice;
+
+        /** The discount the line carries, or null. */
+        public BigDecimal discountAmount;
+    }
+
+    /** One tender of a Catalina transaction. */
+    public static class CatalinaTender {
+
+        /** The tender type: the payment method key. */
+        public String tenderType;
+
+        /** The amount tendered. */
+        public BigDecimal amount;
+
+        /** The card authorisation, or null for a non-card tender. */
+        public String authorizationCode;
+    }
+
+    /**
+     * A cash event as the TFREMA stream carries it to the centralised gestion
+     * commerciale (BO-11-02-01): the transaction and the articles it moved.
+     */
+    public static class TfremaEvent {
+
+        /** The kind of cash event. */
+        public String eventType;
+
+        /** The point of sale number. */
+        public String pdv;
+
+        /** The register. */
+        public String caisse;
+
+        /** The ticket number. */
+        public String transaction;
+
+        /** When the sale was closed, ISO-8601. */
+        public String dateHeure;
+
+        /** The tax-included total. */
+        public BigDecimal montantTtc;
+
+        /** The articles sold, cancelled ones left out. */
+        public List<TfremaLine> lignes = new ArrayList<>();
+    }
+
+    /** One article of a TFREMA cash event. */
+    public static class TfremaLine {
+
+        /** The article EAN. */
+        public String article;
+
+        /** The article label. */
+        public String libelle;
+
+        /** The family code. */
+        public String famille;
+
+        /** The quantity, negative for a returned article. */
+        public BigDecimal quantite;
+
+        /** The tax-included amount of the line. */
+        public BigDecimal montantTtc;
+    }
+
+    /**
+     * The integration status of one e-commerce order, returned to its platform
+     * at the scale of the point of sale (BO-11-04-03).
+     */
+    public static class EcommerceStatus {
+
+        /** The point of sale that integrated the order. */
+        public String pdvNumber;
+
+        /** The order reference. */
+        public String reference;
+
+        /** INTEGRATED, REJECTED or DISABLED. */
+        public String status;
+
+        /** The ticket the order was booked as, or null. */
+        public String ticketNumber;
+
+        /** The total booked, or null. */
+        public BigDecimal total;
+
+        /** The outcome in words. */
+        public String message;
+
+        /** How many lines carried an unknown article. */
+        public int unknownLines;
+
+        /** How many lines carried an article forbidden to sale. */
+        public int forbiddenLines;
     }
 }

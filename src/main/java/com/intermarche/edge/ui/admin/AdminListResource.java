@@ -1,12 +1,15 @@
 package com.intermarche.edge.ui.admin;
 
+import io.quarkus.security.Authenticated;
+import com.intermarche.edge.security.FeatureAccess;
+import com.intermarche.edge.domain.setting.Feature;
+import com.intermarche.edge.domain.people.CrudOption;
 import com.intermarche.edge.domain.setting.PosList;
 import com.intermarche.edge.domain.setting.PosListItem;
 import com.intermarche.edge.service.PosSettingsService;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
@@ -101,6 +104,12 @@ public class AdminListResource {
         /** Whether the kind reads the option markers. */
         public boolean usesOptions;
 
+        /** The bundle key of the value column's heading, by kind (BO-03-02-47, BO-03-07-03). */
+        public String valueLabelKey;
+
+        /** The bundle key of the option markers' hint, by kind. */
+        public String optionsHintKey;
+
         /** The entries, in display order. */
         public List<ItemRow> items = new java.util.ArrayList<>();
     }
@@ -147,7 +156,8 @@ public class AdminListResource {
      * @return the lists page
      */
     @GET
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.POS_LIST)
     @Produces(MediaType.TEXT_HTML)
     @Transactional
     public TemplateInstance list(@QueryParam("notice") String notice,
@@ -180,8 +190,17 @@ public class AdminListResource {
         row.functions = posList.functions == null ? "" : posList.functions;
         row.active = posList.active;
         row.usesSeverity = posList.kind == PosList.Kind.SERVICE_REQUEST;
-        row.usesWeight = posList.kind == PosList.Kind.TARE_CONTAINER;
-        row.usesOptions = posList.kind == PosList.Kind.RETURN_TYPE;
+        // BO-03-02-45/-47 and BO-03-07-03/-04/-06: an expense carries its
+        // maximum and a discount key its figure in the value column, and both
+        // state their rules in the option markers, like a return type.
+        row.usesWeight = posList.kind == PosList.Kind.TARE_CONTAINER
+                || posList.kind == PosList.Kind.JUSTIFICATION
+                || posList.kind == PosList.Kind.DISCOUNT;
+        row.usesOptions = posList.kind == PosList.Kind.RETURN_TYPE
+                || posList.kind == PosList.Kind.JUSTIFICATION
+                || posList.kind == PosList.Kind.DISCOUNT;
+        row.valueLabelKey = valueLabelKey(posList.kind);
+        row.optionsHintKey = optionsHintKey(posList.kind);
         for (PosListItem item : posList.items) {
             ItemRow itemRow = new ItemRow();
             itemRow.id = item.id;
@@ -206,7 +225,8 @@ public class AdminListResource {
      */
     @POST
     @Path("/save")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.POS_LIST, option = CrudOption.CREATE, updateKey = "id")
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response save(MultivaluedMap<String, String> form) {
@@ -247,7 +267,8 @@ public class AdminListResource {
      */
     @POST
     @Path("/delete")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.POS_LIST, option = CrudOption.DELETE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response delete(MultivaluedMap<String, String> form) {
@@ -257,6 +278,16 @@ public class AdminListResource {
         if (row == null) {
             LOGGER.info("Exiting method delete: unknown list");
             return back("Liste inconnue.", false);
+        }
+        // BO-03-13-02: a list whose return types the refunds already name is
+        // not deleted — the states would lose what those refunds were.
+        if (row.kind == PosList.Kind.RETURN_TYPE) {
+            for (PosListItem item : row.items) {
+                if (returnsOfType(item.code) > 0) {
+                    LOGGER.info("Exiting method delete: return types in use");
+                    return back("Cette liste porte des types de retour déjà utilisés : désactivez-la plutôt.", false);
+                }
+            }
         }
         row.delete();
         LOGGER.info("Exiting method delete");
@@ -271,7 +302,8 @@ public class AdminListResource {
      */
     @POST
     @Path("/item/save")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.POS_LIST, option = CrudOption.CREATE, updateKey = "id")
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response saveItem(MultivaluedMap<String, String> form) {
@@ -287,6 +319,20 @@ public class AdminListResource {
         if (code == null || label == null) {
             LOGGER.info("Exiting method saveItem: incomplete");
             return back("Le code et le libellé de l'entrée sont obligatoires.", false);
+        }
+        // BO-03-02-45/-47, BO-03-07-03/-04, BO-03-13-11/-12: the option markers
+        // are a closed vocabulary per kind; a typo is refused rather than
+        // silently ignored at the register.
+        String options = AdminForms.text(form, "options");
+        String problem = optionProblem(parent.kind, options);
+        if (problem != null) {
+            LOGGER.info("Exiting method saveItem: bad option");
+            return back("Option inconnue pour ce genre de liste : " + problem + ".", false);
+        }
+        if (parent.kind == PosList.Kind.DISCOUNT
+                && hasMarker(options, "PERCENT") == hasMarker(options, "AMOUNT")) {
+            LOGGER.info("Exiting method saveItem: discount nature");
+            return back("Une remise porte PERCENT ou AMOUNT, et un seul des deux.", false);
         }
         Long id = AdminForms.id(form.getFirst("id"));
         PosListItem item = id == null ? null : PosListItem.<PosListItem>findById(id);
@@ -311,7 +357,7 @@ public class AdminListResource {
         item.displayOrder = AdminForms.integer(form.getFirst("displayOrder"), 0);
         item.severity = Math.max(AdminForms.integer(form.getFirst("severity"), 0), 0);
         item.numericValue = AdminForms.amount(form.getFirst("numericValue"));
-        item.options = AdminForms.text(form, "options");
+        item.options = options;
         item.active = AdminForms.checkbox(form, "active");
         item.persist();
         LOGGER.infof("Entrée %s de la liste %s enregistrée", item.code, parent.code);
@@ -327,7 +373,8 @@ public class AdminListResource {
      */
     @POST
     @Path("/item/delete")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.POS_LIST, option = CrudOption.DELETE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response deleteItem(MultivaluedMap<String, String> form) {
@@ -338,12 +385,184 @@ public class AdminListResource {
             LOGGER.info("Exiting method deleteItem: unknown item");
             return back("Entrée inconnue.", false);
         }
+        // BO-03-13-02: a return type the refunds already name is DEACTIVATED
+        // rather than deleted, and the administrator is told how many refunds
+        // name it — the register stops offering it all the same.
+        long used = item.posList != null && item.posList.kind == PosList.Kind.RETURN_TYPE
+                ? returnsOfType(item.code) : 0;
+        if (used > 0) {
+            item.active = false;
+            item.persist();
+            LOGGER.info("Exiting method deleteItem: return type in use, deactivated");
+            return back("Le type de retour " + item.code + " est rattaché à " + used
+                    + " retour(s) : il a été désactivé et non supprimé.", false);
+        }
         if (item.posList != null) {
             item.posList.items.remove(item);
         }
         item.delete();
         LOGGER.info("Exiting method deleteItem");
         return back("Entrée supprimée.", true);
+    }
+
+    /**
+     * Switches an entry in or out of service in one gesture (BO-03-02-46,
+     * BO-03-13-03): the register offers it, or stops offering it, with the
+     * next lists it receives, and nothing else of the entry changes.
+     *
+     * @param form the posted form (id)
+     * @return a 303 back to the screen with the outcome
+     */
+    @POST
+    @Path("/item/toggle")
+    @Authenticated
+    @FeatureAccess(value = Feature.POS_LIST, option = CrudOption.UPDATE)
+    @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
+    @Transactional
+    public Response toggleItem(MultivaluedMap<String, String> form) {
+        LOGGER.info("Entering method toggleItem");
+        Long id = AdminForms.id(form.getFirst("id"));
+        PosListItem item = id == null ? null : PosListItem.<PosListItem>findById(id);
+        if (item == null) {
+            LOGGER.info("Exiting method toggleItem: unknown item");
+            return back("Entrée inconnue.", false);
+        }
+        item.active = !item.active;
+        item.persist();
+        LOGGER.info("Exiting method toggleItem");
+        return back(item.active ? "Entrée activée." : "Entrée désactivée.", true);
+    }
+
+    /**
+     * Counts the refunds that name a return type (BO-03-13-02).
+     *
+     * @param code the return type code
+     * @return how many refunds carry that type code
+     */
+    long returnsOfType(String code) {
+        return com.intermarche.edge.domain.sale.Refund.count("returnTypeCode", code);
+    }
+
+    /**
+     * The heading of the value column of a kind's entries.
+     *
+     * @param kind the list kind, possibly null
+     * @return the bundle key of the heading
+     */
+    static String valueLabelKey(PosList.Kind kind) {
+        if (kind == PosList.Kind.JUSTIFICATION) {
+            return "t.montant-maximum-de-la-depense";
+        }
+        if (kind == PosList.Kind.DISCOUNT) {
+            return "t.valeur-de-la-touche";
+        }
+        return "t.poids-kg";
+    }
+
+    /**
+     * The hint of the option markers of a kind's entries.
+     *
+     * @param kind the list kind, possibly null
+     * @return the bundle key of the hint
+     */
+    static String optionsHintKey(PosList.Kind kind) {
+        if (kind == PosList.Kind.JUSTIFICATION) {
+            return "t.options-depense";
+        }
+        if (kind == PosList.Kind.DISCOUNT) {
+            return "t.options-remise";
+        }
+        return "t.options-type-retour";
+    }
+
+    /**
+     * Finds the first option marker a kind does not know (BO-03-02-45/-47,
+     * BO-03-07-03/-04, BO-03-13-11/-12).
+     *
+     * <p>Only the kinds whose markers mean something are checked: a return
+     * type knows {@code TICKET}, {@code NOENDORSE}, {@code NOORIGIN},
+     * {@code PRICE}, {@code DECONSIGNE} and {@code RANGE:code}; an expense
+     * {@code TENDER:code} and {@code CONTROL:level}; a discount key
+     * {@code PERCENT}, {@code AMOUNT}, {@code TICKET}, {@code CUMUL} and
+     * {@code MAX:n}.
+     *
+     * @param kind the list kind, possibly null
+     * @param options the posted markers, possibly null
+     * @return the first unknown marker, or null when all are known
+     */
+    static String optionProblem(PosList.Kind kind, String options) {
+        if (options == null) {
+            return null;
+        }
+        for (String part : options.split(",")) {
+            String marker = part.trim();
+            if (!marker.isEmpty() && !knownMarker(kind, marker)) {
+                return marker;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Tells whether one marker belongs to a kind's vocabulary.
+     *
+     * @param kind the list kind, possibly null
+     * @param marker the trimmed marker, never empty
+     * @return true when the kind knows it, or checks nothing
+     */
+    private static boolean knownMarker(PosList.Kind kind, String marker) {
+        String upper = marker.toUpperCase(Locale.ROOT);
+        int colon = upper.indexOf(':');
+        String name = colon < 0 ? upper : upper.substring(0, colon).trim();
+        String value = colon < 0 ? null : upper.substring(colon + 1).trim();
+        if (kind == PosList.Kind.RETURN_TYPE) {
+            return colon < 0 ? List.of("TICKET", "NOENDORSE", "NOORIGIN", "PRICE", "DECONSIGNE").contains(name)
+                    : "RANGE".equals(name) && !value.isEmpty();
+        }
+        if (kind == PosList.Kind.JUSTIFICATION) {
+            return colon > 0 && ("TENDER".equals(name) && !value.isEmpty()
+                    || "CONTROL".equals(name) && controlLevel(value));
+        }
+        if (kind == PosList.Kind.DISCOUNT) {
+            return colon < 0 ? List.of("PERCENT", "AMOUNT", "TICKET", "CUMUL").contains(name)
+                    : "MAX".equals(name) && AdminForms.amount(value) != null;
+        }
+        return true;
+    }
+
+    /**
+     * Tells whether a word names a tender control level.
+     *
+     * @param value the upper-case word
+     * @return true for NONE, INFO, WARNING, SUPERVISOR or BLOCKING
+     */
+    private static boolean controlLevel(String value) {
+        for (com.intermarche.edge.domain.payment.TenderDefinition.ControlLevel level
+                : com.intermarche.edge.domain.payment.TenderDefinition.ControlLevel.values()) {
+            if (level.name().equals(value)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Tells whether the posted markers carry a bare marker.
+     *
+     * @param options the posted markers, possibly null
+     * @param name the marker, upper case
+     * @return true when it is present
+     */
+    static boolean hasMarker(String options, String name) {
+        if (options == null) {
+            return false;
+        }
+        for (String part : options.split(",")) {
+            if (part.trim().equalsIgnoreCase(name)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -358,7 +577,8 @@ public class AdminListResource {
      */
     @POST
     @Path("/bootstrap")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.POS_LIST, option = CrudOption.CREATE)
     @Transactional
     public Response bootstrap() {
         LOGGER.info("Entering method bootstrap");

@@ -1,5 +1,9 @@
 package com.intermarche.edge.ui.admin;
 
+import io.quarkus.security.Authenticated;
+import com.intermarche.edge.security.FeatureAccess;
+import com.intermarche.edge.domain.setting.Feature;
+import com.intermarche.edge.domain.people.CrudOption;
 import com.intermarche.edge.domain.store.CheckoutIsland;
 import com.intermarche.edge.domain.store.CheckoutPoint;
 import com.intermarche.edge.domain.store.Pdv;
@@ -7,7 +11,6 @@ import com.intermarche.edge.domain.store.PromotionChannel;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
@@ -60,7 +63,8 @@ public class AdminCheckoutIslandResource {
      * @return the page
      */
     @GET
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.CHECKOUT_ISLAND)
     @Transactional
     public TemplateInstance islandsPage(@QueryParam("notice") String notice,
                                         @QueryParam("noticeOk") @DefaultValue("true") boolean noticeOk) {
@@ -79,12 +83,14 @@ public class AdminCheckoutIslandResource {
      * deactivation propagates to the island's registers (BO-03-10-03).
      *
      * @param form the posted form (code, label, pdvNumber, active,
-     *        changeGivingAllowed, promotionChannel, autoPeriodCloseDeclaration)
+     *        changeGivingAllowed, promotionChannel, autoPeriodCloseDeclaration,
+     *        hostBadges, planexaExcluded)
      * @return a 303 redirect with the notice
      */
     @POST
     @Path("/save")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.CHECKOUT_ISLAND, option = CrudOption.CREATE, updateKey = "code", entity = com.intermarche.edge.domain.store.CheckoutIsland.class)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response saveIsland(MultivaluedMap<String, String> form) {
@@ -104,16 +110,29 @@ public class AdminCheckoutIslandResource {
         if (island == null) {
             island = new CheckoutIsland();
             island.code = code;
-            island.persist();
         }
-        island.label = AdminForms.text(form, "label");
+        String label = AdminForms.text(form, "label");
+        // The label column refuses null: an island saved without one is named
+        // by its code rather than answering 500.
+        island.label = label == null ? code : label;
         island.pdvNumber = pdvNumber;
         island.changeGivingAllowed = AdminForms.checkbox(form, "changeGivingAllowed");
         PromotionChannel channel = PromotionChannel.fromName(AdminForms.text(form, "promotionChannel"));
         island.promotionChannel = channel == null ? PromotionChannel.POINT_OF_SALE : channel;
         island.autoPeriodCloseDeclaration = AdminForms.checkbox(form, "autoPeriodCloseDeclaration");
+        // BO-09-03-01: the hosts attached to the island, declared automatically
+        // at the end of period where the store administers it.
+        island.hostBadges = AdminForms.text(form, "hostBadges");
+        // BO-03-10-06: an island needing no hostess is left out of Planexa.
+        island.planexaExcluded = AdminForms.checkbox(form, "planexaExcluded");
         boolean active = AdminForms.checkbox(form, "active");
         island.active = active;
+        // The new island is persisted once its fields are set: Hibernate takes
+        // the inserted state at persist time, so an earlier persist would insert
+        // a null label into a NOT NULL column.
+        if (existing == null) {
+            island.persist();
+        }
         if (!active) {
             propagateDeactivation(code);
         }
@@ -130,7 +149,8 @@ public class AdminCheckoutIslandResource {
      */
     @POST
     @Path("/delete")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.CHECKOUT_ISLAND, option = CrudOption.DELETE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response deleteIsland(MultivaluedMap<String, String> form) {

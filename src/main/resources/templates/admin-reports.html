@@ -5,35 +5,36 @@
  !
  ! The list is BUILT from the ReportCatalog, never written by hand: a report
  ! exists here because a bean implements ReportDefinition. A list maintained
- ! beside the beans is a list somebody forgets to maintain.
+ ! beside the beans is a list somebody forgets to maintain. The report types
+ ! the operator hid in their favorites are left out (BO-01-04-08).
 !}
 {#include admin-layout}
 
-{#title}Rapports{/title}
+{#title}{inject:i18n.get('t.rapports')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Rapports</h1>
-        <p class="page-sub">États du magasin, sur la période de votre choix. Chaque rapport s'affiche, se représente en graphique et s'exporte en CSV, en tableur et en PDF.</p>
+        <h1>{inject:i18n.get('t.rapports')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.etats-du-magasin-sur-la-periode-de')}</p>
     </div>
 </div>
 
-{#for family in families}
+{#for group in groups}
 <div class="card">
-    <h2 class="card-title">{family.label}</h2>
+    <h2 class="card-title">{inject:i18n.text(group.family.label)}</h2>
     <table class="data-table">
         <thead>
         <tr>
-            <th>Rapport</th>
-            <th class="col-muted">Exigence</th>
-            <th class="col-actions">Colonnes</th>
+            <th>{inject:i18n.get('t.rapport')}</th>
+            <th class="col-muted">{inject:i18n.get('t.exigence-2')}</th>
+            <th class="col-actions">{inject:i18n.get('t.colonnes')}</th>
         </tr>
         </thead>
         <tbody>
-        {#for report in catalog.of(family)}
+        {#for report in group.reports}
         <tr>
-            <td><a class="link-strong" href="/admin/reports/{report.code}">{report.label}</a></td>
+            <td><a class="link-strong" href="/admin/reports/{report.code}">{inject:i18n.text(report.label)}</a></td>
             <td class="col-muted">{report.requirement}</td>
             <td class="col-actions">{report.columns.size}</td>
         </tr>
@@ -43,7 +44,7 @@
 </div>
 {/for}
 
-{#if families.isEmpty}
-<div class="empty-state">Aucun rapport déclaré sur ce nœud.</div>
+{#if groups.isEmpty}
+<div class="empty-state">{inject:i18n.get('t.aucun-rapport-declare-sur-ce-nud-ou')}</div>
 {/if}
 {/body}

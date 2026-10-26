@@ -36,6 +36,33 @@
 
 .app-identity-link:hover { color: var(--im-red); }
 
+/* On a narrow screen (800 x 600) the brand, the menus and the identity no
+   longer fit on one line: the header wraps instead of widening the page, the
+   identity going to a second line, still right-aligned. */
+@media (max-width: 1000px) {
+    .app-header {
+        flex-wrap: wrap;
+        height: auto;
+        min-height: 56px;
+        gap: 4px 20px;
+        padding: 6px 16px;
+    }
+
+    .app-nav {
+        flex-wrap: wrap;
+        gap: 16px;
+    }
+
+    .app-identity {
+        gap: 8px;
+    }
+
+    .app-identity-name,
+    .app-identity-link {
+        white-space: nowrap;
+    }
+}
+
 /* ---------- Sign-in page ---------- */
 
 .login-body {
@@ -86,3 +113,12 @@
 }
 
 .login-submit { width: 100%; margin-top: 4px; }
+
+/* Single sign-on door (BO-01-02-01): a link styled as the secondary button. */
+.login-sso {
+    display: block;
+    margin-top: 10px;
+    text-align: center;
+    text-decoration: none;
+    color: var(--im-ink);
+}

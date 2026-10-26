@@ -111,15 +111,17 @@ public class EmployeeIdentityProvider implements IdentityProvider<UsernamePasswo
      * when the form session cookie is restored: at that point the identity
      * was already proven, only the account's current state has to be
      * re-checked — which is what makes a deactivation or a lockout take
-     * effect on an already open session.
+     * effect on an already open session. A session opened through the single
+     * sign-on (BO-01-02-01) is restored the same way, so an account whose
+     * sign-in mode admits the SSO needs no local password to keep it.
      *
      * @param loginName the presented login name
      * @param password the presented password, or null to skip the password
      *                 check
      * @return the identity of the employee
      * @throws AuthenticationFailedException when the account is unknown,
-     *         inactive, locked, without back-office access, or the password
-     *         is wrong
+     *         inactive, locked, without back-office access, signing in by
+     *         password while administered SSO only, or the password is wrong
      */
     SecurityIdentity identityOf(String loginName, String password) {
         if (loginName == null || loginName.isBlank()) {
@@ -139,7 +141,15 @@ public class EmployeeIdentityProvider implements IdentityProvider<UsernamePasswo
             LOGGER.debugf("Back-office sign-in refused: account '%s' is locked out", loginName);
             throw new AuthenticationFailedException();
         }
-        if (!employee.hasBackOfficeAccess()) {
+        if (password != null && (!employee.allowsPasswordLogin()
+                || nodeSignIn() == Employee.AuthMode.SSO)) {
+            // BO-01-02-09: an account, or an echelon, administered as
+            // single-sign-on only has no local password door, whatever
+            // password the account may still carry.
+            LOGGER.debugf("Back-office sign-in refused: '%s' signs in through the SSO only", loginName);
+            throw new AuthenticationFailedException();
+        }
+        if (!employee.hasBackOfficeAccess() && (password != null || !employee.allowsSsoLogin())) {
             LOGGER.debugf("Back-office sign-in refused: '%s' has no back-office password", loginName);
             throw new AuthenticationFailedException();
         }
@@ -167,9 +177,12 @@ public class EmployeeIdentityProvider implements IdentityProvider<UsernamePasswo
                 // BO-01-02-12: a secret past the administered delay demands a new
                 // one exactly as a forced change does — the filter downstream
                 // reads one attribute and does not need to know which of the
-                // two reasons set it.
-                .addAttribute("mustChangePassword", employee.mustChangePassword
-                        || employee.secretExpired(passwordExpiryDays()))
+                // two reasons set it. Neither applies to an SSO-only account,
+                // nor on a store to an account the central node owns: its
+                // password is changed at the centre (BO-01-01-03).
+                .addAttribute("mustChangePassword", employee.authMode != Employee.AuthMode.SSO
+                        && !employee.centralManaged
+                        && (employee.mustChangePassword || employee.secretExpired(passwordExpiryDays())))
                 .build();
     }
 
@@ -279,6 +292,21 @@ public class EmployeeIdentityProvider implements IdentityProvider<UsernamePasswo
             return posSettingsService.backOfficeLockoutMinutes();
         } catch (Exception unreadable) {
             return 15;
+        }
+    }
+
+    /**
+     * Reads the back-office sign-in mode posed at this node's echelon
+     * (BO-01-02-09); an unreadable parameter keeps every door open.
+     *
+     * @return the node's mode, ANY when unreadable
+     */
+    private Employee.AuthMode nodeSignIn() {
+        try {
+            return posSettingsService.backOfficeSignIn();
+        } catch (Exception unreadable) {
+            LOGGER.debugf("Mode de connexion de l'échelon illisible (%s)", unreadable.getMessage());
+            return Employee.AuthMode.ANY;
         }
     }
 

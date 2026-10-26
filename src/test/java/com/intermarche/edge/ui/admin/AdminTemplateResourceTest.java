@@ -837,6 +837,13 @@ class AdminTemplateResourceTest {
         assertTrue(body.contains("{\"expression\":\"{line.label}\",\"sample\":\"LAIT DEMI-ECREME 1L\","
                 + "\"loop\":\"{#for line in lines}…{/for}\"}"));
         assertTrue(body.contains("{\"expression\":\"{operator}\",\"sample\":\"MARIE\",\"loop\":null}"));
+        try {
+            com.fasterxml.jackson.databind.JsonNode parsed = new com.fasterxml.jackson.databind.ObjectMapper().readTree(body);
+            assertTrue(parsed.isArray());
+            assertTrue(parsed.size() > 0);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException malformed) {
+            throw new AssertionError(malformed);
+        }
     }
 
     /**
@@ -953,18 +960,127 @@ class AdminTemplateResourceTest {
     }
 
     /**
-     * The JSON escape maps a null value to the empty string — the null arm of a
-     * guard no real reference reaches, exercised on the helper directly.
+     * The one-line writing maps a null value to the empty string — the null
+     * arm of a guard no real reference reaches, exercised on the helper
+     * directly — and folds a line break into a space.
      *
      * @throws Exception when the helper cannot be reached by reflection
      */
     @Test
-    void escapeMapsANullValueToTheEmptyString() throws Exception {
+    void flatMapsANullValueToTheEmptyString() throws Exception {
         AdminTemplateResource resource = newResource();
-        java.lang.reflect.Method escape =
-                AdminTemplateResource.class.getDeclaredMethod("escape", String.class);
-        escape.setAccessible(true);
-        assertEquals("", escape.invoke(resource, (String) null));
-        assertEquals("a b", escape.invoke(resource, "a\nb"));
+        java.lang.reflect.Method flat =
+                AdminTemplateResource.class.getDeclaredMethod("flat", String.class);
+        flat.setAccessible(true);
+        assertEquals("", flat.invoke(resource, (String) null));
+        assertEquals("a b", flat.invoke(resource, "a\nb"));
+    }
+    /** BO-03-05: each banner type offers three spare rows; ordinary layouts and null templates offer no line table. */
+    @Test
+    void coverageBannerRowsAndTypes() throws Exception {
+        var resource = newResource();
+        var method = AdminTemplateResource.class.getDeclaredMethod("bannerRows", DocumentTemplate.class);
+        method.setAccessible(true);
+        assertEquals(java.util.List.of(), method.invoke(resource, (Object) null));
+        for (var type : DocumentTemplate.DocumentType.values()) {
+            var template = new DocumentTemplate();
+            template.documentType = type;
+            template.source = "Hello";
+            var rows = (java.util.List<?>) method.invoke(resource, template);
+            boolean banner = java.util.Set.of(DocumentTemplate.DocumentType.TICKET_HEADER,
+                    DocumentTemplate.DocumentType.TICKET_FOOTER, DocumentTemplate.DocumentType.INVOICE_HEADER,
+                    DocumentTemplate.DocumentType.INVOICE_FOOTER).contains(type);
+            assertEquals(banner ? 4 : 0, rows.size(), type.name());
+        }
+    }
+
+    /** BO-03-05: blank row, bold-only row, active-only row and all alignment choices keep their distinct meanings. */
+    @Test
+    void coveragePostedBannerLineLegs() throws Exception {
+        var resource = newResource();
+        var posted = form("lineText.0", " ", "lineText.1", " ", "lineBold.1", "on",
+                "lineText.2", " ", "lineActive.2", "on", "lineText.3", "RIGHT", "lineAlign.3", "RIGHT",
+                "lineText.4", "CENTRE", "lineAlign.4", "CENTRE", "lineText.5", "LEFT", "lineAlign.5", "UNKNOWN");
+        var method = AdminTemplateResource.class.getDeclaredMethod("postedLines", MultivaluedMap.class);
+        method.setAccessible(true);
+        var rows = (java.util.List<com.intermarche.edge.service.BannerLines.Line>) method.invoke(resource, posted);
+        assertEquals(5, rows.size());
+        assertTrue(rows.getFirst().bold());
+        assertTrue(rows.get(1).active());
+        assertEquals(com.intermarche.edge.service.BannerLines.Align.RIGHT, rows.get(2).align());
+        assertEquals(com.intermarche.edge.service.BannerLines.Align.CENTRE, rows.get(3).align());
+        assertEquals(com.intermarche.edge.service.BannerLines.Align.LEFT, rows.get(4).align());
+        var blank = AdminTemplateResource.class.getDeclaredMethod("blankToNull", String.class);
+        blank.setAccessible(true);
+        assertNull(blank.invoke(resource, (Object) null));
+    }
+
+    /** BO-03-05: saving the line-table door compiles its rows into the template's single stored source. */
+    @Test
+    void coverageSaveBannerFromLineTable() {
+        var resource = newResource();
+        var posted = form("code", "HEADER", "documentType", "TICKET_HEADER", "lineText.0", "ADMIN HEADER", "lineActive.0", "on");
+        try (var templates = mockStatic(DocumentTemplate.class);
+             var created = org.mockito.Mockito.mockConstruction(DocumentTemplate.class)) {
+            assertTrue(resource.saveTemplate(posted).getLocation().toString().contains("noticeOk=true"));
+            assertTrue(created.constructed().getFirst().source.contains("ADMIN HEADER"));
+            org.mockito.Mockito.verify(created.constructed().getFirst()).persist();
+        }
+    }
+
+    /** BO-03: an absent optional form value retains the documented empty/default interpretation. */
+    @Test
+    void absentOptionalFormValueKeepsItsFallback() throws Exception {
+        var method = AdminTemplateResource.class.getDeclaredMethod("blankToNull", String.class);
+        method.setAccessible(true);
+        org.junit.jupiter.api.Assertions.assertEquals(null, method.invoke(new AdminTemplateResource(), (Object) null));
+    }
+
+
+    /** BO-03-05: an explicitly empty optional value follows the empty arm, while a nonempty one is retained. */
+    @Test
+    void emptyOptionalValueIsNormalised() throws Exception {
+        var method = AdminTemplateResource.class.getDeclaredMethod("blankToNull", String.class);
+        method.setAccessible(true);
+        assertNull(method.invoke(new AdminTemplateResource(), ""));
+        assertEquals("VALUE", method.invoke(new AdminTemplateResource(), "VALUE"));
+    }
+
+    /**
+     * BO-02-05-04: a template posed at a country or an enseigne keeps its scope,
+     * canonical; the whole organisation is stored as no scope at all.
+     */
+    @Test
+    void theEchelonOfATemplateIsStored() {
+        AdminTemplateResource resource = newResource();
+        DocumentTemplate existing = stored();
+        PanacheQuery<DocumentTemplate> found = queryOf(existing);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> DocumentTemplate.find("code", "TICKET_VENTE")).thenReturn(found);
+            MultivaluedMap<String, String> posted = soundForm("TICKET_VENTE");
+            posted.putSingle("echelonScope", "country:PT");
+            assertEquals("Gabarit enregistré.", notice(resource.saveTemplate(posted)));
+            assertEquals("COUNTRY:PT", existing.echelonScope);
+            posted.putSingle("echelonScope", "*");
+            resource.saveTemplate(posted);
+            assertNull(existing.echelonScope);
+            posted.remove("echelonScope");
+            existing.echelonScope = "ENSEIGNE:IF";
+            resource.saveTemplate(posted);
+            assertNull(existing.echelonScope);
+        }
+    }
+
+    /**
+     * BO-02-05-04: an unreadable scope and a register-level one are refused.
+     */
+    @Test
+    void anInvalidEchelonIsRefused() {
+        AdminTemplateResource resource = newResource();
+        MultivaluedMap<String, String> posted = soundForm("TICKET_VENTE");
+        posted.putSingle("echelonScope", "PLANET:MARS");
+        assertEquals("Échelon du gabarit invalide.", notice(resource.saveTemplate(posted)));
+        posted.putSingle("echelonScope", "TPV:POS01");
+        assertEquals("Échelon du gabarit invalide.", notice(resource.saveTemplate(posted)));
     }
 }

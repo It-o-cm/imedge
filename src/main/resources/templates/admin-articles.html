@@ -8,83 +8,41 @@
 !}
 {#include admin-layout}
 
-{#title}Articles{/title}
+{#title}{inject:i18n.get('t.articles')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Articles</h1>
-        <p class="page-sub">Fiches articles du référentiel, recherche multicritères et attributs de caisse.</p>
+        <h1>{inject:i18n.get('t.articles')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.fiches-articles-du-referentiel-recherche-multicr')}</p>
     </div>
     <div class="page-actions">
-        <a class="btn btn-ghost" href="/admin/article-attributes">Attributs</a>
-        <a class="btn btn-ghost" href="/admin/article-selections">Sélections</a>
+        <a class="btn btn-ghost" href="/admin/article-attributes">{inject:i18n.get('t.attributs')}</a>
+        <a class="btn btn-ghost" href="/admin/article-selections">{inject:i18n.get('t.selections')}</a>
+        <a class="btn btn-ghost" href="/admin/measure-units">{inject:i18n.get('t.p20-unites-de-mesure')}</a>
+        <a class="btn btn-ghost" href="/admin/article-field-rights">{inject:i18n.get('t.p20-droits-de-la-fiche-article')}</a>
+        <a class="btn btn-ghost" href="/admin/eeg-providers">{inject:i18n.get('t.p20-etiquettes-electroniques')}</a>
     </div>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 <div class="card">
-    <h2 class="card-title">Recherche</h2>
+    <h2 class="card-title">{inject:i18n.get('t.recherche')}</h2>
     <form method="get" action="/admin/articles" class="article-search">
-        <div class="field-grid">
-            <div class="field">
-                <label class="field-label" for="s-text">Texte (EAN, libellé, code interne)</label>
-                <input class="input-control" id="s-text" type="text" name="text" value="{criteria.text ?: ''}">
-            </div>
-            <div class="field">
-                <label class="field-label" for="s-type">Type</label>
-                <select class="input-control" id="s-type" name="type">
-                    <option value="">Tous</option>
-                    {#for type in types}
-                    <option value="{type.name}" {#if criteria.type && criteria.type.name == type.name}selected{/if}>{type.name}</option>
-                    {/for}
-                </select>
-            </div>
-            <div class="field">
-                <label class="field-label" for="s-status">Statut</label>
-                <select class="input-control" id="s-status" name="status">
-                    <option value="ALL">Tous</option>
-                    <option value="ACTIVE" {#if criteria.status.name == 'ACTIVE'}selected{/if}>Actifs</option>
-                    <option value="INACTIVE" {#if criteria.status.name == 'INACTIVE'}selected{/if}>Désactivés</option>
-                </select>
-            </div>
-            <div class="field">
-                <label class="field-label" for="s-forbidden">Vente</label>
-                <select class="input-control" id="s-forbidden" name="forbidden">
-                    <option value="">Toutes</option>
-                    <option value="yes" {#if criteria.forbidden == true}selected{/if}>Interdites</option>
-                    <option value="no" {#if criteria.forbidden == false}selected{/if}>Autorisées</option>
-                </select>
-            </div>
-            <div class="field">
-                <label class="field-label" for="s-ean-from">EAN de</label>
-                <input class="input-control" id="s-ean-from" type="text" name="eanFrom" value="{criteria.eanFrom ?: ''}">
-            </div>
-            <div class="field">
-                <label class="field-label" for="s-ean-to">EAN à</label>
-                <input class="input-control" id="s-ean-to" type="text" name="eanTo" value="{criteria.eanTo ?: ''}">
-            </div>
-        </div>
-        <div class="field-grid">
-            {#for def in attributeDefs}
-            <div class="field field-check">
-                <label class="field-label"><input type="checkbox" name="attr" value="{def.code}" {#if criteria.attributes.contains(def.code)}checked{/if}> {def.label}</label>
-            </div>
-            {/for}
-        </div>
+        {#include article-criteria /}
         <div class="page-actions" style="margin-top: 6px;">
-            <button class="btn btn-primary" type="submit">Rechercher</button>
-            <a class="btn btn-ghost" href="/admin/articles">Réinitialiser</a>
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.rechercher')}</button>
+            <a class="btn btn-ghost" href="/admin/articles">{inject:i18n.get('t.reinitialiser-2')}</a>
         </div>
     </form>
     {#if !selections.isEmpty()}
     <form method="get" action="/admin/articles" class="article-selection-apply">
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="s-selection">Appliquer une sélection enregistrée</label>
+                <label class="field-label" for="s-selection">{inject:i18n.get('t.appliquer-une-selection-enregistree')}</label>
                 <select class="input-control" id="s-selection" name="selection" onchange="this.form.submit()">
                     <option value="">—</option>
                     {#for sel in selections}
@@ -100,36 +58,41 @@
 <div class="card">
     {#if page.empty}
     <div class="empty-state">
-        <p>Aucun article ne correspond.</p>
-        <p class="empty-hint">Élargissez la recherche, ou intégrez les articles via l'import CSV ou le GraphQL.</p>
+        <p>{inject:i18n.get('t.aucun-article-ne-correspond')}</p>
+        <p class="empty-hint">{inject:i18n.get('t.elargissez-la-recherche-ou-integrez-les-articles')}</p>
     </div>
     {#else}
     <form method="post" action="/admin/articles/bulk-code" class="bulk-code-bar">
-        {#if criteria.text}<input type="hidden" name="text" value="{criteria.text}">{/if}
-        {#if criteria.type}<input type="hidden" name="type" value="{criteria.type.name}">{/if}
-        {#if criteria.status.name != 'ALL'}<input type="hidden" name="status" value="{criteria.status.name}">{/if}
-        {#if criteria.forbidden == true}<input type="hidden" name="forbidden" value="yes">{/if}
-        {#if criteria.forbidden == false}<input type="hidden" name="forbidden" value="no">{/if}
-        {#if criteria.eanFrom}<input type="hidden" name="eanFrom" value="{criteria.eanFrom}">{/if}
-        {#if criteria.eanTo}<input type="hidden" name="eanTo" value="{criteria.eanTo}">{/if}
-        {#for code in criteria.attributes}<input type="hidden" name="attr" value="{code}">{/for}
+        {! The perimeter travels as the canonical query string of the criteria,
+         ! so every criterion of the search (BO-02-03-30) bounds the batch. !}
+        <input type="hidden" name="query" value="{criteriaQuery}">
         {! The TOTAL and not the page: the bulk applies to the whole perimeter, and a
          ! bar announcing 100 articles while writing 109 204 is a trap. !}
-        <span class="bulk-code-label">Code article à l'écran sur les {page.total} article(s) filtré(s) :</span>
-        <label class="bulk-code-toggle"><input type="checkbox" name="value"> Activer</label>
-        <button class="btn btn-small btn-ghost" type="submit">Appliquer en masse</button>
+        <span class="bulk-code-label">{inject:i18n.get('t.code-article-a-l-ecran-sur-les')} {page.total} {inject:i18n.get('t.article-s-filtre-s')}</span>
+        <label class="bulk-code-toggle"><input type="checkbox" name="value"> {inject:i18n.get('t.activer')}</label>
+        <button class="btn btn-small btn-ghost" type="submit">{inject:i18n.get('t.appliquer-en-masse')}</button>
     </form>
+    <div class="bulk-code-bar">
+        <a class="btn btn-small btn-ghost" href="/admin/articles/export?{baseQuery}">{inject:i18n.get('t.p20-exporter-le-perimetre-csv')}</a>
+        {#if eegEnabled}
+        <form method="post" action="/admin/articles/eeg-push" style="display:inline">
+            <input type="hidden" name="query" value="{criteriaQuery}">
+            {#if selectedSelection}<input type="hidden" name="selection" value="{selectedSelection}">{/if}
+            <button class="btn btn-small btn-primary" type="submit">{inject:i18n.get('t.p20-envoyer-les-prix-aux-eeg')}</button>
+        </form>
+        {/if}
+    </div>
     <table class="data-table">
         <thead>
             <tr>
-                <th>EAN</th>
-                <th>Libellé commercial</th>
-                <th>Libellé encaissement</th>
-                <th>Code interne</th>
-                <th>Type</th>
-                <th>EGAlim</th>
-                <th>Statut</th>
-                <th class="col-actions">Actions</th>
+                <th>{inject:i18n.get('t.ean')}</th>
+                <th>{inject:i18n.get('t.libelle-commercial')}</th>
+                <th>{inject:i18n.get('t.libelle-encaissement')}</th>
+                <th>{inject:i18n.get('t.code-interne')}</th>
+                <th>{inject:i18n.get('t.type')}</th>
+                <th>{inject:i18n.get('t.egalim')}</th>
+                <th>{inject:i18n.get('t.statut')}</th>
+                <th class="col-actions">{inject:i18n.get('t.actions')}</th>
             </tr>
         </thead>
         <tbody>
@@ -144,10 +107,10 @@
                  ! lookup per row. A code the referential does not declare is named as
                  ! such: the moteur de valorisation will not cap that article, and an
                  ! empty cell would hide it. !}
-                <td>{#if product.egalimRegime}<span class="egalim-mark">{product.egalimRegime}</span> <span class="col-muted">{egalimCaps.get(product.egalimRegime) ?: 'non référencé'}</span>{#else}<span class="col-muted">Non classé</span>{/if}</td>
-                <td>{#if product.active}<span class="badge badge-ok">Actif</span>{#else}<span class="badge badge-off">Désactivé</span>{/if}</td>
+                <td>{#if product.egalimRegime}<span class="egalim-mark">{product.egalimRegime}</span> <span class="col-muted">{#if egalimCaps.get(product.egalimRegime)}{inject:i18n.text(egalimCaps.get(product.egalimRegime))}{#else}{inject:i18n.get('t.rc3-non-reference')}{/if}</span>{#else}<span class="col-muted">{inject:i18n.get('t.non-classe')}</span>{/if}</td>
+                <td>{#if product.active}<span class="badge badge-ok">{inject:i18n.get('t.actif')}</span>{#else}<span class="badge badge-off">{inject:i18n.get('t.desactive')}</span>{/if}</td>
                 <td class="col-actions">
-                    <a class="btn btn-small btn-ghost" href="/admin/articles/edit?id={product.id}">Modifier</a>
+                    <a class="btn btn-small btn-ghost" href="/admin/articles/edit?id={product.id}">{inject:i18n.get('t.modifier')}</a>
                 </td>
             </tr>
             {/for}
@@ -159,18 +122,18 @@
      ! degrade the reading, it makes the reader conclude wrong — same rule as
      ! the journal, and the same pager. !}
     <div class="pager">
-        <span class="pager-status">Articles {page.firstIndex} à {page.lastIndex} sur {page.total}</span>
+        <span class="pager-status">{inject:i18n.get('t.articles')} {page.firstIndex} {inject:i18n.get('t.x21-a')} {page.lastIndex} {inject:i18n.get('t.sur')} {page.total}</span>
         {#if page.pageCount > 1}
         {#if page.first}
-        <span class="btn btn-small btn-muted is-hidden">Précédent</span>
+        <span class="btn btn-small btn-muted is-hidden">{inject:i18n.get('t.precedent')}</span>
         {#else}
-        <a class="btn btn-small btn-muted" href="/admin/articles?{baseQuery}page={page.previous}">Précédent</a>
+        <a class="btn btn-small btn-muted" href="/admin/articles?{baseQuery}page={page.previous}">{inject:i18n.get('t.precedent')}</a>
         {/if}
-        <span class="pager-status">Page {page.number} / {page.pageCount}</span>
+        <span class="pager-status">{inject:i18n.get('t.page')} {page.number} / {page.pageCount}</span>
         {#if page.last}
-        <span class="btn btn-small btn-muted is-hidden">Suivant</span>
+        <span class="btn btn-small btn-muted is-hidden">{inject:i18n.get('t.suivant')}</span>
         {#else}
-        <a class="btn btn-small btn-muted" href="/admin/articles?{baseQuery}page={page.next}">Suivant</a>
+        <a class="btn btn-small btn-muted" href="/admin/articles?{baseQuery}page={page.next}">{inject:i18n.get('t.suivant')}</a>
         {/if}
         {/if}
     </div>
@@ -178,4 +141,4 @@
 </div>
 {/body}
 
-{#footer}Une fiche modifiée ici change le comportement de la caisse au tirage suivant.{/footer}
+{#footer}{inject:i18n.get('t.une-fiche-modifiee-ici-change-le-comportement')}{/footer}

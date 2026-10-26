@@ -139,4 +139,54 @@ class ReportCatalogTest {
         ReportCatalog catalog = indexed(a, c);
         assertEquals(List.of(ReportFamily.SALES, ReportFamily.TAX), catalog.families());
     }
+
+    /**
+     * Every option a report offers names its code and its label, as the
+     * report screen reads them: a choice without its label would break the
+     * page (BO-06-01-04).
+     */
+    @Test
+    void everyOptionNamesItsCodeAndLabel() {
+        List<ReportDefinition> reports = List.of(
+                new CancellationReport(),
+                new CashierDetailReport(),
+                new CashierOrderProfileReport(),
+                new CashierPerformanceReport(),
+                new CashierReport(),
+                new CashierStateReport(),
+                new CashierWeeklyReport(),
+                new ChannelRevenueReport(),
+                new CustomerListReport(),
+                new DepositReturnReport(),
+                new FamilySalesReport(),
+                new FidelityCardRateReport(),
+                new FidelityVatReport(),
+                new HourlyProductivityReport(),
+                new HourlySalesReport(),
+                new InvoiceListReport(),
+                new LocationSalesReport(),
+                new PdvRevenueReport(),
+                new PendingTicketReport(),
+                new PostalCodeReport(),
+                new PriceForcingReport(),
+                new PromotionArticleReport(),
+                new PromotionCashierReport(),
+                new ReasonCodeReport(),
+                new RefundReport(),
+                new ReturnTypeReport(),
+                new SettlementReport(),
+                new StoreSalesReport(),
+                new StoredValueReport(),
+                new SurveyReport(),
+                new TaxRefundReport(),
+                new VatByFamilyReport(),
+                new VatRegimeReport());
+        for (ReportDefinition report : reports) {
+            for (String choice : report.optionChoices()) {
+                String[] parts = choice.split(":");
+                org.junit.jupiter.api.Assertions.assertTrue(parts.length == 2 && !parts[0].isBlank()
+                        && !parts[1].isBlank(), report.code() + " : " + choice);
+            }
+        }
+    }
 }

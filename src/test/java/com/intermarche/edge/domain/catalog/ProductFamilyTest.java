@@ -739,6 +739,78 @@ class ProductFamilyTest {
     }
 
     /**
+     * findDirectFamily prefers the deeper classified node when several nodes of
+     * one scheme hold the article: the first candidate (a scheme node, so the
+     * {@code nomenclature == null} continue arm is FALSE) seeds classified while
+     * classified is still null (first {@code ||} operand true, short-circuit),
+     * and the second is deeper so it promotes (first operand false, deeper true,
+     * both {@code level} ternaries on their non-null arm), then the
+     * {@code classified != null} return arm hands back the sous-famille.
+     */
+    @Test
+    void findDirectFamilyPrefersTheDeeperClassifiedNode() {
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            Nomenclature scheme = new Nomenclature();
+            scheme.id = 1L;
+            ProductFamily rayon = node(scheme, "10", 0);
+            ProductFamily famille = node(scheme, "1002", 1);
+            @SuppressWarnings("unchecked")
+            PanacheQuery<ProductFamily> query = mock(PanacheQuery.class);
+            when(query.list()).thenReturn(List.of(rayon, famille));
+            panache.when(() -> ProductFamily.find(
+                    "select pf from ProductFamily pf join pf.products p where p.id = ?1", 7L))
+                    .thenReturn(query);
+            Assertions.assertSame(famille, ProductFamily.findDirectFamily(product(7L)));
+        }
+    }
+
+    /**
+     * findDirectFamily keeps the incumbent when the later candidate is shallower:
+     * the second node carries a null level (deeper's candidate ternary takes its
+     * null arm, counting -1) against a placed incumbent, so deeper returns false
+     * (return arm false) and the first, deeper node is returned.
+     */
+    @Test
+    void findDirectFamilyKeepsTheIncumbentWhenCandidateShallower() {
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            Nomenclature scheme = new Nomenclature();
+            scheme.id = 1L;
+            ProductFamily famille = node(scheme, "1002", 1);
+            ProductFamily loose = node(scheme, "10", null);
+            @SuppressWarnings("unchecked")
+            PanacheQuery<ProductFamily> query = mock(PanacheQuery.class);
+            when(query.list()).thenReturn(List.of(famille, loose));
+            panache.when(() -> ProductFamily.find(
+                    "select pf from ProductFamily pf join pf.products p where p.id = ?1", 7L))
+                    .thenReturn(query);
+            Assertions.assertSame(famille, ProductFamily.findDirectFamily(product(7L)));
+        }
+    }
+
+    /**
+     * findDirectFamily promotes a placed candidate over an incumbent with a null
+     * level: the incumbent's null level takes deeper's incumbent ternary null arm
+     * (counting -1) and the placed candidate is deeper (return arm true), so the
+     * placed node wins over the unplaced one first seen.
+     */
+    @Test
+    void findDirectFamilyPromotesOverAnIncumbentWithNullLevel() {
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            Nomenclature scheme = new Nomenclature();
+            scheme.id = 1L;
+            ProductFamily loose = node(scheme, "10", null);
+            ProductFamily famille = node(scheme, "1002", 1);
+            @SuppressWarnings("unchecked")
+            PanacheQuery<ProductFamily> query = mock(PanacheQuery.class);
+            when(query.list()).thenReturn(List.of(loose, famille));
+            panache.when(() -> ProductFamily.find(
+                    "select pf from ProductFamily pf join pf.products p where p.id = ?1", 7L))
+                    .thenReturn(query);
+            Assertions.assertSame(famille, ProductFamily.findDirectFamily(product(7L)));
+        }
+    }
+
+    /**
      * fileUnderNomenclature refuses a null product (first OR arm true), touching
      * no query.
      */
@@ -892,6 +964,183 @@ class ProductFamilyTest {
             Assertions.assertTrue(node.products.contains(article));
             verify(match).persist();
             verify(node).persist();
+        }
+    }
+
+    /**
+     * fileUnderNomenclature rejects a null product on the first leg of its guard
+     * without touching the database.
+     */
+    @Test
+    void fileUnderNomenclatureRejectsNullProduct() {
+        Assertions.assertFalse(ProductFamily.fileUnderNomenclature(null, "1002"));
+    }
+
+    /**
+     * fileUnderNomenclature rejects a null node code (first leg false, second leg
+     * true) without touching the database.
+     */
+    @Test
+    void fileUnderNomenclatureRejectsNullNodeCode() {
+        Assertions.assertFalse(ProductFamily.fileUnderNomenclature(product(1L), null));
+    }
+
+    /**
+     * fileUnderNomenclature rejects a blank node code (first two legs false, the
+     * isBlank leg true) without touching the database.
+     */
+    @Test
+    void fileUnderNomenclatureRejectsBlankNodeCode() {
+        Assertions.assertFalse(ProductFamily.fileUnderNomenclature(product(1L), "   "));
+    }
+
+    /**
+     * fileUnderNomenclature returns false when no node carries the trimmed code
+     * (guard fully false, findByCode returns null, node == null arm true).
+     */
+    @Test
+    void fileUnderNomenclatureRejectsUnknownCode() {
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            @SuppressWarnings("unchecked")
+            PanacheQuery<ProductFamily> codeQuery = mock(PanacheQuery.class);
+            when(codeQuery.firstResult()).thenReturn(null);
+            panache.when(() -> ProductFamily.find("code", "1002")).thenReturn(codeQuery);
+            Assertions.assertFalse(ProductFamily.fileUnderNomenclature(product(1L), "1002"));
+        }
+    }
+
+    /**
+     * fileUnderNomenclature returns false when the found node belongs to no
+     * scheme (node != null so the first leg is false, node.nomenclature == null
+     * leg true): filing under a non-nomenclature group is not a classification.
+     */
+    @Test
+    void fileUnderNomenclatureRejectsANodeOutsideAnyScheme() {
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            ProductFamily node = new ProductFamily();
+            node.code = "1002";
+            node.nomenclature = null;
+            @SuppressWarnings("unchecked")
+            PanacheQuery<ProductFamily> codeQuery = mock(PanacheQuery.class);
+            when(codeQuery.firstResult()).thenReturn(node);
+            panache.when(() -> ProductFamily.find("code", "1002")).thenReturn(codeQuery);
+            Assertions.assertFalse(ProductFamily.fileUnderNomenclature(product(1L), "1002"));
+        }
+    }
+
+    /**
+     * fileUnderNomenclature files an unheld article: the article holds nothing
+     * yet (empty holding, loop not entered) and is not on the node, so the
+     * {@code !contains} arm is true and the article is added under the node.
+     */
+    @Test
+    void fileUnderNomenclatureFilesAnUnheldArticle() {
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            Nomenclature scheme = new Nomenclature();
+            scheme.id = 5L;
+            ProductFamily node = mock(ProductFamily.class);
+            node.code = "1002";
+            node.nomenclature = scheme;
+            node.products = new HashSet<>();
+            @SuppressWarnings("unchecked")
+            PanacheQuery<ProductFamily> codeQuery = mock(PanacheQuery.class);
+            when(codeQuery.firstResult()).thenReturn(node);
+            panache.when(() -> ProductFamily.find("code", "1002")).thenReturn(codeQuery);
+            @SuppressWarnings("unchecked")
+            PanacheQuery<ProductFamily> holdingQuery = mock(PanacheQuery.class);
+            when(holdingQuery.list()).thenReturn(List.of());
+            panache.when(() -> ProductFamily.find(
+                    "select pf from ProductFamily pf join pf.products p where p.id = ?1", 1L))
+                    .thenReturn(holdingQuery);
+            Product p = product(1L);
+            Assertions.assertTrue(ProductFamily.fileUnderNomenclature(p, " 1002 "));
+            Assertions.assertTrue(node.products.contains(p));
+        }
+    }
+
+    /**
+     * fileUnderNomenclature is idempotent when the article is already on the node
+     * (empty holding, {@code !contains} arm false): it reports success without a
+     * second add.
+     */
+    @Test
+    void fileUnderNomenclatureIsIdempotentWhenAlreadyFiled() {
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            Nomenclature scheme = new Nomenclature();
+            scheme.id = 5L;
+            Product p = product(1L);
+            ProductFamily node = mock(ProductFamily.class);
+            node.code = "1002";
+            node.nomenclature = scheme;
+            node.products = new HashSet<>(List.of(p));
+            @SuppressWarnings("unchecked")
+            PanacheQuery<ProductFamily> codeQuery = mock(PanacheQuery.class);
+            when(codeQuery.firstResult()).thenReturn(node);
+            panache.when(() -> ProductFamily.find("code", "1002")).thenReturn(codeQuery);
+            @SuppressWarnings("unchecked")
+            PanacheQuery<ProductFamily> holdingQuery = mock(PanacheQuery.class);
+            when(holdingQuery.list()).thenReturn(List.of());
+            panache.when(() -> ProductFamily.find(
+                    "select pf from ProductFamily pf join pf.products p where p.id = ?1", 1L))
+                    .thenReturn(holdingQuery);
+            Assertions.assertTrue(ProductFamily.fileUnderNomenclature(p, "1002"));
+            Assertions.assertTrue(node.products.contains(p));
+        }
+    }
+
+    /**
+     * fileUnderNomenclature detaches the article from every OTHER node of the
+     * SAME scheme and leaves the rest alone, exercising each leg of the loop
+     * predicate on both arms: a node with no scheme (first leg false), the target
+     * node itself sharing the code (second leg false), a same-scheme node whose
+     * scheme id is null (third leg false), a node of a DIFFERENT scheme (fourth
+     * leg false), and a genuine sibling of the same scheme (all legs true) which
+     * is the one the article is removed from. The article is already on the node,
+     * so no re-add happens.
+     */
+    @Test
+    void fileUnderNomenclatureDetachesSiblingsOfTheSameScheme() {
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            Nomenclature scheme = new Nomenclature();
+            scheme.id = 5L;
+            Product p = product(1L);
+            ProductFamily node = mock(ProductFamily.class);
+            node.code = "1002";
+            node.nomenclature = scheme;
+            node.products = new HashSet<>(List.of(p));
+            ProductFamily looseOther = mock(ProductFamily.class);
+            looseOther.nomenclature = null;
+            ProductFamily sameCode = mock(ProductFamily.class);
+            sameCode.nomenclature = scheme;
+            sameCode.code = "1002";
+            ProductFamily nullSchemeId = mock(ProductFamily.class);
+            Nomenclature unpersistedScheme = new Nomenclature();
+            unpersistedScheme.id = null;
+            nullSchemeId.nomenclature = unpersistedScheme;
+            nullSchemeId.code = "9999";
+            ProductFamily otherScheme = mock(ProductFamily.class);
+            Nomenclature different = new Nomenclature();
+            different.id = 99L;
+            otherScheme.nomenclature = different;
+            otherScheme.code = "8888";
+            ProductFamily sibling = mock(ProductFamily.class);
+            sibling.nomenclature = scheme;
+            sibling.code = "7777";
+            sibling.products = new HashSet<>(List.of(p));
+            @SuppressWarnings("unchecked")
+            PanacheQuery<ProductFamily> codeQuery = mock(PanacheQuery.class);
+            when(codeQuery.firstResult()).thenReturn(node);
+            panache.when(() -> ProductFamily.find("code", "1002")).thenReturn(codeQuery);
+            @SuppressWarnings("unchecked")
+            PanacheQuery<ProductFamily> holdingQuery = mock(PanacheQuery.class);
+            when(holdingQuery.list()).thenReturn(
+                    List.of(looseOther, sameCode, nullSchemeId, otherScheme, sibling));
+            panache.when(() -> ProductFamily.find(
+                    "select pf from ProductFamily pf join pf.products p where p.id = ?1", 1L))
+                    .thenReturn(holdingQuery);
+            Assertions.assertTrue(ProductFamily.fileUnderNomenclature(p, "1002"));
+            Assertions.assertFalse(sibling.products.contains(p));
+            Assertions.assertTrue(node.products.contains(p));
         }
     }
 }

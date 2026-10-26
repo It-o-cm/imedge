@@ -84,6 +84,14 @@ public class ScheduledReportRun extends PanacheEntity {
     @Column(name = "content")
     public byte[] content;
 
+    /** When the edition was sent to the administered printer, or null (BO-09-01-10). */
+    @Column(name = "printed_at")
+    public LocalDateTime printedAt;
+
+    /** Why the printing failed, or null when it did not or was not asked (BO-09-01-10). */
+    @Column(name = "print_failure", length = 255)
+    public String printFailure;
+
     /**
      * The editions of one period end, newest report first.
      *

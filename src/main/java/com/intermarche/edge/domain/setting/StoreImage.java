@@ -32,7 +32,9 @@ import java.util.Objects;
  * <p>The image travels as a PNG {@code data:} URI, like the touch pictures of
  * the catalogue ({@code BO-03-01-24}), and for the same reason: a snapshot
  * that is pure text stays diffable, fingerprintable and loggable, and the
- * back office already knows how to resize one.
+ * back office already knows how to resize one. The register stores it as
+ * received: the printer rasterises it to dots the first time a document asks
+ * for it, and a document rendered as a page uses the very same string.
  */
 @Entity
 @Table(name = "store_images",
@@ -52,7 +54,18 @@ public class StoreImage extends BaseEntity {
         RECEIPT_LOGO("Logo de ticket"),
 
         /** The visual of a loyalty advantage (BO-10-03-09). */
-        LOYALTY_ADVANTAGE("Visuel d'avantage fidélité");
+        LOYALTY_ADVANTAGE("Visuel d'avantage fidélité"),
+
+        /** The monetique logo printed above every terminal receipt (BO-10-07-13). */
+        EFT_LOGO("Logo monétique"),
+
+        /** The contactless logo a contactless payment's receipt carries (BO-10-07-13). */
+        CONTACTLESS_LOGO("Logo sans contact"),
+        /**
+         * The picture of a tare container (BO-02-03-39), shown on the weighing
+         * screen beside the container whose code the image carries.
+         */
+        TARE_CONTAINER("Visuel de contenant de tare");
 
         /** What the administration screen calls this usage. */
         private final String label;
@@ -115,7 +128,7 @@ public class StoreImage extends BaseEntity {
     @Column(name = "image_data", columnDefinition = "TEXT")
     public String imageData;
 
-    /** Whether the image is distributed at all. */
+    /** Whether the image is distributed at all, and so whether a register uses it. */
     @Column(name = "active", nullable = false)
     public boolean active = true;
 

@@ -96,3 +96,18 @@
     border-radius: 6px;
     font-size: 14px;
 }
+
+/*
+ * Supervision consoles (BO-08, lot 18 recette): at 1280 and 1366 px the
+ * headings of a nine-column console wrap instead of widening the table, and
+ * a long reported message or JSON answer (cell-long) breaks inside its cell;
+ * below 1000 px narrow.css already lets every cell break. A peripheral and
+ * its state stay on one line.
+ */
+@media (min-width: 1001px) {
+    .sync-table th { white-space: normal; }
+
+    .sync-table td.cell-long { overflow-wrap: anywhere; }
+}
+
+.sync-table .console-pair { white-space: nowrap; }

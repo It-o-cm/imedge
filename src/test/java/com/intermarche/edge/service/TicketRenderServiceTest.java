@@ -1233,4 +1233,55 @@ class TicketRenderServiceTest {
         return (String) ((java.util.Map<String, Object>)
                 service.saleDocumentData(ticket, false, 0).get("fidelity")).get("message");
     }
+    /** LC-07-09-06: credit receipts preserve empty account fields and optional engine messages independently. */
+    @Test
+    void coverageCreditReceiptNullFieldsAndMessages() {
+        var service = newService();
+        Ticket ticket = ticket(null);
+        var credit = new com.intermarche.edge.domain.payment.CreditPayment(BigDecimal.ONE);
+        credit.amount = BigDecimal.ONE;
+        credit.accountNumber = null;
+        credit.accountName = null;
+        ticket.payments.add(credit);
+        var blank = new com.intermarche.edge.domain.sale.TicketMessage();
+        blank.text = " ";
+        var absent = new com.intermarche.edge.domain.sale.TicketMessage();
+        var shown = new com.intermarche.edge.domain.sale.TicketMessage();
+        shown.text = "ENGINE NOTICE";
+        ticket.messages = new ArrayList<>(java.util.List.of(blank, absent, shown));
+        String text = render(service, ticket);
+        assertTrue(text.contains("COMPTE"));
+        assertTrue(text.contains("ENGINE NOTICE"));
+        org.junit.jupiter.api.Assertions.assertFalse(text.contains("null"));
+        ticket.messages = null;
+        org.junit.jupiter.api.Assertions.assertFalse(render(service, ticket).contains("ENGINE NOTICE"));
+    }
+
+    /** LC-07-09-06: credit account identities are printed when known rather than being hidden by null fallbacks. */
+    @Test
+    void coverageCreditReceiptKnownAccount() {
+        var service = newService();
+        Ticket ticket = ticket(null);
+        var credit = new com.intermarche.edge.domain.payment.CreditPayment(BigDecimal.ONE);
+        credit.amount = BigDecimal.ONE;
+        credit.accountNumber = "ACCOUNT";
+        credit.accountName = "HOLDER";
+        ticket.payments.add(credit);
+        String text = render(service, ticket);
+        assertTrue(text.contains("COMPTE ACCOUNT"));
+        assertTrue(text.contains("HOLDER"));
+    }
+
+    /** LC-06-03-08: malformed deposit VAT details create no false collected-VAT section. */
+    @Test
+    void coverageMalformedDepositVatIsNotPrinted() {
+        var service = newService();
+        Ticket ticket = ticket(null);
+        var deposit = new com.intermarche.edge.domain.payment.DepositPayment(BigDecimal.ONE);
+        deposit.amount = BigDecimal.ONE;
+        deposit.vatDetail = "invalid";
+        ticket.payments.add(deposit);
+        org.junit.jupiter.api.Assertions.assertFalse(render(service, ticket).contains("TVA DEJA PERCUE SUR L'ACOMPTE"));
+    }
+
 }

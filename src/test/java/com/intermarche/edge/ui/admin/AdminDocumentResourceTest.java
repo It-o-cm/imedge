@@ -1,7 +1,11 @@
 package com.intermarche.edge.ui.admin;
 
 import com.intermarche.edge.domain.sale.DocumentType;
+import com.intermarche.edge.domain.sale.FiscalDocument;
 import com.intermarche.edge.domain.sale.Invoice;
+import com.intermarche.edge.domain.sale.Ticket;
+import com.intermarche.edge.domain.sale.TicketLine;
+import io.quarkus.hibernate.orm.panache.PanacheQuery;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
@@ -16,6 +20,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -65,7 +70,34 @@ class AdminDocumentResourceTest {
     private AdminDocumentResource newResource() {
         AdminDocumentResource resource = new AdminDocumentResource();
         resource.adminDocuments = mock(Template.class);
+        resource.adminDocument = mock(Template.class);
         return resource;
+    }
+
+    /**
+     * Builds a Portuguese fiscal document (BO-02-04-19).
+     *
+     * @param number the document number
+     * @param type its type, possibly null
+     * @param ticketId the store-local id of the ticket it states, possibly null
+     * @return the document
+     */
+    private FiscalDocument fiscal(String number, FiscalDocument.Type type, Long ticketId) {
+        FiscalDocument document = new FiscalDocument();
+        document.number = number;
+        document.documentType = type;
+        document.ticketId = ticketId;
+        document.issuedAt = LocalDateTime.of(2026, 9, 11, 9, 0);
+        document.terminalId = "POS01";
+        document.customerName = "Cliente";
+        document.customerTaxId = "PT999999990";
+        document.grossTotal = new BigDecimal("12.30");
+        document.taxTotal = new BigDecimal("2.30");
+        document.atcud = "ABCD1234-7";
+        document.hash = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789";
+        document.qrPayload = "A:1*B:2";
+        document.sourceNumber = "FT POS01/1";
+        return document;
     }
 
     /**
@@ -193,9 +225,9 @@ class AdminDocumentResourceTest {
         withNif.customerTaxId = "PT123456789";
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
             stubAll(panache, List.of(withNif, document("F-2", DocumentType.FACTURE, "Bravo")));
-            List<Invoice> matches = resource.search(null, "pt123", null, null, null);
+            List<AdminDocumentResource.DocumentRow> matches = resource.search(null, "pt123", null, null, null);
             assertEquals(1, matches.size());
-            assertEquals("F-1", matches.get(0).documentNumber);
+            assertEquals("F-1", matches.get(0).number);
             assertTrue(resource.search(null, "FR", null, null, null).isEmpty());
         }
     }
@@ -254,7 +286,7 @@ class AdminDocumentResourceTest {
             assertTrue(csv.contains("F-1;FACTURE;2026-09-10T18:42;CAISSE1;T-1;"));
             // BO-10-04-19 et -14 : la date d'échéance et l'éco-taxe sont deux
             // colonnes de plus, vides sur un document qui n'en porte pas.
-            assertTrue(csv.contains("Acme, et fils;SIR;;PT1;;100.00;120.00;;0;1"));
+            assertTrue(csv.contains("Acme, et fils;SIR;;PT1;;100.00;120.00;;0;1;;;0"));
             assertTrue(response.getHeaderString("Content-Disposition").contains("documents-"));
         }
     }
@@ -333,5 +365,267 @@ class AdminDocumentResourceTest {
             assertTrue(csv.contains("X-1;;;CAISSE1;T-1;"));
             assertFalse(csv.contains("null"));
         }
+    }
+    /**
+     * The Portuguese documents are listed beside the invoices, told apart by
+     * their type, each with its ticket number, most recent first (BO-02-04-19).
+     */
+    @Test
+    void thePortugueseDocumentsAreListedByType() {
+        AdminDocumentResource resource = newResource();
+        Ticket ticket = new Ticket();
+        ticket.ticketNumber = "POS01-000012";
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            stubAll(panache, List.of(document("F-1", DocumentType.FACTURE, "Acme")));
+            panache.when(() -> FiscalDocument.list("order by issuedAt desc")).thenReturn(List.of(
+                    fiscal("FS POS01/1", FiscalDocument.Type.FS, 7L),
+                    fiscal("RC POS01/1", FiscalDocument.Type.RC, null)));
+            panache.when(() -> Ticket.findById(7L)).thenReturn(ticket);
+            List<AdminDocumentResource.DocumentRow> rows = resource.search(null, null, null, null, null);
+            assertEquals(3, rows.size());
+            assertEquals("FS POS01/1", rows.get(0).number);
+            assertEquals("FS", rows.get(0).type);
+            assertEquals("FATURA SIMPLIFICADA", rows.get(0).typeTitle);
+            assertEquals("POS01-000012", rows.get(0).ticketNumber);
+            assertEquals(new BigDecimal("10.00"), rows.get(0).totalExcludingTax);
+            assertTrue(rows.get(0).isFiscal());
+            assertNull(rows.get(1).ticketNumber);
+            assertFalse(rows.get(2).isFiscal());
+            assertEquals(1, resource.search(null, null, "RC", null, null).size());
+            assertEquals(2, resource.search(null, "pt9999", null, null, null).size());
+        }
+    }
+
+    /**
+     * The four bound cases of the fiscal documents each issue their own query.
+     */
+    @Test
+    void theFiscalBoundsHaveTheirOwnQueries() {
+        AdminDocumentResource resource = newResource();
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> FiscalDocument.list("issuedAt >= ?1 and issuedAt < ?2 order by issuedAt desc",
+                    LocalDate.of(2026, 9, 1).atStartOfDay(), LocalDate.of(2026, 9, 2).atStartOfDay()))
+                    .thenReturn(List.of(fiscal("FT 1", FiscalDocument.Type.FT, null)));
+            panache.when(() -> FiscalDocument.list("issuedAt >= ?1 order by issuedAt desc",
+                    LocalDate.of(2026, 9, 1).atStartOfDay()))
+                    .thenReturn(List.of(fiscal("FT 2", FiscalDocument.Type.FT, null)));
+            panache.when(() -> FiscalDocument.list("issuedAt < ?1 order by issuedAt desc",
+                    LocalDate.of(2026, 9, 2).atStartOfDay()))
+                    .thenReturn(List.of(fiscal("FT 3", FiscalDocument.Type.FT, null)));
+            assertEquals("FT 1", resource.search(null, null, null, "2026-09-01", "2026-09-01").get(0).number);
+            assertEquals("FT 2", resource.search(null, null, null, "2026-09-01", null).get(0).number);
+            assertEquals("FT 3", resource.search(null, null, null, null, "2026-09-01").get(0).number);
+        }
+    }
+
+    /**
+     * A fiscal document without a type, totals or signature still makes a row,
+     * and a row without an issue date sorts last.
+     */
+    @Test
+    void aBareFiscalDocumentMakesARow() {
+        FiscalDocument bare = fiscal("X", null, null);
+        bare.grossTotal = null;
+        bare.hash = null;
+        AdminDocumentResource.DocumentRow row = AdminDocumentResource.DocumentRow.of(bare, null);
+        assertNull(row.type);
+        assertNull(row.typeTitle);
+        assertNull(row.totalExcludingTax);
+        assertNull(row.hashCharacters);
+        FiscalDocument noTax = fiscal("Y", FiscalDocument.Type.NC, null);
+        noTax.taxTotal = null;
+        assertNull(AdminDocumentResource.DocumentRow.of(noTax, null).totalExcludingTax);
+        assertEquals(4, AdminDocumentResource.DocumentRow.of(fiscal("Z", FiscalDocument.Type.FT, null), null)
+                .hashCharacters.length());
+        AdminDocumentResource resource = newResource();
+        Invoice undated = document("F-0", DocumentType.FACTURE, "Zulu");
+        undated.issueDate = null;
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            stubAll(panache, List.of(undated, document("F-1", DocumentType.FACTURE, "Acme")));
+            assertEquals("F-0", resource.search(null, null, null, null, null).get(1).number);
+        }
+    }
+
+    /**
+     * The kinds offered by the filter are the two commercial ones, then the four
+     * Portuguese ones with their names.
+     */
+    @Test
+    void theKindsListBothFamilies() {
+        List<AdminDocumentResource.Kind> kinds = AdminDocumentResource.kinds();
+        assertEquals(6, kinds.size());
+        assertEquals("FACTURE", kinds.get(0).code());
+        assertEquals("NC", kinds.get(4).code());
+        assertEquals("NC — NOTA DE CRÉDITO", kinds.get(4).title());
+    }
+
+    /**
+     * {@code find} answers null on a null or blank number, an invoice first,
+     * else a fiscal document, else null.
+     */
+    @Test
+    void findLooksInBothFamilies() {
+        AdminDocumentResource resource = newResource();
+        assertNull(resource.find(null));
+        assertNull(resource.find("  "));
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            PanacheQuery<Invoice> invoices = mock(PanacheQuery.class);
+            PanacheQuery<FiscalDocument> fiscals = mock(PanacheQuery.class);
+            PanacheQuery<FiscalDocument> none = mock(PanacheQuery.class);
+            PanacheQuery<Invoice> noInvoice = mock(PanacheQuery.class);
+            when(invoices.firstResult()).thenReturn(document("F-1", DocumentType.FACTURE, "Acme"));
+            when(fiscals.firstResult()).thenReturn(fiscal("FS 1", FiscalDocument.Type.FS, null));
+            panache.when(() -> Invoice.find("documentNumber", "F-1")).thenReturn(invoices);
+            panache.when(() -> Invoice.find("documentNumber", "FS 1")).thenReturn(noInvoice);
+            panache.when(() -> Invoice.find("documentNumber", "NONE")).thenReturn(noInvoice);
+            panache.when(() -> FiscalDocument.find("number", "FS 1")).thenReturn(fiscals);
+            panache.when(() -> FiscalDocument.find("number", "NONE")).thenReturn(none);
+            assertEquals("FACTURE", resource.find(" F-1 ").type);
+            assertEquals("FS", resource.find("FS 1").type);
+            assertNull(resource.find("NONE"));
+        }
+    }
+
+    /**
+     * The detail of a fiscal document shows the lines it covers, the cancelled
+     * ones left out, and the printed image of its sale.
+     */
+    @Test
+    void theDetailOfAFiscalDocumentShowsItsCoveredLines() {
+        AdminDocumentResource resource = newResource();
+        TemplateInstance instance = mock(TemplateInstance.class);
+        when(resource.adminDocument.data(anyString(), any())).thenReturn(instance);
+        when(instance.data(anyString(), any())).thenReturn(instance);
+        FiscalDocument document = fiscal("FS 1", FiscalDocument.Type.FS, 7L);
+        Ticket ticket = new Ticket();
+        ticket.formattedContent = "TICKET";
+        TicketLine sold = new TicketLine();
+        sold.lineNumber = 1;
+        TicketLine cancelled = new TicketLine();
+        cancelled.cancelled = true;
+        ticket.lines = new java.util.ArrayList<>(List.of(sold, cancelled));
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            PanacheQuery<Invoice> noInvoice = mock(PanacheQuery.class);
+            PanacheQuery<FiscalDocument> fiscals = mock(PanacheQuery.class);
+            when(fiscals.firstResult()).thenReturn(document);
+            panache.when(() -> Invoice.find("documentNumber", "FS 1")).thenReturn(noInvoice);
+            panache.when(() -> FiscalDocument.find("number", "FS 1")).thenReturn(fiscals);
+            panache.when(() -> Ticket.findById(7L)).thenReturn(ticket);
+            assertSame(instance, resource.view("FS 1"));
+        }
+        verify(instance).data(eq("lines"), eq(List.of(sold)));
+        verify(instance).data(eq("printed"), eq("TICKET"));
+    }
+
+    /**
+     * The printed ticket of the detail drops the printer's image, barcode and
+     * QR markup and keeps its text; no printout stays none.
+     */
+    @Test
+    void thePrintedTicketDropsThePrinterMarkup() {
+        assertEquals("HEAD\nTEXT\nEND", AdminDocumentResource.readable(
+                "[[IMAGE 384 72 A/8+]]\nHEAD\nTEXT\n[[QR A:1*B:2]]\n[[BARCODE POS01-1]]\nEND"));
+        assertNull(AdminDocumentResource.readable(null));
+    }
+
+    /**
+     * The detail of an invoice keeps every live line of its ticket, a ticket
+     * without lines shows none, and an unknown number shows nothing at all.
+     */
+    @Test
+    void theDetailOfAnInvoiceAndOfNothing() {
+        AdminDocumentResource resource = newResource();
+        TemplateInstance first = mock(TemplateInstance.class);
+        when(resource.adminDocument.data(anyString(), any())).thenReturn(first);
+        when(first.data(anyString(), any())).thenReturn(first);
+        Invoice invoice = document("F-1", DocumentType.FACTURE, "Acme");
+        Ticket ticket = new Ticket();
+        ticket.id = 9L;
+        TicketLine sold = new TicketLine();
+        ticket.lines = new java.util.ArrayList<>(List.of(sold));
+        invoice.ticket = ticket;
+        Invoice orphan = document("F-2", DocumentType.FACTURE, "Bravo");
+        Ticket lineless = new Ticket();
+        lineless.id = 10L;
+        lineless.lines = null;
+        orphan.ticket = lineless;
+        Invoice gone = document("F-3", DocumentType.FACTURE, "Charlie");
+        Ticket missing = new Ticket();
+        missing.id = 11L;
+        gone.ticket = missing;
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            PanacheQuery<Invoice> one = mock(PanacheQuery.class);
+            PanacheQuery<Invoice> two = mock(PanacheQuery.class);
+            PanacheQuery<Invoice> three = mock(PanacheQuery.class);
+            when(one.firstResult()).thenReturn(invoice);
+            when(two.firstResult()).thenReturn(orphan);
+            when(three.firstResult()).thenReturn(gone);
+            panache.when(() -> Invoice.find("documentNumber", "F-1")).thenReturn(one);
+            panache.when(() -> Invoice.find("documentNumber", "F-2")).thenReturn(two);
+            panache.when(() -> Invoice.find("documentNumber", "F-3")).thenReturn(three);
+            panache.when(() -> Ticket.findById(9L)).thenReturn(ticket);
+            panache.when(() -> Ticket.findById(10L)).thenReturn(lineless);
+            resource.view("F-1");
+            resource.view("F-2");
+            resource.view("F-3");
+            resource.view(null);
+        }
+        verify(first).data(eq("lines"), eq(List.of(sold)));
+        verify(resource.adminDocument).data(eq("document"), eq(null));
+    }
+
+    /**
+     * The extraction states a fiscal document's ATCUD, its source document and
+     * its cancellation, the print count left empty.
+     */
+    @Test
+    void theExtractionStatesTheFiscalColumns() {
+        AdminDocumentResource resource = newResource();
+        FiscalDocument cancelled = fiscal("NC POS01/1", FiscalDocument.Type.NC, null);
+        cancelled.cancelled = true;
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> FiscalDocument.list("order by issuedAt desc")).thenReturn(List.of(cancelled));
+            String csv = (String) resource.export(null, null, null, null, null).getEntity();
+            assertTrue(csv.contains(";10.00;12.30;2.30;;;ABCD1234-7;FT POS01/1;1"));
+        }
+    }
+    /**
+     * The detail of an invoice stating no ticket shows no line, a fiscal
+     * document shows only the lines it covers, and a fiscal document whose
+     * ticket this node does not hold states no ticket number.
+     */
+    @Test
+    void theDetailKeepsOnlyWhatTheDocumentStates() {
+        AdminDocumentResource resource = newResource();
+        TemplateInstance instance = mock(TemplateInstance.class);
+        when(resource.adminDocument.data(anyString(), any())).thenReturn(instance);
+        when(instance.data(anyString(), any())).thenReturn(instance);
+        Invoice ticketless = document("F-9", DocumentType.FACTURE, "Acme");
+        FiscalDocument partial = fiscal("FT 2", FiscalDocument.Type.FT, 8L);
+        partial.lineUids = "U1";
+        Ticket ticket = new Ticket();
+        TicketLine covered = new TicketLine();
+        covered.lineUid = "U1";
+        TicketLine other = new TicketLine();
+        other.lineUid = "U2";
+        ticket.lines = new java.util.ArrayList<>(List.of(covered, other));
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            PanacheQuery<Invoice> invoice = mock(PanacheQuery.class);
+            when(invoice.firstResult()).thenReturn(ticketless);
+            PanacheQuery<Invoice> noInvoice = mock(PanacheQuery.class);
+            PanacheQuery<FiscalDocument> fiscals = mock(PanacheQuery.class);
+            when(fiscals.firstResult()).thenReturn(partial);
+            panache.when(() -> Invoice.find("documentNumber", "F-9")).thenReturn(invoice);
+            panache.when(() -> Invoice.find("documentNumber", "FT 2")).thenReturn(noInvoice);
+            panache.when(() -> FiscalDocument.find("number", "FT 2")).thenReturn(fiscals);
+            panache.when(() -> Ticket.findById(8L)).thenReturn(ticket);
+            resource.view("F-9");
+            resource.view("FT 2");
+            panache.when(() -> FiscalDocument.list("order by issuedAt desc"))
+                    .thenReturn(List.of(fiscal("FS 3", FiscalDocument.Type.FS, 77L)));
+            assertNull(resource.search(null, null, null, null, null).get(0).ticketNumber);
+        }
+        verify(instance).data(eq("lines"), eq(List.of()));
+        verify(instance).data(eq("lines"), eq(List.of(covered)));
     }
 }

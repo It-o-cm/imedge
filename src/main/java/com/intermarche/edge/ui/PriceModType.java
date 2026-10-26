@@ -20,13 +20,13 @@ package com.intermarche.edge.ui;
 public enum PriceModType {
 
     /** A reduction in euros on one line ({@code BO-03-07-04}). */
-    REMISE(Scope.LINE, "SAISIE REMISE (€)"),
+    REMISE(Scope.LINE, "pricemod.remise"),
 
     /** A reduction in percent on one line ({@code BO-03-07-02}). */
-    DISCOUNT(Scope.LINE, "SAISIE DISCOUNT (%)"),
+    DISCOUNT(Scope.LINE, "pricemod.discount"),
 
     /** A price typed in place of the catalog's, on one line ({@code BO-10-07-12}). */
-    FORCE_PRICE(Scope.LINE, "NOUVEAU PRIX (€)"),
+    FORCE_PRICE(Scope.LINE, "pricemod.forcePrice"),
 
     /**
      * How many, not how much ({@code LC-02-13-11}).
@@ -35,13 +35,13 @@ public enum PriceModType {
      * neither group: the modal must not offer it the choice between euros and
      * percent, because it is not a price question.
      */
-    QUANTITY(Scope.NEITHER, "QUANTITÉ ARTICLE"),
+    QUANTITY(Scope.NEITHER, "pricemod.quantity"),
 
     /** A reduction in euros on the whole ticket ({@code BO-03-07-07}). */
-    GLOBAL_REMISE(Scope.TICKET, "REMISE TICKET (€)"),
+    GLOBAL_REMISE(Scope.TICKET, "pricemod.globalRemise"),
 
     /** A reduction in percent on the whole ticket ({@code BO-03-07-08}). */
-    GLOBAL_DISCOUNT(Scope.TICKET, "REMISE TICKET (%)");
+    GLOBAL_DISCOUNT(Scope.TICKET, "pricemod.globalDiscount");
 
     /** What a mode applies to, which decides the modes the modal offers beside it. */
     private enum Scope {
@@ -56,18 +56,18 @@ public enum PriceModType {
     /** What this mode applies to. */
     private final Scope scope;
 
-    /** The title the modal carries for this mode. */
-    private final String label;
+    /** Bundle key of the title the modal carries for this mode (LC-13-06). */
+    private final String labelKey;
 
     /**
      * Declares a mode.
      *
      * @param scope what the mode applies to
-     * @param label the title the modal carries
+     * @param labelKey the title the modal carries
      */
-    PriceModType(Scope scope, String label) {
+    PriceModType(Scope scope, String labelKey) {
         this.scope = scope;
-        this.label = label;
+        this.labelKey = labelKey;
     }
 
     /**
@@ -75,8 +75,8 @@ public enum PriceModType {
      *
      * @return the display title
      */
-    public String getLabel() {
-        return label;
+    public String getLabelKey() {
+        return labelKey;
     }
 
     /**

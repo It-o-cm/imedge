@@ -23,8 +23,9 @@ import java.util.Map;
  * (BO-03-03-17), and an ARTICLE ATTRIBUTE used as a sort criterion or to
  * isolate the lines carrying it at one end of the ticket (BO-03-03-18).
  * <p>
- * A pure static rule, deliberately outside the renderer: it decides nothing about
- * paper and talks to no collaborator, so it can be exercised on its own.
+ * A pure static rule, deliberately outside the renderer ({@code TicketPrinterService}
+ * on a register): it decides nothing about paper and talks to no collaborator, so it
+ * can be exercised on its own exactly like {@code PrintPolicy}.
  * <p>
  * The order applies to the PRINTED ticket alone. The stored lines keep their entry
  * order and their line numbers whatever is administered — the ticket is a rendering,
@@ -149,6 +150,27 @@ public final class TicketLineOrder {
      */
     public static List<TicketLine> apply(List<TicketLine> lines, String order,
             boolean familyAlphabetical, String attributeCode, String isolation) {
+        return apply(lines, order, familyAlphabetical, attributeCode, isolation, 0);
+    }
+
+    /**
+     * Returns the lines in printing order, the families being read at an
+     * administered LEVEL of the nomenclature (BO-03-03-17).
+     *
+     * @param lines the ticket's lines, in entry order
+     * @param order the administered order, normalized on the way in
+     * @param familyAlphabetical whether the family headings come out
+     *        alphabetically; false orders them by the first article of each
+     *        family
+     * @param attributeCode the article attribute the lines are sorted or
+     *        isolated on (BO-03-03-18), null or blank for none
+     * @param isolation where the lines carrying that attribute are isolated
+     * @param level the nomenclature level the families are read at, one-based,
+     *        zero for the article's own family
+     * @return a new list in printing order; the given list is never touched
+     */
+    public static List<TicketLine> apply(List<TicketLine> lines, String order,
+            boolean familyAlphabetical, String attributeCode, String isolation, int level) {
         if (lines == null) {
             return List.of();
         }
@@ -156,7 +178,7 @@ public final class TicketLineOrder {
         switch (normalize(order)) {
             case LABEL -> ordered.sort(Comparator.comparing(
                     TicketLineOrder::labelOf, String.CASE_INSENSITIVE_ORDER));
-            case FAMILY -> sortByFamily(ordered, familyAlphabetical);
+            case FAMILY -> sortByFamily(ordered, familyAlphabetical, level);
             default -> {
                 // Entry order: the list is already in it.
             }
@@ -175,20 +197,28 @@ public final class TicketLineOrder {
      *
      * @param ordered the lines, in entry order; sorted in place
      * @param alphabetical whether the headings come out alphabetically
+     * @param level the nomenclature level the families are read at, zero
+     *        for the article's own family
      */
-    private static void sortByFamily(List<TicketLine> ordered, boolean alphabetical) {
+    private static void sortByFamily(List<TicketLine> ordered, boolean alphabetical, int level) {
+        // Each line's heading is resolved ONCE: at a level above the article,
+        // it is a nomenclature lookup, and a comparator calls it at every
+        // comparison.
+        Map<TicketLine, String> headings = new java.util.IdentityHashMap<>();
+        for (TicketLine line : ordered) {
+            headings.put(line, familyAt(line, level));
+        }
         if (alphabetical) {
-            ordered.sort(Comparator.comparing(
-                    TicketLineOrder::familyOf, String.CASE_INSENSITIVE_ORDER));
+            ordered.sort(Comparator.comparing(headings::get, String.CASE_INSENSITIVE_ORDER));
             return;
         }
         // The rank of each family is its first article's position. Read before
         // the insertion, so the first family ranks 0 and not 1.
         Map<String, Integer> firstSeen = new HashMap<>();
         for (TicketLine line : ordered) {
-            firstSeen.putIfAbsent(familyOf(line), firstSeen.size());
+            firstSeen.putIfAbsent(headings.get(line), firstSeen.size());
         }
-        ordered.sort(Comparator.comparingInt(line -> firstSeen.get(familyOf(line))));
+        ordered.sort(Comparator.comparingInt(line -> firstSeen.get(headings.get(line))));
     }
 
     /**
@@ -278,6 +308,47 @@ public final class TicketLineOrder {
             return line.familyCode.trim();
         }
         return NO_FAMILY;
+    }
+
+    /**
+     * The heading a line is grouped under at a LEVEL of the nomenclature
+     * (BO-03-03-17): the label of the node of that level the article's family
+     * descends from.
+     *
+     * <p>The node is found by its code, the nomenclature's codes being
+     * prefixes of one another level after level: the family {@code 0102} of a
+     * nomenclature whose first level is two characters long descends from the
+     * node {@code 01}. Everything that cannot be resolved — no level asked, a
+     * line without family, a family outside any nomenclature, a level the
+     * nomenclature does not have or one below the article's own — keeps the
+     * article's family, so asking for a level never loses a heading.
+     *
+     * @param line the sold line, possibly null
+     * @param level the level, one-based, zero for the article's own family
+     * @return the heading, never null
+     */
+    public static String familyAt(TicketLine line, int level) {
+        if (level <= 0 || line == null || line.familyCode == null || line.familyCode.isBlank()) {
+            return familyOf(line);
+        }
+        String code = line.familyCode.trim();
+        com.intermarche.edge.domain.catalog.ProductFamily family =
+                com.intermarche.edge.domain.catalog.ProductFamily.findByCode(code);
+        if (family == null || family.nomenclature == null) {
+            return familyOf(line);
+        }
+        com.intermarche.edge.domain.catalog.NomenclatureLevel wanted =
+                family.nomenclature.levelAt(level - 1);
+        if (wanted == null || wanted.codeLength <= 0 || wanted.codeLength >= code.length()) {
+            return familyOf(line);
+        }
+        String nodeCode = code.substring(0, wanted.codeLength);
+        com.intermarche.edge.domain.catalog.ProductFamily node =
+                com.intermarche.edge.domain.catalog.ProductFamily.findByCode(nodeCode);
+        if (node == null || node.description == null || node.description.isBlank()) {
+            return nodeCode;
+        }
+        return node.description.trim();
     }
 
     /**

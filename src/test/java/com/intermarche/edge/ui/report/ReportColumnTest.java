@@ -83,18 +83,20 @@ class ReportColumnTest {
         Assertions.assertTrue(new ReportColumn("k", "l", ReportColumn.Kind.INTEGER, true).numeric());
         Assertions.assertTrue(new ReportColumn("k", "l", ReportColumn.Kind.AMOUNT, true).numeric());
         Assertions.assertTrue(new ReportColumn("k", "l", ReportColumn.Kind.PERCENT, false).numeric());
+        Assertions.assertTrue(new ReportColumn("k", "l", ReportColumn.Kind.DECIMAL, false).numeric());
         Assertions.assertFalse(new ReportColumn("k", "l", ReportColumn.Kind.DATE, false).numeric());
         Assertions.assertFalse(new ReportColumn("k", "l", ReportColumn.Kind.TIME, false).numeric());
         Assertions.assertFalse(new ReportColumn("k", "l", ReportColumn.Kind.DATETIME, false).numeric());
     }
 
     /**
-     * The Kind enum exposes exactly the seven declared constants, valueOf round-trips.
+     * The Kind enum exposes exactly the eight declared constants, valueOf round-trips.
      */
     @Test
-    void kindEnumDeclaresSevenConstants() {
+    void kindEnumDeclaresEightConstants() {
         ReportColumn.Kind[] values = ReportColumn.Kind.values();
-        Assertions.assertEquals(7, values.length);
+        Assertions.assertEquals(8, values.length);
+        Assertions.assertEquals(ReportColumn.Kind.DECIMAL, ReportColumn.Kind.valueOf("DECIMAL"));
         Assertions.assertEquals(ReportColumn.Kind.TEXT, ReportColumn.Kind.valueOf("TEXT"));
         Assertions.assertEquals(ReportColumn.Kind.INTEGER, ReportColumn.Kind.valueOf("INTEGER"));
         Assertions.assertEquals(ReportColumn.Kind.AMOUNT, ReportColumn.Kind.valueOf("AMOUNT"));
@@ -102,5 +104,19 @@ class ReportColumnTest {
         Assertions.assertEquals(ReportColumn.Kind.DATE, ReportColumn.Kind.valueOf("DATE"));
         Assertions.assertEquals(ReportColumn.Kind.TIME, ReportColumn.Kind.valueOf("TIME"));
         Assertions.assertEquals(ReportColumn.Kind.DATETIME, ReportColumn.Kind.valueOf("DATETIME"));
+    }
+
+    /**
+     * The average, figure and decimal factories build columns that a total row
+     * never sums.
+     */
+    @Test
+    void untotalledFactoriesBuildTheirKind() {
+        Assertions.assertEquals(new ReportColumn("b", "Panier", ReportColumn.Kind.AMOUNT, false),
+                ReportColumn.average("b", "Panier"));
+        Assertions.assertEquals(new ReportColumn("c", "Clients", ReportColumn.Kind.INTEGER, false),
+                ReportColumn.figure("c", "Clients"));
+        Assertions.assertEquals(new ReportColumn("d", "Cadence", ReportColumn.Kind.DECIMAL, false),
+                ReportColumn.decimal("d", "Cadence"));
     }
 }

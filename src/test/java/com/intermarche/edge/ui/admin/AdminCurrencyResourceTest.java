@@ -264,4 +264,19 @@ class AdminCurrencyResourceTest {
         Response response = newResource().deleteCurrency(form());
         assertTrue(response.getLocation().toString().contains("noticeOk=false"));
     }
+    /** BO-03-02-40: rate history tolerates absent identity/principal and records the authenticated name. */
+    @Test
+    void operatorNameCoversEveryIdentityLeg() throws Exception {
+        AdminCurrencyResource resource = new AdminCurrencyResource();
+        var method = AdminCurrencyResource.class.getDeclaredMethod("operatorName");
+        method.setAccessible(true);
+        assertNull(method.invoke(resource));
+        resource.identity = mock(io.quarkus.security.identity.SecurityIdentity.class);
+        assertNull(method.invoke(resource));
+        java.security.Principal principal = mock(java.security.Principal.class);
+        when(principal.getName()).thenReturn("admin");
+        when(resource.identity.getPrincipal()).thenReturn(principal);
+        assertEquals("admin", method.invoke(resource));
+    }
+
 }

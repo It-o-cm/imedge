@@ -98,16 +98,189 @@ public class DashboardIndicatorService {
         LOGGER.info("Entering method indicators");
         LocalDateTime from = LocalDate.now().atStartOfDay();
         List<Map<String, Object>> rows = new ArrayList<>();
-        for (DashboardIndicator indicator : selected()) {
-            Map<String, Object> entry = new HashMap<>();
-            entry.put("code", indicator.code());
-            entry.put("label", indicator.label());
-            entry.put("unit", indicator.unit().suffix());
-            entry.put("value", valueOf(indicator, from));
-            rows.add(entry);
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (String token : tokens()) {
+            if (!seen.add(token.toLowerCase(java.util.Locale.ROOT))) {
+                continue;
+            }
+            DashboardIndicator indicator = DashboardIndicator.byCode(token);
+            Map<String, Object> entry = indicator == null ? generic(token, from) : new HashMap<>();
+            if (indicator != null) {
+                entry.put("code", indicator.code());
+                entry.put("label", indicator.label());
+                entry.put("unit", indicator.unit().suffix());
+                entry.put("value", valueOf(indicator, from));
+            }
+            if (entry != null) {
+                rows.add(entry);
+            }
         }
         LOGGER.info("Exiting method indicators");
         return rows;
+    }
+
+    /**
+     * The administered indicator codes, trimmed, blanks dropped; none when the
+     * list cannot be read.
+     *
+     * @return the codes in their administered order
+     */
+    List<String> tokens() {
+        List<String> tokens = new ArrayList<>();
+        String raw;
+        try {
+            raw = posSettingsService.dashboardIndicators();
+        } catch (Exception unreadable) {
+            return tokens;
+        }
+        if (raw == null) {
+            return tokens;
+        }
+        for (String token : raw.split(";")) {
+            if (!token.isBlank()) {
+                tokens.add(token.trim());
+            }
+        }
+        return tokens;
+    }
+
+    /**
+     * Names the code a tile's label carries, for the screen to show it by its
+     * label in the page's language (BO-04-03-03): an event type, a payment
+     * method, a movement type.
+     *
+     * @param entry the tile
+     * @param prefix the prefix of the code's labels in the bundles
+     * @param code the code the label carries
+     */
+    static void subject(Map<String, Object> entry, String prefix, String code) {
+        entry.put("subjectPrefix", prefix);
+        entry.put("subject", code);
+    }
+
+    /**
+     * An OPEN indicator (BO-04-03-03/-15): any datum of the system the store
+     * names — {@code event:TYPE} counts the day's journal events of a type,
+     * so every use of a control is addressable; {@code payment:KEY} totals the
+     * day's settlements of a method; {@code family:CODE} the day's revenue of
+     * a branch of the nomenclature; {@code movement:TYPE} the day's cash
+     * movements of a type.
+     *
+     * @param token the administered code
+     * @param from the start of the day
+     * @return the tile, or null when the code names nothing
+     */
+    Map<String, Object> generic(String token, LocalDateTime from) {
+        int colon = token.indexOf(':');
+        if (colon <= 0 || colon == token.length() - 1) {
+            return null;
+        }
+        String kind = token.substring(0, colon).trim().toLowerCase(java.util.Locale.ROOT);
+        String value = token.substring(colon + 1).trim();
+        Map<String, Object> entry = new HashMap<>();
+        entry.put("code", token);
+        switch (kind) {
+            case "event" -> {
+                TechnicalEvent.EventType type = eventType(value);
+                if (type == null) {
+                    return null;
+                }
+                entry.put("label", "Événements " + type.name());
+                subject(entry, "t.s21-ev-", type.name());
+                entry.put("unit", DashboardIndicator.Unit.COUNT.suffix());
+                entry.put("value", Long.toString(countEvents(List.of(type), from)));
+            }
+            case "payment" -> {
+                Class<?> type = com.intermarche.edge.domain.payment.PaymentTypes.forKey(value.toUpperCase(java.util.Locale.ROOT));
+                if (type == null) {
+                    return null;
+                }
+                entry.put("label", "Règlements " + value.toUpperCase(java.util.Locale.ROOT));
+                subject(entry, "t.s21-pm-", value.toUpperCase(java.util.Locale.ROOT));
+                entry.put("unit", DashboardIndicator.Unit.AMOUNT.suffix());
+                entry.put("value", amount(entityManager.createQuery(
+                                "select coalesce(sum(p.amount), 0) from Ticket t join t.payments p"
+                                        + " where t.status = :status and t.closingDate >= :from and type(p) = :type",
+                                BigDecimal.class)
+                        .setParameter("status", com.intermarche.edge.domain.sale.Ticket.TicketStatus.CLOSED)
+                        .setParameter("from", from)
+                        .setParameter("type", type)
+                        .getSingleResult()));
+            }
+            case "family" -> {
+                entry.put("label", "CA famille " + value);
+                entry.put("unit", DashboardIndicator.Unit.AMOUNT.suffix());
+                entry.put("value", amount(entityManager.createQuery(
+                                "select coalesce(sum(l.totalPrice), 0) from Ticket t join t.lines l"
+                                        + " where t.status = :status and t.closingDate >= :from"
+                                        + " and l.cancelled = false and l.familyCode like :family", BigDecimal.class)
+                        .setParameter("status", com.intermarche.edge.domain.sale.Ticket.TicketStatus.CLOSED)
+                        .setParameter("from", from)
+                        .setParameter("family", value + "%")
+                        .getSingleResult()));
+            }
+            case "movement" -> {
+                com.intermarche.edge.domain.session.CashMovement.MovementType type = movementType(value);
+                if (type == null) {
+                    return null;
+                }
+                entry.put("label", "Mouvements " + type.name());
+                subject(entry, "t.s21-mv-", type.name());
+                entry.put("unit", DashboardIndicator.Unit.AMOUNT.suffix());
+                entry.put("value", amount(entityManager.createQuery(
+                                "select coalesce(sum(m.amount), 0) from CashMovement m"
+                                        + " where m.movementDate >= :from and m.type = :type", BigDecimal.class)
+                        .setParameter("from", from)
+                        .setParameter("type", type)
+                        .getSingleResult()));
+            }
+            default -> {
+                return null;
+            }
+        }
+        return entry;
+    }
+
+    /**
+     * Reads a journal event type, ignoring case.
+     *
+     * @param name the typed name
+     * @return the type, or null
+     */
+    static TechnicalEvent.EventType eventType(String name) {
+        for (TechnicalEvent.EventType type : TechnicalEvent.EventType.values()) {
+            if (type.name().equalsIgnoreCase(name)) {
+                return type;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Reads a cash-movement type, ignoring case.
+     *
+     * @param name the typed name
+     * @return the type, or null
+     */
+    static com.intermarche.edge.domain.session.CashMovement.MovementType movementType(String name) {
+        for (com.intermarche.edge.domain.session.CashMovement.MovementType type
+                : com.intermarche.edge.domain.session.CashMovement.MovementType.values()) {
+            if (type.name().equalsIgnoreCase(name)) {
+                return type;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Writes an amount the French way, a null read as zero.
+     *
+     * @param amount the amount, possibly null
+     * @return two decimals, a decimal comma
+     */
+    static String amount(BigDecimal amount) {
+        BigDecimal value = amount == null ? BigDecimal.ZERO : amount;
+        return value.setScale(2, RoundingMode.HALF_UP).toPlainString().replace(".", ",");
     }
 
     /**

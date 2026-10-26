@@ -1,11 +1,7 @@
 package com.intermarche.edge.ui.hardware;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mockStatic;
-import static org.mockito.Mockito.times;
+import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
 
 import java.awt.Color;
 import java.awt.Graphics2D;
@@ -19,11 +15,15 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.Base64;
-
 import javax.imageio.ImageIO;
 
-import org.junit.jupiter.api.Test;
-import org.mockito.MockedStatic;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.times;
 
 /**
  * Unit tests for {@link ReceiptLogo}.
@@ -32,11 +32,7 @@ import org.mockito.MockedStatic;
  * points, {@link ReceiptLogo#directive()} (raster directive for the thermal head)
  * and {@link ReceiptLogo#dataUri()} (a {@code data:} URI for a rendered page).
  * Both read the SAME classpath resource {@code /print/logo.png} once and cache the
- * result; {@link ReceiptLogo#directive()} delegates to
- * {@link ReceiptLogo#directive(int)}, which rasterises at an administered head
- * width and memoises per width in a map keyed on the width, while
- * {@link ReceiptLogo#dataUri()} keeps its own pair of private static fields. The
- * private pipeline
+ * result in private static fields; the private pipeline
  * ({@code read}/{@code croppedPng} → {@code fit} → {@code flatten} →
  * {@code inkBounds} → {@code encode} → {@code isBlack}) is exercised only through
  * those two methods.
@@ -61,11 +57,8 @@ import org.mockito.MockedStatic;
  * {@code "[[IMAGE 384 384 <base64> ]]"} whose decoded payload is exactly
  * {@code (384/8) * 384 = 18432} bytes, and an absent logo yields the empty string.
  *
- * <p>Branch inventory covered: {@code directive(int)} the
- * {@code widthDots < DOTS_PER_BYTE} fallback ternary (both arms) and the
- * {@code cached != null} present/absent arms, with per-width memoisation shown by
- * two distinct widths each decoded once; {@code dataUri()} loaded/not-loaded arms
- * and the {@code map}/{@code orElse}
+ * <p>Branch inventory covered: {@code directive()} loaded/not-loaded arms;
+ * {@code dataUri()} loaded/not-loaded arms and the {@code map}/{@code orElse}
  * (present/empty) arms; {@code read()} and {@code croppedPng()} each with their
  * {@code stream == null}, {@code source == null}, {@code fitted == null}, success
  * and {@code IOException} arms; {@code fit()} {@code ink == null}/non-null arms;
@@ -104,19 +97,47 @@ class ReceiptLogoTest {
     }
 
     /**
-     * Clears the memoised caches so each scenario recomputes from scratch. The
-     * per-width directive cache is a final map, so it is emptied in place rather
-     * than reassigned.
+     * Clears the memoised caches so each scenario recomputes from scratch.
      *
      * @throws Exception when a cache field cannot be reset
      */
-    @SuppressWarnings("unchecked")
     private void resetCaches() throws Exception {
-        Field directives = ReceiptLogo.class.getDeclaredField("DIRECTIVES");
-        directives.setAccessible(true);
-        ((java.util.Map<Integer, String>) directives.get(null)).clear();
+        clearStaticMap("DIRECTIVES");
         setStatic("dataUriLoaded", false);
         setStatic("dataUri", null);
+        // BO-03-03-15: the single-entry cache of the ADMINISTERED image, so a
+        // scenario never reads the picture the previous one imported.
+        setStatic("administeredSource", null);
+        setStatic("administeredWidth", 0);
+        setStatic("administeredDirective", null);
+    }
+
+    /**
+     * Encodes an image as the PNG {@code data:} URI the back office
+     * distributes ({@code BO-03-03-15}).
+     *
+     * @param image the image to encode
+     * @return the data URI
+     * @throws Exception when the image cannot be written
+     */
+    private String dataUriOf(BufferedImage image) throws Exception {
+        java.io.ByteArrayOutputStream png = new java.io.ByteArrayOutputStream();
+        ImageIO.write(image, "png", png);
+        return "data:image/png;base64," + Base64.getEncoder().encodeToString(png.toByteArray());
+    }
+
+    /**
+     * Empties a private static {@link java.util.Map} cache of {@link ReceiptLogo} by
+     * reflection; the field is {@code final}, so it is cleared in place rather than
+     * reassigned.
+     *
+     * @param name the field name
+     * @throws Exception when the field cannot be accessed
+     */
+    private void clearStaticMap(String name) throws Exception {
+        Field field = ReceiptLogo.class.getDeclaredField(name);
+        field.setAccessible(true);
+        ((java.util.Map<?, ?>) field.get(null)).clear();
     }
 
     /**
@@ -169,9 +190,9 @@ class ReceiptLogoTest {
     // --------------------------------------------------
 
     /**
-     * Proves (cached absent arm, width ternary false arm, read success, fit
-     * non-null, encode both isBlack arms) the readable logo yields the raster
-     * directive of a 384x384 square whose decoded payload is exactly 18432 bytes.
+     * Proves (loaded false arm, read success, fit non-null, encode both isBlack
+     * arms) the readable logo yields the raster directive of a 384x384 square whose
+     * decoded payload is exactly 18432 bytes.
      *
      * @throws Exception when a cache reset fails
      */
@@ -187,6 +208,8 @@ class ReceiptLogoTest {
                     directive.length() - DIRECTIVE_SUFFIX.length());
             byte[] bits = Base64.getDecoder().decode(payload);
             assertEquals(SQUARE_BITS, bits.length);
+            assertEquals(directive, ReceiptLogo.directive());
+            imageIo.verify(() -> ImageIO.read(any(InputStream.class)), org.mockito.Mockito.times(1));
         }
     }
 
@@ -234,8 +257,8 @@ class ReceiptLogoTest {
     }
 
     /**
-     * Proves (cached present arm) the directive is computed once: a second call
-     * at the same width returns the cached value without re-reading the image.
+     * Proves (loaded true arm) the directive is computed once: a second call
+     * returns the cached value without re-reading the image.
      *
      * @throws Exception when a cache reset fails
      */
@@ -459,4 +482,167 @@ class ReceiptLogoTest {
             imageIo.verify(() -> ImageIO.read(any(InputStream.class)), times(2));
         }
     }
+
+    /**
+     * BO-03-03-15: an administered image is rasterised to the paper exactly
+     * as the installation's file is — cropped to its ink, scaled to the
+     * width, packed into dots — and a bare base64 payload reads the same as
+     * a {@code data:} URI.
+     *
+     * @throws Exception when the fixture cannot be built
+     */
+    @Test
+    void anAdministeredImageIsRasterisedToThePaper() throws Exception {
+        resetCaches();
+        String uri = dataUriOf(mixedInkImage());
+        String directive = ReceiptLogo.directive(uri, 384);
+        assertTrue(directive.startsWith(SQUARE_PREFIX));
+        assertTrue(directive.endsWith(DIRECTIVE_SUFFIX));
+        assertEquals(SQUARE_BITS, Base64.getDecoder().decode(
+                directive.substring(SQUARE_PREFIX.length(),
+                        directive.length() - DIRECTIVE_SUFFIX.length())).length);
+        resetCaches();
+        String bare = uri.substring(uri.indexOf(',') + 1);
+        assertEquals(directive, ReceiptLogo.directive(bare, 384));
+    }
+
+    /**
+     * BO-03-03-15: the administered rasterisation is memoised on the picture
+     * AND the width — the same pair answers the cached string, a different
+     * width recomputes.
+     *
+     * @throws Exception when the fixture cannot be built
+     */
+    @Test
+    void theAdministeredRasterIsMemoisedOnPictureAndWidth() throws Exception {
+        resetCaches();
+        String uri = dataUriOf(mixedInkImage());
+        String first = ReceiptLogo.directive(uri, 384);
+        assertSame(first, ReceiptLogo.directive(uri, 384));
+        String narrow = ReceiptLogo.directive(uri, 192);
+        assertTrue(narrow.startsWith("[[IMAGE 192 192 "));
+        assertNotEquals(first, narrow);
+    }
+
+    /**
+     * BO-03-03-15: a width narrower than one packed byte falls back on the
+     * default paper width rather than failing a receipt, and the one-argument
+     * entry prints at that same default.
+     *
+     * @throws Exception when the fixture cannot be built
+     */
+    @Test
+    void anImpossibleWidthFallsBackOnThePaper() throws Exception {
+        resetCaches();
+        String uri = dataUriOf(mixedInkImage());
+        assertTrue(ReceiptLogo.directive(uri, 4).startsWith(SQUARE_PREFIX));
+        resetCaches();
+        assertTrue(ReceiptLogo.directive(uri).startsWith(SQUARE_PREFIX));
+    }
+
+    /**
+     * BO-03-03-15: an administered picture that is not readable at all —
+     * invalid base64, or bytes that are not an image — prints nothing, and
+     * an entirely white one prints nothing either. None of the three fails
+     * the document.
+     *
+     * @throws Exception when the fixture cannot be built
+     */
+    @Test
+    void anUnprintableAdministeredImagePrintsNothing() throws Exception {
+        resetCaches();
+        assertEquals("", ReceiptLogo.directive("data:image/png;base64,!!!!", 384));
+        resetCaches();
+        assertEquals("", ReceiptLogo.directive("data:image/png;base64,AAAA", 384));
+        resetCaches();
+        assertEquals("", ReceiptLogo.directive(dataUriOf(whiteImage()), 384));
+    }
+
+    /**
+     * BO-03-03-15: no administered picture falls back on the installation's
+     * file, for the raster as for the page rendering.
+     *
+     * @throws Exception when the caches cannot be reset
+     */
+    @Test
+    void noAdministeredImageFallsBackOnTheInstallation() throws Exception {
+        resetCaches();
+        assertEquals(ReceiptLogo.directive(384), ReceiptLogo.directive(null, 384));
+        assertEquals(ReceiptLogo.directive(384), ReceiptLogo.directive("   ", 384));
+        assertEquals(ReceiptLogo.dataUri(), ReceiptLogo.dataUri(null));
+        assertEquals(ReceiptLogo.dataUri(), ReceiptLogo.dataUri("  "));
+    }
+
+    /**
+     * BO-03-03-15: a page-rendered document is handed the administered
+     * picture as it stands, a bare payload being given back its prefix.
+     *
+     * @throws Exception when the fixture cannot be built
+     */
+    @Test
+    void thePageRenderingHandsOverTheAdministeredPicture() throws Exception {
+        resetCaches();
+        String uri = dataUriOf(mixedInkImage());
+        assertEquals(uri, ReceiptLogo.dataUri(uri));
+        assertEquals("data:image/png;base64,ABC", ReceiptLogo.dataUri("ABC"));
+    }
+    /** BO-03-03-15: malformed data URIs without a comma cannot become a printable logo. */
+    @Test
+    void dataUriWithoutPayloadSeparatorPrintsNothing() throws Exception {
+        resetCaches();
+        assertEquals("", ReceiptLogo.directive("data:image/png;base64", 384));
+    }
+
+    /** BO-03-03-15: a failing resource close, alone or during decoding failure, never prevents a receipt. */
+    @Test
+    void resourceCloseFailuresLeaveBothLogoOutputsEmpty() throws Exception {
+        for (String entry : new String[]{"directive", "dataUri"}) {
+            for (boolean decodeFails : new boolean[]{false, true}) {
+                InputStream stream = org.mockito.Mockito.mock(InputStream.class);
+                org.mockito.Mockito.doThrow(new IOException("close failed")).when(stream).close();
+                Class<?> isolated = logoWithResource(stream);
+                try (var images = mockStatic(ImageIO.class)) {
+                    if (decodeFails) images.when(() -> ImageIO.read(stream)).thenThrow(new IOException("decode failed"));
+                    else images.when(() -> ImageIO.read(stream)).thenReturn(mixedInkImage());
+                    assertEquals("", isolated.getMethod(entry).invoke(null));
+                }
+                org.mockito.Mockito.verify(stream).close();
+            }
+        }
+    }
+
+    /**
+     * Loads a fresh logo utility whose classpath resource is the supplied stream.
+     * The original code source keeps normal instrumentation active without changing global caches.
+     * @param stream mocked classpath resource
+     * @return independently initialized logo class
+     * @throws Exception when the class bytes cannot be loaded
+     */
+    private Class<?> logoWithResource(InputStream stream) throws Exception {
+        String name = ReceiptLogo.class.getName();
+        ClassLoader parent = ReceiptLogo.class.getClassLoader();
+        byte[] bytes;
+        try (var original = parent.getResourceAsStream(name.replace('.', '/') + ".class")) {
+            bytes = original.readAllBytes();
+        }
+        ClassLoader loader = new ClassLoader(parent) {
+            /** Defines only the logo utility locally so all ImageIO collaborators retain their identity. */
+            @Override
+            protected Class<?> loadClass(String requested, boolean resolve) throws ClassNotFoundException {
+                if (!name.equals(requested)) return super.loadClass(requested, resolve);
+                Class<?> loaded = findLoadedClass(requested);
+                if (loaded == null) loaded = defineClass(requested, bytes, 0, bytes.length, ReceiptLogo.class.getProtectionDomain());
+                if (resolve) resolveClass(loaded);
+                return loaded;
+            }
+
+            /** Supplies the failure-controlled classpath logo and delegates every other resource. */
+            @Override
+            public InputStream getResourceAsStream(String resource) {
+                return "print/logo.png".equals(resource) ? stream : super.getResourceAsStream(resource);
+            }
+        };
+        return Class.forName(name, true, loader);
+    }
+
 }

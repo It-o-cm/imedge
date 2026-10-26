@@ -377,7 +377,35 @@ class ArticleBarcodeRangeTest {
                 ArticleBarcodeRange.Purpose.valueOf("EXTERNAL_LOOKUP"));
         assertEquals(ArticleBarcodeRange.Purpose.CUSTOMER_ORDER,
                 ArticleBarcodeRange.Purpose.valueOf("CUSTOMER_ORDER"));
-        assertEquals(7, ArticleBarcodeRange.Purpose.values().length);
+        assertEquals(ArticleBarcodeRange.Purpose.FUNCTION,
+                ArticleBarcodeRange.Purpose.valueOf("FUNCTION"));
+        assertEquals(ArticleBarcodeRange.Purpose.PROMOTION_ENGINE,
+                ArticleBarcodeRange.Purpose.valueOf("PROMOTION_ENGINE"));
+        assertEquals(9, ArticleBarcodeRange.Purpose.values().length);
+    }
+
+    /**
+     * {@code definesPromotion} is true only for a promotion range that names its
+     * promotion AND states a known type: a range that triggers nothing, a null
+     * type and an unknown type say no, PERCENT and AMOUNT say yes (BO-03-06-43,
+     * each leg of the compound condition).
+     */
+    @Test
+    void definesPromotionNeedsATriggeringRangeAndAKnownType() {
+        ArticleBarcodeRange range = priceRange();
+        range.purpose = ArticleBarcodeRange.Purpose.ARTICLE;
+        range.promotionType = ArticleBarcodeRange.PROMOTION_PERCENT;
+        assertFalse(range.definesPromotion());
+        range.purpose = ArticleBarcodeRange.Purpose.PROMOTION;
+        range.promotionCode = "COUPON_NUTELLA";
+        range.promotionType = null;
+        assertFalse(range.definesPromotion());
+        range.promotionType = "GIFT";
+        assertFalse(range.definesPromotion());
+        range.promotionType = ArticleBarcodeRange.PROMOTION_PERCENT;
+        assertTrue(range.definesPromotion());
+        range.promotionType = ArticleBarcodeRange.PROMOTION_AMOUNT;
+        assertTrue(range.definesPromotion());
     }
 
     /**
@@ -401,6 +429,8 @@ class ArticleBarcodeRangeTest {
         // An EXTERNAL_LOOKUP range is not a promotion range either.
         range.purpose = ArticleBarcodeRange.Purpose.EXTERNAL_LOOKUP;
         assertFalse(range.triggersPromotion());
+        // A promotion range is not an article range, so the weighed-label
+        // handler keeps its hands off it.
         assertFalse(range.isArticlePurpose());
     }
 

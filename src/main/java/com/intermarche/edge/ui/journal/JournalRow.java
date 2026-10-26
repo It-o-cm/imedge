@@ -73,4 +73,24 @@ public class JournalRow {
         this.trainingMode = trainingMode;
         this.autonomous = autonomous;
     }
+
+    /**
+     * The VAT ventilation of the ticket by rate (BO-04-01-55), written
+     * {@code 5,5 % HT 4,74 TVA 0,26 | 20 % HT ...}; empty when none.
+     */
+    public String vat = "";
+
+    /** Where the row's detail is shown (BO-04-01-50), or null when it has none. */
+    public String detailUrl;
+
+    /**
+     * Splits the VAT ventilation into one French sentence per rate,
+     * {@code 5,5 % HT 4,74 TVA 0,26}, so the screen and the export translate
+     * each of them in the page's language.
+     *
+     * @return the parts, empty when the ticket has no VAT ventilation
+     */
+    public java.util.List<String> getVatParts() {
+        return vat.isEmpty() ? java.util.List.of() : java.util.List.of(vat.split(" \\| "));
+    }
 }

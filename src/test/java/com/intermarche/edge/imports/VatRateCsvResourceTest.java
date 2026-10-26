@@ -18,12 +18,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.*;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.verify;
@@ -365,7 +366,7 @@ class VatRateCsvResourceTest {
         int national = (int) method.invoke(resource, 1,
                 line("1", "0.2000", "Taux normal"), ofFrance);
         assertEquals(VatRate.checksumOf(1, new BigDecimal("0.2000"),
-                "Taux normal", "FRA", "TVA 20 %"), national);
+                "Taux normal", "FRA", "TVA 20 %", false, null), national);
     }
 
     /**
@@ -379,7 +380,7 @@ class VatRateCsvResourceTest {
         VatRate existing = new VatRate();
         int incoming = (int) method.invoke(resource, 5,
                 line("5", "0.0000", null), existing);
-        assertEquals(VatRate.checksumOf(5, new BigDecimal("0.0000"), null, null, null), incoming);
+        assertEquals(VatRate.checksumOf(5, new BigDecimal("0.0000"), null, null, null, false, null), incoming);
     }
 
     /**
@@ -403,6 +404,155 @@ class VatRateCsvResourceTest {
         Response response = resource.importVatRates(new ByteArrayInputStream(
                 "VAT_NUMBER|RATE|LABEL\n".getBytes(StandardCharsets.UTF_8)));
         assertEquals(200, response.getStatus());
-        assertEquals("{\"createdCount\":0, \"updatedCount\":0}", response.getEntity());
+        assertEquals("{\"createdCount\":0,\"updatedCount\":0}", response.getEntity());
+    }
+
+    /**
+     * The public entry point delegates to the base import with the VAT-NUMBER key
+     * and the required columns: an empty stream carries no header and no row, so
+     * it imports nothing and answers a 200 with zero counts.
+     *
+     * <p>One line, and still the only door the VAT feed goes through. What it
+     * hands the base import — which column is the key, which ones are required —
+     * is a contract: swapping the two arguments compiles and breaks every import
+     * of the rates the whole ticket is computed with.
+     */
+    @Test
+    void importVatRatesDelegatesToTheBaseImport() {
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            java.io.InputStream stream = new java.io.ByteArrayInputStream(new byte[0]);
+            jakarta.ws.rs.core.Response response = resource.importVatRates(stream);
+            assertEquals(200, response.getStatus());
+            assertEquals("{\"createdCount\":0,\"updatedCount\":0}", response.getEntity());
+        }
+    }
+
+    /**
+     * Builds a parsed line over the full header of the country-aware feed
+     * (BO-02-02-01): number, rate, label, country, legal mention, exemption
+     * flag and exemption code.
+     *
+     * @param cells the seven cells, in that order
+     * @return the parsed line
+     */
+    private ImporterCsvResource.LineData fullLine(String... cells) {
+        Map<String, Integer> header = new HashMap<>();
+        header.put(VatRateCsvResource.COL_VAT_NUMBER, 0);
+        header.put(VatRateCsvResource.COL_RATE, 1);
+        header.put(VatRateCsvResource.COL_LABEL, 2);
+        header.put(VatRateCsvResource.COL_COUNTRY, 3);
+        header.put(VatRateCsvResource.COL_LEGAL_MENTION, 4);
+        header.put(VatRateCsvResource.COL_EXEMPT, 5);
+        header.put(VatRateCsvResource.COL_EXEMPTION_CODE, 6);
+        return new ImporterCsvResource.LineData(1, header, cells, VatRateCsvResource.COL_VAT_NUMBER);
+    }
+
+    /**
+     * A line of the full feed creates a Portuguese exemption with its country,
+     * its mention, its flag and its code (BO-02-02-01), the country normalised
+     * to upper case.
+     */
+    @Test
+    void processLineLogicFeedsTheCountryAndTheExemption() {
+        Map<String, Object> context = new HashMap<>();
+        context.put(CTX_VAT_RATES, new HashMap<String, VatRate>());
+        int[] counters = new int[]{0, 0};
+        EntityManager em = mock(EntityManager.class);
+        try (MockedStatic<Panache> panache = mockStatic(Panache.class)) {
+            panache.when(Panache::getEntityManager).thenReturn(em);
+            resource.processLineLogic(fullLine("10", "0", "Isento", "pt", "Isento artigo 9.º do CIVA", "S", "M07"),
+                    context, counters);
+            org.mockito.ArgumentCaptor<Object> captor = org.mockito.ArgumentCaptor.forClass(Object.class);
+            verify(em).persist(captor.capture());
+            VatRate created = (VatRate) captor.getValue();
+            assertEquals("PT", created.country);
+            assertEquals("Isento artigo 9.º do CIVA", created.legalMention);
+            assertTrue(created.exempt);
+            assertEquals("M07", created.exemptionCode);
+        }
+    }
+
+    /**
+     * {@code optional} keeps the held value when the header lacks the column,
+     * reads an empty cell as null and a filled one as itself.
+     *
+     * @throws Exception when reflection fails
+     */
+    @Test
+    void optionalReadsAbsentEmptyAndFilledColumns() throws Exception {
+        Method method = privateMethod("optional", ImporterCsvResource.LineData.class, String.class, String.class);
+        assertEquals("held", method.invoke(resource, line("1", "0.2", "x"),
+                VatRateCsvResource.COL_LEGAL_MENTION, "held"));
+        assertNull(method.invoke(resource, fullLine("1", "0.2", "x", "FR", "", "", ""),
+                VatRateCsvResource.COL_LEGAL_MENTION, "held"));
+        assertEquals("TVA", method.invoke(resource, fullLine("1", "0.2", "x", "FR", "TVA", "", ""),
+                VatRateCsvResource.COL_LEGAL_MENTION, "held"));
+        assertNull(method.invoke(resource, new ImporterCsvResource.LineData(1,
+                Map.of(VatRateCsvResource.COL_VAT_NUMBER, 0, VatRateCsvResource.COL_LEGAL_MENTION, 5),
+                new String[]{"1"}, VatRateCsvResource.COL_VAT_NUMBER), VatRateCsvResource.COL_LEGAL_MENTION, "held"));
+    }
+
+    /**
+     * {@code country} keeps a null held country when the column is absent,
+     * raises the case and cuts a too long code to three characters.
+     *
+     * @throws Exception when reflection fails
+     */
+    @Test
+    void countryNormalisesTheCell() throws Exception {
+        Method method = privateMethod("country", ImporterCsvResource.LineData.class, String.class);
+        assertNull(method.invoke(resource, line("1", "0.2", "x"), null));
+        assertEquals("BEL", method.invoke(resource, line("1", "0.2", "x"), "BEL"));
+        assertEquals("BE", method.invoke(resource, fullLine("1", "0.2", "x", " be ", "", "", ""), null));
+        assertEquals("POR", method.invoke(resource, fullLine("1", "0.2", "x", "PORT", "", "", ""), null));
+    }
+
+    /**
+     * {@code exempt} keeps the held flag when the column is absent, reads the
+     * five affirmative spellings as true and anything else as false.
+     *
+     * @throws Exception when reflection fails
+     */
+    @Test
+    void exemptReadsTheAffirmativeSpellings() throws Exception {
+        Method method = privateMethod("exempt", ImporterCsvResource.LineData.class, boolean.class);
+        assertEquals(true, method.invoke(resource, line("1", "0", "x"), true));
+        for (String yes : List.of("true", "1", "o", "Y", "s")) {
+            assertEquals(true, method.invoke(resource, fullLine("1", "0", "x", "", "", yes, ""), false), yes);
+        }
+        assertEquals(false, method.invoke(resource, fullLine("1", "0", "x", "", "", "non", ""), true));
+        assertEquals(false, method.invoke(resource, new ImporterCsvResource.LineData(1,
+                Map.of(VatRateCsvResource.COL_VAT_NUMBER, 0, VatRateCsvResource.COL_EXEMPT, 5),
+                new String[]{"1"}, VatRateCsvResource.COL_VAT_NUMBER), true));
+    }
+
+    /**
+     * The EXEMPT column poses the exemption and the incoming checksum reads it;
+     * without the column the row's own flag and code are kept and hashed
+     * (BO-02-03-26/27 with BO-02-02-01).
+     *
+     * @throws Exception when reflection fails
+     */
+    @Test
+    void theExemptColumnPosesTheExemption() throws Exception {
+        Method feed = privateMethod("feedVatRate", ImporterCsvResource.LineData.class, VatRate.class);
+        VatRate regime = new VatRate();
+        feed.invoke(resource, fullLine("9", "0.0000", "Exonéré", "", "", "true", ""), regime);
+        assertTrue(regime.exempt);
+        VatRate kept = new VatRate();
+        kept.exempt = true;
+        kept.exemptionCode = "M07";
+        feed.invoke(resource, line("9", "0.0000", "Exonéré"), kept);
+        assertTrue(kept.exempt);
+        assertEquals("M07", kept.exemptionCode);
+        Method checksum = privateMethod("computeIncomingChecksum",
+                Integer.class, ImporterCsvResource.LineData.class, VatRate.class);
+        VatRate existing = new VatRate();
+        assertEquals(VatRate.checksumOf(9, new BigDecimal("0.0000"), "Exonéré", null, null, true, null),
+                (int) checksum.invoke(resource, 9, fullLine("9", "0.0000", "Exonéré", "", "", "true", ""), existing));
+        existing.exempt = true;
+        existing.exemptionCode = "M07";
+        assertEquals(VatRate.checksumOf(9, new BigDecimal("0.0000"), "Exonéré", null, null, true, "M07"),
+                (int) checksum.invoke(resource, 9, line("9", "0.0000", "Exonéré"), existing));
     }
 }

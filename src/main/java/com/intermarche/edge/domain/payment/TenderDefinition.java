@@ -13,7 +13,7 @@ import java.util.List;
 /**
  * An administered TENDER: the back-office row that puts one payment method in
  * service and states the rules the register applies to it
- * (BO-03-02-02/03/04/05/10/12/13/14/15/16/17/18/19/21/22/23/25/30).
+ * (BO-03-02-01/02/03/04/05/10/12/13/14/15/16/17/18/19/21/22/23/24/25/29/30/36/44).
  *
  * <p>The doctrine, stated once so no reader has to guess it: the register knows
  * HOW to settle a sale in cash, by card, by cheque, on account, on the fidelity
@@ -167,7 +167,10 @@ public class TenderDefinition extends PanacheEntity {
      * because that is what the requirement says in so many words: the product
      * code belongs to the payment mean, not to the register. Verbatim, because
      * the pair a tag and its value form is the acquirer's to state and not the
-     * back office's to compose — it descends to the register unchanged, and a
+     * back office's to compose — it descends to the register unchanged, which
+     * parses it with the very codec it uses on the wire
+     * ({@code VerifoneFrameCodec}, whose {@code {TAG}value} syntax is the one
+     * the requirement itself writes these codes in) and emits it unchanged. A
      * store whose acquirer changes a code changes a row.
      */
     @Column(name = "vic_product_code", length = 20)
@@ -235,21 +238,6 @@ public class TenderDefinition extends PanacheEntity {
     public boolean fidelityReported = false;
 
     /**
-     * Whether an amount may be transferred OUT of this tender ({@code BO-05-02-17}).
-     *
-     * <p>Source and destination are administered SEPARATELY because they are not
-     * the same permission: a discount voucher may be corrected into cash — the
-     * shop took a voucher and recorded cash — while cash may never be corrected
-     * into a voucher, which would invent a voucher nobody handed over.
-     */
-    @Column(name = "transfer_source", nullable = false)
-    public boolean transferSource = true;
-
-    /** Whether an amount may be transferred INTO this tender ({@code BO-05-02-17}). */
-    @Column(name = "transfer_destination", nullable = false)
-    public boolean transferDestination = true;
-
-    /**
      * The GABARIT printed when this tender is used, by its code; null when the
      * tender prints nothing of its own (BO-03-02-32).
      *
@@ -293,6 +281,223 @@ public class TenderDefinition extends PanacheEntity {
      */
     @Column(name = "print_forced", nullable = false)
     public boolean printForced = false;
+
+    /**
+     * Whether an amount may be transferred OUT of this tender ({@code BO-05-02-17}).
+     *
+     * <p>Source and destination are administered SEPARATELY because they are not
+     * the same permission: a discount voucher may be corrected into cash — the
+     * shop took a voucher and recorded cash — while cash may never be corrected
+     * into a voucher, which would invent a voucher nobody handed over.
+     */
+    @Column(name = "transfer_source", nullable = false)
+    public boolean transferSource = true;
+
+    /** Whether an amount may be transferred INTO this tender ({@code BO-05-02-17}). */
+    @Column(name = "transfer_destination", nullable = false)
+    public boolean transferDestination = true;
+
+    /**
+     * The settlement NATURES an additional tender may be carried out as
+     * (BO-03-02-01): the ones the payment screen settles on a typed amount,
+     * so a tender the store adds is one more key that opens the very pad its
+     * nature opens.
+     */
+    public static final java.util.Set<String> ADDITIONAL_NATURES = java.util.Set.of(
+            "CASH", "CARD", "CHEQUE", "CHEQUE_DEFERRED", "TR", "FIDELITY", "TRD");
+
+    /**
+     * The settlement NATURE an ADDITIONAL tender is carried out as
+     * (BO-03-02-01), as a {@link PaymentTypes} key, or null on a tender whose
+     * {@link #code} is itself that key.
+     *
+     * <p>This is what makes the referential unbounded without making the
+     * register invent anything: "American Express", "Carte Pass" or "Chèque
+     * cadeau enseigne" are as many rows as the store wants, each with its own
+     * code, label, ceilings and slip, and each settled by the conversation its
+     * nature already knows how to hold — a card is debited on the terminal, a
+     * cheque is read, cash goes into the drawer.
+     */
+    @Column(name = "nature", length = 20)
+    public String nature;
+
+    /**
+     * The codes of the ISLANDS on which settling with this tender calls a
+     * supervisor (BO-03-02-29), separated by semicolons or commas, or null.
+     *
+     * <p>The self-service flag says "every self-service lane"; this list names
+     * the islands themselves, because the questionnaire speaks of "un îlot
+     * spécifié": a store may watch its fidelity payments on the self-service
+     * island and nowhere else, or on the drive island only.
+     */
+    @Column(name = "supervision_islands", length = 500)
+    public String supervisionIslands;
+
+    /**
+     * The monetics answers that select this tender (BO-03-02-44): pairs
+     * {@code D16:code} or {@code D46:code} separated by semicolons, e.g.
+     * {@code D16:43;D46:1010}, or null.
+     *
+     * <p>On the TENDER rather than in a free table, because the requirement
+     * reads it that way: a terminal answering {@code {D16}43} records the
+     * payment mean "American Express" the store administered, and the
+     * correspondence is maintained where that payment mean is.
+     */
+    @Column(name = "monetic_codes", length = 500)
+    public String moneticCodes;
+
+    /**
+     * Whether settling CASH goes through the coin machine of the register
+     * (BO-03-02-36), the machine being the one its checkout point describes.
+     */
+    @Column(name = "coin_machine", nullable = false)
+    public boolean coinMachine = false;
+
+    /**
+     * Whether a cheque of this tender is READ by the MICR reader before it is
+     * registered (BO-03-02-24); true by default, which is what the register did
+     * before the column existed.
+     */
+    @Column(name = "micr_reading", nullable = false)
+    public boolean micrReading = true;
+
+    /**
+     * Whether a cheque of this tender needs a supervisor's AUTHORIZATION
+     * before it is taken (BO-03-02-24).
+     */
+    @Column(name = "cheque_authorization", nullable = false)
+    public boolean chequeAuthorization = false;
+
+    /**
+     * Whether the cashier keys the ACCOUNT NUMBER of a cheque of this tender
+     * (BO-03-02-24), recorded on the settlement.
+     */
+    @Column(name = "account_number_entry", nullable = false)
+    public boolean accountNumberEntry = false;
+
+    /**
+     * Whether the front of a cheque of this tender is printed AUTOMATICALLY
+     * when it is taken, before it is read (BO-03-02-24): the cashier no longer
+     * presses the front-print key, the cheque passes the printer as soon as it
+     * is validated.
+     */
+    @Column(name = "cheque_auto_print", nullable = false)
+    public boolean chequeAutoPrint = false;
+
+    /**
+     * Returns the settlement nature this tender is carried out as
+     * (BO-03-02-01).
+     *
+     * @return the administered nature, or the code itself when none is set
+     */
+    public String nature() {
+        if (nature == null || nature.isBlank()) {
+            return code;
+        }
+        return nature.trim();
+    }
+
+    /**
+     * Tells whether this tender is one the STORE ADDED (BO-03-02-01): its
+     * code is not a settlement key the register names by itself.
+     *
+     * @return true when the code is not a settlement key
+     */
+    public boolean isAdditional() {
+        return code != null && PaymentTypes.forKey(code) == null;
+    }
+
+    /**
+     * Tells whether this tender is settled as a cheque read and endorsed by
+     * the register (BO-03-02-24), the one whose cheque options apply.
+     *
+     * @return true when the nature is CHEQUE
+     */
+    public boolean isChequeNature() {
+        return "CHEQUE".equals(nature());
+    }
+
+    /**
+     * Tells whether settling with this tender on the given island calls a
+     * supervisor (BO-03-02-29).
+     *
+     * @param islandCode the island of the register, or null
+     * @return true when the island is one the administered list names
+     */
+    public boolean supervisedOnIsland(String islandCode) {
+        if (islandCode == null || islandCode.isBlank()
+                || supervisionIslands == null || supervisionIslands.isBlank()) {
+            return false;
+        }
+        for (String part : supervisionIslands.split("[;,]")) {
+            if (part.trim().equalsIgnoreCase(islandCode.trim())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Tells whether this tender carries the given monetics answer
+     * (BO-03-02-44).
+     *
+     * @param tag the tag, {@code D16} or {@code D46}
+     * @param value the value the terminal returned under it, or null
+     * @return true when the administered pairs name that tag and value
+     */
+    public boolean answersMonetic(String tag, String value) {
+        if (value == null || value.isBlank() || moneticCodes == null || moneticCodes.isBlank()) {
+            return false;
+        }
+        String wanted = tag + ":" + value.trim();
+        for (String part : moneticCodes.split(";")) {
+            if (part.trim().equalsIgnoreCase(wanted)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Returns the active tender the monetics answer selects (BO-03-02-44): a
+     * known {@code D16} first, then the {@code D46} fallback, exactly the order
+     * the terminal's own answer is read in.
+     *
+     * @param primary the {@code D16} value, or null
+     * @param alternate the {@code D46} value, or null
+     * @return the tender, or null when no active row carries either answer
+     */
+    public static TenderDefinition findByMonetic(String primary, String alternate) {
+        List<TenderDefinition> tenders = listAllOrdered();
+        for (TenderDefinition tender : tenders) {
+            if (tender.active && tender.answersMonetic("D16", primary)) {
+                return tender;
+            }
+        }
+        for (TenderDefinition tender : tenders) {
+            if (tender.active && tender.answersMonetic("D46", alternate)) {
+                return tender;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Returns the ACTIVE tenders the store added (BO-03-02-01), in
+     * administered order, whose nature the payment screen settles on an amount.
+     *
+     * @return the additional tenders in service, empty when none is
+     */
+    public static List<TenderDefinition> listActiveAdditional() {
+        List<TenderDefinition> tenders = new java.util.ArrayList<>();
+        for (TenderDefinition tender : listAllOrdered()) {
+            if (tender.active && tender.isAdditional()
+                    && ADDITIONAL_NATURES.contains(tender.nature())) {
+                tenders.add(tender);
+            }
+        }
+        return tenders;
+    }
 
 
     /**
@@ -415,6 +620,15 @@ public class TenderDefinition extends PanacheEntity {
 
 
     /**
+     * Returns every administered tender, active or not, in administered order.
+     *
+     * @return the whole referential, empty when nothing is administered
+     */
+    public static List<TenderDefinition> listAllOrdered() {
+        return list("order by displayOrder, code");
+    }
+
+    /**
      * Indicates whether the STORE may change this tender's description, or only
      * take it in and out of service (BO-03-02-06 and -07).
      *
@@ -516,13 +730,29 @@ public class TenderDefinition extends PanacheEntity {
         }
     }
 
+
     /**
-     * Returns every administered tender, active or not, in administered order.
+     * Returns the VIC product codes of the tenders in service, in administered
+     * order (BO-03-09-30).
      *
-     * @return the whole referential, empty when nothing is administered
+     * <p>Only the ACTIVE tenders: a payment mean the store took out of service
+     * must not be declared to the terminal as accepted, or the customer is
+     * offered a product the register will then refuse. A tender carrying no
+     * code contributes nothing, so a store that administers none gets an empty
+     * list and a request identical to the one it got before this column
+     * existed.
+     *
+     * @return the ordered VIC product codes, empty when none is administered
      */
-    public static List<TenderDefinition> listAllOrdered() {
-        return list("order by displayOrder, code");
+    public static List<String> activeVicProductCodes() {
+        List<String> codes = new java.util.ArrayList<>();
+        for (TenderDefinition tender : listAllOrdered()) {
+            if (tender.active
+                    && tender.vicProductCode != null && !tender.vicProductCode.isBlank()) {
+                codes.add(tender.vicProductCode.trim());
+            }
+        }
+        return codes;
     }
 
     /**

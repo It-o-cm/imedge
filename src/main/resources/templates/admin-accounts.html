@@ -7,83 +7,146 @@
  ! La suppression demande une confirmation et le serveur refuse un titulaire
  ! que l'historique nomme : un compte qui a avalise, compte ou vendu se
  ! desactive, il ne s'efface pas.
+ ! Echelons (BO-01-01-03, BO-01-02-03) : pays, enseignes, PDV, types de TPV
+ ! et TPV auxquels le compte est rattache. Un compte cree sans code recoit
+ ! un badge, un PIN et un mot de passe provisoire generes (BO-01-02-06), et
+ ! un compte superieur reinitialise les secrets d'un compte inferieur
+ ! (BO-01-02-10). `editing` porte le compte en cours de modification.
 !}
 {#include admin-layout}
 
-{#title}Comptes{/title}
+{#title}{inject:i18n.get('t.comptes')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Comptes</h1>
-        <p class="page-sub">Qui peut entrer, avec quel role et a quel niveau hierarchique. Un compte n'administre que des comptes d'un niveau strictement inferieur au sien. Les profils et leur echelon se reglent sur <a class="link-strong" href="/admin/users">Utilisateurs</a>, le volet financier sur <a class="link-strong" href="/admin/employees">Salaries</a>.</p>
+        <h1>{inject:i18n.get('t.comptes')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.qui-peut-entrer-avec-quel-role-et')} <a class="link-strong" href="/admin/users">{inject:i18n.get('t.utilisateurs')}</a>{inject:i18n.get('t.le-volet-financier-sur')} <a class="link-strong" href="/admin/employees">{inject:i18n.get('t.salaries')}</a>.</p>
     </div>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 <div class="card">
-    <h2 class="card-title">Creer un compte</h2>
-    <p class="card-sub">Le code initial ouvre la caisse et le back-office, et son titulaire devra le changer a sa premiere entree. Telephone et date de debut sont facultatifs.</p>
+    {#if editing}
+    <h2 class="card-title">{inject:i18n.get('t.modifier-le-compte')} {editing.loginName}</h2>
+    <p class="card-sub">{inject:i18n.get('t.laissez-le-code-vide-pour-conserver-les')}</p>
+    {#else}
+    <h2 class="card-title">{inject:i18n.get('t.creer-un-compte')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.sans-code-saisi-le-systeme-genere-le')}</p>
+    {/if}
     <form method="post" action="/admin/accounts/save">
-        <div class="form-grid">
-            <label>Identifiant<input type="text" name="loginName" maxlength="60" required></label>
-            <label>Nom<input type="text" name="lastName" maxlength="60" required></label>
-            <label>Prenom<input type="text" name="firstName" maxlength="60"></label>
-            <label>Adresse electronique<input type="email" name="email" maxlength="120" required></label>
-            <label>Telephone<input type="text" name="phone" maxlength="30"></label>
-            <label>Date de debut<input type="date" name="startDate"></label>
-            <label>Departement<input type="text" name="department" maxlength="60"></label>
-            <label>Niveau hierarchique<input type="number" name="hierarchyLevel" min="0" value="0"></label>
-            <label>Badge<input type="text" name="badgeId" maxlength="20"></label>
-            <label>Langue<input type="text" name="language" maxlength="10" placeholder="fr, nl, pt"></label>
-            <label>Role
-                <select name="role">
-                    {#for role in roles}<option value="{role}">{role}</option>{/for}
+        {#if editing}<input type="hidden" name="id" value="{editing.id}">{/if}
+        <div class="field-grid">
+            <label class="field"><span class="field-label">{inject:i18n.get('t.identifiant')}</span><input class="input-control" type="text" name="loginName" maxlength="60" required value="{#if editing}{editing.loginName}{/if}"></label>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.nom')}</span><input class="input-control" type="text" name="lastName" maxlength="60" required value="{#if editing}{editing.lastName}{/if}"></label>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.prenom')}</span><input class="input-control" type="text" name="firstName" maxlength="60" required value="{#if editing}{editing.firstName}{/if}"></label>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.adresse-electronique')}</span><input class="input-control" type="email" name="email" maxlength="120" required value="{#if editing}{editing.email}{/if}"></label>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.telephone')}</span><input class="input-control" type="text" name="phone" maxlength="30" value="{#if editing}{editing.phone}{/if}"></label>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.date-de-debut')}</span><input class="input-control" type="date" name="startDate" value="{#if editing}{editing.startDate}{/if}"></label>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.departement')}</span><input class="input-control" type="text" name="department" maxlength="60" value="{#if editing}{editing.department}{/if}"></label>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.niveau-hierarchique')}</span><input class="input-control" type="number" name="hierarchyLevel" min="0" value="{#if editing}{editing.hierarchyLevel}{#else}0{/if}"></label>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.badge-2')}</span><input class="input-control" type="text" name="badgeId" maxlength="20" value="{#if editing}{editing.badgeId}{/if}" placeholder="{inject:i18n.get('t.vide-genere')}"></label>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.cle-dallas')}</span><input class="input-control" type="text" name="dallasKey" maxlength="23" value="{#if editing}{editing.dallasKey}{/if}" placeholder="{inject:i18n.get('t.16-chiffres-hexadecimaux-vide-aucune')}"></label>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.langue')}</span><input class="input-control" type="text" name="language" maxlength="10" placeholder="{inject:i18n.get('t.fr-nl-pt')}" value="{#if editing}{editing.language}{/if}"></label>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.role')}</span>
+                <select class="input-control" name="role">
+                    {#for role in roles}<option value="{role}"{#if editing && editing.role == role.name} selected{/if}>{inject:i18n.code('t.rs21-role-', role)}</option>{/for}
                 </select>
             </label>
-            <label>Code initial<input type="password" name="secret" minlength="4" required></label>
-            <label class="check"><input type="checkbox" name="active" checked> Actif</label>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.connexion-au-back-office')}</span>
+                <select class="input-control" name="authMode">
+                    {#for mode in authModes}<option value="{mode}"{#if editing && editing.authMode == mode.name} selected{/if}>{#switch mode.name}{#case 'ANY'}{inject:i18n.get('t.mot-de-passe-ou-sso')}{#case 'PASSWORD'}{inject:i18n.get('t.mot-de-passe-seulement')}{#case 'SSO'}{inject:i18n.get('t.sso-seulement')}{/switch}</option>{/for}
+                </select>
+            </label>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.echelons-de-rattachement')}</span>
+                <select class="input-control account-scopes" name="scope" multiple size="6">
+                    {#for choice in echelons}<option value="{choice.value}"{#if editing && editing.scopes.contains(choice.value)} selected{/if}>{inject:i18n.text(choice.label)}</option>{/for}
+                </select>
+                <span class="field-hint">{inject:i18n.get('t.aucun-choix-ou-tous-les-echelons-toute')}</span>
+            </label>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.autres-tpv')}</span>
+                <input class="input-control" type="text" name="terminals" maxlength="200" placeholder="{inject:i18n.get('t.pos07-pos08')}">
+                <span class="field-hint">{inject:i18n.get('t.identifiants-de-caisses-pas-encore-declarees-ni')}</span>
+            </label>
+            <label class="field"><span class="field-label">{#if editing}{inject:i18n.get('t.nouveau-code')}{#else}{inject:i18n.get('t.code-initial')}{/if}</span><input class="input-control" type="password" name="secret" minlength="4" autocomplete="new-password" placeholder="{#if editing}{inject:i18n.get('t.vide-inchange')}{#else}{inject:i18n.get('t.vide-genere')}{/if}"></label>
+            <label class="toggle"><input type="checkbox" name="active"{#if !editing || editing.active} checked{/if}> <span>{inject:i18n.get('t.actif')}</span></label>
         </div>
-        <button class="btn btn-primary" type="submit">Creer</button>
+        <div class="page-actions" style="margin-top: 12px;">
+            <button class="btn btn-primary" type="submit">{#if editing}{inject:i18n.get('t.enregistrer')}{#else}{inject:i18n.get('t.creer')}{/if}</button>
+            {#if editing}<a class="btn btn-ghost" href="/admin/accounts">{inject:i18n.get('t.annuler')}</a>{/if}
+        </div>
     </form>
 </div>
 
 <div class="card">
-    <h2 class="card-title">Les comptes</h2>
-    <form method="get" action="/admin/accounts" class="filter-row">
-        <label>Rechercher<input type="text" name="text" value="{text}" placeholder="nom, identifiant, departement"></label>
-        <button class="btn" type="submit">Filtrer</button>
-        <a class="btn btn-ghost" href="/admin/accounts">Reinitialiser</a>
+    <h2 class="card-title">{inject:i18n.get('t.les-comptes')}</h2>
+    <form method="get" action="/admin/accounts" class="filter-bar">
+        <div class="filter-field">
+            <label class="filter-label" for="a-text">{inject:i18n.get('t.rechercher')}</label>
+            <input id="a-text" type="text" name="text" value="{text}" placeholder="{inject:i18n.get('t.nom-identifiant-departement')}">
+        </div>
+        <div class="filter-actions">
+            <button class="btn" type="submit">{inject:i18n.get('t.filtrer')}</button>
+            <a class="btn btn-ghost" href="/admin/accounts">{inject:i18n.get('t.reinitialiser')}</a>
+        </div>
     </form>
-    <table class="admin-table">
+    <table class="data-table account-table">
         <thead>
-            <tr><th>Nom</th><th>Identifiant</th><th>Role</th><th>Departement</th><th>Niveau</th><th>Telephone</th><th>Debut</th><th>Langue</th><th>Actif</th><th></th></tr>
+            <tr><th>{inject:i18n.get('t.compte')}</th><th>{inject:i18n.get('t.role')}</th><th>{inject:i18n.get('t.echelons')}</th><th>{inject:i18n.get('t.actif')}</th><th>{inject:i18n.get('t.actions')}</th></tr>
         </thead>
         <tbody>
-            {#for account in page.items}
+            {#for account in page.rows}
             <tr class="{#if !account.active}row-muted{/if}">
-                <td>{account.fullName}</td>
-                <td class="mono">{account.loginName}</td>
-                <td>{account.role}</td>
-                <td>{account.department}</td>
-                <td>{account.hierarchyLevel}</td>
-                <td>{account.phone}</td>
-                <td>{account.startDate}</td>
-                <td>{account.language}</td>
-                <td>{#if account.active}oui{#else}non{/if}</td>
-                <td class="cell-actions">
-                    <form method="post" action="/admin/accounts/delete" onsubmit="return confirm('Supprimer definitivement le compte {account.loginName} ?');">
+                <td>
+                    <span class="link-strong">{#if account.legalEntity}{account.lastName}{#else}{account.fullName}{/if}</span>
+                    <div class="mono col-muted">{account.loginName}</div>
+                    <div class="col-muted">{account.department}{#if account.phone} · {account.phone}{/if}{#if account.startDate} {inject:i18n.get('t.depuis')} {account.startDate}{/if}{#if account.language} · {account.language}{/if}</div>
+                </td>
+                <td>{inject:i18n.code('t.rs21-role-', account.role)}<div class="col-muted">{inject:i18n.get('t.niveau')} {account.hierarchyLevel} · {#switch account.authMode}{#case 'ANY'}{inject:i18n.get('t.mot-de-passe-ou-sso-2')}{#case 'PASSWORD'}{inject:i18n.get('t.mot-de-passe')}{#case 'SSO'}{inject:i18n.get('t.sso')}{/switch}</div>{#if account.central}<span class="badge">{inject:i18n.get('t.central')}</span>{/if}</td>
+                <td class="col-muted">{inject:i18n.text(account.scopes)}</td>
+                <td>{#if account.active}{inject:i18n.get('t.oui')}{#else}{inject:i18n.get('t.non')}{/if}</td>
+                {! BO-03-06-51 : la carte superviseur rattachee au titulaire. !}
+                <td class="account-actions">
+                    {#if account.manageable}
+                    <a class="btn btn-small" href="/admin/accounts?edit={account.id}">{inject:i18n.get('t.modifier')}</a>
+                    <a class="btn btn-small" href="/admin/accounts/badge?id={account.id}">{inject:i18n.get('t.badge-2')}</a>
+                    <form method="post" action="/admin/accounts/reset" onsubmit="return confirm('{inject:i18n.js('t.reinitialiser-les-secrets-de')} {account.loginName} ?');">
                         <input type="hidden" name="id" value="{account.id}">
-                        <button class="btn btn-danger" type="submit" {#if account.referenced}disabled title="Nomme par l'historique : desactivez-le"{/if}>Supprimer</button>
+                        <select class="input-control" name="what" aria-label="{inject:i18n.get('t.secret-a-reinitialiser')}">
+                            <option value="both">{inject:i18n.get('t.pin-et-mot-de-passe')}</option>
+                            <option value="pin">{inject:i18n.get('t.pin-caisse-2')}</option>
+                            <option value="password">{inject:i18n.get('t.mot-de-passe-bo')}</option>
+                        </select>
+                        <button class="btn btn-small" type="submit">{inject:i18n.get('t.reinitialiser')}</button>
                     </form>
+                    {#if account.supervisorCard}
+                    <a class="btn btn-small" href="/admin/accounts/supervisor-card?id={account.id}">{inject:i18n.get('t.imprimer')}</a>
+                    <form method="post" action="/admin/accounts/supervisor-card" onsubmit="return confirm('{inject:i18n.js('t.retirer-la-carte-superviseur-de')} {account.loginName} ?');">
+                        <input type="hidden" name="id" value="{account.id}">
+                        <input type="hidden" name="action" value="revoke">
+                        <button class="btn btn-small" type="submit">{inject:i18n.get('t.retirer')}</button>
+                    </form>
+                    {#else}
+                    <form method="post" action="/admin/accounts/supervisor-card">
+                        <input type="hidden" name="id" value="{account.id}">
+                        <button class="btn btn-small" type="submit">{inject:i18n.get('t.creer-la-carte')}</button>
+                    </form>
+                    {/if}
+                    <form method="post" action="/admin/accounts/delete" onsubmit="return confirm('{inject:i18n.js('t.supprimer-definitivement-le-compte')} {account.loginName} ?');">
+                        <input type="hidden" name="id" value="{account.id}">
+                        <button class="btn btn-small btn-danger" type="submit" {#if account.referenced}disabled title="{inject:i18n.get('t.nomme-par-l-historique-desactivez-le')}"{/if}>{inject:i18n.get('t.supprimer')}</button>
+                    </form>
+                    {#else}
+                    <span class="col-muted">{#if account.central}{inject:i18n.get('t.administre-au-central')}{#else}{inject:i18n.get('t.hors-de-votre-niveau')}{/if}</span>
+                    {/if}
                 </td>
             </tr>
             {/for}
-            {#if page.items.isEmpty()}
-            <tr><td colspan="10" class="cell-empty">Aucun compte ne correspond.</td></tr>
+            {#if page.rows.isEmpty()}
+            <tr><td colspan="5" class="cell-empty">{inject:i18n.get('t.aucun-compte-ne-correspond')}</td></tr>
             {/if}
         </tbody>
     </table>

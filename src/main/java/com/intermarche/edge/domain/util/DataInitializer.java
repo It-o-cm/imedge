@@ -1,27 +1,34 @@
 package com.intermarche.edge.domain.util;
 
-import com.intermarche.edge.domain.barcode.*;
-import com.intermarche.edge.domain.catalog.*;
-import com.intermarche.edge.domain.payment.*;
-import com.intermarche.edge.domain.people.*;
-import com.intermarche.edge.domain.sale.*;
-import com.intermarche.edge.domain.session.*;
-import com.intermarche.edge.domain.setting.*;
-import com.intermarche.edge.domain.store.*;
-import com.intermarche.edge.domain.sync.*;
+import com.intermarche.edge.domain.barcode.CouponField;
+import com.intermarche.edge.domain.barcode.CouponType;
 import com.intermarche.edge.domain.campaign.Campaign;
 import com.intermarche.edge.domain.catalog.Nomenclature;
 import com.intermarche.edge.domain.catalog.NomenclatureLevel;
-import com.intermarche.edge.service.campaign.CampaignFeedProjector;
+import com.intermarche.edge.domain.catalog.Price;
+import com.intermarche.edge.domain.catalog.Product;
+import com.intermarche.edge.domain.catalog.ProductFamily;
+import com.intermarche.edge.domain.catalog.ProductType;
+import com.intermarche.edge.domain.catalog.VatRate;
+import com.intermarche.edge.domain.people.Employee;
+import com.intermarche.edge.domain.setting.EchelonLevel;
+import com.intermarche.edge.domain.setting.EchelonSetting;
+import com.intermarche.edge.domain.store.Address;
+import com.intermarche.edge.domain.store.Country;
+import com.intermarche.edge.domain.store.Enseigne;
+import com.intermarche.edge.domain.store.Pdv;
+import com.intermarche.edge.domain.store.Store;
 import io.quarkus.arc.profile.IfBuildProfile;
 import io.quarkus.runtime.StartupEvent;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
+import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.jboss.logging.Logger;
+
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -30,10 +37,24 @@ import java.util.List;
 /**
  * Development/test data seeder.
  * <p>
- * Restricted to the dev and test build profiles: this bean wipes and reloads
- * the referential tables at startup, which must never run in production
- * (each reboot would purge the register's database). Production
+ * Restricted at BUILD time to the dev, test and demo profiles: this bean
+ * wipes and reloads the referential tables at startup, which must never run in
+ * production (each reboot would purge the node's database). Production
  * referentials are fed through the CSV imports.
+ * <p>
+ * The class is shared by the register and the store node, and each build keeps
+ * its own packaging rule. The register's {@code demo} build carries the seed
+ * (its demonstrator starts on the demonstration set); the store node's does
+ * not — its {@code application.properties} excludes this bean from a demo
+ * build ({@code %demo.quarkus.arc.exclude-types}), so a node is only ever
+ * seeded under dev and test, as before.
+ * <p>
+ * What the seed writes depends on the node's {@code pos.role}. A REGISTER
+ * (the default) seeds the referential only, and steps aside when it already
+ * holds one. A STORE or CENTRAL node also seeds a demonstration campaign and
+ * refreshes the engine feeds projected from the seed ({@link SeedFeedProjector},
+ * optional: a node with no implementation projects nothing); a CENTRAL node
+ * alone also seeds the echelon registry.
  * <p>
  * VALUATION-ENGINE COMPATIBILITY (phase 7): the catalog seeded here is the
  * MIRROR of the valuation engine's own seed (its ProductImporterClient /
@@ -52,8 +73,11 @@ import java.util.List;
  * purpose: they can never reach a basket.
  */
 @ApplicationScoped
-@IfBuildProfile(anyOf = {"dev", "test"})
+@IfBuildProfile(anyOf = {"dev", "test", "demo"})
 public class DataInitializer {
+
+    /** The class logger. */
+    private static final Logger LOGGER = Logger.getLogger(DataInitializer.class);
 
     /** Price window start shared with the engine's seed (12 Jan 2026). */
     private static final LocalDateTime PRICE_START = LocalDateTime.of(2026, 1, 12, 0, 0, 0);
@@ -82,26 +106,56 @@ public class DataInitializer {
      */
     private final java.util.Map<String, VatRate> seededVatRates = new java.util.HashMap<>();
 
-    /** Projects the seeded campaigns into the BUDGET_GROUPS engine feed. */
+    /**
+     * The engine feeds projected from the seeded rows (the store node's
+     * campaign BUDGET_GROUPS feed), refreshed once the seed is written on a
+     * store or central node. A register declares none.
+     */
     @Inject
-    CampaignFeedProjector campaignFeedProjector;
+    Instance<SeedFeedProjector> seedFeedProjectors;
 
     /**
      * The role of this node. Only a CENTRAL node holds the echelon registry
      * (country, enseigne, PDV, echelon settings); a store node receives it by
-     * pull and must never seed it. Defaults to {@code store}, this project's own
-     * default in {@code application.properties}.
+     * pull and must never seed it. Only a STORE or CENTRAL node seeds the
+     * campaigns; a register is seeded with the referential alone. Defaults to
+     * {@code register}, the register's own default; the store node sets
+     * {@code pos.role=store} in its {@code application.properties}.
      */
-    @ConfigProperty(name = "pos.role", defaultValue = "store")
+    @ConfigProperty(name = "pos.role", defaultValue = "register")
     String role;
 
     /**
-     * Wipes and reloads the referential tables at startup (dev/test only).
+     * Loads the demonstration referential at startup, into a node that has
+     * none.
+     * <p>
+     * The tables are wiped before being written, because a partial seed laid
+     * over a previous one duplicates everything it does not overwrite. That
+     * wipe is precisely why the seed steps aside on a populated register: on
+     * a database that survives a restart, running it again would delete the
+     * referential pulled from the store node and the sales of the day, and it
+     * would fail doing so, the articles being referenced by their families.
+     * <p>
+     * Under dev and test the schema is recreated empty at every start, so the
+     * seed runs every time there, as it always has. On a demonstrator whose
+     * database is kept, the empty state is produced by the DELIVERY, which
+     * removes the database file before restarting the register: reseeding is
+     * then a deployment act, no longer a consequence of a reboot.
+     * <p>
+     * On a store or central node the seed always runs (a node is only seeded
+     * under dev and test, on a fresh schema), and it also wipes and seeds the
+     * campaigns, refreshes the projected engine feeds and, on a central node,
+     * the echelon registry.
      *
      * @param ev the startup event
      */
     @Transactional
     void onStart(@Observes StartupEvent ev) {
+        boolean storeSide = storeSide();
+        if (!storeSide && Product.count() > 0) {
+            LOGGER.info("Référentiel déjà présent: seed de démonstration ignoré");
+            return;
+        }
         Employee.deleteAll();
         Price.deleteAll();
         Product.deleteAll();
@@ -110,7 +164,9 @@ public class DataInitializer {
         Nomenclature.deleteAll();
         CouponType.deleteAll();
         VatRate.deleteAll();
-        Campaign.deleteAll();
+        if (storeSide) {
+            Campaign.deleteAll();
+        }
 
         createStore();
         loadVatRates();
@@ -118,9 +174,23 @@ public class DataInitializer {
         loadProductsAndFamilies();
         loadCouponTypes();
         loadNomenclature();
-        loadCampaigns();
-        campaignFeedProjector.project();
-        loadEchelons();
+        if (storeSide) {
+            loadCampaigns();
+            for (SeedFeedProjector projector : seedFeedProjectors) {
+                projector.project();
+            }
+            loadEchelons();
+        }
+    }
+
+    /**
+     * Whether this node is a STORE or a CENTRAL node rather than a register —
+     * the nodes that seed the campaigns and never skip their seed.
+     *
+     * @return true on a store or central node, false on a register
+     */
+    boolean storeSide() {
+        return "store".equalsIgnoreCase(role) || "central".equalsIgnoreCase(role);
     }
 
     /**

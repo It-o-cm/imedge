@@ -6,38 +6,38 @@
 !}
 {#include admin-layout}
 
-{#title}Attributs article{/title}
+{#title}{inject:i18n.get('t.attributs-article')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Attributs article</h1>
-        <p class="page-sub">Attributs personnalisés déclarés, rattachés ensuite aux fiches articles.</p>
+        <h1>{inject:i18n.get('t.attributs-article')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.attributs-personnalises-declares-rattaches-ensui')}</p>
     </div>
     <div class="page-actions">
-        <a class="btn btn-ghost" href="/admin/articles">Retour aux articles</a>
+        <a class="btn btn-ghost" href="/admin/articles">{inject:i18n.get('t.retour-aux-articles')}</a>
     </div>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 <div class="card">
-    <h2 class="card-title">Nouvel attribut</h2>
+    <h2 class="card-title">{inject:i18n.get('t.nouvel-attribut')}</h2>
     <form method="post" action="/admin/article-attributes">
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="n-code">Code</label>
+                <label class="field-label" for="n-code">{inject:i18n.get('t.code')}</label>
                 <input class="input-control" id="n-code" type="text" name="code" maxlength="50" required>
             </div>
             <div class="field">
-                <label class="field-label" for="n-label">Libellé</label>
+                <label class="field-label" for="n-label">{inject:i18n.get('t.libelle')}</label>
                 <input class="input-control" id="n-label" type="text" name="label" maxlength="100" required>
             </div>
         </div>
         <div class="page-actions" style="margin-top: 6px;">
-            <button class="btn btn-primary" type="submit">Créer</button>
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.creer-2')}</button>
         </div>
     </form>
 </div>
@@ -45,15 +45,15 @@
 <div class="card">
     {#if definitions.isEmpty()}
     <div class="empty-state">
-        <p>Aucun attribut personnalisé déclaré.</p>
-        <p class="empty-hint">Créez un attribut pour le rendre saisissable sur les fiches articles.</p>
+        <p>{inject:i18n.get('t.aucun-attribut-personnalise-declare')}</p>
+        <p class="empty-hint">{inject:i18n.get('t.creez-un-attribut-pour-le-rendre-saisissable')}</p>
     </div>
     {#else}
     <table class="data-table">
         <thead>
             <tr>
-                <th>Attribut</th>
-                <th class="col-actions">Actions</th>
+                <th>{inject:i18n.get('t.attribut')}</th>
+                <th class="col-actions">{inject:i18n.get('t.actions')}</th>
             </tr>
         </thead>
         <tbody>
@@ -64,14 +64,14 @@
                         <input type="hidden" name="id" value="{def.id}">
                         <input class="input-control" type="text" name="code" value="{def.code}" maxlength="50">
                         <input class="input-control" type="text" name="label" value="{def.label}" maxlength="100">
-                        <button class="btn btn-small btn-ghost" type="submit">Enregistrer</button>
+                        <button class="btn btn-small btn-ghost" type="submit">{inject:i18n.get('t.enregistrer')}</button>
                     </form>
                 </td>
                 <td class="col-actions">
                     <form method="post" action="/admin/article-attributes/delete"
-                          onsubmit="return confirm('Supprimer cet attribut ?');">
+                          onsubmit="return confirm('{inject:i18n.js('t.supprimer-cet-attribut')}');">
                         <input type="hidden" name="id" value="{def.id}">
-                        <button class="btn btn-small btn-danger" type="submit">Supprimer</button>
+                        <button class="btn btn-small btn-danger" type="submit">{inject:i18n.get('t.supprimer')}</button>
                     </form>
                 </td>
             </tr>
@@ -82,4 +82,4 @@
 </div>
 {/body}
 
-{#footer}Un attribut déclaré ici devient saisissable sur chaque fiche article et voyage avec le tirage.{/footer}
+{#footer}{inject:i18n.get('t.un-attribut-declare-ici-devient-saisissable-sur')}{/footer}

@@ -2,7 +2,6 @@ package com.intermarche.edge.imports;
 
 import com.intermarche.edge.domain.catalog.EgalimRegime;
 import io.quarkus.hibernate.orm.panache.Panache;
-import io.smallrye.common.annotation.RunOnVirtualThread;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
@@ -46,13 +45,12 @@ import java.util.Set;
  * is retained verbatim and delivered to the valuation engines. It has to: the
  * engine is the only party that computes, the article feed carries the regime
  * CODE and not its number of percent, and without this feed the engine would
- * cap at figures compiled into its own code — a ceiling corrected on the
- * screen below would change nothing at all, which is two sources for one
- * number and the wrong one winning.
+ * cap at figures compiled into its own code — a ceiling corrected upstream
+ * would change nothing at all, which is two sources for one number and the
+ * wrong one winning.
  */
 // No @Path: the ONE door is POST /feeds/import/{CODE}, which delegates here.
 @ApplicationScoped
-@RunOnVirtualThread
 public class EgalimRegimeCsvResource extends ImporterCsvResource {
 
     private static final Logger LOGGER = Logger.getLogger(EgalimRegimeCsvResource.class);
@@ -95,10 +93,10 @@ public class EgalimRegimeCsvResource extends ImporterCsvResource {
      * <p>
      * The regimes ARE an engine feed. The engine alone computes the EGAlim
      * correction, and the article feed hands it a regime CODE, never a
-     * ceiling; the ceiling only exists here. An engine that never receives
-     * this file caps at the values compiled into its own enum, and a rate
-     * corrected on the node's EGAlim screen then changes nothing — the screen
-     * would administer a number nobody reads.
+     * ceiling; the ceiling only exists in this referential. An engine that
+     * never receives this file caps at the values compiled into its own enum,
+     * and a rate corrected on the EGAlim screen then changes nothing — the
+     * screen would administer a number nobody reads.
      *
      * @return the EGALIM_REGIMES feed code
      */

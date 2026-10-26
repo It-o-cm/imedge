@@ -5,99 +5,134 @@
 !}
 {#include admin-layout}
 
-{#title}Monnayeurs{/title}
+{#title}{inject:i18n.get('t.monnayeurs')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Monnayeurs</h1>
-        <p class="page-sub">Montant disponible tenu par le logiciel, sans interroger l'automate.</p>
+        <h1>{inject:i18n.get('t.monnayeurs')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.montant-disponible-tenu-par-le-logiciel-sans')}</p>
     </div>
     <div class="page-actions">
-        <a class="btn btn-ghost" href="/admin/coin-machines/export">Extraire (CSV)</a>
+        <a class="btn btn-ghost" href="/admin/coin-machines/export">{inject:i18n.get('t.extraire-csv')}</a>
     </div>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 <div class="card">
-    <h2 class="card-title">Déclarer un monnayeur</h2>
+    <h2 class="card-title">{inject:i18n.get('t.declarer-un-monnayeur')}</h2>
     <form method="post" action="/admin/coin-machines">
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="m-code">Code</label>
+                <label class="field-label" for="m-code">{inject:i18n.get('t.code')}</label>
                 <input class="input-control" id="m-code" type="text" name="code" maxlength="30" required>
             </div>
             <div class="field">
-                <label class="field-label" for="m-label">Libellé</label>
+                <label class="field-label" for="m-label">{inject:i18n.get('t.libelle')}</label>
                 <input class="input-control" id="m-label" type="text" name="label" maxlength="120">
             </div>
             <div class="field">
-                <label class="field-label" for="m-terminal">Caisse</label>
+                <label class="field-label" for="m-terminal">{inject:i18n.get('t.caisse')}</label>
                 <input class="input-control" id="m-terminal" type="text" name="terminalId" maxlength="20">
             </div>
             <div class="field">
-                <label class="field-label" for="m-active">En service</label>
+                <label class="field-label" for="m-active">{inject:i18n.get('t.en-service')}</label>
                 <input id="m-active" type="checkbox" name="active" checked>
             </div>
         </div>
         <div class="page-actions" style="margin-top: 6px;">
-            <button class="btn btn-primary" type="submit">Enregistrer</button>
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer')}</button>
         </div>
     </form>
 </div>
 
 <div class="card">
-    <h2 class="card-title">Parc</h2>
-    <p class="card-sub">Total tenu par le logiciel : <strong>{total} €</strong></p>
+    <h2 class="card-title">{inject:i18n.get('t.parc')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.total-tenu-par-le-logiciel')} <strong>{inject:i18n.money(total)} €</strong></p>
     {#if machines.isEmpty()}
     <div class="empty-state">
-        <p>Aucun monnayeur déclaré.</p>
+        <p>{inject:i18n.get('t.aucun-monnayeur-declare')}</p>
     </div>
     {#else}
+    <div class="table-scroll">
     <table class="data-table">
         <thead>
-        <tr><th>Code</th><th>Libellé</th><th>Caisse</th><th>Tenu €</th><th>Compté €</th><th>Écart €</th><th>État</th><th></th></tr>
+        <tr><th>{inject:i18n.get('t.code')}</th><th>{inject:i18n.get('t.libelle')}</th><th>{inject:i18n.get('t.caisse')}</th><th>{inject:i18n.get('t.tenu')}</th><th>{inject:i18n.get('t.compte-2')}</th><th>{inject:i18n.get('t.ecart')}</th><th>{inject:i18n.get('t.etat')}</th><th></th></tr>
         </thead>
         <tbody>
         {#for machine in machines}
         <tr>
-            <td>{machine.code}</td>
+            <td class="cell-keep">{machine.code}</td>
             <td>{machine.label ?: '—'}</td>
-            <td>{machine.terminalId ?: '—'}</td>
-            <td>{machine.declaredAmountFormatted}</td>
-            <td>{machine.countedAmount ?: '—'}</td>
-            <td>{machine.varianceFormatted}</td>
+            <td class="cell-keep">{machine.terminalId ?: '—'}</td>
+            <td class="cell-keep">{inject:i18n.money(machine.declaredAmountFormatted)}</td>
+            <td class="cell-keep">{#if machine.countedAmount != null}{inject:i18n.money(machine.countedAmount)}{#else}—{/if}</td>
+            <td class="cell-keep">{inject:i18n.money(machine.varianceFormatted)}</td>
             <td>
-                {#if !machine.active}<span class="badge badge-off">Hors service</span>
-                {#else if machine.reconciled}<span class="badge badge-ok">Conforme</span>
-                {#else}<span class="badge badge-off">À contrôler</span>{/if}
+                {#if !machine.active}<span class="badge badge-off">{inject:i18n.get('t.hors-service')}</span>
+                {#else if machine.reconciled}<span class="badge badge-ok">{inject:i18n.get('t.conforme')}</span>
+                {#else}<span class="badge badge-off">{inject:i18n.get('t.a-controler')}</span>{/if}
             </td>
             <td>
                 <form method="post" action="/admin/coin-machines/count">
                     <input type="hidden" name="id" value="{machine.id}">
-                    <input class="input-control" type="text" inputmode="decimal" name="countedAmount" placeholder="Compté">
-                    <button class="btn btn-small btn-primary" type="submit">Compter</button>
+                    <input class="input-control" type="text" inputmode="decimal" name="countedAmount" placeholder="{inject:i18n.get('t.compte-3')}">
+                    <button class="btn btn-small btn-primary" type="submit">{inject:i18n.get('t.compter')}</button>
                 </form>
                 {#if machine.countedAmount}
                 <form method="post" action="/admin/coin-machines/align">
                     <input type="hidden" name="id" value="{machine.id}">
-                    <button class="btn btn-small btn-ghost" type="submit">Réaligner</button>
+                    <button class="btn btn-small btn-ghost" type="submit">{inject:i18n.get('t.realigner')}</button>
                 </form>
                 {/if}
                 {! BO-05-02-16 : un chargement, ou un retrait avec un signe moins. !}
                 <form method="post" action="/admin/coin-machines/load">
                     <input type="hidden" name="code" value="{machine.code}">
-                    <input class="input-control" type="text" inputmode="decimal" name="amount" placeholder="Chargement">
-                    <button class="btn btn-small btn-ghost" type="submit">Charger</button>
+                    <input class="input-control" type="text" inputmode="decimal" name="amount" placeholder="{inject:i18n.get('t.chargement')}">
+                    <button class="btn btn-small btn-ghost" type="submit">{inject:i18n.get('t.charger')}</button>
                 </form>
             </td>
         </tr>
         {/for}
         </tbody>
     </table>
+    </div>
+    {/if}
+</div>
+
+{! BO-05-02-16 : les flux qui ont fait bouger le montant tenu, du plus récent
+ ! au plus ancien — ventes, retours, mouvements de caisse en espèces,
+ ! chargements, comptages et réalignements. !}
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.u-flux-des-monnayeurs')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.u-flux-des-monnayeurs-aide')}</p>
+    {#if flows.isEmpty()}
+    <div class="empty-state">
+        <p>{inject:i18n.get('t.u-aucun-flux-monnayeur')}</p>
+    </div>
+    {#else}
+    <div class="table-scroll">
+    <table class="data-table">
+        <thead>
+        <tr><th>{inject:i18n.get('t.date')}</th><th>{inject:i18n.get('t.code')}</th><th>{inject:i18n.get('t.nature')}</th><th>{inject:i18n.get('t.reference')}</th><th>{inject:i18n.get('t.montant')}</th><th>{inject:i18n.get('t.u-montant-tenu-apres')}</th></tr>
+        </thead>
+        <tbody>
+        {#for flow in flows}
+        <tr>
+            <td class="col-muted cell-keep">{flow.recordedAt.format('dd/MM/yyyy HH:mm')}</td>
+            <td class="cell-keep">{flow.machineCode}</td>
+            <td>{inject:i18n.code('t.u-flux-', flow.kind)}</td>
+            <td class="col-muted cell-keep">{flow.reference ?: '—'}</td>
+            <td class="sup-amount">{inject:i18n.money(flow.amountFormatted)}</td>
+            <td class="sup-amount">{inject:i18n.money(flow.balanceAfterFormatted)}</td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+    </div>
     {/if}
 </div>
 {/body}

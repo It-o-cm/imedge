@@ -53,6 +53,21 @@ class JournalServiceTest {
     private JournalService serviceWith(EntityManager entityManager) {
         JournalService service = new JournalService();
         service.entityManager = entityManager;
+        service.posSettingsService = mock(com.intermarche.edge.service.PosSettingsService.class);
+        if (org.mockito.Mockito.mockingDetails(entityManager).isMock()) {
+            TypedQuery<Object[]> vat = selfQuery();
+            when(entityManager.createQuery(org.mockito.ArgumentMatchers.startsWith("select t.id, l.vatRate"),
+                    eq(Object[].class))).thenReturn(vat);
+            when(vat.getResultList()).thenReturn(List.of());
+            TypedQuery<TechnicalEvent> events = selfQuery();
+            when(entityManager.createQuery(org.mockito.ArgumentMatchers.startsWith(
+                    "select e from TechnicalEvent e where e.ticketNumber"), eq(TechnicalEvent.class))).thenReturn(events);
+            when(events.getResultList()).thenReturn(List.of());
+            TypedQuery<com.intermarche.edge.domain.sale.Invoice> documents = selfQuery();
+            when(entityManager.createQuery(org.mockito.ArgumentMatchers.startsWith("select d from Invoice d"),
+                    eq(com.intermarche.edge.domain.sale.Invoice.class))).thenReturn(documents);
+            when(documents.getResultList()).thenReturn(List.of());
+        }
         return service;
     }
 
@@ -723,17 +738,17 @@ class JournalServiceTest {
         EntityManager em = mock(EntityManager.class);
         TypedQuery<Object[]> query = selfQuery();
         Object[] normal = {5L, "C04", "C04-00000123", "12341234",
-                LocalDateTime.of(2026, 8, 31, 14, 30), new BigDecimal("12.50"), 3};
+                LocalDateTime.of(2026, 8, 31, 14, 30), new BigDecimal("12.50"), 3, false};
         Object[] nullAmount = {6L, "C04", "C04-00000124", "12341234",
-                LocalDateTime.of(2026, 8, 31, 15, 0), null, 0};
+                LocalDateTime.of(2026, 8, 31, 15, 0), null, 0, true};
         when(em.createQuery(anyString(), eq(Object[].class))).thenReturn(query);
         when(query.getResultList()).thenReturn(List.<Object[]>of(normal, nullAmount));
         stubCount(em, 2L);
         JournalService service = serviceWith(em);
         ArgumentCaptor<String> jpql = ArgumentCaptor.forClass(String.class);
         JournalPage<JournalRow> page = service.search(new JournalCriteria());
-        org.mockito.Mockito.verify(em).createQuery(jpql.capture(), eq(Object[].class));
-        assertTrue(jpql.getValue().contains("order by t.creationDate asc, t.id asc"));
+        org.mockito.Mockito.verify(em, org.mockito.Mockito.times(2)).createQuery(jpql.capture(), eq(Object[].class));
+        assertTrue(jpql.getAllValues().get(0).contains("order by t.creationDate asc, t.id asc"));
         org.mockito.Mockito.verify(query).setFirstResult(0);
         org.mockito.Mockito.verify(query).setMaxResults(JournalService.PAGE_SIZE);
         assertEquals(2, page.rows.size());
@@ -745,6 +760,9 @@ class JournalServiceTest {
         assertEquals("12,50", page.rows.get(0).amount);
         assertEquals("N", page.rows.get(0).trainingMode);
         assertEquals("0,00", page.rows.get(1).amount);
+        assertEquals("N", page.rows.get(0).autonomous);
+        assertEquals("O", page.rows.get(1).autonomous);
+        assertEquals("/admin/journal/ticket/5", page.rows.get(0).detailUrl);
     }
 
     /**
@@ -994,13 +1012,13 @@ class JournalServiceTest {
         EntityManager em = mock(EntityManager.class);
         TypedQuery<Object[]> query = selfQuery();
         Object[] row = {5L, "C04", "C04-00000123", "12341234",
-                LocalDateTime.of(2026, 8, 31, 14, 30), new BigDecimal("12.50"), 3};
+                LocalDateTime.of(2026, 8, 31, 14, 30), new BigDecimal("12.50"), 3, false};
         when(em.createQuery(anyString(), eq(Object[].class))).thenReturn(query);
         when(query.getResultList()).thenReturn(List.<Object[]>of(row));
         JournalService service = serviceWith(em);
-        String csv = service.exportCsv(new JournalCriteria());
-        assertEquals("TPV;Transaction;Caissiere;Date;Heure;Montant;Articles;Ecole;Autonome\n"
-                + "C04;C04-00000123;12341234;31/08/2026;14:30;12,50;3;N;N\n", csv);
+        String csv = service.exportCsv(new JournalCriteria(), java.util.function.UnaryOperator.identity());
+        assertEquals("\uFEFFTPV;Transaction;Caissière;Date;Heure;Montant;Articles;École;Autonome;TVA\n"
+                + "C04;C04-00000123;12341234;31/08/2026;14:30;12,50;3;N;N;\n", csv);
         org.mockito.Mockito.verify(query).setMaxResults(JournalService.EXPORT_CHUNK);
         org.mockito.Mockito.verify(query).setFirstResult(0);
     }
@@ -1015,17 +1033,17 @@ class JournalServiceTest {
         EntityManager em = mock(EntityManager.class);
         TypedQuery<Object[]> query = selfQuery();
         Object[] first = {5L, "C04", "C04-00000123", "12341234",
-                LocalDateTime.of(2026, 8, 31, 14, 30), new BigDecimal("12.50"), 3};
+                LocalDateTime.of(2026, 8, 31, 14, 30), new BigDecimal("12.50"), 3, false};
         Object[] second = {6L, "C05", "C05-00000456", "12341234",
-                LocalDateTime.of(2026, 8, 31, 15, 45), new BigDecimal("7.00"), 1};
+                LocalDateTime.of(2026, 8, 31, 15, 45), new BigDecimal("7.00"), 1, false};
         when(em.createQuery(anyString(), eq(Object[].class))).thenReturn(query);
         when(query.getResultList()).thenReturn(
                 List.<Object[]>of(first), List.<Object[]>of(second), List.<Object[]>of());
         JournalService service = serviceWith(em);
-        String csv = service.exportCsv(new JournalCriteria(), 1);
-        assertEquals("TPV;Transaction;Caissiere;Date;Heure;Montant;Articles;Ecole;Autonome\n"
-                + "C04;C04-00000123;12341234;31/08/2026;14:30;12,50;3;N;N\n"
-                + "C05;C05-00000456;12341234;31/08/2026;15:45;7,00;1;N;N\n", csv);
+        String csv = service.exportCsv(new JournalCriteria(), 1, java.util.function.UnaryOperator.identity());
+        assertEquals("\uFEFFTPV;Transaction;Caissière;Date;Heure;Montant;Articles;École;Autonome;TVA\n"
+                + "C04;C04-00000123;12341234;31/08/2026;14:30;12,50;3;N;N;\n"
+                + "C05;C05-00000456;12341234;31/08/2026;15:45;7,00;1;N;N;\n", csv);
         org.mockito.Mockito.verify(query).setFirstResult(0);
         org.mockito.Mockito.verify(query).setFirstResult(1);
         org.mockito.Mockito.verify(query).setFirstResult(2);
@@ -1042,8 +1060,29 @@ class JournalServiceTest {
         when(em.createQuery(anyString(), eq(Object[].class))).thenReturn(query);
         when(query.getResultList()).thenReturn(List.of());
         JournalService service = serviceWith(em);
-        assertEquals("TPV;Transaction;Caissiere;Date;Heure;Montant;Articles;Ecole;Autonome\n",
-                service.exportCsv(new JournalCriteria()));
+        assertEquals("\uFEFFTPV;Transaction;Caissière;Date;Heure;Montant;Articles;École;Autonome;TVA\n",
+                service.exportCsv(new JournalCriteria(), java.util.function.UnaryOperator.identity()));
+    }
+
+    /**
+     * {@code exportCsv} writes its headings in the page's language — here the
+     * Dutch bundle — the values staying as the screen writes them.
+     */
+    @Test
+    void exportCsvHeadingsFollowThePageLanguage() {
+        EntityManager em = mock(EntityManager.class);
+        TypedQuery<Object[]> query = selfQuery();
+        when(em.createQuery(anyString(), eq(Object[].class))).thenReturn(query);
+        when(query.getResultList()).thenReturn(List.of());
+        JournalService service = serviceWith(em);
+        com.intermarche.edge.ui.admin.BackOfficeMessages dutch = com.intermarche.edge.ui.admin.BackOfficeMessages.in("nl");
+        String csv = service.exportCsv(new JournalCriteria(), dutch::text);
+        assertEquals("\uFEFFTPV;" + dutch.text("Transaction") + ";" + dutch.text("Caissière") + ";"
+                + dutch.text("Date") + ";" + dutch.text("Heure") + ";" + dutch.text("Montant") + ";"
+                + dutch.text("Articles") + ";" + dutch.text("École") + ";" + dutch.text("Autonome") + ";"
+                + dutch.text("TVA") + "\n", csv);
+        assertFalse(csv.contains("Caissière"));
+        assertFalse(csv.contains("Heure"));
     }
 
     // --------------------------------------------------
@@ -1125,7 +1164,33 @@ class JournalServiceTest {
         assertEquals(1, detail.payments.size());
         assertEquals("CARD", detail.payments.get(0).method);
         assertEquals("3,00", detail.payments.get(0).amount);
+        assertNull(detail.payments.get(0).guaranteeAuthorization);
+        assertNull(detail.payments.get(0).guaranteeProvider);
         assertTrue(detail.fidelityGroups.isEmpty());
+    }
+
+    /**
+     * BO-03-02-24: the detail of a ticket paid by a guaranteed cheque shows the
+     * authorization number and the provider synced from the register; a cheque
+     * no service guaranteed shows none.
+     */
+    @Test
+    void buildDetailShowsTheChequeGuarantee() {
+        EntityManager em = mock(EntityManager.class);
+        Ticket ticket = ticketWithFidelity();
+        com.intermarche.edge.domain.payment.ChequePayment guaranteed =
+                new com.intermarche.edge.domain.payment.ChequePayment(new BigDecimal("2.00"));
+        guaranteed.guaranteeAuthorization = "GAR000001";
+        guaranteed.guaranteeProvider = "SIMULATEUR";
+        ticket.payments.add(guaranteed);
+        ticket.payments.add(new com.intermarche.edge.domain.payment.ChequePayment(new BigDecimal("1.00")));
+        when(em.find(Ticket.class, 1L)).thenReturn(ticket);
+        JournalTicketDetail detail = serviceWith(em).buildDetail(1L);
+        assertEquals("CHEQUE", detail.payments.get(0).method);
+        assertEquals("GAR000001", detail.payments.get(0).guaranteeAuthorization);
+        assertEquals("SIMULATEUR", detail.payments.get(0).guaranteeProvider);
+        assertNull(detail.payments.get(1).guaranteeAuthorization);
+        assertNull(detail.payments.get(1).guaranteeProvider);
     }
 
     /**
@@ -1411,5 +1476,513 @@ class JournalServiceTest {
         assertEquals(new BigDecimal("50.00"), query.parameters().get("movementAmountMin"));
         assertFalse(service.buildMovementQuery(new JournalCriteria()).whereClause()
                 .contains("m.amount"));
+    }
+
+    /** LC-07-04: a cash settlement has no card entry mode but keeps its payment nature and amount in the journal. */
+    @Test
+    void cashPaymentHasNoCardEntryMode() {
+        var ticket = new Ticket();
+        ticket.ticketNumber = "T1";
+        ticket.status = Ticket.TicketStatus.CLOSED;
+        ticket.creationDate = java.time.LocalDateTime.of(2026, 10, 20, 12, 0);
+        ticket.payments.add(new com.intermarche.edge.domain.payment.CashPayment(new BigDecimal("3.00"), new BigDecimal("5.00")));
+        var em = mock(EntityManager.class);
+        when(em.find(Ticket.class, 1L)).thenReturn(ticket);
+        var detail = serviceWith(em).buildDetail(1L);
+        assertEquals(1, detail.payments.size());
+        assertEquals("CASH", detail.payments.getFirst().method);
+        assertEquals("3,00", detail.payments.getFirst().amount);
+        assertNull(detail.payments.getFirst().entryMode);
+    }
+
+
+    // --------------------------------------------------
+    // Lot 21, group S
+    // --------------------------------------------------
+
+    /**
+     * Builds the ticket where clause of a criteria.
+     *
+     * @param criteria the criteria
+     * @return the query
+     */
+    private JournalQuery ticketQuery(JournalCriteria criteria) {
+        return serviceWith(mock(EntityManager.class)).buildTicketQuery(criteria);
+    }
+
+    /**
+     * Every ticket-sourced event adds its clause, with and without its amount
+     * range (BO-04-01-14).
+     */
+    @Test
+    void everyEventAddsItsClause() {
+        for (JournalEvent event : JournalEvent.values()) {
+            JournalCriteria bare = new JournalCriteria();
+            bare.event = event;
+            JournalQuery plain = ticketQuery(bare);
+            JournalCriteria ranged = new JournalCriteria();
+            ranged.event = event;
+            ranged.eventAmountMin = BigDecimal.ONE;
+            ranged.eventAmountMax = BigDecimal.TEN;
+            JournalQuery bounded = ticketQuery(ranged);
+            boolean ownSource = event == JournalEvent.TRAINING || event == JournalEvent.NO_SALE;
+            assertEquals(ownSource, plain.whereClause().equals(" where t.status in :statuses"), event.name());
+            boolean expectBounds = !ownSource && event.isAmountRange();
+            assertEquals(expectBounds, bounded.whereClause().contains(">= :eventAmountMin"), event.name());
+            assertEquals(expectBounds, bounded.parameters().containsKey("eventAmountMax"), event.name());
+        }
+        JournalCriteria cancelled = new JournalCriteria();
+        cancelled.event = JournalEvent.CANCELLED;
+        assertEquals(Ticket.TicketStatus.CANCELLED, ticketQuery(cancelled).parameters().get("eventCancelled"));
+        JournalCriteria forced = new JournalCriteria();
+        forced.event = JournalEvent.FORCED_PRICE;
+        assertEquals(com.intermarche.edge.ui.PriceModType.FORCE_PRICE, ticketQuery(forced).parameters().get("eventForced"));
+        JournalCriteria discount = new JournalCriteria();
+        discount.event = JournalEvent.DISCOUNT;
+        assertTrue(ticketQuery(discount).parameters().containsKey("eventReductions"));
+        JournalCriteria voucher = new JournalCriteria();
+        voucher.event = JournalEvent.STORE_VOUCHER;
+        assertEquals(com.intermarche.edge.domain.payment.VoucherPayment.class,
+                ticketQuery(voucher).parameters().get("eventPaymentType"));
+        JournalCriteria coupon = new JournalCriteria();
+        coupon.event = JournalEvent.VENDOR_COUPON;
+        assertEquals(com.intermarche.edge.domain.payment.SogecPayment.class,
+                ticketQuery(coupon).parameters().get("eventPaymentType"));
+        JournalCriteria offline = new JournalCriteria();
+        offline.event = JournalEvent.OFFLINE;
+        offline.eventAmountMin = BigDecimal.ONE;
+        assertEquals(" where t.status in :statuses and t.offline = true", ticketQuery(offline).whereClause());
+    }
+
+    /**
+     * One bound of the event amount alone is applied alone.
+     */
+    @Test
+    void eventAmountBoundsApplyAlone() {
+        JournalCriteria low = new JournalCriteria();
+        low.event = JournalEvent.FORCED_PRICE;
+        low.eventAmountMin = BigDecimal.ONE;
+        JournalQuery lowQuery = ticketQuery(low);
+        assertTrue(lowQuery.whereClause().contains("l.totalPrice >= :eventAmountMin"));
+        assertFalse(lowQuery.whereClause().contains(":eventAmountMax"));
+        JournalCriteria high = new JournalCriteria();
+        high.event = JournalEvent.FORCED_PRICE;
+        high.eventAmountMax = BigDecimal.TEN;
+        JournalQuery highQuery = ticketQuery(high);
+        assertTrue(highQuery.whereClause().contains("l.totalPrice <= :eventAmountMax"));
+        assertFalse(highQuery.parameters().containsKey("eventAmountMin"));
+    }
+
+    /**
+     * The settlement cancellation is searched by flag, amount bounds or method,
+     * each alone (BO-04-01-19).
+     */
+    @Test
+    void paymentCancellationCriteria() {
+        JournalCriteria flag = new JournalCriteria();
+        flag.flags.add(JournalCriteria.Flag.PAYMENT_CANCELLED);
+        assertTrue(ticketQuery(flag).whereClause().contains("e.eventType = :paymentCancelledType"));
+        JournalCriteria low = new JournalCriteria();
+        low.paymentCancelMin = BigDecimal.ONE;
+        assertTrue(ticketQuery(low).whereClause().contains("e.amount >= :paymentCancelMin"));
+        JournalCriteria high = new JournalCriteria();
+        high.paymentCancelMax = BigDecimal.TEN;
+        assertTrue(ticketQuery(high).whereClause().contains("e.amount <= :paymentCancelMax"));
+        JournalCriteria method = new JournalCriteria();
+        method.paymentCancelMethod = "CHEQUE";
+        JournalQuery query = ticketQuery(method);
+        assertTrue(query.whereClause().contains("e.code = :paymentCancelMethod"));
+        assertEquals(TechnicalEvent.EventType.PAYMENT_CANCELLED, query.parameters().get("paymentCancelledType"));
+        assertFalse(ticketQuery(new JournalCriteria()).whereClause().contains("paymentCancelledType"));
+    }
+
+    /**
+     * The unknown codes are searched by range bounds, each alone (BO-04-01-34);
+     * the flag also finds a code scanned that rang nothing.
+     */
+    @Test
+    void unknownCodeCriteria() {
+        JournalCriteria low = new JournalCriteria();
+        low.unknownCodeMin = "200";
+        assertTrue(ticketQuery(low).whereClause().contains("u.code >= :unknownCodeMin"));
+        JournalCriteria high = new JournalCriteria();
+        high.unknownCodeMax = "300";
+        JournalQuery query = ticketQuery(high);
+        assertTrue(query.whereClause().contains("u.code <= :unknownCodeMax"));
+        assertEquals(TechnicalEvent.EventType.UNKNOWN_ARTICLE_SCANNED, query.parameters().get("unknownRangeType"));
+        JournalCriteria flag = new JournalCriteria();
+        flag.flags.add(JournalCriteria.Flag.UNKNOWN_ITEM);
+        assertEquals(TechnicalEvent.EventType.UNKNOWN_ARTICLE_SCANNED, ticketQuery(flag).parameters().get("unknownType"));
+    }
+
+    /**
+     * The self-scanning flags and the secondary monetics server (BO-04-01-41/42/43/48).
+     */
+    @Test
+    void selfScanningAndSecondaryServerFlags() {
+        JournalCriteria criteria = new JournalCriteria();
+        criteria.flags.add(JournalCriteria.Flag.SELF_SCAN);
+        criteria.flags.add(JournalCriteria.Flag.SELF_SCAN_CONTROLLED);
+        criteria.flags.add(JournalCriteria.Flag.SELF_SCAN_VERIFIED);
+        criteria.flags.add(JournalCriteria.Flag.SECONDARY_SERVER);
+        JournalService service = serviceWith(mock(EntityManager.class));
+        when(service.posSettingsService.secondaryMoneticServers()).thenReturn(List.of("2"));
+        JournalQuery query = service.buildTicketQuery(criteria);
+        assertTrue(query.whereClause().contains("t.selfScanning = true"));
+        assertTrue(query.whereClause().contains("t.selfScanControlled = true"));
+        assertTrue(query.whereClause().contains("t.selfScanVerified = true"));
+        assertTrue(query.whereClause().contains("p.moneticServer in :secondaryServers"));
+        assertEquals(List.of("2"), query.parameters().get("secondaryServers"));
+        JournalService none = serviceWith(mock(EntityManager.class));
+        when(none.posSettingsService.secondaryMoneticServers()).thenReturn(List.of());
+        JournalCriteria secondary = new JournalCriteria();
+        secondary.flags.add(JournalCriteria.Flag.SECONDARY_SERVER);
+        assertTrue(none.buildTicketQuery(secondary).whereClause().endsWith("and 1 = 0"));
+    }
+
+    /**
+     * The VAT ventilation of the listed tickets, several rates joined
+     * (BO-04-01-55).
+     */
+    @Test
+    void searchWritesTheVatOfEachTicket() {
+        EntityManager em = mock(EntityManager.class);
+        TypedQuery<Object[]> query = selfQuery();
+        Object[] row = {5L, "C04", "T5", null, LocalDateTime.of(2026, 8, 31, 14, 30), new BigDecimal("12.50"), 3, true};
+        when(em.createQuery(anyString(), eq(Object[].class))).thenReturn(query);
+        when(query.getResultList()).thenReturn(List.<Object[]>of(row));
+        stubCount(em, 1L);
+        JournalService service = serviceWith(em);
+        TypedQuery<Object[]> vat = selfQuery();
+        when(em.createQuery(org.mockito.ArgumentMatchers.startsWith("select t.id, l.vatRate"), eq(Object[].class)))
+                .thenReturn(vat);
+        when(vat.getResultList()).thenReturn(List.<Object[]>of(
+                new Object[]{5L, new BigDecimal("0.0550"), new BigDecimal("5.00")},
+                new Object[]{5L, new BigDecimal("0.2000"), new BigDecimal("6.00")}));
+        JournalRow mapped = service.search(new JournalCriteria()).rows.get(0);
+        assertEquals("5,5 % HT 4,74 TVA 0,26 | 20 % HT 5,00 TVA 1,00", mapped.vat);
+        assertEquals("O", mapped.autonomous);
+        assertEquals("", mapped.cashier);
+    }
+
+    /**
+     * The rate keyed in the form is a percent, the lines carry a fraction; a
+     * keyed fraction is kept (BO-04-01-55).
+     */
+    @Test
+    void vatFractionReadsTheKeyedPercent() {
+        assertEquals(new BigDecimal("0.20"), JournalService.vatFraction(new BigDecimal("20")));
+        assertEquals(new BigDecimal("0.055"), JournalService.vatFraction(new BigDecimal("5.5")));
+        assertEquals(new BigDecimal("0.2"), JournalService.vatFraction(new BigDecimal("0.2")));
+        assertEquals(BigDecimal.ONE, JournalService.vatFraction(BigDecimal.ONE));
+    }
+
+    /**
+     * A rate or an amount the line does not carry reads as zero.
+     */
+    @Test
+    void vatRowReadsNullsAsZero() {
+        JournalService.VatRow row = JournalService.vatRow(null, null);
+        assertEquals("0", row.rate());
+        assertEquals("0,00", row.base());
+        assertEquals("0,00", row.tax());
+        assertEquals("0,00", row.total());
+    }
+
+    /**
+     * The training sales are listed from their own table, « Mode école » = O,
+     * by register and period (BO-04-01-14/50); they export the same way.
+     */
+    @Test
+    void trainingSalesAreListedAndExported() {
+        EntityManager em = mock(EntityManager.class);
+        TypedQuery<com.intermarche.edge.domain.sale.TrainingTicket> query = selfQuery();
+        com.intermarche.edge.domain.sale.TrainingTicket dated = new com.intermarche.edge.domain.sale.TrainingTicket();
+        dated.id = 3L;
+        dated.terminalId = "C04";
+        dated.cashierLogin = "jdupont";
+        dated.issuedAt = LocalDateTime.of(2026, 10, 25, 9, 15);
+        dated.itemCount = 2;
+        dated.totalIncludingTax = new BigDecimal("4");
+        com.intermarche.edge.domain.sale.TrainingTicket undated = new com.intermarche.edge.domain.sale.TrainingTicket();
+        undated.id = 4L;
+        com.intermarche.edge.domain.sale.TrainingTicket badgeless = new com.intermarche.edge.domain.sale.TrainingTicket();
+        badgeless.id = 5L;
+        badgeless.cashierLogin = "stagiaire";
+        com.intermarche.edge.domain.sale.TrainingTicket unknown = new com.intermarche.edge.domain.sale.TrainingTicket();
+        unknown.id = 6L;
+        unknown.cashierLogin = "parti";
+        when(em.createQuery(anyString(), eq(com.intermarche.edge.domain.sale.TrainingTicket.class))).thenReturn(query);
+        when(query.getResultList()).thenReturn(List.of(dated, undated, badgeless, unknown));
+        stubCount(em, 4L);
+        JournalService service = serviceWith(em);
+        TypedQuery<Object[]> holders = selfQuery();
+        when(holders.getResultList()).thenReturn(List.<Object[]>of(
+                new Object[]{"jdupont", "12341234"}, new Object[]{"stagiaire", null}));
+        when(em.createQuery(org.mockito.ArgumentMatchers.startsWith("select e.loginName, e.badgeId"), eq(Object[].class)))
+                .thenReturn(holders);
+        JournalCriteria criteria = new JournalCriteria();
+        criteria.event = JournalEvent.TRAINING;
+        criteria.terminalMin = "C01";
+        criteria.terminalMax = "C09";
+        criteria.dateFrom = LocalDateTime.of(2026, 10, 1, 0, 0);
+        criteria.dateTo = LocalDateTime.of(2026, 10, 31, 0, 0);
+        criteria.cashierMin = "1";
+        criteria.cashierMax = "2";
+        criteria.amountMin = BigDecimal.ONE;
+        criteria.amountMax = BigDecimal.TEN;
+        JournalPage<JournalRow> page = service.search(criteria);
+        assertEquals("12341234", page.rows.get(0).cashier);
+        assertEquals("stagiaire", page.rows.get(2).cashier);
+        assertEquals("parti", page.rows.get(3).cashier);
+        assertEquals("O", page.rows.get(0).trainingMode);
+        assertEquals("25/10/2026", page.rows.get(0).date);
+        assertEquals("09:15", page.rows.get(0).time);
+        assertEquals("4,00", page.rows.get(0).amount);
+        assertEquals("/admin/journal/training/3", page.rows.get(0).detailUrl);
+        assertEquals("", page.rows.get(1).date);
+        assertEquals("", page.rows.get(1).time);
+        assertEquals("", page.rows.get(1).cashier);
+        ArgumentCaptor<String> jpql = ArgumentCaptor.forClass(String.class);
+        org.mockito.Mockito.verify(em).createQuery(jpql.capture(), eq(Long.class));
+        assertTrue(jpql.getValue().contains("x.terminalId >= :terminalMin and x.terminalId <= :terminalMax"
+                + " and x.issuedAt >= :dateFrom and x.issuedAt <= :dateTo"
+                + " and x.cashierLogin in (select e.loginName from Employee e where e.badgeId >= :cashierMin)"
+                + " and x.cashierLogin in (select e.loginName from Employee e where e.badgeId <= :cashierMax)"
+                + " and x.totalIncludingTax >= :amountMin and x.totalIncludingTax <= :amountMax"));
+        when(query.getResultList()).thenReturn(List.of(dated), List.of());
+        assertTrue(service.exportCsv(criteria, 1, java.util.function.UnaryOperator.identity()).contains("C04;;12341234;25/10/2026;09:15;4,00;2;O;N;\n"));
+        JournalCriteria unbounded = new JournalCriteria();
+        unbounded.event = JournalEvent.TRAINING;
+        when(query.getResultList()).thenReturn(List.of());
+        assertTrue(service.search(unbounded).rows.isEmpty());
+    }
+
+    /**
+     * The drawers opened outside a sale are listed from the journal by their
+     * range criteria (BO-04-01-14 « pas de vente »); they export the same way.
+     */
+    @Test
+    void drawersOpenedOutsideASaleAreListedAndExported() {
+        EntityManager em = mock(EntityManager.class);
+        TypedQuery<TechnicalEvent> query = selfQuery();
+        TechnicalEvent opened = new TechnicalEvent();
+        opened.id = 9L;
+        opened.terminalId = "C04";
+        opened.operatorBadgeId = "1";
+        opened.eventType = TechnicalEvent.EventType.DRAWER_FORCED_OPEN;
+        opened.eventDate = LocalDateTime.of(2026, 10, 25, 11, 0);
+        TechnicalEvent numbered = new TechnicalEvent();
+        numbered.id = 10L;
+        numbered.terminalId = "C04";
+        numbered.eventType = TechnicalEvent.EventType.DRAWER_FORCED_OPEN;
+        numbered.eventDate = LocalDateTime.of(2026, 10, 25, 11, 5);
+        numbered.ticketNumber = "T9";
+        numbered.amount = new BigDecimal("2");
+        when(em.createQuery(anyString(), eq(TechnicalEvent.class))).thenReturn(query);
+        when(query.getResultList()).thenReturn(List.of(opened, numbered));
+        stubCount(em, 2L);
+        JournalService service = serviceWith(em);
+        JournalCriteria criteria = new JournalCriteria();
+        criteria.event = JournalEvent.NO_SALE;
+        criteria.cashierMin = "1";
+        criteria.eventAmountMin = BigDecimal.ONE;
+        JournalPage<JournalRow> page = service.search(criteria);
+        assertEquals("", page.rows.get(0).transaction);
+        assertEquals("0,00", page.rows.get(0).amount);
+        assertEquals("T9", page.rows.get(1).transaction);
+        assertEquals("1", page.rows.get(0).cashier);
+        assertEquals("", page.rows.get(1).cashier);
+        assertEquals("2,00", page.rows.get(1).amount);
+        assertNull(page.rows.get(0).detailUrl);
+        ArgumentCaptor<String> jpql = ArgumentCaptor.forClass(String.class);
+        org.mockito.Mockito.verify(em).createQuery(jpql.capture(), eq(Long.class));
+        assertTrue(jpql.getValue().contains("e.eventType in :eventTypes"));
+        assertTrue(jpql.getValue().contains("e.amount >= :eventAmountMin"));
+        when(query.getResultList()).thenReturn(List.of(numbered), List.of());
+        assertTrue(service.exportCsv(criteria, 1, java.util.function.UnaryOperator.identity()).contains("C04;T9;;25/10/2026;11:05;2,00;0;N;N;\n"));
+    }
+
+    /**
+     * The functional journal searches the amount and the code events bear,
+     * and shows them (BO-04-01-19/34).
+     */
+    @Test
+    void functionalJournalSearchesAmountsAndCodes() {
+        JournalCriteria criteria = new JournalCriteria();
+        criteria.eventAmountMin = BigDecimal.ONE;
+        criteria.eventAmountMax = BigDecimal.TEN;
+        criteria.eventCode = "CHEQUE";
+        JournalQuery query = serviceWith(mock(EntityManager.class)).buildEventQuery(criteria);
+        assertEquals(" where e.amount >= :eventAmountMin and e.amount <= :eventAmountMax and e.code = :eventCode",
+                query.whereClause());
+        EntityManager em = mock(EntityManager.class);
+        TypedQuery<TechnicalEvent> typed = selfQuery();
+        TechnicalEvent cancelled = new TechnicalEvent();
+        cancelled.terminalId = "C04";
+        cancelled.eventType = TechnicalEvent.EventType.PAYMENT_CANCELLED;
+        cancelled.eventDate = LocalDateTime.of(2026, 10, 25, 11, 0);
+        cancelled.code = "CHEQUE";
+        cancelled.amount = new BigDecimal("15");
+        cancelled.ticketNumber = "T1";
+        TechnicalEvent bare = new TechnicalEvent();
+        bare.terminalId = "C04";
+        bare.eventType = TechnicalEvent.EventType.SESSION_OPENED;
+        bare.eventDate = LocalDateTime.of(2026, 10, 25, 8, 0);
+        when(em.createQuery(anyString(), eq(TechnicalEvent.class))).thenReturn(typed);
+        when(typed.getResultList()).thenReturn(List.of(cancelled, bare));
+        stubCount(em, 2L);
+        JournalPage<JournalEventRow> page = serviceWith(em).searchEvents(new JournalCriteria());
+        assertEquals("CHEQUE", page.rows.get(0).code);
+        assertEquals("15,00", page.rows.get(0).amount);
+        assertEquals("T1", page.rows.get(0).ticketNumber);
+        assertEquals("", page.rows.get(1).code);
+        assertEquals("", page.rows.get(1).amount);
+        assertEquals("", page.rows.get(1).ticketNumber);
+    }
+
+    /**
+     * The detail states the VAT by rate, the self-scanning, the offline sale,
+     * the unknown codes, the cancelled settlements and the documents issued
+     * (BO-04-01-14/19/34/41/42/43/50/53/55).
+     */
+    @Test
+    void buildDetailStatesTheLot21Facts() {
+        EntityManager em = mock(EntityManager.class);
+        Ticket ticket = new Ticket();
+        ticket.ticketNumber = "T7";
+        ticket.terminalId = "C04";
+        ticket.status = Ticket.TicketStatus.CLOSED;
+        ticket.creationDate = LocalDateTime.of(2026, 10, 25, 10, 0);
+        ticket.selfScanning = true;
+        ticket.selfScanControlled = true;
+        ticket.selfScanVerified = true;
+        ticket.offline = true;
+        TicketLine reduced = new TicketLine();
+        reduced.productLabel = "Lait";
+        reduced.quantity = BigDecimal.ONE;
+        reduced.totalPrice = new BigDecimal("1.055");
+        reduced.vatRate = new BigDecimal("0.0550");
+        TicketLine untaxed = new TicketLine();
+        untaxed.productLabel = "Timbre";
+        untaxed.quantity = BigDecimal.ONE;
+        untaxed.totalPrice = new BigDecimal("1.00");
+        TicketLine priceless = new TicketLine();
+        priceless.productLabel = "Rien";
+        priceless.quantity = BigDecimal.ONE;
+        TicketLine cancelled = new TicketLine();
+        cancelled.productLabel = "Annulé";
+        cancelled.quantity = BigDecimal.ONE;
+        cancelled.totalPrice = new BigDecimal("9");
+        cancelled.cancelled = true;
+        ticket.lines.addAll(List.of(reduced, untaxed, priceless, cancelled));
+        when(em.find(Ticket.class, 7L)).thenReturn(ticket);
+        JournalService service = serviceWith(em);
+        TechnicalEvent unknown = new TechnicalEvent();
+        unknown.eventType = TechnicalEvent.EventType.UNKNOWN_ARTICLE_SCANNED;
+        unknown.code = "2000000000001";
+        TechnicalEvent payment = new TechnicalEvent();
+        payment.eventType = TechnicalEvent.EventType.PAYMENT_CANCELLED;
+        payment.code = "CHEQUE";
+        payment.amount = new BigDecimal("15");
+        TypedQuery<TechnicalEvent> events = selfQuery();
+        when(events.getResultList()).thenReturn(List.of(unknown, payment));
+        when(em.createQuery(org.mockito.ArgumentMatchers.startsWith("select e from TechnicalEvent e where e.ticketNumber"),
+                eq(TechnicalEvent.class))).thenReturn(events);
+        com.intermarche.edge.domain.sale.Invoice invoice = new com.intermarche.edge.domain.sale.Invoice();
+        invoice.id = 3L;
+        invoice.documentNumber = "F-1";
+        TypedQuery<com.intermarche.edge.domain.sale.Invoice> documents = selfQuery();
+        when(documents.getResultList()).thenReturn(List.of(invoice));
+        when(em.createQuery(org.mockito.ArgumentMatchers.startsWith("select d from Invoice d"),
+                eq(com.intermarche.edge.domain.sale.Invoice.class))).thenReturn(documents);
+        JournalTicketDetail detail = service.buildDetail(7L);
+        assertEquals(2, detail.vatRows.size());
+        assertEquals("0", detail.vatRows.get(0).rate());
+        assertEquals("5,5", detail.vatRows.get(1).rate());
+        assertEquals("1,00", detail.vatRows.get(1).base());
+        assertEquals("0,06", detail.vatRows.get(1).tax());
+        assertEquals("O", detail.autonomous);
+        assertEquals("N", detail.trainingMode);
+        assertTrue(detail.selfScanControlled);
+        assertTrue(detail.selfScanVerified);
+        assertTrue(detail.offline);
+        assertEquals(List.of("2000000000001"), detail.unknownCodes);
+        assertEquals(List.of("CHEQUE 15,00"), detail.cancelledPayments);
+        assertEquals("F-1", detail.documents.get(0).number);
+        assertEquals("FACTURE", detail.documents.get(0).title);
+        assertEquals(3L, detail.documents.get(0).id);
+        ticket.selfScanning = false;
+        assertEquals("N", service.buildDetail(7L).autonomous);
+    }
+
+    /**
+     * An invoice reprinted as a duplicate counts one more print and is
+     * journalled by the reprint rule the reports share, and restates its sale
+     * (BO-04-01-53, BO-06-04-03).
+     */
+    @Test
+    void duplicateRestatesTheDocument() {
+        EntityManager em = mock(EntityManager.class);
+        JournalService service = serviceWith(em);
+        service.invoiceDuplicateService = mock(com.intermarche.edge.ui.report.InvoiceDuplicateService.class);
+        org.mockito.Mockito.doAnswer(call -> {
+            com.intermarche.edge.domain.sale.Invoice reprinted = call.getArgument(0);
+            reprinted.printCount++;
+            return reprinted.printCount - 1;
+        }).when(service.invoiceDuplicateService).countReprint(any());
+        assertNull(service.duplicate(1L));
+        com.intermarche.edge.domain.sale.Invoice invoice = new com.intermarche.edge.domain.sale.Invoice();
+        invoice.documentNumber = "F-1";
+        invoice.documentType = com.intermarche.edge.domain.sale.DocumentType.BON_LIVRAISON;
+        invoice.terminalId = "C04";
+        invoice.ticketNumber = "T7";
+        invoice.issueDate = LocalDateTime.of(2026, 10, 25, 10, 0);
+        invoice.printCount = 1;
+        invoice.customerName = "ACME";
+        invoice.customerAddress.streetLine1 = "1 rue";
+        invoice.customerAddress.postalCode = " ";
+        invoice.customerAddress.city = "Lyon";
+        invoice.totalIncludingTax = new BigDecimal("12");
+        Ticket ticket = new Ticket();
+        TicketLine sold = new TicketLine();
+        sold.productLabel = "Lait";
+        sold.quantity = new BigDecimal("2.000");
+        sold.totalPrice = new BigDecimal("12");
+        sold.vatRate = new BigDecimal("0.2000");
+        TicketLine bare = new TicketLine();
+        bare.productLabel = "Sac";
+        TicketLine cancelled = new TicketLine();
+        cancelled.productLabel = "Annulé";
+        cancelled.cancelled = true;
+        ticket.lines.addAll(List.of(sold, bare, cancelled));
+        invoice.ticket = ticket;
+        when(em.find(com.intermarche.edge.domain.sale.Invoice.class, 3L)).thenReturn(invoice);
+        JournalService.Duplicate duplicate = service.duplicate(3L);
+        assertEquals(2, duplicate.printCount());
+        assertEquals("BON DE LIVRAISON", duplicate.title());
+        assertEquals("25/10/2026 10:00", duplicate.issuedAt());
+        assertEquals("1 rue Lyon", duplicate.customerAddress());
+        assertEquals(2, duplicate.lines().size());
+        assertEquals("2", duplicate.lines().get(0).quantity());
+        assertEquals("", duplicate.lines().get(1).quantity());
+        assertEquals("0,00", duplicate.lines().get(1).total());
+        assertEquals(2, duplicate.vatRows().size());
+        assertEquals("20", duplicate.vatRows().get(1).rate());
+        assertEquals("10,00", duplicate.vatRows().get(1).base());
+        assertEquals("2,00", duplicate.vatRows().get(1).tax());
+        assertEquals("12,00", duplicate.totalIncludingTax());
+        org.mockito.Mockito.verify(service.invoiceDuplicateService).countReprint(invoice);
+        com.intermarche.edge.domain.sale.Invoice orphan = new com.intermarche.edge.domain.sale.Invoice();
+        orphan.documentNumber = "F-2";
+        orphan.customerAddress = null;
+        invoice.customerAddress.streetLine1 = null;
+        assertEquals("Lyon", service.duplicate(3L).customerAddress());
+        when(em.find(com.intermarche.edge.domain.sale.Invoice.class, 4L)).thenReturn(orphan);
+        JournalService.Duplicate lone = service.duplicate(4L);
+        assertEquals("", lone.issuedAt());
+        assertEquals("", lone.customerAddress());
+        assertTrue(lone.lines().isEmpty());
+        assertEquals("FACTURE", lone.title());
     }
 }

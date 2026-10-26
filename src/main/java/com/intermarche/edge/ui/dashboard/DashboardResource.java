@@ -1,8 +1,11 @@
 package com.intermarche.edge.ui.dashboard;
 
+import io.quarkus.security.Authenticated;
+import com.intermarche.edge.security.FeatureAccess;
+import com.intermarche.edge.domain.setting.Feature;
+import com.intermarche.edge.domain.people.CrudOption;
 import io.quarkus.qute.Location;
 import jakarta.annotation.security.PermitAll;
-import jakarta.annotation.security.RolesAllowed;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
 import jakarta.inject.Inject;
@@ -58,6 +61,21 @@ public class DashboardResource {
     com.intermarche.edge.security.CurrentUser currentUser;
 
     @Inject @Location("dashboard") Template dashboard;
+
+    /** The control indicators page (BO-04-03-01). */
+    @Inject @Location("dashboard-control") Template dashboardControl;
+
+    /** The real-time register watch page (BO-04-03-07). */
+    @Inject @Location("dashboard-live") Template dashboardLive;
+
+    /** The control indicators (BO-04-03-01). */
+    @Inject ControlIndicatorService controlIndicatorService;
+
+    /** The registers' operations as they come (BO-04-03-07). */
+    @Inject LiveActivityService liveActivityService;
+
+    /** Where the back office's decisions are journalled (BO-04-03-14). */
+    @Inject SupervisionJournal supervisionJournal;
     @Inject DashboardService dashboardService;
     @Inject SupervisorCallRegistry supervisorCallRegistry;
 
@@ -69,6 +87,9 @@ public class DashboardResource {
 
     /** The administrable row of tiles (BO-04-03-01/-03/-15). */
     @Inject DashboardIndicatorService dashboardIndicatorService;
+
+    /** The page's labels: the administrable tiles are labelled in the page's language. */
+    @Inject com.intermarche.edge.ui.admin.BackOfficeMessages i18n;
 
     /** What has been served to which register, for the message acknowledgements (LC-01-08-05). */
     @Inject
@@ -94,6 +115,12 @@ public class DashboardResource {
         public String reason;
         /** The free message the cashier typed, or null (EXP-19). */
         public String message;
+
+        /** The ticket a survey answer was given on (BO-06-03-02), or null. */
+        public String ticketNumber;
+
+        /** The badge of the cashier who answered (BO-06-03-02), or null. */
+        public String badge;
     }
 
     /**
@@ -103,7 +130,8 @@ public class DashboardResource {
      */
     @GET
     @Path("/dashboard")
-    @RolesAllowed({"ADMIN", "MANAGER"})
+    @Authenticated
+    @FeatureAccess(value = Feature.SUPERVISION)
     @Produces(MediaType.TEXT_HTML)
     public TemplateInstance dashboardPage() {
         LOGGER.info("Entering method dashboardPage");
@@ -119,7 +147,8 @@ public class DashboardResource {
      */
     @GET
     @Path("/dashboard-data")
-    @RolesAllowed({"ADMIN", "MANAGER"})
+    @Authenticated
+    @FeatureAccess(value = Feature.SUPERVISION)
     @Produces(MediaType.APPLICATION_JSON)
     public Map<String, Object> dashboardData() {
         LOGGER.info("Entering method dashboardData");
@@ -136,9 +165,11 @@ public class DashboardResource {
                 entry.put("reason", call.reason);
                 entry.put("severity", call.severity);
                 entry.put("status", call.status.name());
-                entry.put("statusLabel", call.status.getLabel());
+                entry.put("statusLabel", i18n.text(call.status.getLabel()));
                 entry.put("refusalReason", call.refusalReason);
                 entry.put("message", call.message);
+                entry.put("reasonLabel", CallWording.reason(i18n, call.reason));
+                entry.put("gesture", CallWording.gesture(i18n, call.message));
                 entry.put("time", call.time);
                 calls.add(entry);
             }
@@ -160,7 +191,19 @@ public class DashboardResource {
         // BO-04-03-01/-03/-15: the second row of tiles, the one the store
         // chooses. The five fixed cumuls above are the same everywhere; what
         // a given shop watches beside them is a parameter, not a release.
-        data.put("indicators", dashboardIndicatorService.indicators());
+        // Their labels are French, computed by the catalogue: shown in the page's language.
+        List<Map<String, Object>> indicators = dashboardIndicatorService.indicators();
+        for (Map<String, Object> indicator : indicators) {
+            String label = i18n.text(indicator.get("label"));
+            Object subject = indicator.remove("subject");
+            Object prefix = indicator.remove("subjectPrefix");
+            if (subject != null && prefix != null) {
+                // The code inside the label is shown by its own label.
+                label = label.replace(subject.toString(), i18n.code(prefix.toString(), subject));
+            }
+            indicator.put("label", label);
+        }
+        data.put("indicators", indicators);
         LOGGER.info("Exiting method dashboardData");
         return data;
     }
@@ -173,7 +216,8 @@ public class DashboardResource {
      */
     @GET
     @Path("/dashboard/ack/{id}")
-    @RolesAllowed({"ADMIN", "MANAGER"})
+    @Authenticated
+    @FeatureAccess(value = Feature.SUPERVISION, option = CrudOption.UPDATE)
     public Response acknowledge(@PathParam("id") long id) {
         LOGGER.info("Entering method acknowledge with id: " + id);
         // LC-01-07-04: the acknowledgement TELLS THE LANE — its indicator
@@ -188,6 +232,8 @@ public class DashboardResource {
                     com.intermarche.edge.domain.sync.RegisterCommand.CommandType.SUPERVISOR_ACK,
                     currentUser.getFullName(),
                     "acquittée par " + currentUser.getFullName());
+            supervisionJournal.handled(acknowledged.terminalId, "ACQUITTEMENT", currentUser.getFullName(),
+                    acknowledged.reason);
         }
         LOGGER.info("Exiting method acknowledge");
         return Response.noContent().build();
@@ -208,11 +254,15 @@ public class DashboardResource {
      */
     @GET
     @Path("/dashboard/call/{id}/to-till")
-    @RolesAllowed({"ADMIN", "MANAGER"})
+    @Authenticated
+    @FeatureAccess(value = Feature.SUPERVISION, option = CrudOption.UPDATE)
     public Response sendBackToTill(@PathParam("id") long id) {
         LOGGER.info("Entering method sendBackToTill with id: " + id);
-        supervisorCallRegistry.settle(id, SupervisorCallRegistry.CallStatus.TO_HANDLE_AT_TILL,
-                null, posSettingsService.settledCallsKept());
+        SupervisorCallRegistry.Call sent = supervisorCallRegistry.settle(id,
+                SupervisorCallRegistry.CallStatus.TO_HANDLE_AT_TILL, null, posSettingsService.settledCallsKept());
+        if (sent != null) {
+            supervisionJournal.handled(sent.terminalId, "A_TRAITER_EN_CAISSE", currentUser.getFullName(), sent.reason);
+        }
         LOGGER.info("Exiting method sendBackToTill");
         return Response.noContent().build();
     }
@@ -232,7 +282,8 @@ public class DashboardResource {
      */
     @GET
     @Path("/dashboard/call/{id}/refuse")
-    @RolesAllowed({"ADMIN", "MANAGER"})
+    @Authenticated
+    @FeatureAccess(value = Feature.SUPERVISION, option = CrudOption.UPDATE)
     public Response refuse(@PathParam("id") long id,
                            @jakarta.ws.rs.QueryParam("reason") String reason) {
         LOGGER.info("Entering method refuse with id: " + id);
@@ -248,6 +299,8 @@ public class DashboardResource {
         registerCommandService.issue(refused.terminalId,
                 com.intermarche.edge.domain.sync.RegisterCommand.CommandType.SUPERVISOR_REFUSED,
                 currentUser.getFullName(), wording);
+        supervisionJournal.handled(refused.terminalId, "REFUS", currentUser.getFullName(),
+                refused.reason + " : " + wording);
         LOGGER.info("Exiting method refuse");
         return Response.noContent().build();
     }
@@ -267,7 +320,8 @@ public class DashboardResource {
      */
     @GET
     @Path("/dashboard/call/{id}/authorise")
-    @RolesAllowed({"ADMIN", "MANAGER"})
+    @Authenticated
+    @FeatureAccess(value = Feature.SUPERVISION, option = CrudOption.UPDATE)
     public Response authorise(@PathParam("id") long id) {
         LOGGER.info("Entering method authorise with id: " + id);
         SupervisorCallRegistry.Call granted = supervisorCallRegistry.settle(id,
@@ -280,7 +334,11 @@ public class DashboardResource {
         registerCommandService.issue(granted.terminalId,
                 com.intermarche.edge.domain.sync.RegisterCommand.CommandType.SUPERVISOR_GRANTED,
                 currentUser.getFullName(),
-                "Autorisé par " + currentUser.getFullName());
+                // The register words the grant itself (« Autorisation accordée
+                // par {0} »): it is sent who granted, not a sentence.
+                currentUser.getFullName());
+        supervisionJournal.handled(granted.terminalId, "AUTORISATION", currentUser.getFullName(),
+                granted.reason + (granted.message.isBlank() ? "" : " " + granted.message));
         LOGGER.info("Exiting method authorise");
         return Response.noContent().build();
     }
@@ -463,6 +521,130 @@ public class DashboardResource {
     }
 
     /**
+     * The registers' pending requests for the alert shown on EVERY
+     * back-office screen (BO-04-02-12): the authorisations and service
+     * requests not yet decided, and the lanes gone quiet. Polled by the
+     * back-office layout; empty and disabled when the store switched the
+     * global alert, or the register alerts, off.
+     *
+     * @return the JSON alerts
+     */
+    @GET
+    @Path("/dashboard/alerts")
+    @Authenticated
+    @FeatureAccess(value = Feature.SUPERVISION)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Map<String, Object> alerts() {
+        LOGGER.info("Entering method alerts");
+        Map<String, Object> data = new HashMap<>();
+        boolean enabled = posSettingsService.globalAlertsEnabled() && posSettingsService.dashboardAlertsEnabled();
+        data.put("enabled", enabled);
+        List<Map<String, Object>> calls = new ArrayList<>();
+        if (enabled) {
+            for (SupervisorCallRegistry.Call call : supervisorCallRegistry.getPending()) {
+                if (call.status == SupervisorCallRegistry.CallStatus.PENDING) {
+                    Map<String, Object> entry = new HashMap<>();
+                    entry.put("id", call.id);
+                    entry.put("terminal", call.terminalId);
+                    entry.put("operator", call.operator);
+                    entry.put("reason", call.reason);
+                    entry.put("message", call.message);
+                    entry.put("reasonLabel", CallWording.reason(i18n, call.reason));
+                    entry.put("gesture", CallWording.gesture(i18n, call.message));
+                    entry.put("time", call.time);
+                    calls.add(entry);
+                }
+            }
+        }
+        data.put("calls", calls);
+        LOGGER.info("Exiting method alerts");
+        return data;
+    }
+
+    /**
+     * Shows the control indicators page (BO-04-03-01).
+     *
+     * @return the page
+     */
+    @GET
+    @Path("/dashboard/control")
+    @Authenticated
+    @FeatureAccess(value = Feature.CONTROL_INDICATORS)
+    @Produces(MediaType.TEXT_HTML)
+    public TemplateInstance controlPage() {
+        LOGGER.info("Entering method controlPage");
+        LOGGER.info("Exiting method controlPage");
+        return dashboardControl.data("control", controlIndicatorService.data());
+    }
+
+    /**
+     * The control indicators, polled by the bar every back-office screen
+     * shows to the profiles granted them (BO-04-03-01).
+     *
+     * @return the JSON indicators
+     */
+    @GET
+    @Path("/dashboard/control-data")
+    @Authenticated
+    @FeatureAccess(value = Feature.CONTROL_INDICATORS)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Map<String, Object> controlData() {
+        LOGGER.info("Entering method controlData");
+        Map<String, Object> data = controlIndicatorService.data();
+        for (Object row : (List<?>) data.get("detail")) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> entry = (Map<String, Object>) row;
+            entry.put("label", i18n.text(entry.get("label")));
+        }
+        LOGGER.info("Exiting method controlData");
+        return data;
+    }
+
+    /**
+     * Shows the real-time watch of the registers (BO-04-03-07).
+     *
+     * @return the page
+     */
+    @GET
+    @Path("/dashboard/live")
+    @Authenticated
+    @FeatureAccess(value = Feature.LIVE_ACTIVITY)
+    @Produces(MediaType.TEXT_HTML)
+    public TemplateInstance livePage() {
+        LOGGER.info("Entering method livePage");
+        LOGGER.info("Exiting method livePage");
+        return dashboardLive.instance();
+    }
+
+    /**
+     * The operations recorded since the last one the watch shows
+     * (BO-04-03-07), their type labelled in the page's language.
+     *
+     * @param after the last operation shown, or null for the latest ones
+     * @param terminal the register watched, or null for all of them
+     * @return the JSON operations, newest first
+     */
+    @GET
+    @Path("/dashboard/live-data")
+    @Authenticated
+    @FeatureAccess(value = Feature.LIVE_ACTIVITY)
+    @Produces(MediaType.APPLICATION_JSON)
+    public List<Map<String, Object>> liveData(@jakarta.ws.rs.QueryParam("after") Long after,
+                                              @jakarta.ws.rs.QueryParam("terminal") String terminal) {
+        LOGGER.info("Entering method liveData with after: " + after);
+        List<Map<String, Object>> rows = liveActivityService.after(after, terminal);
+        for (Map<String, Object> row : rows) {
+            row.put("label", i18n.code("t.s21-ev-", row.get("type")));
+            row.put("detail", com.intermarche.edge.ui.journal.EventWording.detail(i18n,
+                    String.valueOf(row.get("type")), (String) row.get("detail")));
+            row.put("terminal", com.intermarche.edge.ui.journal.EventWording.terminal(i18n, row.get("type"),
+                    row.get("terminal")));
+        }
+        LOGGER.info("Exiting method liveData");
+        return rows;
+    }
+
+    /**
      * Leaves a FORCED CLOSE order for a register (LC-01-02-07, BO-04-03-13).
      *
      * <p>The order is written, not sent: the register collects it on its next
@@ -476,12 +658,14 @@ public class DashboardResource {
      */
     @POST
     @Path("/dashboard/force-close/{terminalId}")
-    @RolesAllowed({"ADMIN", "MANAGER"})
+    @Authenticated
+    @FeatureAccess(value = Feature.SUPERVISION, option = CrudOption.UPDATE)
     public Response forceClose(@PathParam("terminalId") String terminalId) {
         LOGGER.info("Entering method forceClose with terminalId: " + terminalId);
         registerCommandService.issue(terminalId,
                 com.intermarche.edge.domain.sync.RegisterCommand.CommandType.CLOSE_SESSION,
                 currentUser.getFullName(), "Fermeture demandée depuis le back-office");
+        supervisionJournal.handled(terminalId, "FERMETURE_FORCEE", currentUser.getFullName(), null);
         LOGGER.info("Exiting method forceClose");
         return Response.noContent().build();
     }
@@ -513,8 +697,13 @@ public class DashboardResource {
             return Response.status(Response.Status.UNAUTHORIZED)
                     .entity("Jeton invalide").build();
         }
-        supervisorCallRegistry.add(dto.terminalId, dto.operator, dto.reason, dto.message,
-                severityOf(dto.reason));
+        // BO-06-03-02: a survey answer travels on the call road to be filed as
+        // the customer's answer; it asks nobody to come, so it never stands on
+        // the line board as a call waiting for a supervisor.
+        if (!"SONDAGE".equalsIgnoreCase(dto.reason)) {
+            supervisorCallRegistry.add(dto.terminalId, dto.operator, dto.reason, dto.message,
+                    severityOf(dto.reason));
+        }
         recordMessageConfirmation(dto);
         LOGGER.info("Exiting method receiveCall");
         return Response.ok("OK").build();
@@ -595,6 +784,9 @@ public class DashboardResource {
         ack.terminalId = dto.terminalId;
         ack.operatorName = dto.operator;
         ack.answer = answer;
+        // BO-06-03-02: the answer is tied to the ticket it was given on.
+        ack.ticketNumber = dto.ticketNumber;
+        ack.operatorCode = dto.badge;
         ack.persist();
         LOGGER.infof("Confirmation du message %d par %s sur %s", message.id,
                 dto.operator, dto.terminalId);

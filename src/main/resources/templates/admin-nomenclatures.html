@@ -40,143 +40,140 @@
 !}
 {#include admin-layout}
 
-{#title}Nomenclatures{/title}
+{#title}{inject:i18n.get('t.nomenclatures')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Nomenclatures</h1>
+        <h1>{inject:i18n.get('t.nomenclatures')}</h1>
         {#if scheme}
-        <p class="page-sub">{scheme.label} — {scheme.depth()} niveau(x), {total} nœud(s) à ce niveau.</p>
+        <p class="page-sub">{inject:i18n.text(scheme.label)} — {scheme.depth()} {inject:i18n.get('t.niveau-x')} {total} {inject:i18n.get('t.nud-s-a-ce-niveau')}</p>
         {#else}
-        <p class="page-sub">Aucune nomenclature intégrée.</p>
+        <p class="page-sub">{inject:i18n.get('t.aucune-nomenclature-integree')}</p>
         {/if}
     </div>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 {#if schemes.size() > 1}
 <div class="page-actions">
     {#for candidate in schemes}
     <a class="btn {#if scheme && candidate.code == scheme.code}btn-primary{#else}btn-ghost{/if}"
-       href="/admin/nomenclatures?scheme={candidate.code}">{candidate.label}</a>
+       href="/admin/nomenclatures?scheme={candidate.code}">{inject:i18n.text(candidate.label)}</a>
     {/for}
 </div>
 {/if}
 
 <details class="card panel">
-    <summary class="card-title panel-title">Intégrer un fichier</summary>
+    <summary class="card-title panel-title">{inject:i18n.get('t.integrer-un-fichier')}</summary>
     <form method="post" action="/admin/nomenclatures/import" enctype="multipart/form-data">
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="ni-scheme">Code de la nomenclature</label>
+                <label class="field-label" for="ni-scheme">{inject:i18n.get('t.code-de-la-nomenclature')}</label>
                 <input class="input-control" id="ni-scheme" type="text" name="scheme"
                        maxlength="30" required value="{#if scheme}{scheme.code}{/if}">
-                <span class="field-hint">Clé d'intégration : le même code recharge la nomenclature existante, un code inconnu en crée une.</span>
+                <span class="field-hint">{inject:i18n.get('t.cle-d-integration-le-meme-code-recharge')}</span>
             </div>
             <div class="field">
-                <label class="field-label" for="ni-label">Libellé</label>
+                <label class="field-label" for="ni-label">{inject:i18n.get('t.libelle')}</label>
                 <input class="input-control" id="ni-label" type="text" name="label"
                        maxlength="60" value="{#if scheme}{scheme.label}{/if}">
-                <span class="field-hint">Utilisé à la création ; vide, le code fait office de libellé.</span>
+                <span class="field-hint">{inject:i18n.get('t.utilise-a-la-creation-vide-le-code')}</span>
             </div>
             <div class="field">
-                <label class="field-label" for="ni-enseigne">Enseigne</label>
+                <label class="field-label" for="ni-enseigne">{inject:i18n.get('t.enseigne-2')}</label>
                 <input class="input-control" id="ni-enseigne" type="text" name="enseigne"
                        maxlength="30" value="{#if scheme && scheme.enseigneCode}{scheme.enseigneCode}{/if}">
-                <span class="field-hint">L'enseigne que la nomenclature classe (ITM, BRICO…), facultatif.</span>
+                <span class="field-hint">{inject:i18n.get('t.l-enseigne-que-la-nomenclature-classe-itm')}</span>
             </div>
             <div class="field">
-                <label class="field-label" for="ni-file">Fichier publié</label>
+                <label class="field-label" for="ni-file">{inject:i18n.get('t.fichier-publie')}</label>
                 <input class="input-control" id="ni-file" type="file" name="file" required>
-                <span class="field-hint">Export de la gestion commerciale, colonnes <code>SOURCE|NIVEAU|NUMERO|LIBELLE</code>.</span>
+                <span class="field-hint">{inject:i18n.get('t.export-de-la-gestion-commerciale-colonnes')} <code>{inject:i18n.get('t.source-niveau-numero-libelle')}</code>.</span>
             </div>
         </div>
         <div class="page-actions">
-            <button class="btn btn-primary" type="submit">Intégrer</button>
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.integrer')}</button>
         </div>
     </form>
     <p class="page-sub">
-        L'intégration est idempotente : le même fichier deux fois ne change rien.
-        Les nœuds que le fichier ne nomme plus sont conservés — un article peut
-        encore y être rattaché.
+        {inject:i18n.get('t.l-integration-est-idempotente-le-meme-fichier')}
     </p>
 </details>
 
 {#if scheme}
 <details class="card panel">
-    <summary class="card-title panel-title">Niveaux<span class="panel-count">{levelRows.size()}</span></summary>
+    <summary class="card-title panel-title">{inject:i18n.get('t.niveaux')}<span class="panel-count">{levelRows.size()}</span></summary>
     <div class="field-grid">
         <form method="post" action="/admin/nomenclatures/levels">
             <input type="hidden" name="scheme" value="{scheme.code}">
             <div class="field-grid">
                 {#for row in levelRows}
                 <div class="field">
-                    <label class="field-label" for="nl-{row.rank}">Niveau {row.rank}</label>
+                    <label class="field-label" for="nl-{row.rank}">{inject:i18n.get('t.niveau-2')} {row.rank}</label>
                     <div class="level-line">
                         <input class="input-control level-name" id="nl-{row.rank}" type="text"
                                name="level-{row.rank}" maxlength="60" value="{row.label}"
-                               placeholder="Activité, rayon, famille…">
+                               placeholder="{inject:i18n.get('t.activite-rayon-famille')}">
                         <input class="input-control level-digits" id="nd-{row.rank}" type="number"
                                name="length-{row.rank}" min="1" max="40" required
-                               aria-label="Caractères du code du niveau {row.rank}"
+                               aria-label="{inject:i18n.get('t.caracteres-du-code-du-niveau')} {row.rank}"
                                value="{row.codeLength}"{#if !row.reshapable} readonly{/if}>
-                        <span class="level-unit">car.</span>
+                        <span class="level-unit">{inject:i18n.get('t.car')}</span>
                     </div>
                     <span class="field-hint">
-                        {#if row.reshapable}Aucun nœud posé ici ni en dessous : la longueur se change et le niveau se retire.
-                        {#else}{row.nodes} nœud(s) posés ici ou en dessous : la longueur est figée.
+                        {#if row.reshapable}{inject:i18n.get('t.aucun-nud-pose-ici-ni-en-dessous')}
+                        {#else}{row.nodes} {inject:i18n.get('t.nud-s-poses-ici-ou-en-dessous')}
                         {/if}
-                        {#if row.custom}Défini par le point de vente.{#else}National.{/if}
+                        {#if row.custom}{inject:i18n.get('t.defini-par-le-point-de-vente')}{#else}{inject:i18n.get('t.national')}{/if}
                     </span>
                     {#if row.reshapable}
                     <button class="btn btn-ghost" type="submit"
                             formaction="/admin/nomenclatures/levels/delete"
-                            formnovalidate name="rank" value="{row.rank}">Retirer ce niveau</button>
+                            formnovalidate name="rank" value="{row.rank}">{inject:i18n.get('t.retirer-ce-niveau')}</button>
                     {/if}
                 </div>
                 {/for}
             </div>
             <div class="page-actions">
-                <button class="btn btn-primary" type="submit">Enregistrer les niveaux</button>
+                <button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer-les-niveaux')}</button>
             </div>
         </form>
         <form method="post" action="/admin/nomenclatures/levels/add">
             <input type="hidden" name="scheme" value="{scheme.code}">
             <div class="field-grid">
                 <div class="field">
-                    <label class="field-label" for="na-label">Nouveau niveau</label>
+                    <label class="field-label" for="na-label">{inject:i18n.get('t.nouveau-niveau')}</label>
                     <div class="level-line">
                         <input class="input-control level-name" id="na-label" type="text"
-                               name="label" maxlength="60" placeholder="Segment, sous-famille…">
+                               name="label" maxlength="60" placeholder="{inject:i18n.get('t.segment-sous-famille')}">
                         <input class="input-control level-digits" id="na-length" type="number"
                                name="length" min="1" max="40" required
-                               aria-label="Caractères du code du nouveau niveau"
+                               aria-label="{inject:i18n.get('t.caracteres-du-code-du-nouveau-niveau')}"
                                value="{nextLength}">
-                        <span class="level-unit">car.</span>
+                        <span class="level-unit">{inject:i18n.get('t.car')}</span>
                     </div>
-                    <span class="field-hint">Nom vide : le niveau prend son rang. Longueur CUMULÉE,
-                        donc supérieure à celle du niveau au-dessus.</span>
+                    <span class="field-hint">{inject:i18n.get('t.nom-vide-le-niveau-prend-son-rang')}</span>
                 </div>
             </div>
             <div class="page-actions">
-                <button class="btn btn-ghost" type="submit">Ajouter un niveau</button>
+                <button class="btn btn-ghost" type="submit">{inject:i18n.get('t.ajouter-un-niveau')}</button>
             </div>
         </form>
     </div>
 </details>
 
 <div class="card">
-    <h2 class="card-title">{scheme.label}</h2>
+    <h2 class="card-title">{inject:i18n.text(scheme.label)}</h2>
 
     <div class="field">
-        <label class="field-label" for="nomen-search">Rechercher</label>
+        <label class="field-label" for="nomen-search">{inject:i18n.get('t.rechercher')}</label>
         <input class="input-control" id="nomen-search" type="search" autocomplete="off"
-               placeholder="un code ou un libellé — 1002, boucherie…">
-        <span class="field-hint">Quatre niveaux : chercher évite d'en ouvrir trois pour en atteindre un.</span>
+               placeholder="{inject:i18n.get('t.un-code-ou-un-libelle-1002-boucherie')}">
+        <span class="field-hint">{inject:i18n.get('t.quatre-niveaux-chercher-evite-d-en-ouvrir')}</span>
     </div>
 
     <div id="nomen-hits" class="nomen-hits" hidden></div>
@@ -187,26 +184,26 @@
          data-customs="{#for level in levels}{#if level_index}|{/if}{level.custom}{/for}"></div>
 
     <div id="nomen-fallback">
-        <h2 class="card-title">{levelLabel}</h2>
+        <h2 class="card-title">{inject:i18n.text(levelLabel)}</h2>
 
     <p class="page-sub">
         {#for crumb in crumbs}
-        <a href="/admin/nomenclatures?scheme={scheme.code}{#if crumb.code}&parent={crumb.code}{/if}">{crumb.label}</a>
+        <a href="/admin/nomenclatures?scheme={scheme.code}{#if crumb.code}&parent={crumb.code}{/if}">{inject:i18n.text(crumb.label)}</a>
         {#if crumb_hasNext} › {/if}
         {/for}
     </p>
 
     {#if levelCustom}
-    <p class="page-sub">Niveau défini par le point de vente : ce que vous saisissez ici vous appartient.</p>
+    <p class="page-sub">{inject:i18n.get('t.niveau-defini-par-le-point-de-vente')}</p>
     {#else}
-    <p class="page-sub">Niveau national : la prochaine intégration réécrit les libellés de ce niveau.</p>
+    <p class="page-sub">{inject:i18n.get('t.niveau-national-la-prochaine-integration-reecrit')}</p>
     {/if}
 
     {#if rows.isEmpty()}
-    <p class="page-sub">Rien à ce niveau.</p>
+    <p class="page-sub">{inject:i18n.get('t.rien-a-ce-niveau')}</p>
     {#else}
     <table class="data-table">
-        <tr><th>Code</th><th>Libellé</th><th>Contient</th><th></th></tr>
+        <tr><th>{inject:i18n.get('t.code')}</th><th>{inject:i18n.get('t.libelle')}</th><th>{inject:i18n.get('t.contient')}</th><th></th></tr>
         {#for row in rows}
         <tr>
             <td><code>{row.code}</code></td>
@@ -215,25 +212,25 @@
                     <input type="hidden" name="scheme" value="{scheme.code}">
                     <input type="hidden" name="code" value="{row.code}">
                     <input class="input-control" type="text" name="label" maxlength="255"
-                           required value="{row.label}" aria-label="Libellé de {row.code}">
-                    <button class="btn btn-ghost" type="submit">Renommer</button>
+                           required value="{row.label}" aria-label="{inject:i18n.get('t.libelle-de')} {row.code}">
+                    <button class="btn btn-ghost" type="submit">{inject:i18n.get('t.renommer')}</button>
                 </form>
             </td>
             <td>
                 {#if row.openable}
-                <a href="/admin/nomenclatures?scheme={scheme.code}&parent={row.code}">{row.children} nœud(s)</a>
+                <a href="/admin/nomenclatures?scheme={scheme.code}&parent={row.code}">{row.children} {inject:i18n.get('t.nud-s')}</a>
                 {#else}
                 —
                 {/if}
             </td>
             <td>
                 {#if row.openable}
-                <span class="field-hint">Vider d'abord</span>
+                <span class="field-hint">{inject:i18n.get('t.vider-d-abord')}</span>
                 {#else}
                 <form method="post" action="/admin/nomenclatures/nodes/delete" class="app-identity-form">
                     <input type="hidden" name="scheme" value="{scheme.code}">
                     <input type="hidden" name="code" value="{row.code}">
-                    <button class="btn btn-ghost" type="submit">Supprimer</button>
+                    <button class="btn btn-ghost" type="submit">{inject:i18n.get('t.supprimer')}</button>
                 </form>
                 {/if}
             </td>
@@ -244,33 +241,32 @@
 
     {#if codeLength > 0}
     <details class="card panel">
-        <summary class="card-title panel-title">Ajouter un nœud à ce niveau</summary>
+        <summary class="card-title panel-title">{inject:i18n.get('t.ajouter-un-nud-a-ce-niveau')}</summary>
         <form method="post" action="/admin/nomenclatures/nodes">
             <input type="hidden" name="scheme" value="{scheme.code}">
             <div class="field-grid">
                 <div class="field">
-                    <label class="field-label" for="nn-code">Code</label>
+                    <label class="field-label" for="nn-code">{inject:i18n.get('t.code')}</label>
                     <input class="input-control" id="nn-code" type="text" name="code"
                            required minlength="{codeLength}" maxlength="{codeLength}"
                            value="{parent}">
                     <span class="field-hint">
-                        {codeLength} caractères exactement — c'est la longueur qui place le nœud à ce niveau.
-                        {#if parent}Il doit commencer par <code>{parent}</code> pour tenir sous le nœud ouvert.{/if}
+                        {codeLength} {inject:i18n.get('t.caracteres-exactement-c-est-la-longueur-qui')}
+                        {#if parent}{inject:i18n.get('t.il-doit-commencer-par')} <code>{parent}</code> {inject:i18n.get('t.pour-tenir-sous-le-nud-ouvert')}{/if}
                     </span>
                 </div>
                 <div class="field">
-                    <label class="field-label" for="nn-label">Libellé</label>
+                    <label class="field-label" for="nn-label">{inject:i18n.get('t.libelle')}</label>
                     <input class="input-control" id="nn-label" type="text" name="label"
                            maxlength="255" required>
                 </div>
             </div>
             <div class="page-actions">
-                <button class="btn btn-primary" type="submit">Ajouter</button>
+                <button class="btn btn-primary" type="submit">{inject:i18n.get('t.ajouter')}</button>
             </div>
         </form>
         <p class="page-sub">
-            Le code ne se modifie pas : il porte l'identité du nœud et son
-            rattachement. Le changer, c'est supprimer puis recréer.
+            {inject:i18n.get('t.le-code-ne-se-modifie-pas-il')}
         </p>
     </details>
     {/if}
@@ -278,11 +274,11 @@
     {#if totalPages > 1}
     <div class="page-actions">
         {#if page > 1}
-        <a class="btn btn-ghost" href="/admin/nomenclatures?scheme={scheme.code}{#if parent}&parent={parent}{/if}&page={page - 1}">Précédent</a>
+        <a class="btn btn-ghost" href="/admin/nomenclatures?scheme={scheme.code}{#if parent}&parent={parent}{/if}&page={page - 1}">{inject:i18n.get('t.precedent')}</a>
         {/if}
-        <span class="field-hint">Page {page} / {totalPages} — {total} nœud(s)</span>
+        <span class="field-hint">{inject:i18n.get('t.page')} {page} / {totalPages} — {total} {inject:i18n.get('t.nud-s')}</span>
         {#if page < totalPages}
-        <a class="btn btn-ghost" href="/admin/nomenclatures?scheme={scheme.code}{#if parent}&parent={parent}{/if}&page={page + 1}">Suivant</a>
+        <a class="btn btn-ghost" href="/admin/nomenclatures?scheme={scheme.code}{#if parent}&parent={parent}{/if}&page={page + 1}">{inject:i18n.get('t.suivant')}</a>
         {/if}
     </div>
     {/if}
@@ -291,15 +287,25 @@
 
 {#else}
 <div class="card">
-    <h2 class="card-title">Aucune nomenclature</h2>
+    <h2 class="card-title">{inject:i18n.get('t.aucune-nomenclature')}</h2>
     <p class="page-sub">
-        Rien n'est encore intégré. Renseignez un code et déposez le fichier
-        publié par la gestion commerciale dans le panneau « Intégrer un
-        fichier » ci-dessus ; les niveaux et leurs longueurs de code sont
-        déduits du fichier lui-même.
+        {inject:i18n.get('t.rien-n-est-encore-integre-renseignez-un')}
     </p>
 </div>
 {/if}
+
+{! Labels of the living tree, read by its script (the script itself is raw text). !}
+<div id="nomenLabels" hidden
+     data-deplacer="{inject:i18n.get('t.rc3-nom-deplacer')}"
+     data-renumeroter="{inject:i18n.get('t.rc3-nom-renumeroter')}"
+     data-ajouter-sous="{inject:i18n.get('t.rc3-nom-ajouter-sous')}"
+     data-supprimer="{inject:i18n.get('t.rc3-nom-supprimer')}"
+     data-national="{inject:i18n.get('t.rc3-nom-national')}"
+     data-reecrit="{inject:i18n.get('t.rc3-nom-reecrit')}"
+     data-libelle="{inject:i18n.get('t.libelle')}"
+     data-ajouter="{inject:i18n.get('t.ajouter')}"
+     data-il-manque="{inject:i18n.get('t.rc3-nom-il-manque')}"
+     data-aucun-noeud="{inject:i18n.get('t.rc3-nom-aucun-noeud')}"></div>
 
 {|
 <style>
@@ -381,6 +387,7 @@
 // node from its segment alone — on a classification of 2504 nodes, a reload
 // per gesture is the whole ergonomic problem.
 (function () {
+    var T = (document.getElementById('nomenLabels') || { dataset: {} }).dataset;
     var mount = document.getElementById('nomen-tree');
     if (!mount || !window.fetch) { return; }
     // How long a drag must rest on a closed node before it opens.
@@ -461,7 +468,7 @@
         var grip = document.createElement('span');
         grip.className = 'nomen-grip';
         grip.textContent = '⠿';
-        grip.title = 'Déplacer ' + node.code + ' sous un autre nœud';
+        grip.title = T.deplacer.replace('%1', node.code);
         // The grip is a SIGN, not the handle: the whole row is grabbed (see
         // wireDrag). A ten-pixel glyph is something an operator has to be told
         // about before they can use it, and a tree whose rows do not move
@@ -484,7 +491,7 @@
         own.maxLength = node.code.length - fixedLength;
         own.size = own.maxLength;
         own.setAttribute('aria-label', 'Numéro de ' + node.code);
-        own.title = 'Renuméroter ' + node.code;
+        own.title = T.renumeroter.replace('%1', node.code);
         code.appendChild(fixed);
         code.appendChild(own);
         var label = document.createElement('input');
@@ -495,12 +502,12 @@
         add.className = 'nomen-act';
         add.type = 'button';
         add.textContent = '＋';
-        add.title = 'Ajouter un nœud sous ' + node.code;
+        add.title = T.ajouterSous.replace('%1', node.code);
         var kill = document.createElement('button');
         kill.className = 'nomen-act nomen-del';
         kill.type = 'button';
         kill.textContent = '✕';
-        kill.title = 'Supprimer ' + node.code;
+        kill.title = T.supprimer.replace('%1', node.code);
         var slot = document.createElement('span');
         slot.className = 'nomen-say';
         var deeper = node.level !== null && node.level + 1 < lengths.length;
@@ -527,8 +534,8 @@
         if (node.level !== null && customs[node.level] === false) {
             var flag = document.createElement('span');
             flag.className = 'nomen-national';
-            flag.textContent = 'national';
-            flag.title = 'La prochaine intégration réécrit ce libellé.';
+            flag.textContent = T.national;
+            flag.title = T.reecrit;
             row.appendChild(flag);
         }
         li.appendChild(row);
@@ -737,12 +744,12 @@
         seg.setAttribute('aria-label', 'Segment du code');
         var label = document.createElement('input');
         label.className = 'input-control';
-        label.placeholder = 'Libellé';
+        label.placeholder = T.libelle;
         label.setAttribute('aria-label', 'Libellé du nouveau nœud');
         var go = document.createElement('button');
         go.className = 'btn btn-primary';
         go.type = 'button';
-        go.textContent = 'Ajouter';
+        go.textContent = T.ajouter;
         var slot = document.createElement('span');
         slot.className = 'nomen-say';
         box.appendChild(prefix);
@@ -756,8 +763,8 @@
         function create() {
             var full = parentCode + seg.value.trim();
             if (levelOf(full) !== level) {
-                slot.textContent = 'Il manque ' + (segmentLength(level) - seg.value.trim().length)
-                        + ' caractère(s).';
+                slot.textContent = T.ilManque.replace('%1',
+                        segmentLength(level) - seg.value.trim().length);
                 slot.classList.add('nomen-bad');
                 return;
             }
@@ -854,7 +861,7 @@
                     hits.textContent = '';
                     hits.hidden = false;
                     if (!found.length) {
-                        hits.textContent = 'Aucun nœud ne porte « ' + needle + ' ».';
+                        hits.textContent = T.aucunNoeud.replace('%1', needle);
                         return;
                     }
                     found.forEach(function (node) {
@@ -879,4 +886,4 @@
 |}
 {/body}
 
-{#footer}Le fichier publié par la gestion commerciale s'intègre ici, et les nœuds s'y éditent : le niveau le plus fin appartient au point de vente. Un nœud d'un niveau national est réécrit à la prochaine intégration.{/footer}
+{#footer}{inject:i18n.get('t.le-fichier-publie-par-la-gestion-commerciale')}{/footer}

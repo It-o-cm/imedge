@@ -55,6 +55,7 @@ class AdminCashPouchResourceTest {
         resource.adminSafePouches = mock(Template.class);
         resource.safeService = mock(SafeService.class);
         resource.currentUser = mock(CurrentUser.class);
+        resource.posSettingsService = mock(com.intermarche.edge.service.PosSettingsService.class);
         return resource;
     }
 
@@ -102,6 +103,23 @@ class AdminCashPouchResourceTest {
                 "status = ?1 and closingDate >= ?2 and closingDate < ?3 order by terminalId",
                 CashSession.SessionStatus.CLOSED, day.atStartOfDay(),
                 day.plusDays(1).atStartOfDay())).thenReturn(query);
+        stubValidation(panache, day, null);
+    }
+
+    /**
+     * Stubs the validation of one accounting day (BO-05-02-10).
+     *
+     * @param panache the active PanacheEntityBase mock
+     * @param day the accounting day
+     * @param validation the validation to resolve, null for a day not validated
+     */
+    @SuppressWarnings("unchecked")
+    private void stubValidation(MockedStatic<PanacheEntityBase> panache, LocalDate day,
+            com.intermarche.edge.domain.safe.SafeDayValidation validation) {
+        PanacheQuery<com.intermarche.edge.domain.safe.SafeDayValidation> query = mock(PanacheQuery.class);
+        when(query.firstResult()).thenReturn(validation);
+        panache.when(() -> com.intermarche.edge.domain.safe.SafeDayValidation.find("accountingDay", day))
+                .thenReturn(query);
     }
 
     /**
@@ -134,6 +152,7 @@ class AdminCashPouchResourceTest {
         }
         verify(view).data("withdrawn", "1250.00");
         verify(view).data("terminals", "C01,C02");
+        verify(view).data("validationRequired", false);
         verify(view).data("day", "2026-09-15");
     }
 
@@ -310,5 +329,49 @@ class AdminCashPouchResourceTest {
             assertSame(view, resource.list(null, null, true));
         }
         verify(view).data("withdrawn", "0.00");
+    }
+    /**
+     * A pouch waits for the validation of its day when the back office asks
+     * for it, and is accepted once the day is validated (BO-05-02-10).
+     */
+    @Test
+    void apouchWaitsForTheValidationOfItsDay() {
+        AdminCashPouchResource resource = newResource();
+        when(resource.posSettingsService.pouchRequiresDayValidation()).thenReturn(true);
+        LocalDate day = LocalDate.of(2026, 9, 15);
+        MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
+        form.add("pouchNumber", "POCH-3");
+        form.add("accountingDay", "2026-09-15");
+        form.add("amount", "10,00");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
+                MockedConstruction<CashPouch> created = mockConstruction(CashPouch.class)) {
+            PanacheQuery<CashPouch> query = mock(PanacheQuery.class);
+            panache.when(() -> CashPouch.find("pouchNumber", "POCH-3")).thenReturn(query);
+            stubValidation(panache, day, null);
+            String location = java.net.URLDecoder.decode(resource.deposit(form).getLocation().toString(),
+                    java.nio.charset.StandardCharsets.UTF_8);
+            assertTrue(location.contains("La journée comptable n'est pas validée"));
+            assertTrue(created.constructed().isEmpty());
+            stubValidation(panache, day, new com.intermarche.edge.domain.safe.SafeDayValidation());
+            assertNull(resource.sequenceRefusal(day));
+        }
+    }
+
+    /**
+     * An accounting day takes at most the administered number of pouches; no
+     * limit at zero (BO-05-02-10).
+     */
+    @Test
+    void anAccountingDayTakesAtMostItsPouches() {
+        AdminCashPouchResource resource = newResource();
+        LocalDate day = LocalDate.of(2026, 9, 15);
+        when(resource.posSettingsService.pouchesPerDay()).thenReturn(2, 2, 0);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> CashPouch.count("accountingDay", day)).thenReturn(2L, 1L);
+            assertEquals("Cette journée comptable compte déjà 2 pochette(s) remise(s) au coffre.",
+                    resource.sequenceRefusal(day));
+            assertNull(resource.sequenceRefusal(day));
+            assertNull(resource.sequenceRefusal(day));
+        }
     }
 }

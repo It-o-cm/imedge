@@ -1,6 +1,7 @@
 package com.intermarche.edge.ui.admin;
 
 import com.intermarche.edge.domain.people.CrudOption;
+import com.intermarche.edge.domain.people.Employee;
 import com.intermarche.edge.domain.people.EmployeeProfile;
 import com.intermarche.edge.domain.setting.Feature;
 import com.intermarche.edge.domain.people.Profile;
@@ -30,6 +31,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -141,6 +143,25 @@ class AdminProfileResourceTest {
     }
 
     /**
+     * Stubs the signed-in actor, {@code Employee.findActiveLogin("mcurie")}.
+     *
+     * @param panache the active PanacheEntityBase mock
+     * @param role the actor's role
+     * @param level the actor's hierarchical level
+     */
+    @SuppressWarnings("unchecked")
+    private void stubActor(MockedStatic<PanacheEntityBase> panache, Employee.EmployeeRole role, int level) {
+        Employee actor = new Employee();
+        actor.loginName = "mcurie";
+        actor.role = role;
+        actor.hierarchyLevel = level;
+        PanacheQuery<Employee> query = mock(PanacheQuery.class);
+        when(query.firstResult()).thenReturn(actor);
+        panache.when(() -> Employee.find("(badgeId = ?1 or loginName = ?1) and active = true", "mcurie"))
+                .thenReturn(query);
+    }
+
+    /**
      * Asserts a value is a 303 redirect whose location contains a fragment.
      *
      * @param value the returned value
@@ -234,17 +255,32 @@ class AdminProfileResourceTest {
      * other-profiles filter (found arm).
      */
     @Test
+    @SuppressWarnings("unchecked")
     void editFormRendersExistingProfile() {
         permit(true);
         TemplateInstance instance = wireForm();
         Profile edited = profile(5L, "Edited",
                 new ProfileGrant("settings", CrudOption.VIEW, true, 9L),
-                new ProfileGrant("store", CrudOption.VIEW, false, null));
+                new ProfileGrant("settings", CrudOption.DELETE, true, 9L),
+                new ProfileGrant("store", CrudOption.VIEW, false, null),
+                new ProfileGrant("store", CrudOption.UPDATE, false, null));
         Profile other = profile(9L, "Other");
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
             panache.when(() -> Profile.findById(5L)).thenReturn(edited);
             stubListing(panache, List.of(edited, other));
             assertEquals(instance, resource.editForm(5L));
+            org.mockito.ArgumentCaptor<Object> groups = org.mockito.ArgumentCaptor.forClass(Object.class);
+            verify(resource.adminProfileForm).data(org.mockito.ArgumentMatchers.eq("profile"), any());
+            verify(instance).data(org.mockito.ArgumentMatchers.eq("groups"), groups.capture());
+            AdminProfileResource.MenuGroup parametrage = ((List<AdminProfileResource.MenuGroup>) groups.getValue()).get(0);
+            AdminProfileResource.FeatureRow settings = parametrage.features.get(0);
+            assertTrue(settings.requiresValidation);
+            assertEquals(9L, settings.validatorId);
+            assertEquals(3, settings.validationCells.size());
+            assertTrue(settings.validationCells.get(2).checked);
+            AdminProfileResource.FeatureRow store = parametrage.features.get(1);
+            assertTrue(!store.requiresValidation);
+            assertTrue(!store.validationCells.get(1).checked);
         }
     }
 
@@ -321,8 +357,12 @@ class AdminProfileResourceTest {
             PanacheQuery<Profile> selfQuery = query(self);
             panache.when(() -> Profile.findById(5L)).thenReturn(edited);
             panache.when(() -> Profile.find("name", "Edited")).thenReturn(selfQuery);
+            stubActor(panache, Employee.EmployeeRole.MANAGER, 2);
+            when(permissionService.mayAssign(any(), any())).thenReturn(true);
+            form.putSingle("hierarchyLevel", "2");
             assertRedirect(resource.save(form), "enregistr");
             assertEquals(1, edited.grants.size());
+            assertEquals(2, edited.hierarchyLevel);
         }
     }
 
@@ -357,6 +397,8 @@ class AdminProfileResourceTest {
         form.get("grant").add(null);
         form.get("menugrant").add(null);
         form.add("validate", "settings");
+        form.add("validate", "store:VIEW");
+        form.add("validate", "supervision:VIEW");
         form.add("validate", "profile");
         form.add("validate", "user");
         form.add("validate", "store");
@@ -366,6 +408,8 @@ class AdminProfileResourceTest {
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
             PanacheQuery<Profile> noClash = query(null);
             panache.when(() -> Profile.find("name", "New")).thenReturn(noClash);
+            stubActor(panache, Employee.EmployeeRole.ADMIN, 0);
+            form.putSingle("hierarchyLevel", "7");
             org.mockito.MockedConstruction<Profile> construction =
                     org.mockito.Mockito.mockConstruction(Profile.class);
             try {
@@ -373,6 +417,8 @@ class AdminProfileResourceTest {
                 Profile built = construction.constructed().get(0);
                 assertEquals("New", built.name);
                 assertEquals("d", built.description);
+                assertEquals(7, built.hierarchyLevel);
+                assertTrue(built.grants.stream().anyMatch(g -> "store".equals(g.featureKey) && g.requiresValidation));
                 org.mockito.Mockito.verify(built).persist();
             } finally {
                 construction.close();
@@ -453,5 +499,37 @@ class AdminProfileResourceTest {
         PanacheQuery<Profile> query = mock(PanacheQuery.class);
         when(query.firstResult()).thenReturn(row);
         return query;
+    }
+
+    /**
+     * BO-01-03-03: a profile above the actor is not modified, a level above
+     * the actor's is not given, and an unknown actor gives none.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void saveKeepsWithinTheActorsLevel() {
+        permit(true);
+        MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
+        form.putSingle("id", "5");
+        form.putSingle("name", "Edited");
+        form.putSingle("hierarchyLevel", "4");
+        Profile edited = profile(5L, "Edited");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            PanacheQuery<Profile> selfQuery = query(edited);
+            panache.when(() -> Profile.findById(5L)).thenReturn(edited);
+            panache.when(() -> Profile.find("name", "Edited")).thenReturn(selfQuery);
+            stubActor(panache, Employee.EmployeeRole.MANAGER, 2);
+            when(permissionService.mayAssign(any(), any())).thenReturn(false);
+            assertRedirect(resource.save(form), "sup%C3%A9rieur");
+            when(permissionService.mayAssign(any(), any())).thenReturn(true);
+            assertRedirect(resource.save(form), "d%C3%A9passer");
+            PanacheQuery<Employee> nobody = mock(PanacheQuery.class);
+            panache.when(() -> Employee.find("(badgeId = ?1 or loginName = ?1) and active = true", "mcurie"))
+                    .thenReturn(nobody);
+            form.remove("id");
+            PanacheQuery<Profile> noClash = query(null);
+            panache.when(() -> Profile.find("name", "Edited")).thenReturn(noClash);
+            assertRedirect(resource.save(form), "d%C3%A9passer");
+        }
     }
 }

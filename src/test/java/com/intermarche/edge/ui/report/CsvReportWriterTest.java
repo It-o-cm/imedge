@@ -18,11 +18,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>Branch enumeration for the target class: {@code write} has the first /
  * not-first column arm and the with- / without-totals arm; {@code append} has
  * the first / not-first cell arm and the ternary's short-row (null) / present
- * arm; {@code escape} has its null arm, its nothing-to-quote arm and each of the
- * four characters (separator, quote, line feed, carriage return) that force
- * quoting. The residual branch left red by {@code ReportWritersTest} is
- * {@code escape}'s null arm, reachable only through a column whose label is null,
- * which {@code csvNullColumnLabelRendersEmpty} exercises.
+ * arm; {@code escape} has its nothing-to-quote arm and each of the four
+ * characters (separator, quote, line feed, carriage return) that force
+ * quoting. A column whose label is null is written empty by the translation of
+ * the edition's language, which {@code csvNullColumnLabelRendersEmpty} shows.
  */
 class CsvReportWriterTest {
 
@@ -159,7 +158,7 @@ class CsvReportWriterTest {
 
     /**
      * A column whose label is null renders as an empty field rather than the
-     * text "null" — the residual null arm of {@code escape}.
+     * text "null": the translation of the edition's language writes it empty.
      */
     @Test
     void csvNullColumnLabelRendersEmpty() {

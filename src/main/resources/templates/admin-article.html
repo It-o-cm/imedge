@@ -11,16 +11,16 @@
 !}
 {#include admin-layout}
 
-{#title}Fiche article{/title}
+{#title}{inject:i18n.get('t.fiche-article')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Fiche article</h1>
-        <p class="page-sub">Données, attributs, offres et historique des prix d'un article du référentiel.</p>
+        <h1>{inject:i18n.get('t.fiche-article')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.donnees-attributs-offres-et-historique-des-prix')}</p>
     </div>
     <div class="page-actions">
-        <a class="btn btn-ghost" href="/admin/articles">Retour à la liste</a>
+        <a class="btn btn-ghost" href="/admin/articles">{inject:i18n.get('t.retour-a-la-liste')}</a>
     </div>
 </div>
 
@@ -29,96 +29,204 @@
     <input type="hidden" name="id" value="{product.id}">
 
     <div class="card">
-        <h2 class="card-title">Identité</h2>
+        <h2 class="card-title">{inject:i18n.get('t.identite')}</h2>
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="f-ean">Code EAN</label>
-                <input class="input-control" id="f-ean" type="text" value="{product.ean}" disabled>
-                <span class="field-hint">Non modifiable depuis cet écran.</span>
+                <label class="field-label" for="f-ean">{inject:i18n.get('t.code-ean')}</label>
+                <input class="input-control" id="f-ean" type="text" name="ean" value="{product.ean}" maxlength="38" required {#if !editable.contains('EAN')}disabled{/if}>
+                <span class="field-hint">{inject:i18n.get('t.p20-identite-portable-de-l-article')}</span>
             </div>
             <div class="field">
-                <label class="field-label" for="f-name">Libellé commercial</label>
-                <input class="input-control" id="f-name" type="text" value="{product.name}" disabled>
-                <span class="field-hint">Intégré depuis la Gestion Commerciale.</span>
+                <label class="field-label" for="f-name">{inject:i18n.get('t.libelle-commercial')}</label>
+                <input class="input-control" id="f-name" type="text" name="name" value="{product.name}" maxlength="255" required {#if !editable.contains('NAME')}disabled{/if}>
+                <span class="field-hint">{inject:i18n.get('t.integre-depuis-la-gestion-commerciale')}</span>
             </div>
             <div class="field">
-                <label class="field-label" for="f-checkout">Libellé encaissement</label>
-                <input class="input-control" id="f-checkout" type="text" name="checkoutLabel" value="{product.checkoutLabel ?: ''}" maxlength="100">
-                <span class="field-hint">Affiché sur la ligne et le ticket. Vide : le libellé commercial s'applique.</span>
+                <label class="field-label" for="f-checkout">{inject:i18n.get('t.libelle-encaissement')}</label>
+                <input class="input-control" id="f-checkout" type="text" name="checkoutLabel" value="{product.checkoutLabel ?: ''}" maxlength="100" {#if !editable.contains('CHECKOUT_LABEL')}disabled{/if}>
+                <span class="field-hint">{inject:i18n.get('t.affiche-sur-la-ligne-et-le-ticket')}</span>
             </div>
             <div class="field">
-                <label class="field-label" for="f-infomsg">Message à la saisie</label>
-                <input class="input-control" id="f-infomsg" type="text" name="infoMessage" value="{product.infoMessage ?: ''}" maxlength="200">
-                <span class="field-hint">Phrase affichée au caissier quand l'article est saisi. Jamais bloquante : la vente continue.</span>
+                <label class="field-label" for="f-infomsg">{inject:i18n.get('t.message-a-la-saisie')}</label>
+                <input class="input-control" id="f-infomsg" type="text" name="infoMessage" value="{product.infoMessage ?: ''}" maxlength="200" {#if !editable.contains('MESSAGES')}disabled{/if}>
+                <span class="field-hint">{inject:i18n.get('t.phrase-affichee-au-caissier-quand-l-article')}</span>
             </div>
             <div class="field">
-                <label class="field-label" for="f-internal">Code interne</label>
-                <input class="input-control" id="f-internal" type="text" name="internalCode" value="{product.internalCode ?: ''}" maxlength="50">
-                <span class="field-hint">Encaissement par scan ou saisie, en plus de l'EAN.</span>
+                <label class="field-label" for="f-linked">{inject:i18n.get('t.article-lie-automatiquement-ean')}</label>
+                <input class="input-control" id="f-linked" type="text" name="LINKED_ARTICLE_EAN" value="{linkedArticleEan ?: ''}" maxlength="38" {#if !editable.contains('LINKS')}disabled{/if}>
+                <span class="field-hint">{inject:i18n.get('t.ean-de-larticle-a-ajouter-automatiquement-laisse')}</span>
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-linked-qty">{inject:i18n.get('t.p20-quantite-d-article-lie-par-unite')}</label>
+                <input class="input-control" id="f-linked-qty" type="text" name="LINKED_ARTICLE_QUANTITY" inputmode="decimal" value="{linkedArticleQuantity}" placeholder="1" {#if !editable.contains('LINKS')}disabled{/if}>
+                <span class="field-hint">{inject:i18n.get('t.p20-par-exemple-6-consignes-pour-un-pack')}</span>
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-complementary">{inject:i18n.get('t.p20-articles-complementaires-ean')}</label>
+                <input class="input-control" id="f-complementary" type="text" name="COMPLEMENTARY_EANS" value="{complementaryEans}" maxlength="255" {#if !editable.contains('LINKS')}disabled{/if}>
+                <span class="field-hint">{inject:i18n.get('t.p20-proposes-a-l-hotesse-a-la-vente')}</span>
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-forbidden">{inject:i18n.get('t.message-de-vente-interdite-rappel')}</label>
+                <input class="input-control" id="f-forbidden" type="text" name="FORBIDDEN_SALE_MESSAGE" value="{forbiddenSaleMessage ?: ''}" maxlength="120" {#if !editable.contains('MESSAGES')}disabled{/if}>
+                <span class="field-hint">{inject:i18n.get('t.affiche-en-caisse-quand-cet-article-interdit')}</span>
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-internal">{inject:i18n.get('t.code-interne')}</label>
+                <input class="input-control" id="f-internal" type="text" name="internalCode" value="{product.internalCode ?: ''}" maxlength="50" {#if !editable.contains('INTERNAL_CODE')}disabled{/if}>
+                <span class="field-hint">{inject:i18n.get('t.encaissement-par-scan-ou-saisie-en-plus')}</span>
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-sale-codes">{inject:i18n.get('t.p20-codes-de-vente-supplementaires')}</label>
+                <textarea class="input-control" id="f-sale-codes" name="saleCodes" rows="3" {#if !editable.contains('SALE_CODES')}disabled{/if}>{saleCodes}</textarea>
+                <span class="field-hint">{inject:i18n.get('t.p20-un-code-par-ligne-ean-13-ean-8')}</span>
             </div>
         </div>
     </div>
 
     <div class="card">
-        <h2 class="card-title">Caractéristiques</h2>
+        <h2 class="card-title">{inject:i18n.get('t.caracteristiques')}</h2>
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="f-plu">PLU</label>
-                <input class="input-control" id="f-plu" type="text" value="{product.plu ?: '—'}" disabled>
+                <label class="field-label" for="f-plu">{inject:i18n.get('t.plu')}</label>
+                <input class="input-control" id="f-plu" type="text" name="plu" value="{product.plu ?: ''}" maxlength="4" {#if !editable.contains('PLU')}disabled{/if}>
             </div>
             <div class="field">
-                <label class="field-label" for="f-type">Type</label>
-                <input class="input-control" id="f-type" type="text" value="{product.productType ?: '—'}" disabled>
+                <label class="field-label" for="f-type">{inject:i18n.get('t.type')}</label>
+                <select class="input-control" id="f-type" name="productType" {#if !editable.contains('TYPE')}disabled{/if}>
+                    {#for type in types}
+                    <option value="{type.name}" {#if product.productType && product.productType.name == type.name}selected{/if}>{type.name}</option>
+                    {/for}
+                </select>
             </div>
             <div class="field">
-                <label class="field-label" for="f-unit">Unité de mesure</label>
-                <input class="input-control" id="f-unit" type="text" name="unitName" value="{product.unitName ?: ''}" maxlength="20">
+                <label class="field-label" for="f-unit-code">{inject:i18n.get('t.unite-de-mesure')}</label>
+                <select class="input-control" id="f-unit-code" name="UNIT_CODE" {#if !editable.contains('UNIT')}disabled{/if}>
+                    <option value="">{inject:i18n.get('t.p20-libelle-libre')}</option>
+                    {#for unit in units}
+                    <option value="{unit.code}" {#if unitCode == unit.code}selected{/if}>{unit.code} — {unit.label} ({unit.symbol})</option>
+                    {/for}
+                </select>
+                <span class="field-hint"><a class="link-strong" href="/admin/measure-units">{inject:i18n.get('t.p20-unites-de-mesure')}</a></span>
             </div>
             <div class="field">
-                <label class="field-label" for="f-weight">Poids de référence (kg)</label>
-                <input class="input-control" id="f-weight" type="text" name="referenceWeight" value="{product.referenceWeight ?: ''}">
-                <span class="field-hint">Décimal en kilogrammes. Vide : aucun poids de référence.</span>
+                <label class="field-label" for="f-unit">{inject:i18n.get('t.p20-libelle-d-unite')}</label>
+                <input class="input-control" id="f-unit" type="text" name="unitName" value="{product.unitName ?: ''}" maxlength="20" {#if !editable.contains('UNIT')}disabled{/if}>
+                <span class="field-hint">{inject:i18n.get('t.p20-remplace-par-le-symbole-de-l-unite')}</span>
             </div>
             <div class="field">
-                <label class="field-label" for="f-volume">Volume de référence (L)</label>
-                <input class="input-control" id="f-volume" type="text" name="referenceVolume" value="{product.referenceVolume ?: ''}">
-                <span class="field-hint">Décimal en litres. Vide : aucun volume de référence.</span>
+                <label class="field-label" for="f-weight">{inject:i18n.get('t.poids-de-reference-kg')}</label>
+                <input class="input-control" id="f-weight" type="text" name="referenceWeight" value="{product.referenceWeight ?: ''}" {#if !editable.contains('MEASURES')}disabled{/if}>
+                <span class="field-hint">{inject:i18n.get('t.decimal-en-kilogrammes-vide-aucun-poids-de')}</span>
             </div>
             <div class="field">
-                <label class="field-label" for="f-gift">Carte cadeau (€)</label>
-                <input class="input-control" id="f-gift" type="text" name="giftCardAmount" value="{product.giftCardAmount ?: ''}">
-                <span class="field-hint">Renseigné : l'article EST une carte cadeau de ce montant. Vide : article normal.</span>
+                <label class="field-label" for="f-volume">{inject:i18n.get('t.volume-de-reference-l')}</label>
+                <input class="input-control" id="f-volume" type="text" name="referenceVolume" value="{product.referenceVolume ?: ''}" {#if !editable.contains('MEASURES')}disabled{/if}>
+                <span class="field-hint">{inject:i18n.get('t.decimal-en-litres-vide-aucun-volume-de')}</span>
             </div>
             <div class="field">
-                <label class="field-label" for="f-brand">Marque</label>
-                <input class="input-control" id="f-brand" type="text" name="brand" value="{product.brand ?: ''}" maxlength="100">
+                <label class="field-label" for="f-gift">{inject:i18n.get('t.carte-cadeau')}</label>
+                <input class="input-control" id="f-gift" type="text" name="giftCardAmount" value="{product.giftCardAmount ?: ''}" {#if !editable.contains('GIFT_CARD')}disabled{/if}>
+                <span class="field-hint">{inject:i18n.get('t.renseigne-l-article-est-une-carte-cadeau')}</span>
             </div>
             <div class="field">
-                <label class="field-label" for="f-desc">Description</label>
-                <input class="input-control" id="f-desc" type="text" name="description" value="{product.description ?: ''}" maxlength="255">
+                <label class="field-label" for="f-brand">{inject:i18n.get('t.marque')}</label>
+                <input class="input-control" id="f-brand" type="text" name="brand" value="{product.brand ?: ''}" maxlength="100" {#if !editable.contains('BRAND')}disabled{/if}>
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-desc">{inject:i18n.get('t.description')}</label>
+                <input class="input-control" id="f-desc" type="text" name="description" value="{product.description ?: ''}" maxlength="255" {#if !editable.contains('BRAND')}disabled{/if}>
             </div>
             <div class="field field-check">
-                <label class="field-label"><input type="checkbox" name="active" {#if product.active}checked{/if}> Article actif</label>
-                <span class="field-hint">Décoché : l'article est désactivé (retiré du référentiel), jamais supprimé.</span>
+                <label class="field-label"><input type="checkbox" name="active" {#if product.active}checked{/if} {#if !editable.contains('STATUS')}disabled{/if}> {inject:i18n.get('t.article-actif')}</label>
+                <span class="field-hint">{inject:i18n.get('t.decoche-l-article-est-desactive-retire-du')}</span>
             </div>
             <div class="field field-check">
-                <label class="field-label"><input type="checkbox" name="variableWeight" {#if product.variableWeight}checked{/if}> Vendu au poids (vrac)</label>
-                <span class="field-hint">Coché : le poids est connu à la pesée (écran FRUITS &amp; LÉGUMES ou étiquette 2x). Décoché : article préemballé.</span>
+                <label class="field-label"><input type="checkbox" name="variableWeight" {#if product.variableWeight}checked{/if} {#if !editable.contains('MEASURES')}disabled{/if}> {inject:i18n.get('t.vendu-au-poids-vrac')}</label>
+                <span class="field-hint">{inject:i18n.get('t.coche-le-poids-est-connu-a-la')}</span>
             </div>
         </div>
     </div>
 
     <div class="card">
-        <h2 class="card-title">Comportement en caisse</h2>
+        <h2 class="card-title">{inject:i18n.get('t.comportement-en-caisse')}</h2>
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="f-age">Contrôle d'âge (ans)</label>
-                <input class="input-control" id="f-age" type="number" name="ageRestriction" min="0" value="{product.ageRestriction ?: ''}">
-                <span class="field-hint">Vide ou 0 : aucun contrôle.</span>
+                <label class="field-label" for="f-age">{inject:i18n.get('t.controle-d-age-ans')}</label>
+                <input class="input-control" id="f-age" type="number" name="ageRestriction" min="0" value="{product.ageRestriction ?: ''}" {#if !editable.contains('STATUS')}disabled{/if}>
+                <span class="field-hint">{inject:i18n.get('t.vide-ou-0-aucun-controle')}</span>
             </div>
             <div class="field field-check">
-                <label class="field-label"><input type="checkbox" name="forbiddenToSale" {#if product.forbiddenToSale}checked{/if}> Vente interdite</label>
-                <span class="field-hint">L'article est refusé au scan.</span>
+                <label class="field-label"><input type="checkbox" name="forbiddenToSale" {#if product.forbiddenToSale}checked{/if} {#if !editable.contains('STATUS')}disabled{/if}> {inject:i18n.get('t.vente-interdite')}</label>
+                <span class="field-hint">{inject:i18n.get('t.l-article-est-refuse-au-scan')}</span>
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-mode">{inject:i18n.get('t.p20-mode-de-passage-en-caisse')}</label>
+                <select class="input-control" id="f-mode" name="CHECKOUT_MODE" {#if !editable.contains('CHECKOUT_MODE')}disabled{/if}>
+                    <option value="">{inject:i18n.get('t.p20-selon-les-attributs')}</option>
+                    {#for mode in checkoutModes}
+                    <option value="{mode}" {#if checkoutMode == mode}selected{/if}>{inject:i18n.code('t.p20-mode-', mode)}</option>
+                    {/for}
+                </select>
+                <span class="field-hint">{inject:i18n.get('t.p20-appel-prix-prix-a-saisir-quantite')}</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2 class="card-title">{inject:i18n.get('t.p20-nomenclature-et-tva')}</h2>
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label">{inject:i18n.get('t.p20-rattachement')}</label>
+                {#if nomenclaturePath.isEmpty()}
+                <span class="col-muted">{inject:i18n.get('t.p20-article-rattache-a-aucun-noeud')}</span>
+                {#else}
+                <span>{#for step in nomenclaturePath}{#if step_index > 0} › {/if}<span class="col-muted">{step.level ?: ''}</span> {step.code} {step.description ?: ''}{/for}</span>
+                {/if}
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-node">{inject:i18n.get('t.p20-rattacher-au-noeud')}</label>
+                <input class="input-control" id="f-node" type="text" name="nomenclatureNode" maxlength="50" placeholder="{inject:i18n.get('t.code')}" {#if !editable.contains('NOMENCLATURE')}disabled{/if}>
+                <span class="field-hint">{inject:i18n.get('t.p20-code-de-la-sous-famille-vide')}</span>
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-vat">{inject:i18n.get('t.p20-code-tva-de-l-article')}</label>
+                <select class="input-control" id="f-vat" name="VAT_NUMBER" {#if !editable.contains('VAT')}disabled{/if}>
+                    <option value="">{inject:i18n.get('t.p20-tva-du-prix')}</option>
+                    {#for rate in vatRates}
+                    <option value="{rate.number}" {#if vatNumber == rate.number.toString()}selected{/if}>{rate.code()} — {rate.getRateFormatted()} % {rate.label ?: ''}{#if rate.exempt} ({inject:i18n.get('t.p20-exo')}){/if}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label">{inject:i18n.get('t.p20-tva-appliquee')}</label>
+                {#if vat.code}
+                <span>{vat.code} — {vat.rate} % {vat.label}{#if vat.exempt} <span class="badge badge-off">{inject:i18n.get('t.p20-exoneree')}</span>{/if} <span class="col-muted">({#if vat.fromArticle}{inject:i18n.get('t.p20-code-de-l-article')}{#else}{inject:i18n.get('t.p20-regime-du-prix')}{/if})</span></span>
+                {#else}
+                <span class="col-muted">{#if vat.exempt}{inject:i18n.get('t.p20-exoneree')}{#else}{inject:i18n.get('t.p20-aucun-regime')}{/if}</span>
+                {/if}
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2 class="card-title">{inject:i18n.get('t.p20-fournisseur')}</h2>
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="f-sup-code">{inject:i18n.get('t.p20-code-fournisseur')}</label>
+                <input class="input-control" id="f-sup-code" type="text" name="SUPPLIER_CODE" value="{supplierCode}" maxlength="50" {#if !editable.contains('SUPPLIER')}disabled{/if}>
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-sup-name">{inject:i18n.get('t.p20-nom-fournisseur')}</label>
+                <input class="input-control" id="f-sup-name" type="text" name="SUPPLIER_NAME" value="{supplierName}" maxlength="100" {#if !editable.contains('SUPPLIER')}disabled{/if}>
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-sup-art-code">{inject:i18n.get('t.p20-code-article-fournisseur')}</label>
+                <input class="input-control" id="f-sup-art-code" type="text" name="SUPPLIER_ARTICLE_CODE" value="{supplierArticleCode}" maxlength="50" {#if !editable.contains('SUPPLIER')}disabled{/if}>
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-sup-art-name">{inject:i18n.get('t.p20-nom-article-fournisseur')}</label>
+                <input class="input-control" id="f-sup-art-name" type="text" name="SUPPLIER_ARTICLE_NAME" value="{supplierArticleName}" maxlength="100" {#if !editable.contains('SUPPLIER')}disabled{/if}>
             </div>
         </div>
     </div>
@@ -131,35 +239,47 @@
      ! the two cases that cost money: an article classified nowhere, and an
      ! article pointing at a regime the referential does not declare. !}
     <div class="card">
-        <h2 class="card-title">EGAlim</h2>
+        <h2 class="card-title">{inject:i18n.get('t.egalim')}</h2>
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="f-egalim">Régime</label>
-                <input class="input-control" id="f-egalim" type="text" value="{product.egalimRegime ?: 'Non classé'}" disabled>
-                <span class="field-hint">Intégré depuis la Gestion Commerciale, colonne EGALIM_REGIME du flux article.</span>
+                <label class="field-label" for="f-egalim">{inject:i18n.get('t.regime')}</label>
+                <input class="input-control" id="f-egalim" type="text" value="{#if product.egalimRegime}{product.egalimRegime}{#else}{inject:i18n.get('t.non-classe')}{/if}" disabled>
+                <span class="field-hint">{inject:i18n.get('t.integre-depuis-la-gestion-commerciale-colonne-eg')}</span>
             </div>
             <div class="field">
-                <label class="field-label" for="f-egalim-cap">Plafond de générosité promotionnelle</label>
+                <label class="field-label" for="f-egalim-cap">{inject:i18n.get('t.plafond-de-generosite-promotionnelle')}</label>
                 {#if egalimRegime}
-                <input class="input-control" id="f-egalim-cap" type="text" value="{#if egalimRegime.capped}{egalimRegime.capFormatted} %{#else}Non plafonné{/if}" disabled>
-                <span class="field-hint">{egalimRegime.getLabel()} — administré sur la page <a class="link-strong" href="/admin/egalim-regimes">EGAlim</a>, appliqué par le moteur de valorisation.</span>
+                <input class="input-control" id="f-egalim-cap" type="text" value="{#if egalimRegime.capped}{egalimRegime.capFormatted} %{#else}{inject:i18n.get('t.non-plafonne')}{/if}" disabled>
+                <span class="field-hint">{egalimRegime.getLabel()} {inject:i18n.get('t.administre-sur-la-page')} <a class="link-strong" href="/admin/egalim-regimes">{inject:i18n.get('t.egalim')}</a>{inject:i18n.get('t.applique-par-le-moteur-de-valorisation')}</span>
                 {#else if product.egalimRegime}
-                <input class="input-control" id="f-egalim-cap" type="text" value="Régime inconnu" disabled>
-                <span class="field-hint">Aucun régime ne porte ce code dans le <a class="link-strong" href="/admin/egalim-regimes">référentiel EGAlim</a> : le moteur ne plafonnera pas cet article.</span>
+                <input class="input-control" id="f-egalim-cap" type="text" value="{inject:i18n.get('t.x21-regime-inconnu')}" disabled>
+                <span class="field-hint">{inject:i18n.get('t.aucun-regime-ne-porte-ce-code-dans')} <a class="link-strong" href="/admin/egalim-regimes">{inject:i18n.get('t.referentiel-egalim')}</a> {inject:i18n.get('t.le-moteur-ne-plafonnera-pas-cet-article')}</span>
                 {#else}
                 <input class="input-control" id="f-egalim-cap" type="text" value="—" disabled>
-                <span class="field-hint">Article non classé : aucun plafond ne s'applique.</span>
+                <span class="field-hint">{inject:i18n.get('t.article-non-classe-aucun-plafond-ne-s')}</span>
                 {/if}
             </div>
         </div>
     </div>
 
     <div class="card">
-        <h2 class="card-title">Attributs déclarés</h2>
+        <h2 class="card-title">{inject:i18n.get('t.attributs-declares')}</h2>
         <div class="field-grid">
             {#for attr in attributes}
             <div class="field field-check">
-                <label class="field-label"><input type="checkbox" name="{attr.code}" {#if attr.checked}checked{/if}> {attr.label}</label>
+                <label class="field-label"><input type="checkbox" name="{attr.code}" {#if attr.checked}checked{/if} {#if !editable.contains('ATTRIBUTES')}disabled{/if}> {inject:i18n.text(attr.label)}</label>
+            </div>
+            {/for}
+        </div>
+    </div>
+
+    <div class="card">
+        <h2 class="card-title">{inject:i18n.get('t.p20-attributs-valorises')}</h2>
+        <div class="field-grid">
+            {#for attr in textAttributes}
+            <div class="field">
+                <label class="field-label" for="t-{attr.code}">{inject:i18n.text(attr.label)}</label>
+                <input class="input-control" id="t-{attr.code}" type="text" name="{attr.code}" value="{attr.value}" maxlength="255" {#if !editable.contains('ATTRIBUTES')}disabled{/if}>
             </div>
             {/for}
         </div>
@@ -167,12 +287,12 @@
 
     {#if !customAttributes.isEmpty()}
     <div class="card">
-        <h2 class="card-title">Attributs personnalisés</h2>
+        <h2 class="card-title">{inject:i18n.get('t.attributs-personnalises')}</h2>
         <div class="field-grid">
             {#for attr in customAttributes}
             <div class="field">
-                <label class="field-label" for="c-{attr.code}">{attr.label}</label>
-                <input class="input-control" id="c-{attr.code}" type="text" name="{attr.code}" value="{attr.value}" maxlength="255">
+                <label class="field-label" for="c-{attr.code}">{inject:i18n.text(attr.label)}</label>
+                <input class="input-control" id="c-{attr.code}" type="text" name="{attr.code}" value="{attr.value}" maxlength="255" {#if !editable.contains('ATTRIBUTES')}disabled{/if}>
             </div>
             {/for}
         </div>
@@ -180,48 +300,81 @@
     {/if}
 
     <div class="card">
-        <h2 class="card-title">Présentation</h2>
+        <h2 class="card-title">{inject:i18n.get('t.presentation')}</h2>
         <div class="field-grid">
             <div class="field field-check">
-                <label class="field-label"><input type="checkbox" name="codeOnScreen" {#if codeOnScreen}checked{/if}> Code article sur l'écran caisse</label>
-                <span class="field-hint">Consommé par l'écran de vente (BO-10-02-35). Réglable en masse depuis la liste.</span>
+                <label class="field-label"><input type="checkbox" name="codeOnScreen" {#if codeOnScreen}checked{/if} {#if !editable.contains('PRESENTATION')}disabled{/if}> {inject:i18n.get('t.code-article-sur-l-ecran-caisse')}</label>
+                <span class="field-hint">{inject:i18n.get('t.consomme-par-l-ecran-de-vente-bo')}</span>
             </div>
         </div>
     </div>
 
     <div class="page-actions" style="margin-top: 6px;">
-        <button class="btn btn-primary" type="submit">Enregistrer</button>
-        <a class="btn btn-ghost" href="/admin/articles">Annuler</a>
+        <button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer')}</button>
+        <a class="btn btn-ghost" href="/admin/articles">{inject:i18n.get('t.annuler')}</a>
     </div>
 </form>
 
+{#if editable.contains('DELETE')}
+<form method="post" action="/admin/articles/delete" class="page-actions" style="margin-top: 6px;"
+      onsubmit="return confirm('{inject:i18n.js('t.p20-supprimer-cet-article')}');">
+    <input type="hidden" name="id" value="{product.id}">
+    <button class="btn btn-danger" type="submit">{inject:i18n.get('t.p20-supprimer-l-article')}</button>
+    <span class="field-hint">{inject:i18n.get('t.p20-un-article-deja-vendu-est-desactive')}</span>
+</form>
+{/if}
+
+{#if eegEnabled}
 <div class="card">
-    <h2 class="card-title">Prix de vente courant</h2>
-    {#if currentPrice}
-    <p class="price-current">{currentPrice.priceIncludingTax} € TTC · {currentPrice.priceExcludingTax} € HT · TVA {currentPrice.vatRate}</p>
+    <h2 class="card-title">{inject:i18n.get('t.p20-prix-affiche-par-les-eeg')}</h2>
+    {#if eegPrices.isEmpty()}
+    <p class="col-muted">{inject:i18n.get('t.p20-aucun-fournisseur-d-eeg')}</p>
     {#else}
-    <p class="col-muted">Aucun prix courant.</p>
+    <table class="data-table">
+        <thead>
+            <tr><th>{inject:i18n.get('t.p20-fournisseur')}</th><th>{inject:i18n.get('t.p20-prix-affiche')}</th><th>{inject:i18n.get('t.etat')}</th></tr>
+        </thead>
+        <tbody>
+            {#for eeg in eegPrices}
+            <tr>
+                <td>{eeg.provider}</td>
+                <td>{#if eeg.price}{inject:i18n.money(eeg.price)} €{#else}<span class="col-muted">{inject:i18n.get('t.p20-aucun-prix-lu')}</span>{/if}</td>
+                <td>{#if eeg.differs}<span class="badge badge-off">{inject:i18n.get('t.p20-different-du-prix-courant')}</span>{#else if eeg.price}<span class="badge badge-ok">{inject:i18n.get('t.p20-conforme')}</span>{/if}</td>
+            </tr>
+            {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.prix-de-vente-courant')}</h2>
+    {#if currentPrice}
+    <p class="price-current">{inject:i18n.money(currentPrice.priceIncludingTax)} {inject:i18n.get('t.ttc')} {inject:i18n.money(currentPrice.priceExcludingTax)} {inject:i18n.get('t.ht-tva')} {inject:i18n.rate(currentPrice.vatRate)}</p>
+    {#else}
+    <p class="col-muted">{inject:i18n.get('t.aucun-prix-courant')}</p>
     {/if}
 </div>
 
 <div class="card">
-    <h2 class="card-title">Offres</h2>
+    <h2 class="card-title">{inject:i18n.get('t.offres')}</h2>
     {#if offers.isEmpty()}
-    <p class="col-muted">Aucune offre, en cours ou passée.</p>
+    <p class="col-muted">{inject:i18n.get('t.aucune-offre-en-cours-ou-passee')}</p>
     {#else}
     <table class="data-table">
         <thead>
-            <tr><th>Prix TTC</th><th>TVA</th><th>Priorité</th><th>Début</th><th>Fin</th><th>État</th></tr>
+            <tr><th>{inject:i18n.get('t.prix-ttc')}</th><th>{inject:i18n.get('t.tva')}</th><th>{inject:i18n.get('t.priorite')}</th><th>{inject:i18n.get('t.debut')}</th><th>{inject:i18n.get('t.fin')}</th><th>{inject:i18n.get('t.etat')}</th></tr>
         </thead>
         <tbody>
             {#for offer in offers}
             <tr>
-                <td>{offer.priceIncludingTax} €</td>
-                <td class="col-muted">{offer.vatRate}</td>
+                <td>{inject:i18n.money(offer.priceIncludingTax)} €</td>
+                <td class="col-muted">{inject:i18n.rate(offer.vatRate)}</td>
                 <td class="col-muted">{offer.priority}</td>
-                <td class="col-muted">{offer.startDateTime ?: '—'}</td>
-                <td class="col-muted">{offer.endDateTime ?: '—'}</td>
-                <td>{#if offer.active}<span class="badge badge-ok">En cours</span>{#else}<span class="badge badge-off">Hors période</span>{/if}</td>
+                <td class="col-muted">{#if offer.startDateTime}{offer.startDateTime.format('dd/MM/yyyy HH:mm')}{#else}—{/if}</td>
+                <td class="col-muted">{#if offer.endDateTime}{offer.endDateTime.format('dd/MM/yyyy HH:mm')}{#else}—{/if}</td>
+                <td>{#if offer.active}<span class="badge badge-ok">{inject:i18n.get('t.en-cours')}</span>{#else}<span class="badge badge-off">{inject:i18n.get('t.hors-periode')}</span>{/if}</td>
             </tr>
             {/for}
         </tbody>
@@ -230,23 +383,23 @@
 </div>
 
 <div class="card">
-    <h2 class="card-title">Historique des prix de vente</h2>
+    <h2 class="card-title">{inject:i18n.get('t.historique-des-prix-de-vente')}</h2>
     {#if history.isEmpty()}
-    <p class="col-muted">Aucun prix enregistré.</p>
+    <p class="col-muted">{inject:i18n.get('t.aucun-prix-enregistre')}</p>
     {#else}
     <table class="data-table">
         <thead>
-            <tr><th>Prix TTC</th><th>Prix HT</th><th>TVA</th><th>Priorité</th><th>Début</th><th>Fin</th></tr>
+            <tr><th>{inject:i18n.get('t.prix-ttc')}</th><th>{inject:i18n.get('t.prix-ht')}</th><th>{inject:i18n.get('t.tva')}</th><th>{inject:i18n.get('t.priorite')}</th><th>{inject:i18n.get('t.debut')}</th><th>{inject:i18n.get('t.fin')}</th></tr>
         </thead>
         <tbody>
             {#for price in history}
             <tr>
-                <td>{price.priceIncludingTax} €</td>
-                <td class="col-muted">{price.priceExcludingTax} €</td>
-                <td class="col-muted">{price.vatRate}</td>
+                <td>{inject:i18n.money(price.priceIncludingTax)} €</td>
+                <td class="col-muted">{inject:i18n.money(price.priceExcludingTax)} €</td>
+                <td class="col-muted">{inject:i18n.rate(price.vatRate)}</td>
                 <td class="col-muted">{price.priority}</td>
-                <td class="col-muted">{price.startDateTime ?: '—'}</td>
-                <td class="col-muted">{price.endDateTime ?: '—'}</td>
+                <td class="col-muted">{#if price.startDateTime}{price.startDateTime.format('dd/MM/yyyy HH:mm')}{#else}—{/if}</td>
+                <td class="col-muted">{#if price.endDateTime}{price.endDateTime.format('dd/MM/yyyy HH:mm')}{#else}—{/if}</td>
             </tr>
             {/for}
         </tbody>
@@ -256,10 +409,10 @@
 
 {#if !allAttributes.isEmpty()}
 <div class="card">
-    <h2 class="card-title">Tous les attributs</h2>
+    <h2 class="card-title">{inject:i18n.get('t.tous-les-attributs')}</h2>
     <table class="data-table">
         <thead>
-            <tr><th>Code</th><th>Valeur</th></tr>
+            <tr><th>{inject:i18n.get('t.code')}</th><th>{inject:i18n.get('t.valeur')}</th></tr>
         </thead>
         <tbody>
             {#for entry in allAttributes}
@@ -274,9 +427,9 @@
 {/if}
 {#else}
 <div class="card">
-    <p>Article introuvable. <a class="link-strong" href="/admin/articles">Retour à la liste</a>.</p>
+    <p>{inject:i18n.get('t.article-introuvable')} <a class="link-strong" href="/admin/articles">{inject:i18n.get('t.retour-a-la-liste')}</a>.</p>
 </div>
 {/if}
 {/body}
 
-{#footer}Ces données sont référentielles : sur un nœud magasin, elles atteignent les caisses au tirage suivant.{/footer}
+{#footer}{inject:i18n.get('t.ces-donnees-sont-referentielles-sur-un-nud')}{/footer}

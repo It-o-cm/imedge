@@ -5,6 +5,7 @@ import com.intermarche.edge.domain.store.Store;
 import io.smallrye.common.annotation.RunOnVirtualThread;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import org.eclipse.microprofile.graphql.*;
 import org.jboss.logging.Logger;
@@ -38,6 +39,10 @@ import java.util.NoSuchElementException;
 public class StoreResource implements GraphQLTrait {
 
     private static final Logger LOGGER = Logger.getLogger(StoreResource.class);
+
+    /** Moves the referential change stamp once a mutation has committed (BO-03-12-01). */
+    @Inject
+    ReferentialChangeNotifier referentialChange;
 
     // --------------------------------------------------
     // Queries (Retrieve) -> MANAGER only
@@ -147,6 +152,7 @@ public class StoreResource implements GraphQLTrait {
             address.longitude = input.longitude;
             store.address = address;
             store.persist();
+            referentialChange.changed();
             LOGGER.info("Exiting method createStore. Created ID: " + store.id);
             return store;
         }, StoreResource.class, "createStore");
@@ -199,6 +205,7 @@ public class StoreResource implements GraphQLTrait {
             if (input.country != null) store.address.country = input.country;
             if (input.latitude != null) store.address.latitude = input.latitude;
             if (input.longitude != null) store.address.longitude = input.longitude;
+            referentialChange.changed();
             LOGGER.info("Exiting method updateStore");
             return store;
         }, StoreResource.class, "updateStore");
@@ -219,6 +226,7 @@ public class StoreResource implements GraphQLTrait {
         return this.execute(() -> {
             LOGGER.info("Entering method deleteStore for id: " + id);
             boolean result = Store.deleteById(id);
+            referentialChange.changed();
             LOGGER.info("Exiting method deleteStore. Result: " + result);
             return result;
         }, StoreResource.class, "deleteStore");

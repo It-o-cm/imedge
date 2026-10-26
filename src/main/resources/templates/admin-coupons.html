@@ -7,45 +7,45 @@
 !}
 {#include admin-layout}
 
-{#title}Plages de codes-barres{/title}
+{#title}{inject:i18n.get('t.plages-de-codes-barres')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Plages de codes-barres</h1>
-        <p class="page-sub">Chaque plage se décrit par un préfixe, une longueur et des positions ; le motif de reconnaissance en est déduit.</p>
+        <h1>{inject:i18n.get('t.plages-de-codes-barres')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.chaque-plage-se-decrit-par-un-prefixe')}</p>
     </div>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 {#for type in types}
 <div class="card">
-    <h2 class="card-title">{type.code} — {type.label}</h2>
+    <h2 class="card-title">{type.code} — {inject:i18n.text(type.label)}</h2>
     <p class="page-sub">
-        Motif engendré : <code>{type.matchPattern ?: '—'}</code>
-        {#if type.amountPattern} · montant : <code>{type.amountPattern}</code>{/if}
+        {inject:i18n.get('t.motif-engendre')} <code>{type.matchPattern ?: '—'}</code>
+        {#if type.amountPattern} {inject:i18n.get('t.montant-3')} <code>{type.amountPattern}</code>{/if}
     </p>
 
     <form method="post" action="/admin/coupons/type">
         <input type="hidden" name="code" value="{type.code}">
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="l-{type.code}">Libellé</label>
+                <label class="field-label" for="l-{type.code}">{inject:i18n.get('t.libelle')}</label>
                 <input class="input-control" id="l-{type.code}" type="text" name="label" maxlength="100" value="{type.label}">
             </div>
             <div class="field">
-                <label class="field-label" for="p-{type.code}">Préfixe</label>
+                <label class="field-label" for="p-{type.code}">{inject:i18n.get('t.prefixe')}</label>
                 <input class="input-control" id="p-{type.code}" type="text" name="prefix" maxlength="40" value="{type.prefix ?: ''}">
             </div>
             <div class="field">
-                <label class="field-label" for="n-{type.code}">Longueur du code</label>
+                <label class="field-label" for="n-{type.code}">{inject:i18n.get('t.longueur-du-code')}</label>
                 <input class="input-control" id="n-{type.code}" type="number" name="codeLength" min="1" value="{type.codeLength ?: ''}">
             </div>
             <div class="field">
-                <label class="field-label" for="k-{type.code}">Caractères</label>
+                <label class="field-label" for="k-{type.code}">{inject:i18n.get('t.caracteres')}</label>
                 <select class="input-control" id="k-{type.code}" name="codeKind">
                     {#for kind in kinds}
                     <option value="{kind}" {#if type.codeKind == kind}selected{/if}>{kind}</option>
@@ -53,7 +53,7 @@
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="s-{type.code}">Montant</label>
+                <label class="field-label" for="s-{type.code}">{inject:i18n.get('t.montant-2')}</label>
                 <select class="input-control" id="s-{type.code}" name="amountSource">
                     {#for source in sources}
                     <option value="{source}" {#if type.amountSource == source}selected{/if}>{source}</option>
@@ -61,32 +61,62 @@
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="o-{type.code}">Priorité</label>
+                <label class="field-label" for="o-{type.code}">{inject:i18n.get('t.priorite')}</label>
                 <input class="input-control" id="o-{type.code}" type="number" name="priority" value="{type.priority}">
             </div>
             <div class="field">
-                <label class="field-label" for="a-{type.code}">Active</label>
+                <label class="field-label" for="a-{type.code}">{inject:i18n.get('t.active')}</label>
                 <input id="a-{type.code}" type="checkbox" name="active" {#if type.active}checked{/if}>
             </div>
             <div class="field">
-                <label class="field-label" for="d-{type.code}">Ligne de consigne</label>
+                <label class="field-label" for="d-{type.code}">{inject:i18n.get('t.ligne-de-consigne')}</label>
                 <input id="d-{type.code}" type="checkbox" name="depositLine" {#if type.depositLine}checked{/if}>
             </div>
             <div class="field">
-                <label class="field-label" for="ic-{type.code}">Îlots acceptant la plage</label>
-                <input class="input-control" id="ic-{type.code}" type="text" name="islandCodes" maxlength="1000" value="{type.islandCodes ?: ''}" placeholder="vide = tous les îlots">
+                <label class="field-label" for="ic-{type.code}">{inject:i18n.get('t.ilots-acceptant-la-plage')}</label>
+                <input class="input-control" id="ic-{type.code}" type="text" name="islandCodes" maxlength="1000" value="{type.islandCodes ?: ''}" placeholder="{inject:i18n.get('t.vide-tous-les-ilots')}">
             </div>
             <div class="field">
-                <label class="field-label" for="n9-{type.code}">Montant 9999 saisi</label>
+                <label class="field-label" for="n9-{type.code}">{inject:i18n.get('t.montant-9999-saisi')}</label>
                 <input id="n9-{type.code}" type="checkbox" name="manualAmountOnAllNines" {#if type.manualAmountOnAllNines}checked{/if}>
             </div>
+            {! BO-03-06-08 : le moyen de paiement que le code règle. !}
+            <div class="field">
+                <label class="field-label" for="tc-{type.code}">{inject:i18n.get('t.moyen-de-paiement-regle')}</label>
+                <select class="input-control" id="tc-{type.code}" name="tenderCode">
+                    <option value="" {#if !type.tenderCode}selected{/if}>{inject:i18n.get('t.bon-d-achat-par-defaut')}</option>
+                    {#for tender in tenders}
+                    <option value="{tender.code}" {#if tender.code == type.tenderCode}selected{/if}>{tender.functionalId} - {inject:i18n.text(tender.label)}</option>
+                    {/for}
+                </select>
+            </div>
+            {! BO-03-06-30 à -38 : les instruments que la caisse imprime sur cette plage. !}
+            <div class="field">
+                <label class="field-label" for="ik-{type.code}">{inject:i18n.get('t.plage-d-emission')}</label>
+                <select class="input-control" id="ik-{type.code}" name="issuedKind">
+                    <option value="" {#if !type.issuedKind}selected{/if}>{inject:i18n.get('t.lecture-seule')}</option>
+                    {#for kind in issuedKinds}
+                    <option value="{kind}" {#if kind == type.issuedKind}selected{/if}>{kind}</option>
+                    {/for}
+                </select>
+            </div>
+            {! BO-03-02-37 : le protocole d'une plage de cartes prepayees. !}
+            <div class="field">
+                <label class="field-label" for="cp-{type.code}">{inject:i18n.get('t.protocole-carte-prepayee')}</label>
+                <select class="input-control" id="cp-{type.code}" name="cardProtocol">
+                    <option value="" {#if !type.cardProtocol}selected{/if}>{inject:i18n.get('t.aucun-protocole')}</option>
+                    {#for protocol in cardProtocols}
+                    <option value="{protocol}" {#if protocol == type.cardProtocol}selected{/if}>{protocol}</option>
+                    {/for}
+                </select>
+            </div>
         </div>
-        <div class="page-actions"><button class="btn btn-primary" type="submit">Enregistrer la plage</button></div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer-la-plage')}</button></div>
     </form>
 
     <table class="data-table">
         <thead>
-        <tr><th>Rôle</th><th>Position</th><th>Longueur</th><th>Caractères</th><th>Décimales</th><th>Format</th><th>Devise</th><th></th></tr>
+        <tr><th>{inject:i18n.get('t.role-2')}</th><th>{inject:i18n.get('t.position')}</th><th>{inject:i18n.get('t.longueur')}</th><th>{inject:i18n.get('t.caracteres')}</th><th>{inject:i18n.get('t.decimales')}</th><th>{inject:i18n.get('t.format')}</th><th>{inject:i18n.get('t.devise')}</th><th></th></tr>
         </thead>
         <tbody>
         {#for field in type.fields}
@@ -102,7 +132,7 @@
                 <form method="post" action="/admin/coupons/field/delete">
                     <input type="hidden" name="code" value="{type.code}">
                     <input type="hidden" name="role" value="{field.role}">
-                    <button class="btn" type="submit">Supprimer</button>
+                    <button class="btn" type="submit">{inject:i18n.get('t.supprimer')}</button>
                 </form>
             </td>
         </tr>
@@ -114,7 +144,7 @@
         <input type="hidden" name="code" value="{type.code}">
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="fr-{type.code}">Rôle</label>
+                <label class="field-label" for="fr-{type.code}">{inject:i18n.get('t.role-2')}</label>
                 <select class="input-control" id="fr-{type.code}" name="role">
                     {#for role in roles}
                     <option value="{role}">{role}</option>
@@ -122,15 +152,15 @@
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="fo-{type.code}">Position</label>
+                <label class="field-label" for="fo-{type.code}">{inject:i18n.get('t.position')}</label>
                 <input class="input-control" id="fo-{type.code}" type="number" name="offsetPosition" min="0" value="0">
             </div>
             <div class="field">
-                <label class="field-label" for="fl-{type.code}">Longueur</label>
+                <label class="field-label" for="fl-{type.code}">{inject:i18n.get('t.longueur')}</label>
                 <input class="input-control" id="fl-{type.code}" type="number" name="fieldLength" min="1" value="1">
             </div>
             <div class="field">
-                <label class="field-label" for="fk-{type.code}">Caractères</label>
+                <label class="field-label" for="fk-{type.code}">{inject:i18n.get('t.caracteres')}</label>
                 <select class="input-control" id="fk-{type.code}" name="kind">
                     {#for kind in kinds}
                     <option value="{kind}">{kind}</option>
@@ -138,11 +168,11 @@
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="fd-{type.code}">Décimales</label>
+                <label class="field-label" for="fd-{type.code}">{inject:i18n.get('t.decimales')}</label>
                 <input class="input-control" id="fd-{type.code}" type="number" name="decimals" min="0">
             </div>
             <div class="field">
-                <label class="field-label" for="ff-{type.code}">Format date/heure</label>
+                <label class="field-label" for="ff-{type.code}">{inject:i18n.get('t.format-date-heure')}</label>
                 <select class="input-control" id="ff-{type.code}" name="dateFormat">
                     <option value="">—</option>
                     {#for format in formats}
@@ -151,7 +181,7 @@
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="fc-{type.code}">Devise</label>
+                <label class="field-label" for="fc-{type.code}">{inject:i18n.get('t.devise')}</label>
                 <select class="input-control" id="fc-{type.code}" name="currency">
                     <option value="">—</option>
                     {#for currency in currencies}
@@ -160,12 +190,12 @@
                 </select>
             </div>
         </div>
-        <div class="page-actions"><button class="btn btn-primary" type="submit">Enregistrer le champ</button></div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer-le-champ')}</button></div>
     </form>
 
     <table class="data-table">
         <thead>
-        <tr><th>Contrôle</th><th>Niveau</th><th>Message</th><th></th></tr>
+        <tr><th>{inject:i18n.get('t.controle')}</th><th>{inject:i18n.get('t.niveau-2')}</th><th>{inject:i18n.get('t.message')}</th><th></th></tr>
         </thead>
         <tbody>
         {#for control in type.controls}
@@ -177,7 +207,7 @@
                 <form method="post" action="/admin/coupons/control/delete">
                     <input type="hidden" name="code" value="{type.code}">
                     <input type="hidden" name="kind" value="{control.kind}">
-                    <button class="btn" type="submit">Supprimer</button>
+                    <button class="btn" type="submit">{inject:i18n.get('t.supprimer')}</button>
                 </form>
             </td>
         </tr>
@@ -189,7 +219,7 @@
         <input type="hidden" name="code" value="{type.code}">
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="ck-{type.code}">Contrôle</label>
+                <label class="field-label" for="ck-{type.code}">{inject:i18n.get('t.controle')}</label>
                 <select class="input-control" id="ck-{type.code}" name="kind">
                     {#for kind in controlKinds}
                     <option value="{kind}">{kind}</option>
@@ -197,7 +227,7 @@
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="cl-{type.code}">Niveau</label>
+                <label class="field-label" for="cl-{type.code}">{inject:i18n.get('t.niveau-2')}</label>
                 <select class="input-control" id="cl-{type.code}" name="level">
                     {#for level in levels}
                     <option value="{level}">{level}</option>
@@ -205,37 +235,37 @@
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="cm-{type.code}">Message</label>
+                <label class="field-label" for="cm-{type.code}">{inject:i18n.get('t.message')}</label>
                 <input class="input-control" id="cm-{type.code}" type="text" name="message" maxlength="120">
             </div>
         </div>
-        <div class="page-actions"><button class="btn btn-primary" type="submit">Enregistrer le contrôle</button></div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer-le-controle')}</button></div>
     </form>
 </div>
 {/for}
 
 <div class="card">
-    <h2 class="card-title">Nouvelle plage</h2>
+    <h2 class="card-title">{inject:i18n.get('t.nouvelle-plage')}</h2>
     <form method="post" action="/admin/coupons/type">
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="new-code">Code</label>
+                <label class="field-label" for="new-code">{inject:i18n.get('t.code')}</label>
                 <input class="input-control" id="new-code" type="text" name="code" maxlength="50" required>
             </div>
             <div class="field">
-                <label class="field-label" for="new-label">Libellé</label>
+                <label class="field-label" for="new-label">{inject:i18n.get('t.libelle')}</label>
                 <input class="input-control" id="new-label" type="text" name="label" maxlength="100">
             </div>
             <div class="field">
-                <label class="field-label" for="new-prefix">Préfixe</label>
+                <label class="field-label" for="new-prefix">{inject:i18n.get('t.prefixe')}</label>
                 <input class="input-control" id="new-prefix" type="text" name="prefix" maxlength="40">
             </div>
             <div class="field">
-                <label class="field-label" for="new-length">Longueur du code</label>
+                <label class="field-label" for="new-length">{inject:i18n.get('t.longueur-du-code')}</label>
                 <input class="input-control" id="new-length" type="number" name="codeLength" min="1">
             </div>
             <div class="field">
-                <label class="field-label" for="new-kind">Caractères</label>
+                <label class="field-label" for="new-kind">{inject:i18n.get('t.caracteres')}</label>
                 <select class="input-control" id="new-kind" name="codeKind">
                     {#for kind in kinds}
                     <option value="{kind}">{kind}</option>
@@ -243,7 +273,7 @@
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="new-source">Montant</label>
+                <label class="field-label" for="new-source">{inject:i18n.get('t.montant-2')}</label>
                 <select class="input-control" id="new-source" name="amountSource">
                     {#for source in sources}
                     <option value="{source}">{source}</option>
@@ -251,55 +281,82 @@
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="new-islands">Îlots acceptant la plage</label>
-                <input class="input-control" id="new-islands" type="text" name="islandCodes" maxlength="1000" placeholder="vide = tous les îlots">
+                <label class="field-label" for="new-islands">{inject:i18n.get('t.ilots-acceptant-la-plage')}</label>
+                <input class="input-control" id="new-islands" type="text" name="islandCodes" maxlength="1000" placeholder="{inject:i18n.get('t.vide-tous-les-ilots')}">
             </div>
             <div class="field">
-                <label class="field-label" for="new-nines">Montant 9999 saisi</label>
+                <label class="field-label" for="new-nines">{inject:i18n.get('t.montant-9999-saisi')}</label>
                 <input id="new-nines" type="checkbox" name="manualAmountOnAllNines">
             </div>
             <div class="field">
-                <label class="field-label" for="new-priority">Priorité</label>
+                <label class="field-label" for="new-tender">{inject:i18n.get('t.moyen-de-paiement-regle')}</label>
+                <select class="input-control" id="new-tender" name="tenderCode">
+                    <option value="">{inject:i18n.get('t.bon-d-achat-par-defaut')}</option>
+                    {#for tender in tenders}
+                    <option value="{tender.code}">{tender.functionalId} - {inject:i18n.text(tender.label)}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-issued">{inject:i18n.get('t.plage-d-emission')}</label>
+                <select class="input-control" id="new-issued" name="issuedKind">
+                    <option value="">{inject:i18n.get('t.lecture-seule')}</option>
+                    {#for kind in issuedKinds}
+                    <option value="{kind}">{kind}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-protocol">{inject:i18n.get('t.protocole-carte-prepayee')}</label>
+                <select class="input-control" id="new-protocol" name="cardProtocol">
+                    <option value="">{inject:i18n.get('t.aucun-protocole')}</option>
+                    {#for protocol in cardProtocols}
+                    <option value="{protocol}">{protocol}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-priority">{inject:i18n.get('t.priorite')}</label>
                 <input class="input-control" id="new-priority" type="number" name="priority" value="100">
             </div>
             <div class="field">
-                <label class="field-label" for="new-active">Active</label>
+                <label class="field-label" for="new-active">{inject:i18n.get('t.active')}</label>
                 <input id="new-active" type="checkbox" name="active" checked>
             </div>
         </div>
-        <div class="page-actions"><button class="btn btn-primary" type="submit">Créer la plage</button></div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.creer-la-plage')}</button></div>
     </form>
 </div>
 
 <div class="page-head">
     <div>
-        <h2>Plages de codes-barres ARTICLE</h2>
-        <p class="page-sub">Les codes que la balance et le comptoir impriment : le préfixe et la longueur disent ce qui appartient à la plage, les deux zones disent où lire l'article et la valeur, et le motif en est déduit (BO-03-06-02/03/04/05/10).</p>
-        <p class="page-sub"><strong>Destination</strong> : ce que la caisse FAIT du code (BO-03-06-56/-60/-61). ARTICLE, la ligne de vente habituelle ; REFUND, un retour de l'article au prix porté par le code, sans ticket d'origine ; TARE, le poids du contenant, déduit de la prochaine ligne pesée ; BALANCE_TICKET, la référence d'un sachet comptoir, reprise telle quelle.</p>
+        <h2>{inject:i18n.get('t.plages-de-codes-barres-article')}</h2>
+        <p class="page-sub">{inject:i18n.get('t.les-codes-que-la-balance-et-le')}</p>
+        <p class="page-sub"><strong>{inject:i18n.get('t.destination')}</strong> {inject:i18n.get('t.ce-que-la-caisse-fait-du-code')}</p>
     </div>
 </div>
 
 {#for range in articleRanges}
 <div class="card">
-    <h2 class="card-title">{range.code} — {range.label}</h2>
-    <p class="page-sub">Motif engendré : <code>{range.matchPattern ?: '—'}</code></p>
+    <h2 class="card-title">{range.code} — {inject:i18n.text(range.label)}</h2>
+    <p class="page-sub">{inject:i18n.get('t.motif-engendre')} <code>{range.matchPattern ?: '—'}</code></p>
     <form method="post" action="/admin/coupons/article-range">
         <input type="hidden" name="code" value="{range.code}">
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="al-{range.code}">Libellé</label>
+                <label class="field-label" for="al-{range.code}">{inject:i18n.get('t.libelle')}</label>
                 <input class="input-control" id="al-{range.code}" type="text" name="label" maxlength="100" value="{range.label}">
             </div>
             <div class="field">
-                <label class="field-label" for="ap-{range.code}">Préfixe</label>
+                <label class="field-label" for="ap-{range.code}">{inject:i18n.get('t.prefixe')}</label>
                 <input class="input-control" id="ap-{range.code}" type="text" name="prefix" maxlength="40" value="{range.prefix ?: ''}">
             </div>
             <div class="field">
-                <label class="field-label" for="an-{range.code}">Longueur du code</label>
+                <label class="field-label" for="an-{range.code}">{inject:i18n.get('t.longueur-du-code')}</label>
                 <input class="input-control" id="an-{range.code}" type="number" name="codeLength" min="1" max="38" value="{range.codeLength}">
             </div>
             <div class="field">
-                <label class="field-label" for="ak-{range.code}">Caractères</label>
+                <label class="field-label" for="ak-{range.code}">{inject:i18n.get('t.caracteres')}</label>
                 <select class="input-control" id="ak-{range.code}" name="codeKind">
                     {#for kind in kinds}
                     <option value="{kind}" {#if kind == range.codeKind}selected{/if}>{kind}</option>
@@ -307,15 +364,15 @@
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="aap-{range.code}">Article : position</label>
+                <label class="field-label" for="aap-{range.code}">{inject:i18n.get('t.article-position')}</label>
                 <input class="input-control" id="aap-{range.code}" type="number" name="articlePosition" min="0" value="{range.articlePosition}">
             </div>
             <div class="field">
-                <label class="field-label" for="aal-{range.code}">Article : longueur</label>
+                <label class="field-label" for="aal-{range.code}">{inject:i18n.get('t.article-longueur')}</label>
                 <input class="input-control" id="aal-{range.code}" type="number" name="articleLength" min="1" value="{range.articleLength}">
             </div>
             <div class="field">
-                <label class="field-label" for="apu-{range.code}">Destination</label>
+                <label class="field-label" for="apu-{range.code}">{inject:i18n.get('t.destination')}</label>
                 <select class="input-control" id="apu-{range.code}" name="purpose">
                     {#for purpose in purposes}
                     <option value="{purpose}" {#if purpose == range.purpose}selected{/if}>{purpose}</option>
@@ -323,15 +380,39 @@
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="apc-{range.code}">Promotion déclenchée</label>
+                <label class="field-label" for="apc-{range.code}">{inject:i18n.get('t.promotion-declenchee')}</label>
                 <input class="input-control" id="apc-{range.code}" type="text" name="promotionCode" maxlength="60" value="{range.promotionCode ?: ''}">
             </div>
+            {! BO-03-06-43 : la promotion definie par la plage (article = zone article, valeur = zone valeur). !}
             <div class="field">
-                <label class="field-label" for="alu-{range.code}">Service externe (URL)</label>
-                <input class="input-control" id="alu-{range.code}" type="text" name="lookupUrl" maxlength="255" value="{range.lookupUrl ?: ''}">
+                <label class="field-label" for="apt-{range.code}">{inject:i18n.get('t.n19-type-de-promotion')}</label>
+                <select class="input-control" id="apt-{range.code}" name="promotionType">
+                    <option value="" {#if !range.promotionType}selected{/if}>{inject:i18n.get('t.n19-promotion-nommee-seulement')}</option>
+                    <option value="PERCENT" {#if range.promotionType == 'PERCENT'}selected{/if}>{inject:i18n.get('t.n19-pourcentage-zone-valeur')}</option>
+                    <option value="AMOUNT" {#if range.promotionType == 'AMOUNT'}selected{/if}>{inject:i18n.get('t.n19-montant-zone-valeur')}</option>
+                </select>
             </div>
             <div class="field">
-                <label class="field-label" for="avs-{range.code}">Valeur lue</label>
+                <label class="field-label" for="alu-{range.code}">{inject:i18n.get('t.service-externe-url')}</label>
+                <input class="input-control" id="alu-{range.code}" type="text" name="lookupUrl" maxlength="255" value="{range.lookupUrl ?: ''}">
+            </div>
+            {! BO-03-06-41 : le champ de la reponse du partenaire qui porte l'article ou le message. !}
+            <div class="field">
+                <label class="field-label" for="alf-{range.code}">{inject:i18n.get('t.n19-champ-de-la-reponse')}</label>
+                <input class="input-control" id="alf-{range.code}" type="text" name="lookupField" maxlength="100" value="{range.lookupField ?: ''}">
+            </div>
+            {! BO-03-06-59 : la fonction caisse qu'appelle une plage FUNCTION. !}
+            <div class="field">
+                <label class="field-label" for="afn-{range.code}">{inject:i18n.get('t.fonction-caisse')}</label>
+                <select class="input-control" id="afn-{range.code}" name="functionCode">
+                    <option value="" {#if !range.functionCode}selected{/if}>{inject:i18n.get('t.lue-dans-le-code-zone-article')}</option>
+                    {#for function in functions}
+                    <option value="{function}" {#if function.name == range.functionCode}selected{/if}>{function.number} - {inject:i18n.text(function.label)}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="avs-{range.code}">{inject:i18n.get('t.valeur-lue')}</label>
                 <select class="input-control" id="avs-{range.code}" name="valueSource">
                     {#for source in valueSources}
                     <option value="{source}" {#if source == range.valueSource}selected{/if}>{source}</option>
@@ -339,19 +420,19 @@
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="avp-{range.code}">Valeur : position</label>
+                <label class="field-label" for="avp-{range.code}">{inject:i18n.get('t.valeur-position')}</label>
                 <input class="input-control" id="avp-{range.code}" type="number" name="valuePosition" min="0" value="{range.valuePosition}">
             </div>
             <div class="field">
-                <label class="field-label" for="avl-{range.code}">Valeur : longueur</label>
+                <label class="field-label" for="avl-{range.code}">{inject:i18n.get('t.valeur-longueur')}</label>
                 <input class="input-control" id="avl-{range.code}" type="number" name="valueLength" min="1" value="{range.valueLength}">
             </div>
             <div class="field">
-                <label class="field-label" for="avd-{range.code}">Valeur : décimales</label>
+                <label class="field-label" for="avd-{range.code}">{inject:i18n.get('t.valeur-decimales')}</label>
                 <input class="input-control" id="avd-{range.code}" type="number" name="valueDecimals" min="0" value="{range.valueDecimals}">
             </div>
             <div class="field">
-                <label class="field-label" for="ac-{range.code}">Devise du prix</label>
+                <label class="field-label" for="ac-{range.code}">{inject:i18n.get('t.devise-du-prix')}</label>
                 <select class="input-control" id="ac-{range.code}" name="currency">
                     {#for currency in currencies}
                     <option value="{currency}" {#if currency == range.currency}selected{/if}>{currency}</option>
@@ -359,49 +440,49 @@
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="acd-{range.code}">Clé de contrôle</label>
+                <label class="field-label" for="acd-{range.code}">{inject:i18n.get('t.cle-de-controle')}</label>
                 <input id="acd-{range.code}" type="checkbox" name="checkDigit" {#if range.checkDigit}checked{/if}>
             </div>
             <div class="field">
-                <label class="field-label" for="apr-{range.code}">Priorité</label>
+                <label class="field-label" for="apr-{range.code}">{inject:i18n.get('t.priorite')}</label>
                 <input class="input-control" id="apr-{range.code}" type="number" name="priority" value="{range.priority}">
             </div>
             <div class="field">
-                <label class="field-label" for="aa-{range.code}">Active</label>
+                <label class="field-label" for="aa-{range.code}">{inject:i18n.get('t.active')}</label>
                 <input id="aa-{range.code}" type="checkbox" name="active" {#if range.active}checked{/if}>
             </div>
         </div>
-        <div class="page-actions"><button class="btn btn-primary" type="submit">Enregistrer la plage article</button></div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer-la-plage-article')}</button></div>
     </form>
     <form method="post" action="/admin/coupons/article-range/delete">
         <input type="hidden" name="code" value="{range.code}">
-        <div class="page-actions"><button class="btn btn-muted" type="submit">Supprimer la plage article</button></div>
+        <div class="page-actions"><button class="btn btn-muted" type="submit">{inject:i18n.get('t.supprimer-la-plage-article')}</button></div>
     </form>
 </div>
 {/for}
 
 <div class="card">
-    <h2 class="card-title">Nouvelle plage article</h2>
+    <h2 class="card-title">{inject:i18n.get('t.nouvelle-plage-article')}</h2>
     <form method="post" action="/admin/coupons/article-range">
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="new-acode">Code</label>
+                <label class="field-label" for="new-acode">{inject:i18n.get('t.code')}</label>
                 <input class="input-control" id="new-acode" type="text" name="code" maxlength="50" required>
             </div>
             <div class="field">
-                <label class="field-label" for="new-alabel">Libellé</label>
+                <label class="field-label" for="new-alabel">{inject:i18n.get('t.libelle')}</label>
                 <input class="input-control" id="new-alabel" type="text" name="label" maxlength="100">
             </div>
             <div class="field">
-                <label class="field-label" for="new-aprefix">Préfixe</label>
+                <label class="field-label" for="new-aprefix">{inject:i18n.get('t.prefixe')}</label>
                 <input class="input-control" id="new-aprefix" type="text" name="prefix" maxlength="40">
             </div>
             <div class="field">
-                <label class="field-label" for="new-alength">Longueur du code</label>
+                <label class="field-label" for="new-alength">{inject:i18n.get('t.longueur-du-code')}</label>
                 <input class="input-control" id="new-alength" type="number" name="codeLength" min="1" max="38" value="13">
             </div>
             <div class="field">
-                <label class="field-label" for="new-akind">Caractères</label>
+                <label class="field-label" for="new-akind">{inject:i18n.get('t.caracteres')}</label>
                 <select class="input-control" id="new-akind" name="codeKind">
                     {#for kind in kinds}
                     <option value="{kind}">{kind}</option>
@@ -409,15 +490,15 @@
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="new-aapos">Article : position</label>
+                <label class="field-label" for="new-aapos">{inject:i18n.get('t.article-position')}</label>
                 <input class="input-control" id="new-aapos" type="number" name="articlePosition" min="0" value="2">
             </div>
             <div class="field">
-                <label class="field-label" for="new-aalen">Article : longueur</label>
+                <label class="field-label" for="new-aalen">{inject:i18n.get('t.article-longueur')}</label>
                 <input class="input-control" id="new-aalen" type="number" name="articleLength" min="1" value="5">
             </div>
             <div class="field">
-                <label class="field-label" for="new-apurp">Destination</label>
+                <label class="field-label" for="new-apurp">{inject:i18n.get('t.destination')}</label>
                 <select class="input-control" id="new-apurp" name="purpose">
                     {#for purpose in purposes}
                     <option value="{purpose}">{purpose}</option>
@@ -425,15 +506,36 @@
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="new-apromo">Promotion déclenchée</label>
+                <label class="field-label" for="new-apromo">{inject:i18n.get('t.promotion-declenchee')}</label>
                 <input class="input-control" id="new-apromo" type="text" name="promotionCode" maxlength="60" value="">
             </div>
             <div class="field">
-                <label class="field-label" for="new-alookup">Service externe (URL)</label>
+                <label class="field-label" for="new-aptype">{inject:i18n.get('t.n19-type-de-promotion')}</label>
+                <select class="input-control" id="new-aptype" name="promotionType">
+                    <option value="">{inject:i18n.get('t.n19-promotion-nommee-seulement')}</option>
+                    <option value="PERCENT">{inject:i18n.get('t.n19-pourcentage-zone-valeur')}</option>
+                    <option value="AMOUNT">{inject:i18n.get('t.n19-montant-zone-valeur')}</option>
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-alookup">{inject:i18n.get('t.service-externe-url')}</label>
                 <input class="input-control" id="new-alookup" type="text" name="lookupUrl" maxlength="255" value="">
             </div>
             <div class="field">
-                <label class="field-label" for="new-avsrc">Valeur lue</label>
+                <label class="field-label" for="new-alfield">{inject:i18n.get('t.n19-champ-de-la-reponse')}</label>
+                <input class="input-control" id="new-alfield" type="text" name="lookupField" maxlength="100" value="">
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-afunction">{inject:i18n.get('t.fonction-caisse')}</label>
+                <select class="input-control" id="new-afunction" name="functionCode">
+                    <option value="">{inject:i18n.get('t.lue-dans-le-code-zone-article')}</option>
+                    {#for function in functions}
+                    <option value="{function}">{function.number} - {inject:i18n.text(function.label)}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="new-avsrc">{inject:i18n.get('t.valeur-lue')}</label>
                 <select class="input-control" id="new-avsrc" name="valueSource">
                     {#for source in valueSources}
                     <option value="{source}">{source}</option>
@@ -441,19 +543,19 @@
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="new-avpos">Valeur : position</label>
+                <label class="field-label" for="new-avpos">{inject:i18n.get('t.valeur-position')}</label>
                 <input class="input-control" id="new-avpos" type="number" name="valuePosition" min="0" value="7">
             </div>
             <div class="field">
-                <label class="field-label" for="new-avlen">Valeur : longueur</label>
+                <label class="field-label" for="new-avlen">{inject:i18n.get('t.valeur-longueur')}</label>
                 <input class="input-control" id="new-avlen" type="number" name="valueLength" min="1" value="5">
             </div>
             <div class="field">
-                <label class="field-label" for="new-avdec">Valeur : décimales</label>
+                <label class="field-label" for="new-avdec">{inject:i18n.get('t.valeur-decimales')}</label>
                 <input class="input-control" id="new-avdec" type="number" name="valueDecimals" min="0" value="2">
             </div>
             <div class="field">
-                <label class="field-label" for="new-acur">Devise du prix</label>
+                <label class="field-label" for="new-acur">{inject:i18n.get('t.devise-du-prix')}</label>
                 <select class="input-control" id="new-acur" name="currency">
                     {#for currency in currencies}
                     <option value="{currency}">{currency}</option>
@@ -461,39 +563,39 @@
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="new-acd">Clé de contrôle</label>
+                <label class="field-label" for="new-acd">{inject:i18n.get('t.cle-de-controle')}</label>
                 <input id="new-acd" type="checkbox" name="checkDigit" checked>
             </div>
             <div class="field">
-                <label class="field-label" for="new-apri">Priorité</label>
+                <label class="field-label" for="new-apri">{inject:i18n.get('t.priorite')}</label>
                 <input class="input-control" id="new-apri" type="number" name="priority" value="100">
             </div>
             <div class="field">
-                <label class="field-label" for="new-aact">Active</label>
+                <label class="field-label" for="new-aact">{inject:i18n.get('t.active')}</label>
                 <input id="new-aact" type="checkbox" name="active" checked>
             </div>
         </div>
-        <div class="page-actions"><button class="btn btn-primary" type="submit">Créer la plage article</button></div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.creer-la-plage-article')}</button></div>
     </form>
 </div>
 
 <div class="page-head">
     <div>
-        <h2>Îlots de caisse</h2>
-        <p class="page-sub">Le groupe de caisses qu'un magasin pilote ensemble — ligne avant, comptoir, drive. Une plage de codes-barres peut n'être acceptée que sur certains d'entre eux (BO-03-06-07, BO-03-06-50). L'administration des îlots (rattachement, canal de promotion, rendu monnaie…) se fait désormais sur son écran dédié : <a href="/admin/checkout-islands">Îlots de caisse</a>.</p>
+        <h2>{inject:i18n.get('t.ilots-de-caisse')}</h2>
+        <p class="page-sub">{inject:i18n.get('t.le-groupe-de-caisses-qu-un-magasin-2')} <a href="/admin/checkout-islands">{inject:i18n.get('t.ilots-de-caisse')}</a>.</p>
     </div>
 </div>
 
 <div class="card">
-    <h2 class="card-title">Îlots</h2>
+    <h2 class="card-title">{inject:i18n.get('t.ilots')}</h2>
     {#if islands.isEmpty()}
-    <p class="page-sub">Aucun îlot n'est administré. Créez-en sur l'écran <a href="/admin/checkout-islands">Îlots de caisse</a>.</p>
+    <p class="page-sub">{inject:i18n.get('t.aucun-ilot-n-est-administre-creez-en')} <a href="/admin/checkout-islands">{inject:i18n.get('t.ilots-de-caisse')}</a>.</p>
     {#else}
     <div class="field-grid">
         {#for island in islands}
         <div class="field">
-            <span class="field-label">{island.code} — {island.label}</span>
-            <span class="field-hint">{#if island.active}actif{#else}inactif{/if}{#for terminal in island.terminals()} · {terminal}{/for}</span>
+            <span class="field-label">{island.code} — {inject:i18n.text(island.label)}</span>
+            <span class="field-hint">{#if island.active}{inject:i18n.get('t.actif-2')}{#else}{inject:i18n.get('t.inactif')}{/if}{#for terminal in island.terminals()} · {terminal}{/for}</span>
         </div>
         {/for}
     </div>

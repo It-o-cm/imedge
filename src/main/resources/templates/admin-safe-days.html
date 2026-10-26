@@ -5,112 +5,141 @@
 !}
 {#include admin-layout}
 
-{#title}Historique des journées{/title}
+{#title}{inject:i18n.get('t.historique-des-journees')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Historique des journées</h1>
-        <p class="page-sub">Chiffre d'affaires ventilé par moyen de paiement, et mouvements de caisse à valider.</p>
+        <h1>{inject:i18n.get('t.historique-des-journees')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.chiffre-d-affaires-ventile-par-moyen-de')}</p>
     </div>
     <div class="page-actions">
-        <a class="btn btn-ghost" href="/admin/safe/days/export?day={day}">Extraire (CSV)</a>
-        <a class="btn btn-ghost" href="/admin/safe/pouches">Remises au coffre</a>
+        <a class="btn btn-ghost" href="/admin/safe/days/export?day={day}">{inject:i18n.get('t.extraire-csv')}</a>
+        <a class="btn btn-ghost" href="/admin/safe/pouches">{inject:i18n.get('t.remises-au-coffre')}</a>
     </div>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 <div class="card">
-    <h2 class="card-title">Journée comptable</h2>
+    <h2 class="card-title">{inject:i18n.get('t.journee-comptable')}</h2>
     <form method="get" action="/admin/safe/days">
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="h-day">Date</label>
+                <label class="field-label" for="h-day">{inject:i18n.get('t.date')}</label>
                 <input class="input-control" id="h-day" type="date" name="day" value="{day}">
             </div>
         </div>
         <div class="page-actions" style="margin-top: 6px;">
-            <button class="btn btn-primary" type="submit">Afficher</button>
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.afficher')}</button>
         </div>
     </form>
 </div>
 
+{! BO-05-02-09 : la validation du chiffre d'affaires net de la journée, une fois
+ ! chaque mouvement des caissières validé ; BO-05-02-10 : les pochettes de la
+ ! journée attendent cette validation. !}
 <div class="card">
-    <h2 class="card-title">Chiffre d'affaires par moyen de paiement</h2>
-    <p class="card-sub">Total encaissé <strong>{total} €</strong> · total prélevé <strong>{withdrawn} €</strong></p>
+    <h2 class="card-title">{inject:i18n.get('t.u-validation-de-la-journee')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.u-ca-net-remonte')} <strong>{inject:i18n.money(netRevenue)} €</strong> — {inject:i18n.get('t.u-mouvements-a-valider')} <strong>{pending}</strong></p>
+    {#if validation}
+    <div class="alert alert-ok" role="status">{inject:i18n.get('t.u-journee-validee-par')} {validation.validatedBy} — {validation.validatedAt.format('dd/MM/yyyy HH:mm')} — {inject:i18n.money(validation.netRevenue)} €</div>
+    {#else}
+    <form method="post" action="/admin/safe/days/validate-day">
+        <input type="hidden" name="day" value="{day}">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="v-by">{inject:i18n.get('t.u-valideur')}</label>
+                <input class="input-control" id="v-by" type="text" name="endorsedBy" maxlength="20" required>
+            </div>
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.u-valider-la-journee')}</button>
+        </div>
+    </form>
+    {/if}
+</div>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.u-theorique-par-moyen')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.u-total-theorique')} <strong>{inject:i18n.money(total)} €</strong> {inject:i18n.get('t.total-preleve')} <strong>{inject:i18n.money(withdrawn)} €</strong></p>
     {#if tenders.isEmpty()}
     <div class="empty-state">
-        <p>Aucune session close ce jour-là.</p>
+        <p>{inject:i18n.get('t.aucune-session-close-ce-jour-la')}</p>
     </div>
     {#else}
+    <div class="table-scroll">
     <table class="data-table">
         <thead>
-        <tr><th>Moyen de paiement</th><th>Montant €</th></tr>
+        <tr><th>{inject:i18n.get('t.moyen-de-paiement')}</th><th>{inject:i18n.get('t.montant')}</th></tr>
         </thead>
         <tbody>
         {#for tender in tenders}
         <tr>
-            <td>{tender.method}</td>
-            <td>{tender.amount}</td>
+            <td>{tenderLabels.get(tender.method)}</td>
+            <td class="cell-keep">{inject:i18n.money(tender.amount)}</td>
         </tr>
         {/for}
         </tbody>
     </table>
+    </div>
     {/if}
 </div>
 
 <div class="card">
-    <h2 class="card-title">Sessions de la journée</h2>
+    <h2 class="card-title">{inject:i18n.get('t.sessions-de-la-journee')}</h2>
     {#if sessions.isEmpty()}
     <div class="empty-state">
-        <p>Aucune session close ce jour-là.</p>
+        <p>{inject:i18n.get('t.aucune-session-close-ce-jour-la')}</p>
     </div>
     {#else}
+    <div class="table-scroll">
     <table class="data-table">
         <thead>
-        <tr><th>Caisse</th><th>Session</th><th>Compté €</th><th>Théorique €</th><th>Écart €</th><th>Prélevé €</th><th>Arbitrage</th><th>Déclaration papier</th></tr>
+        <tr><th>{inject:i18n.get('t.caisse')}</th><th>{inject:i18n.get('t.session')}</th><th>{inject:i18n.get('t.compte-2')}</th><th>{inject:i18n.get('t.theorique')}</th><th>{inject:i18n.get('t.ecart')}</th><th>{inject:i18n.get('t.preleve')}</th><th>{inject:i18n.get('t.arbitrage')}</th><th>{inject:i18n.get('t.declaration-papier')}</th></tr>
         </thead>
         <tbody>
         {#for session in sessions}
         <tr>
-            <td>{session.terminalId}</td>
-            <td>{session.sessionNumber}</td>
-            <td>{session.countedAmount ?: '—'}</td>
-            <td>{session.theoreticalAmount ?: '—'}</td>
-            <td>{#if session.floatingNoCount}non compté (flottant){#else}{session.variance ?: '—'}{/if}</td>
-            <td>{session.withdrawnAmount ?: '—'}</td>
+            <td class="cell-keep">{session.terminalId}</td>
+            <td class="cell-keep">{session.sessionNumber}</td>
+            <td class="cell-keep">{#if session.countedAmount != null}{inject:i18n.money(session.countedAmount)}{#else}—{/if}</td>
+            <td class="cell-keep">{#if session.theoreticalAmount != null}{inject:i18n.money(session.theoreticalAmount)}{#else}—{/if}</td>
+            <td class="cell-keep">{#if session.floatingNoCount}{inject:i18n.get('t.non-compte-flottant')}{#else}{#if session.variance != null}{inject:i18n.money(session.variance)}{#else}—{/if}{/if}</td>
+            <td class="cell-keep">{#if session.withdrawnAmount != null}{inject:i18n.money(session.withdrawnAmount)}{#else}—{/if}</td>
             <td>{session.varianceEndorsedBy ?: ''}</td>
-            <td>{declarations[session.sessionNumber] ?: ''}</td>
+            <td>{declarations.get(session.sessionNumber) ?: ''}</td>
         </tr>
         {/for}
         </tbody>
     </table>
+    </div>
     {/if}
 </div>
 
 <div class="card">
-    <h2 class="card-title">Mouvements des caissières</h2>
-    <p class="card-sub">Apports, prélèvements, dépenses et transferts : chacun se valide en nommant le responsable qui l'a contrôlé.</p>
+    <h2 class="card-title">{inject:i18n.get('t.mouvements-des-caissieres')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.apports-prelevements-depenses-et-transferts-chac')}</p>
     {#if movements.isEmpty()}
     <div class="empty-state">
-        <p>Aucun mouvement de caisse ce jour-là.</p>
+        <p>{inject:i18n.get('t.aucun-mouvement-de-caisse-ce-jour-la')}</p>
     </div>
     {#else}
+    <div class="table-scroll">
     <table class="data-table">
         <thead>
-        <tr><th>Heure</th><th>Caisse</th><th>Nature</th><th>Moyen</th><th>Montant €</th><th>Motif</th><th>Validé par</th><th></th></tr>
+        <tr><th>{inject:i18n.get('t.heure')}</th><th>{inject:i18n.get('t.caisse')}</th><th>{inject:i18n.get('t.nature')}</th><th>{inject:i18n.get('t.moyen')}</th><th>{inject:i18n.get('t.montant')}</th><th>{inject:i18n.get('t.motif')}</th><th>{inject:i18n.get('t.valide-par-2')}</th><th></th></tr>
         </thead>
         <tbody>
         {#for movement in movements}
         <tr>
-            <td>{movement.movementDate}</td>
-            <td>{movement.terminalId}</td>
-            <td>{movement.type}</td>
-            <td>{movement.paymentMethod ?: 'CASH'}{#if movement.transferTo} → {movement.transferTo}{/if}</td>
-            <td>{movement.amount}</td>
+            <td class="cell-keep">{movement.movementDate.format('dd/MM/yyyy HH:mm')}</td>
+            <td class="cell-keep">{movement.terminalId}</td>
+            <td>{inject:i18n.code('t.u-mvt-', movement.type.name)}</td>
+            <td>{#if movement.paymentMethod}{tenderLabels.get(movement.paymentMethod)}{#else}{tenderLabels.get('CASH')}{/if}{#if movement.transferTo} → {tenderLabels.get(movement.transferTo)}{/if}</td>
+            <td class="cell-keep">{inject:i18n.money(movement.amount)}</td>
             <td>{movement.reason ?: '—'}</td>
             <td>{movement.endorsedBy ?: '—'}</td>
             <td>
@@ -118,15 +147,78 @@
                 <form method="post" action="/admin/safe/days/validate">
                     <input type="hidden" name="id" value="{movement.id}">
                     <input type="hidden" name="day" value="{day}">
-                    <input class="input-control" type="text" name="endorsedBy" maxlength="20" placeholder="Badge" required>
-                    <button class="btn btn-small btn-primary" type="submit">Valider</button>
+                    <input class="input-control" type="text" name="endorsedBy" maxlength="20" placeholder="{inject:i18n.get('t.badge-2')}" required>
+                    <button class="btn btn-small btn-primary" type="submit">{inject:i18n.get('t.valider')}</button>
                 </form>
+                {/if}
+                {#if !validation}
+                {! BO-05-02-09 : la correction est un nouveau mouvement, jamais une
+                 ! réécriture du témoin de la caisse. !}
+                <details>
+                    <summary class="btn btn-small btn-ghost">{inject:i18n.get('t.u-corriger')}</summary>
+                    <form method="post" action="/admin/safe/days/correct">
+                        <input type="hidden" name="id" value="{movement.id}">
+                        <input type="hidden" name="day" value="{day}">
+                        <input class="input-control" type="text" inputmode="decimal" name="amount" placeholder="{inject:i18n.get('t.u-montant-corrige')}" required>
+                        <input class="input-control" type="text" name="reason" maxlength="120" placeholder="{inject:i18n.get('t.motif')}" required>
+                        <input class="input-control" type="text" name="endorsedBy" maxlength="20" placeholder="{inject:i18n.get('t.badge-2')}" required>
+                        <button class="btn btn-small btn-primary" type="submit">{inject:i18n.get('t.enregistrer')}</button>
+                    </form>
+                </details>
                 {/if}
             </td>
         </tr>
         {/for}
         </tbody>
     </table>
+    </div>
     {/if}
 </div>
+
+{#if !validation}
+{#if !sessions.isEmpty()}
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.u-transfert-de-reglement')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.u-transfert-de-reglement-aide')}</p>
+    <form method="post" action="/admin/safe/days/transfer">
+        <input type="hidden" name="day" value="{day}">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="t-session">{inject:i18n.get('t.session')}</label>
+                <select class="input-control" id="t-session" name="session">
+                    {#for session in sessions}<option value="{session.sessionNumber}">{session.terminalId} — {session.sessionNumber}</option>{/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="t-from">{inject:i18n.get('t.u-du-moyen')}</label>
+                <select class="input-control" id="t-from" name="from">
+                    {#for code in tenderCodes}<option value="{code}">{tenderLabels.get(code)}</option>{/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="t-to">{inject:i18n.get('t.u-vers-le-moyen')}</label>
+                <select class="input-control" id="t-to" name="to">
+                    {#for code in tenderCodes}<option value="{code}">{tenderLabels.get(code)}</option>{/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="t-amount">{inject:i18n.get('t.montant')}</label>
+                <input class="input-control" id="t-amount" type="text" inputmode="decimal" name="amount" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="t-reason">{inject:i18n.get('t.motif')}</label>
+                <input class="input-control" id="t-reason" type="text" name="reason" maxlength="120" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="t-by">{inject:i18n.get('t.u-valideur')}</label>
+                <input class="input-control" id="t-by" type="text" name="endorsedBy" maxlength="20" required>
+            </div>
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.u-transferer')}</button>
+        </div>
+    </form>
+</div>
+{/if}
+{/if}
 {/body}

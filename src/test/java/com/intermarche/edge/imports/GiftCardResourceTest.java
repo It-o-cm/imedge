@@ -83,4 +83,13 @@ class GiftCardResourceTest {
         assertEquals(200, response.getStatus());
         assertEquals("{\"valid\":true,\"balance\":25}", response.getEntity());
     }
+    /** LC-07/LC-08: a correct configured node token passes the gate and preserves the relay's safe fallback. */
+    @Test
+    void configuredTokenAcceptsTheAuthenticatedRequest() {
+        var resource = storeResource(Optional.of("TOKEN"));
+        when(resource.relay.relay(any(), any(), any(), any(), anyLong())).thenReturn(new ExternalRelayService.RelayResult(false, 0, ""));
+        assertEquals(200, resource.query("CARD1", "TOKEN").getStatus());
+        org.mockito.Mockito.verify(resource.relay).relay(any(), any(), any(), any(), anyLong());
+    }
+
 }

@@ -107,7 +107,10 @@ public class RegisterPresenceService {
         LOGGER.info("Entering method offline");
         List<Presence> silent = new ArrayList<>();
         for (Presence presence : all()) {
-            if (!presence.online()) {
+            // BO-03-09-01: a register deactivated by the back office is not
+            // expected to speak, and its silence is no alarm.
+            if (!presence.online()
+                    && !com.intermarche.edge.domain.store.CheckoutPoint.isDeactivated(presence.terminalId())) {
                 silent.add(presence);
             }
         }

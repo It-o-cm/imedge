@@ -491,4 +491,32 @@ class EngineFeedDeliveryServiceTest {
         service.runScheduled();
         verify(scheduledDeliveryService).markResult(1L, "HTTP 503 boom");
     }
+
+    /** BO-08-01: an informational HTTP status is not a successful delivery and cannot acknowledge a feed. */
+    @Test
+    void informationalStatusDoesNotAcknowledgeTheFeed() throws Exception {
+        var client = mock(java.net.http.HttpClient.class);
+        var response = mock(java.net.http.HttpResponse.class);
+        when(response.statusCode()).thenReturn(199);
+        when(response.body()).thenReturn("PENDING");
+        org.mockito.Mockito.doReturn(response).when(client).send(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        var field = EngineFeedDeliveryService.class.getDeclaredField("httpClient");
+        field.setAccessible(true);
+        field.set(service, client);
+        when(engineFeedService.pendingFeeds()).thenReturn(List.of(pending("PRODUCTS", "v1", null)));
+        service.deliverPending();
+        verify(engineFeedService).markError(org.mockito.ArgumentMatchers.eq("PRODUCTS"), org.mockito.ArgumentMatchers.contains("HTTP 199"));
+        verify(engineFeedService, org.mockito.Mockito.never()).markApplied(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    /** BO-08-04: a temporary pending-read failure is swallowed and a following delivery cycle retries the keeper. */
+    @Test
+    void backgroundDeliveryRetriesAfterAKeeperFailure() throws Exception {
+        var delivery = service;
+        when(delivery.engineFeedService.pendingFeeds()).thenThrow(new IllegalStateException("database unavailable")).thenReturn(List.of());
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(delivery::deliverSafely);
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(delivery::deliverSafely);
+        verify(delivery.engineFeedService, org.mockito.Mockito.times(2)).pendingFeeds();
+    }
+
 }

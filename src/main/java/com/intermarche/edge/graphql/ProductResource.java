@@ -5,6 +5,7 @@ import com.intermarche.edge.domain.catalog.ProductType;
 import io.smallrye.common.annotation.RunOnVirtualThread;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import org.eclipse.microprofile.graphql.*;
 import org.jboss.logging.Logger;
@@ -43,6 +44,10 @@ import java.util.NoSuchElementException;
 public class ProductResource implements GraphQLTrait {
 
     private static final Logger LOGGER = Logger.getLogger(ProductResource.class);
+
+    /** Moves the referential change stamp once a mutation has committed (BO-03-12-01). */
+    @Inject
+    ReferentialChangeNotifier referentialChange;
 
     // --------------------------------------------------
     // Queries (Retrieve) -> MANAGER only
@@ -165,9 +170,11 @@ public class ProductResource implements GraphQLTrait {
             product.internalCode = input.internalCode;
             // Default 'active' to true if not specified
             product.active = input.active != null ? input.active : true;
+            applyReferential(product, input);
 
             product.persist();
 
+            referentialChange.changed();
             LOGGER.info("Exiting method createProduct. Created ID: " + product.id);
             return product;
         }, ProductResource.class, "createProduct");
@@ -234,7 +241,9 @@ public class ProductResource implements GraphQLTrait {
             if (input.checkoutLabel != null) product.checkoutLabel = input.checkoutLabel;
             if (input.internalCode != null) product.internalCode = input.internalCode;
             if (input.active != null) product.active = input.active;
+            applyReferential(product, input);
 
+            referentialChange.changed();
             LOGGER.info("Exiting method updateProduct");
             return product;
         }, ProductResource.class, "updateProduct");
@@ -255,9 +264,39 @@ public class ProductResource implements GraphQLTrait {
         return this.execute(() -> {
             LOGGER.info("Entering method deleteProduct for id: " + id);
             boolean result = Product.deleteById(id);
+            referentialChange.changed();
             LOGGER.info("Exiting method deleteProduct. Result: " + result);
             return result;
         }, ProductResource.class, "deleteProduct");
+    }
+
+    /**
+     * Applies the referential data the API carries beside the identity: the
+     * attributes, the sale codes, the PLU and the sale ban (BO-02-03-03, -18).
+     * A field the caller does not send leaves the article's value alone.
+     *
+     * @param product the article being created or updated
+     * @param input the mutation input
+     */
+    static void applyReferential(Product product, ProductRecord input) {
+        if (input.attributes != null) {
+            com.intermarche.edge.domain.catalog.attribute.ProductAttributes.mergePairs(product.attributes, input.attributes);
+        }
+        if (input.saleCodes != null) {
+            java.util.Set<String> codes = new java.util.TreeSet<>();
+            for (String code : input.saleCodes) {
+                if (code != null && !code.isBlank() && !code.trim().equals(product.ean)) {
+                    codes.add(code.trim());
+                }
+            }
+            product.saleCodes = codes;
+        }
+        if (input.plu != null) {
+            product.plu = input.plu.isBlank() ? null : input.plu.trim();
+        }
+        if (input.forbiddenToSale != null) {
+            product.forbiddenToSale = input.forbiddenToSale;
+        }
     }
 
     /**
@@ -279,6 +318,18 @@ public class ProductResource implements GraphQLTrait {
         public Boolean active;
         public String checkoutLabel;
         public String internalCode;
+        /**
+         * Declared attributes to merge, as {@code code=value} pairs separated by
+         * semicolons — the grammar of the feed's ATTRIBUTES cell; an empty value
+         * removes the code (BO-02-03-06, -09, -11, -18, -21 to -27, -41).
+         */
+        public String attributes;
+        /** The additional sale codes, replacing the article's own (BO-02-03-03). */
+        public List<String> saleCodes;
+        /** The PLU (weighed-sale identity), blank to remove it. */
+        public String plu;
+        /** Whether the article is forbidden to sale. */
+        public Boolean forbiddenToSale;
 
         public ProductRecord() {
         }
@@ -291,7 +342,9 @@ public class ProductResource implements GraphQLTrait {
             return "ProductRecord [ean=" + ean + ", name=" + name + ", description=" + description +
                     ", brand=" + brand + ", referenceWeight=" + referenceWeight + ", referenceVolume=" + referenceVolume +
                     ", productType=" + productType + ", unitName=" + unitName + ", active=" + active +
-                    ", checkoutLabel=" + checkoutLabel + ", internalCode=" + internalCode;
+                    ", checkoutLabel=" + checkoutLabel + ", internalCode=" + internalCode
+                    + ", attributes=" + attributes + ", saleCodes=" + saleCodes + ", plu=" + plu
+                    + ", forbiddenToSale=" + forbiddenToSale;
         }
 
     }

@@ -3,6 +3,7 @@ package com.intermarche.edge.domain.payment;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.persistence.DiscriminatorValue;
 import jakarta.persistence.Entity;
+
 import java.math.BigDecimal;
 
 /**

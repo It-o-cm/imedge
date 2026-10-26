@@ -1,8 +1,9 @@
 package com.intermarche.edge.domain.payment;
 
-import java.math.BigDecimal;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+
+import java.math.BigDecimal;
 
 /**
  * Unit tests for {@link CardPayment}, targeting 100% branch coverage.
@@ -106,7 +107,7 @@ class CardPaymentTest {
         BigDecimal amount = new BigDecimal("20.0000");
         CardPayment.Factory factory = new CardPayment.Factory();
         TicketPayment payment = factory.create(amount, new BigDecimal("50.0000"));
-        Assertions.assertTrue(payment instanceof CardPayment);
+        Assertions.assertInstanceOf(CardPayment.class, payment);
         Assertions.assertSame(amount, payment.amount);
     }
 

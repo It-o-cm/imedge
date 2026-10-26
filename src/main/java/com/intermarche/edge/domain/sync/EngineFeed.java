@@ -56,6 +56,19 @@ public class EngineFeed extends PanacheEntity {
     public String lastError;
 
     /**
+     * The fingerprint of the referential this file was integrated over on the
+     * store node, empty when that referential was empty, or null when the
+     * integration did not record it: a register applies the file only from
+     * that very state, the pages otherwise.
+     */
+    @Column(name = "base_fingerprint", length = 64)
+    public String baseFingerprint;
+
+    /** The fingerprint of the referential right after the file was integrated, or null. */
+    @Column(name = "result_fingerprint", length = 64)
+    public String resultFingerprint;
+
+    /**
      * Finds a feed by its code.
      *
      * @param code the feed code

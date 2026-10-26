@@ -1,5 +1,9 @@
 package com.intermarche.edge.ui.admin;
 
+import io.quarkus.security.Authenticated;
+import com.intermarche.edge.security.FeatureAccess;
+import com.intermarche.edge.domain.setting.Feature;
+import com.intermarche.edge.domain.people.CrudOption;
 import com.intermarche.edge.domain.catalog.Product;
 import com.intermarche.edge.domain.catalog.ProductFamily;
 import com.intermarche.edge.domain.setting.TouchGroupSetting;
@@ -7,7 +11,6 @@ import com.intermarche.edge.service.PosSettingsService;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
@@ -73,6 +76,10 @@ public class AdminTouchResource {
     @Inject
     PosSettingsService posSettingsService;
 
+    /** The sales volumes counted on the registers' sales (BO-03-01-13). */
+    @Inject
+    com.intermarche.edge.service.SalesVolumeService salesVolumeService;
+
     /** The picture resizer for the single and bulk image imports. */
     @Inject
     ImageResizeService imageResizeService;
@@ -86,7 +93,8 @@ public class AdminTouchResource {
      * @return the administration page
      */
     @GET
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.TOUCH)
     public TemplateInstance list(@QueryParam("notice") String notice,
                                  @QueryParam("noticeOk") @DefaultValue("true") boolean noticeOk) {
         LOGGER.info("Entering method list with notice: " + notice + ", noticeOk: " + noticeOk);
@@ -112,6 +120,8 @@ public class AdminTouchResource {
                 .data("tpvTypes", com.intermarche.edge.domain.store.TpvType.values())
                 .data("orderMode", posSettingsService.touchDisplayOrder())
                 .data("perPage", posSettingsService.touchGroupsPerPage())
+                .data("articleSortVolume", posSettingsService.touchArticleSortVolume())
+                .data("salesVolumeDays", posSettingsService.touchSalesVolumeDays())
                 .data("pinnedCount", pinnedCount)
                 .data("maxPinned", MAX_PINNED)
                 .data("notice", notice)
@@ -127,7 +137,8 @@ public class AdminTouchResource {
      */
     @POST
     @Path("/config")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.TOUCH, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response saveConfig(MultivaluedMap<String, String> form) {
@@ -174,6 +185,24 @@ public class AdminTouchResource {
     }
 
     /**
+     * Recomputes now the sales volumes of the articles and of the groups from
+     * the sales the registers pushed (BO-03-01-13), rather than waiting for the
+     * end of period; the registers take them at their next pull.
+     *
+     * @return a 303 redirect carrying the outcome notice
+     */
+    @POST
+    @Path("/sales-volume")
+    @Authenticated
+    @FeatureAccess(value = Feature.TOUCH, option = CrudOption.UPDATE)
+    public Response refreshSalesVolume() {
+        LOGGER.info("Entering method refreshSalesVolume");
+        int sold = salesVolumeService.refresh(com.intermarche.edge.domain.util.DateTimeProvider.now().toLocalDate());
+        LOGGER.info("Exiting method refreshSalesVolume");
+        return redirect("Volumes de vente recalculés : " + sold + " article(s) vendu(s) sur la période.", true);
+    }
+
+    /**
      * Pins or unpins a group (BO-03-01-07): pinning is refused once
      * {@value #MAX_PINNED} groups are already pinned; unpinning is always
      * allowed.
@@ -183,7 +212,8 @@ public class AdminTouchResource {
      */
     @POST
     @Path("/pin")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.TOUCH, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response togglePin(MultivaluedMap<String, String> form) {
@@ -262,7 +292,8 @@ public class AdminTouchResource {
      */
     @POST
     @Path("/image")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.TOUCH, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response saveImages(MultivaluedMap<String, String> form) {
@@ -310,7 +341,8 @@ public class AdminTouchResource {
      */
     @POST
     @Path("/image/clear")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.TOUCH, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response clearImage(MultivaluedMap<String, String> form) {

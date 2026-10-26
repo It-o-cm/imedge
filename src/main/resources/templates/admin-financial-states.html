@@ -6,62 +6,62 @@
 !}
 {#include admin-layout}
 
-{#title}États financiers X/Z{/title}
+{#title}{inject:i18n.get('t.etats-financiers-x-z')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>États financiers X/Z</h1>
-        <p class="page-sub">Les compteurs Z chaînés du point de vente et des caissiers, et la lecture X de l'intervalle en cours.</p>
+        <h1>{inject:i18n.get('t.etats-financiers-x-z')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.les-compteurs-z-chaines-du-point-de')}</p>
     </div>
 </div>
 
 {#if notice}
-<div class="notice {#if noticeOk}notice-ok{#else}notice-ko{/if}">{notice}</div>
+<div class="notice {#if noticeOk}notice-ok{#else}notice-ko{/if}">{inject:i18n.text(notice)}</div>
 {/if}
 
 <div class="card">
-    <h2 class="card-title">Éditer un état</h2>
+    <h2 class="card-title">{inject:i18n.get('t.editer-un-etat')}</h2>
     <form method="get" action="/admin/financial-states/x" class="inline-form">
-        <select name="scope">{#for scope in scopes}<option value="{scope}">{scope}</option>{/for}</select>
-        <select name="period">{#for period in periods}<option value="{period}">{period}</option>{/for}</select>
-        <button type="submit">Lire un X</button>
+        <select name="scope">{#for scope in scopes}<option value="{scope}">{inject:i18n.code('t.x21-fs-scope-', scope)}</option>{/for}</select>
+        <select name="period">{#for period in periods}<option value="{period}">{inject:i18n.code('t.x21-fs-period-', period)}</option>{/for}</select>
+        <button type="submit">{inject:i18n.get('t.lire-un-x')}</button>
     </form>
     <form method="post" action="/admin/financial-states/emit" class="inline-form">
-        <select name="scope">{#for scope in scopes}<option value="{scope}">{scope}</option>{/for}</select>
-        <select name="period">{#for period in periods}<option value="{period}">{period}</option>{/for}</select>
-        <button type="submit">Émettre un Z</button>
+        <select name="scope">{#for scope in scopes}<option value="{scope}">{inject:i18n.code('t.x21-fs-scope-', scope)}</option>{/for}</select>
+        <select name="period">{#for period in periods}<option value="{period}">{inject:i18n.code('t.x21-fs-period-', period)}</option>{/for}</select>
+        <button type="submit">{inject:i18n.get('t.emettre-un-z')}</button>
     </form>
 </div>
 
 <div class="card">
-    <h2 class="card-title">Z émis</h2>
+    <h2 class="card-title">{inject:i18n.get('t.z-emis')}</h2>
     <table class="data-table">
         <thead>
         <tr>
-            <th>Émis le</th>
-            <th>Porteur</th>
-            <th>Période</th>
+            <th>{inject:i18n.get('t.emis-le')}</th>
+            <th>{inject:i18n.get('t.porteur')}</th>
+            <th>{inject:i18n.get('t.periode')}</th>
             <th>N°</th>
-            <th>CA net</th>
-            <th>Anomalie</th>
+            <th>{inject:i18n.get('t.ca-net-2')}</th>
+            <th>{inject:i18n.get('t.anomalie')}</th>
             <th class="col-actions"></th>
         </tr>
         </thead>
         <tbody>
         {#for state in states}
         <tr>
-            <td>{state.emittedAt}</td>
-            <td>{state.scope}{#if state.cashier} · {state.cashier.loginName}{/if}</td>
-            <td>{state.periodKind}</td>
+            <td>{#if state.emittedAt}{state.emittedAt.format('dd/MM/yyyy HH:mm')}{#else}—{/if}</td>
+            <td>{inject:i18n.code('t.x21-fs-scope-', state.scope)}{#if state.cashier} · {state.cashier.loginName}{/if}</td>
+            <td>{inject:i18n.code('t.x21-fs-period-', state.periodKind)}</td>
             <td>{state.sequence}</td>
-            <td>{state.netTurnover}</td>
-            <td>{#if flagged.contains(state.id)}<span class="badge badge-warn">écart / retard</span>{#else}—{/if}</td>
-            <td class="col-actions"><a href="/admin/financial-states/{state.id}">Ouvrir</a></td>
+            <td>{inject:i18n.money(state.netTurnover)}</td>
+            <td>{#if flagged.contains(state.id)}<span class="badge badge-warn">{inject:i18n.get('t.ecart-retard')}</span>{#else}—{/if}</td>
+            <td class="col-actions"><a href="/admin/financial-states/{state.id}">{inject:i18n.get('t.ouvrir')}</a></td>
         </tr>
         {/for}
         {#if states.isEmpty()}
-        <tr><td colspan="7" class="empty">Aucun Z émis.</td></tr>
+        <tr><td colspan="7" class="empty">{inject:i18n.get('t.aucun-z-emis')}</td></tr>
         {/if}
         </tbody>
     </table>

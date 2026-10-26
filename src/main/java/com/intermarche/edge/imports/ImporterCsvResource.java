@@ -1,5 +1,8 @@
 package com.intermarche.edge.imports;
 
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.quarkus.hibernate.orm.panache.Panache;
 import io.smallrye.common.annotation.RunOnVirtualThread;
 import jakarta.inject.Inject;
@@ -7,14 +10,21 @@ import jakarta.transaction.TransactionManager;
 import jakarta.ws.rs.core.Response;
 import org.jboss.logging.Logger;
 
-import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -191,25 +201,25 @@ public abstract class ImporterCsvResource {
             recordIntegration(com.intermarche.edge.domain.sync.RefApplyAudit.Outcome.FAILED,
                     "Lecture du fichier impossible : " + e.getMessage());
             LOGGER.info("Exiting method importCsvStream");
-            return Response.serverError().entity("Error reading file: " + e.getMessage()).build();
+            return Response.serverError().entity(errorAnswer("Error reading file: " + e.getMessage())).build();
         }
-        try (BufferedReader reader = new BufferedReader(new java.io.StringReader(rawContent))) {
-            String line;
+        try {
+            // BO-08-01-04: immutable buffered text has no remaining I/O failure path.
+            java.util.Iterator<String> lines = rawContent.lines().iterator();
             int lineNumber = 0;
             Map<String, Integer> header = null;
             List<LineData> parsedLines = new ArrayList<>(STAGE_1_SIZE);
             Set<String> targetCodes = new HashSet<>(STAGE_1_SIZE);
-            while ((line = reader.readLine()) != null) {
+            while (lines.hasNext()) {
                 lineNumber++;
-                line = line.trim();
+                String line = lines.next().trim();
                 if (line.isEmpty()) continue;
                 if (header == null) {
                     header = parseHeader(line);
                     List<String> missing = missingColumns(header, keyColumn, requiredColumns);
                     if (!missing.isEmpty()) {
                         return Response.status(Response.Status.BAD_REQUEST)
-                                .entity("{\"error\":\"Missing required columns: "
-                                        + String.join(", ", missing) + "\"}")
+                                .entity(errorAnswer("Missing required columns: " + String.join(", ", missing)))
                                 .build();
                     }
                     continue;
@@ -240,18 +250,12 @@ public abstract class ImporterCsvResource {
                 Map<String, Object> contextMap = processChunkWithFallback(parsedLines, targetCodes, counters, errors);
                 processWithStages(parsedLines, contextMap, STAGE_1_SIZE, counters, errors);
             }
-        } catch (IOException e) {
-            LOGGER.error("Error reading input stream", e);
-            recordIntegration(com.intermarche.edge.domain.sync.RefApplyAudit.Outcome.FAILED,
-                    "Lecture du fichier impossible : " + e.getMessage());
-            LOGGER.info("Exiting method importCsvStream");
-            return Response.serverError().entity("Error reading file: " + e.getMessage()).build();
         } catch (Throwable e) {
             LOGGER.error("Unexpected error", e);
             recordIntegration(com.intermarche.edge.domain.sync.RefApplyAudit.Outcome.FAILED,
                     String.valueOf(e.getMessage()));
             LOGGER.info("Exiting method importCsvStream");
-            return Response.serverError().entity("Unexcepted error: " + e.getMessage()).build();
+            return Response.serverError().entity(errorAnswer("Unexcepted error: " + e.getMessage())).build();
         }
         LOGGER.info("Import finished. Created: " + counters[0] + ", Updated: " + counters[1]);
         // BO-08-01-04: the integration state of a DEPOSITED file. A domain
@@ -262,9 +266,9 @@ public abstract class ImporterCsvResource {
                 counters[0] + " créé(s), " + counters[1] + " mis à jour, "
                         + errors.size() + " erreur(s)");
         captureFeed(rawContent);
-        StringBuilder sb = buildAnswer(counters, errors);
+        String answer = buildAnswer(counters, errors);
         LOGGER.info("Exiting method importCsvStream");
-        return Response.ok(sb.toString()).build();
+        return Response.ok(answer).build();
     }
 
     /**
@@ -387,19 +391,36 @@ public abstract class ImporterCsvResource {
     }
 
     /**
-     * Builds a JSON response string summarizing the import results.
+     * Builds the JSON answer of a refused import, {@code {"error":"…"}},
+     * through the JSON library: the message may quote a header, a path
+     * parameter or an exception text, none of which is JSON-safe.
+     *
+     * @param message the refusal message
+     * @return the JSON document
      */
-    private static StringBuilder buildAnswer(int[] counters, List<String> errors) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("{\"createdCount\":").append(counters[0]);
-        sb.append(", \"updatedCount\":").append(counters[1]);
+    public static String errorAnswer(String message) {
+        return JsonNodeFactory.instance.objectNode().put("error", message).toString();
+    }
+
+    /**
+     * Builds the JSON answer summarizing the import results. The document
+     * is built by the JSON library, never by concatenation: an error
+     * message quotes the rejected line verbatim, and a quote, a backslash
+     * or a control character in it must not break the answer.
+     *
+     * @param counters the created and updated counts
+     * @param errors   the definitive error messages, omitted when empty
+     * @return the JSON document
+     */
+    static String buildAnswer(int[] counters, List<String> errors) {
+        ObjectNode answer = JsonNodeFactory.instance.objectNode()
+                .put("createdCount", counters[0])
+                .put("updatedCount", counters[1]);
         if (!errors.isEmpty()) {
-            sb.append(", \"errors\":[");
-            sb.append(String.join("\",\"", errors));
-            sb.append("\"]");
+            ArrayNode list = answer.putArray("errors");
+            errors.forEach(list::add);
         }
-        sb.append("}");
-        return sb;
+        return answer.toString();
     }
 
     /**
@@ -414,7 +435,7 @@ public abstract class ImporterCsvResource {
         String[] cells = headerLine.split("\\|", -1);
         Map<String, Integer> header = new LinkedHashMap<>();
         for (int i = 0; i < cells.length; i++) {
-            String name = cells[i] == null ? "" : cells[i].trim();
+            String name = cells[i].trim();
             if (name.isEmpty()) continue;
             Integer previous = header.putIfAbsent(name, i);
             if (previous != null) {

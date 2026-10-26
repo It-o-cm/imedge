@@ -1,7 +1,7 @@
 package com.intermarche.edge.service;
 
-import com.intermarche.edge.domain.session.DocumentCounter;
 import com.intermarche.edge.domain.sale.DocumentType;
+import com.intermarche.edge.domain.session.DocumentCounter;
 import com.intermarche.edge.domain.session.TicketCounter;
 import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import io.quarkus.hibernate.orm.panache.PanacheQuery;
@@ -10,9 +10,11 @@ import org.junit.jupiter.api.Test;
 import org.mockito.MockedConstruction;
 import org.mockito.MockedStatic;
 
+import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.mockito.Mockito.*;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.mockStatic;
@@ -185,6 +187,88 @@ class TicketNumberServiceTest {
     }
 
     /**
+     * LC-06-03-01: {@code nextOrderCode} reserves the next rank of the ORDER
+     * sequence — the store node's recall key, not a fiscal counter — and
+     * formats it as {@code <terminal>-CMD<6 digits>} so a scan of the deposit
+     * slip is recognized by its shape alone.
+     */
+    @Test
+    void nextOrderCodeReservesAndFormats() {
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            com.intermarche.edge.domain.session.DocumentSequence sequence =
+                    new com.intermarche.edge.domain.session.DocumentSequence();
+            sequence.lastNumber = 6;
+            @SuppressWarnings("unchecked")
+            PanacheQuery<com.intermarche.edge.domain.session.DocumentSequence> query =
+                    mock(PanacheQuery.class);
+            when(query.withLock(LockModeType.PESSIMISTIC_WRITE)).thenReturn(query);
+            when(query.firstResult()).thenReturn(sequence);
+            mocked.when(() -> com.intermarche.edge.domain.session.DocumentSequence.find(
+                    "documentType = ?1 and terminalId = ?2 and pdvNumber = ?3 and sequenceYear = ?4",
+                    "ORDER", TERMINAL, "", java.time.Year.now().getValue())).thenReturn(query);
+            assertEquals("C04-CMD000007", newService().nextOrderCode());
+        }
+    }
+
+    /**
+     * BO-03-06-53: a customer created at the till takes its number from the
+     * range the head office reserved for the point of sale — the first bound
+     * plus what this register has already created — so it never collides with
+     * a customer the commercial management integrated.
+     */
+    @Test
+    void nextCustomerNumberUsesTheAdministeredRange() {
+        TicketCounter counter = new TicketCounter();
+        counter.lastCustomerNumber = 2L;
+        PanacheQuery<TicketCounter> query = queryReturning(counter);
+        TicketNumberService service = newService();
+        service.posSettingsService = mock(PosSettingsService.class);
+        when(service.posSettingsService.customerLocalCodeRange())
+                .thenReturn(" CLI : 500000 - 599999 ");
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> TicketCounter.find("terminalId", TERMINAL)).thenReturn(query);
+            assertEquals("CLI500002", service.nextCustomerNumber());
+        }
+    }
+
+    /**
+     * Every way of having no usable range falls back to the per-register
+     * numbering, which is what this service did before the key existed: no
+     * service at all (outside CDI), nothing administered, a blank value, a
+     * range with no colon, with no dash, with no prefix, with unreadable
+     * bounds, with its bounds the wrong way round — and an EXHAUSTED range,
+     * because a register out of reserved numbers must still print the invoice
+     * of the customer standing in front of it.
+     */
+    @Test
+    void anUnusableRangeFallsBackOnThePerRegisterNumbering() {
+        String[] unusable = {null, "   ", "CLI500000-599999", "CLI:500000", ":500000-599999",
+                "CLI:cinq-599999", "CLI:500000-cinq", "CLI:599999-500000", "CLI:500000-500001"};
+        for (String range : unusable) {
+            TicketCounter counter = new TicketCounter();
+            // The ninth case is the exhausted one: the third number of a range
+            // two numbers wide.
+            counter.lastCustomerNumber = 2L;
+            PanacheQuery<TicketCounter> query = queryReturning(counter);
+            TicketNumberService service = newService();
+            service.posSettingsService = mock(PosSettingsService.class);
+            when(service.posSettingsService.customerLocalCodeRange()).thenReturn(range);
+            try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+                mocked.when(() -> TicketCounter.find("terminalId", TERMINAL)).thenReturn(query);
+                assertEquals("C04-CLI000003", service.nextCustomerNumber(), String.valueOf(range));
+            }
+        }
+        // And with no settings service at all (built outside CDI).
+        TicketCounter counter = new TicketCounter();
+        counter.lastCustomerNumber = 2L;
+        PanacheQuery<TicketCounter> query = queryReturning(counter);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> TicketCounter.find("terminalId", TERMINAL)).thenReturn(query);
+            assertEquals("C04-CLI000003", newService().nextCustomerNumber());
+        }
+    }
+
+    /**
      * Verifies that {@code nextDocumentNumber} increments the per-type document
      * sequence of the existing counter and formats it as
      * {@code <terminal>-<typePrefix><6 digits>}; also covers the non-null arm of
@@ -253,5 +337,80 @@ class TicketNumberServiceTest {
         TicketNumberService service = newService();
         assertNotNull(service.getTerminalId());
         assertEquals(TERMINAL, service.getTerminalId());
+    }
+
+    /**
+     * BO-09-03-04: the ticket counter restarts at ZERO, so that the next ticket
+     * is the first — and the other sequences of the same row are untouched.
+     */
+    @Test
+    void resetTicketNumbersRestartsOnlyTheTicketSequence() {
+        TicketCounter counter = new TicketCounter();
+        counter.lastNumber = 4217L;
+        counter.lastSessionNumber = 31L;
+        counter.lastRefundNumber = 7L;
+        counter.lastCustomerNumber = 12L;
+        PanacheQuery<TicketCounter> query = queryReturning(counter);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> TicketCounter.find("terminalId", TERMINAL)).thenReturn(query);
+            newService().resetTicketNumbers();
+            assertEquals(0L, counter.lastNumber);
+            assertEquals(31L, counter.lastSessionNumber);
+            assertEquals(7L, counter.lastRefundNumber);
+            assertEquals(12L, counter.lastCustomerNumber);
+        }
+    }
+    /** BO-03-06-53: malformed reserved customer ranges fail over rather than issuing a number outside their bounds. */
+    @Test
+    void reservedCustomerRangeRejectsEachMalformedBoundLeg() throws Exception {
+        TicketNumberService service = newService();
+        service.posSettingsService = mock(PosSettingsService.class);
+        var method = TicketNumberService.class.getDeclaredMethod("administeredCustomerNumber", long.class);
+        method.setAccessible(true);
+        for (String range : new String[]{"X:1-", "X:-2", " :1-2", "X:3-2"}) {
+            when(service.posSettingsService.customerLocalCodeRange()).thenReturn(range);
+            assertNull(method.invoke(service, 1L), range);
+        }
+    }
+
+    /** BO-03-04: fiscal numbering uses the document type as prefix and an empty shop scope when both are absent. */
+    @Test
+    void fiscalNumberingKeepsMissingPrefixAndShopFallbacks() {
+        TicketNumberService service = newService();
+        var type = com.intermarche.edge.domain.setting.DocumentTemplate.DocumentType.FT;
+        try (var templates = mockStatic(com.intermarche.edge.domain.setting.DocumentTemplate.class);
+             var sequences = mockStatic(com.intermarche.edge.domain.session.DocumentSequence.class)) {
+            sequences.when(() -> com.intermarche.edge.domain.session.DocumentSequence.next("FT", "C04", "", 2026)).thenReturn(7L);
+            assertEquals("FT C04/2026/00000007", service.nextDocumentNumber(type, null, 2026));
+        }
+    }
+
+
+    /** BO-03-04: an administered fiscal prefix wins and a named shop is retained as the sequence scope. */
+    @Test
+    void fiscalNumberingUsesAdministeredPrefixAndShop() {
+        var service = newService();
+        var type = com.intermarche.edge.domain.setting.DocumentTemplate.DocumentType.FT;
+        try (var templates = mockStatic(com.intermarche.edge.domain.setting.DocumentTemplate.class);
+             var sequences = mockStatic(com.intermarche.edge.domain.session.DocumentSequence.class)) {
+            templates.when(() -> com.intermarche.edge.domain.setting.DocumentTemplate.prefixFor(type)).thenReturn("FACT");
+            sequences.when(() -> com.intermarche.edge.domain.session.DocumentSequence.next("FT", "C04", "PDV", 2026)).thenReturn(8L);
+            assertEquals("FACT C04/2026/00000008", service.nextDocumentNumber(type, "PDV", 2026));
+        }
+    }
+
+    /**
+     * LC-08-04-15: the deposit invoices are numbered in their own sequence,
+     * per register and per year.
+     */
+    @Test
+    void nextDepositInvoiceNumberUsesItsOwnSequence() {
+        TicketNumberService service = newService();
+        int year = java.time.Year.now().getValue();
+        try (var sequences = mockStatic(com.intermarche.edge.domain.session.DocumentSequence.class)) {
+            sequences.when(() -> com.intermarche.edge.domain.session.DocumentSequence.next(
+                    "DEPOSIT_INVOICE", "C04", "", year)).thenReturn(3L);
+            assertEquals("C04-FA" + year + "-000003", service.nextDepositInvoiceNumber());
+        }
     }
 }

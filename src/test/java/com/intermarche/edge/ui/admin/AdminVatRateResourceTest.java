@@ -579,4 +579,74 @@ class AdminVatRateResourceTest {
         assertEquals("FR", AdminVatRateResource.country("  fr "));
         assertEquals("PRT", AdminVatRateResource.country("prtugal"));
     }
+
+    /**
+     * BO-02-02-01: a typed exemption code makes the regime an exemption, the
+     * code normalised; the box alone does too; both on a creation.
+     */
+    @Test
+    void saveCreatesAnExemptionWithItsCode() {
+        AdminVatRateResource resource = newResource();
+        try (MockedStatic<VatRate> rates = mockStatic(VatRate.class);
+                MockedConstruction<VatRate> created = mockConstruction(VatRate.class)) {
+            rates.when(() -> VatRate.findByNumber(10)).thenReturn(null);
+            rates.when(() -> VatRate.findByNumber(11)).thenReturn(null);
+            Response response = resource.saveVatRate(form("number", "10", "ratePercent", "0",
+                    "label", "Isento", "country", "pt", "exemptionCode", " m07 "));
+            assertTrue(query(response).contains("noticeOk=true"));
+            VatRate exempt = created.constructed().get(0);
+            assertTrue(exempt.exempt);
+            assertEquals("M07", exempt.exemptionCode);
+            assertEquals("PT", exempt.country);
+            resource.saveVatRate(form("number", "11", "ratePercent", "0", "exempt", "on"));
+            VatRate boxed = created.constructed().get(1);
+            assertTrue(boxed.exempt);
+            assertNull(boxed.exemptionCode);
+        }
+    }
+
+    /**
+     * BO-02-02-01: an exemption carrying a rate is a contradiction, refused.
+     */
+    @Test
+    void saveRefusesAnExemptionThatTaxes() {
+        AdminVatRateResource resource = newResource();
+        try (MockedStatic<VatRate> rates = mockStatic(VatRate.class);
+                MockedConstruction<VatRate> created = mockConstruction(VatRate.class)) {
+            rates.when(() -> VatRate.findByNumber(10)).thenReturn(null);
+            Response response = resource.saveVatRate(form("number", "10", "ratePercent", "6", "exempt", "on"));
+            assertTrue(query(response).contains("noticeOk=false"));
+            assertEquals(0, created.constructed().size());
+        }
+    }
+
+    /**
+     * BO-02-02-01: an update writes the exemption too, and two regimes may share
+     * one percentage — nothing refuses a second zero rate under another number.
+     */
+    @Test
+    void saveUpdatesTheExemption() {
+        AdminVatRateResource resource = newResource();
+        VatRate edited = regime(11L, 2, "0.0000", "Exonéré");
+        try (MockedStatic<VatRate> rates = mockStatic(VatRate.class);
+                MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> VatRate.findById(11L)).thenReturn(edited);
+            rates.when(() -> VatRate.findByNumber(2)).thenReturn(edited);
+            resource.saveVatRate(form("id", "11", "number", "2", "ratePercent", "0", "exemptionCode", "M16"));
+            assertTrue(edited.exempt);
+            assertEquals("M16", edited.exemptionCode);
+        }
+    }
+
+    /**
+     * The posted exemption code is trimmed, raised and cut to ten characters,
+     * nothing typed answering null.
+     */
+    @Test
+    void thePostedExemptionCodeIsNormalised() {
+        assertNull(AdminVatRateResource.exemptionCode(null));
+        assertNull(AdminVatRateResource.exemptionCode("  "));
+        assertEquals("M07", AdminVatRateResource.exemptionCode(" m07 "));
+        assertEquals("ABCDEFGHIJ", AdminVatRateResource.exemptionCode("abcdefghijkl"));
+    }
 }

@@ -330,6 +330,18 @@ class EngineFeedServiceTest {
     }
 
     /**
+     * The BUDGET_GROUPS feed is delivered before OFFERS: an offer references
+     * the budget group it is rattached to, so the group must reach the engine
+     * first (catalog order is delivery order).
+     */
+    @Test
+    void budgetGroupsIsDeliveredBeforeOffers() {
+        List<String> codes = EngineFeedService.CATALOG.stream().map(EngineFeedService.FeedDef::code).toList();
+        assertTrue(codes.contains("BUDGET_GROUPS"));
+        assertTrue(codes.indexOf("BUDGET_GROUPS") < codes.indexOf("OFFERS"));
+    }
+
+    /**
      * Builds a mocked Panache query yielding one first result.
      *
      * @param result the entity the query returns, or null
@@ -341,5 +353,46 @@ class EngineFeedServiceTest {
                 mock(io.quarkus.hibernate.orm.panache.PanacheQuery.class);
         org.mockito.Mockito.when(query.firstResult()).thenReturn(result);
         return query;
+    }
+    /** BO-08-04: failure of the digest provider prevents publishing an unversioned engine feed. */
+    @org.junit.jupiter.api.Test
+    void digestProviderFailureCannotProduceAVersion() throws Exception {
+        var cause = new java.security.NoSuchAlgorithmException("provider unavailable");
+        try (var digests = org.mockito.Mockito.mockStatic(java.security.MessageDigest.class)) {
+            digests.when(() -> java.security.MessageDigest.getInstance("SHA-256")).thenThrow(cause);
+            var method = EngineFeedService.class.getDeclaredMethod("sha256", String.class);
+            method.setAccessible(true);
+            var failure = org.junit.jupiter.api.Assertions.assertThrows(java.lang.reflect.InvocationTargetException.class, () -> method.invoke(null, "CODE|NAME"));
+            org.junit.jupiter.api.Assertions.assertInstanceOf(IllegalStateException.class, failure.getCause());
+            org.junit.jupiter.api.Assertions.assertSame(cause, failure.getCause().getCause());
+        }
+    }
+
+    /**
+     * BO-02-03-33: a new content drops the stamps of the previous file, and
+     * {@code stamp} records the states around an integration on a held feed
+     * while an absent feed is left alone.
+     */
+    @Test
+    void stampsAreDroppedByANewFileAndRecordedAfterItsIntegration() {
+        EngineFeed existing = mock(EngineFeed.class);
+        existing.code = "PRODUCTS";
+        existing.version = "old";
+        existing.baseFingerprint = "b0";
+        existing.resultFingerprint = "r0";
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            io.quarkus.hibernate.orm.panache.PanacheQuery<EngineFeed> held = queryOf(existing);
+            io.quarkus.hibernate.orm.panache.PanacheQuery<EngineFeed> absent = queryOf(null);
+            mocked.when(() -> EngineFeed.find("code", "PRODUCTS")).thenReturn(held);
+            mocked.when(() -> EngineFeed.find("code", "PRICES")).thenReturn(absent);
+            service.store("PRODUCTS", "EAN|NAME");
+            assertNull(existing.baseFingerprint);
+            assertNull(existing.resultFingerprint);
+            service.stamp("PRODUCTS", "", "r1");
+            assertEquals("", existing.baseFingerprint);
+            assertEquals("r1", existing.resultFingerprint);
+            verify(existing, org.mockito.Mockito.times(2)).persist();
+            service.stamp("PRICES", "b", "r");
+        }
     }
 }

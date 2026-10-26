@@ -17,6 +17,7 @@ import org.mockito.MockedConstruction;
 import org.mockito.MockedStatic;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -27,6 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.mockStatic;
@@ -71,6 +73,8 @@ class AdminEchelonResourceTest {
         AdminEchelonResource resource = new AdminEchelonResource();
         resource.adminEchelons = mock(Template.class);
         resource.echelonSettings = mock(EchelonSettingService.class);
+        resource.pdvRegistry = mock(com.intermarche.edge.service.PdvRegistryService.class);
+        resource.refExportService = mock(com.intermarche.edge.service.sync.store.RefExportService.class);
         return resource;
     }
 
@@ -133,12 +137,41 @@ class AdminEchelonResourceTest {
         AdminEchelonResource resource = newResource();
         TemplateInstance instance = wireTemplate(resource);
         List<Pdv> personalised = List.of(new Pdv());
+        List<com.intermarche.edge.domain.setting.EchelonSetting> programmed =
+                List.of(new com.intermarche.edge.domain.setting.EchelonSetting());
         when(resource.echelonSettings.personalizedPdvs("IF", "k")).thenReturn(personalised);
+        when(resource.echelonSettings.programmed()).thenReturn(programmed);
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
             stubLists(panache);
-            assertSame(instance, resource.echelonsPage(null, true, "IF", "k"));
+            assertSame(instance, resource.echelonsPage(null, true, "IF", "k", null));
             verify(resource.echelonSettings).personalizedPdvs("IF", "k");
             verify(instance).data("personalised", personalised);
+            // BO-03-12-03: the values programmed for a later day, current and pending.
+            verify(instance).data("programmed", programmed);
+            // BO-10-03-08: the page's script masks the value of a secret key.
+            verify(instance).data("secretKeys", "[\"fidelity.password\",\"fiscal.at-password\"]");
+            org.mockito.ArgumentCaptor<Object> closed = org.mockito.ArgumentCaptor.forClass(Object.class);
+            verify(instance).data(org.mockito.ArgumentMatchers.eq("closedValues"), closed.capture());
+            com.fasterxml.jackson.databind.JsonNode parsed = readJson((String) closed.getValue());
+            assertEquals(com.intermarche.edge.service.PosSettingsService.CLOSED_VALUES.size(), parsed.size());
+            for (java.util.Map.Entry<String, java.util.List<String>> entry
+                    : com.intermarche.edge.service.PosSettingsService.CLOSED_VALUES.entrySet()) {
+                assertEquals(entry.getValue().size(), parsed.get(entry.getKey()).size());
+            }
+        }
+    }
+
+    /**
+     * Reads a JSON text with a real parser, so a malformed document fails.
+     *
+     * @param text the JSON text
+     * @return the parsed document
+     */
+    private static com.fasterxml.jackson.databind.JsonNode readJson(String text) {
+        try {
+            return new com.fasterxml.jackson.databind.ObjectMapper().readTree(text);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException malformed) {
+            throw new AssertionError(malformed);
         }
     }
 
@@ -186,7 +219,7 @@ class AdminEchelonResourceTest {
         TemplateInstance instance = wireTemplate(resource);
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
             stubLists(panache);
-            resource.echelonsPage("n", false, viewEnseigne, viewKey);
+            resource.echelonsPage("n", false, viewEnseigne, viewKey, null);
             verify(resource.echelonSettings, never()).personalizedPdvs(anyString(), anyString());
             verify(instance).data("personalised", List.of());
         }
@@ -217,8 +250,10 @@ class AdminEchelonResourceTest {
         form.putSingle("code", " FR ");
         form.putSingle("name", " France ");
         form.putSingle("defaultLanguage", "  ");
+        List<String> namedAtPersist = new ArrayList<>();
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
-             MockedConstruction<Country> construction = mockConstruction(Country.class)) {
+             MockedConstruction<Country> construction = mockConstruction(Country.class,
+                     (entity, context) -> doAnswer(call -> namedAtPersist.add(entity.name)).when(entity).persist())) {
             PanacheQuery<Country> query = mock(PanacheQuery.class);
             when(query.firstResult()).thenReturn(null);
             panache.when(() -> Country.find("code", "FR")).thenReturn(query);
@@ -230,6 +265,7 @@ class AdminEchelonResourceTest {
             assertEquals("France", created.name);
             assertNull(created.defaultLanguage);
             verify(created, times(1)).persist();
+            assertEquals(List.of("France"), namedAtPersist);
         }
     }
 
@@ -283,8 +319,10 @@ class AdminEchelonResourceTest {
         form.putSingle("name", "Intermarché France");
         form.putSingle("countryCode", "FR");
         form.putSingle("defaultLanguage", "fr");
+        List<String> namedAtPersist = new ArrayList<>();
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
-             MockedConstruction<Enseigne> construction = mockConstruction(Enseigne.class)) {
+             MockedConstruction<Enseigne> construction = mockConstruction(Enseigne.class,
+                     (entity, context) -> doAnswer(call -> namedAtPersist.add(entity.name)).when(entity).persist())) {
             PanacheQuery<Enseigne> query = mock(PanacheQuery.class);
             when(query.firstResult()).thenReturn(null);
             panache.when(() -> Enseigne.find("code", "IF")).thenReturn(query);
@@ -294,6 +332,7 @@ class AdminEchelonResourceTest {
             assertEquals("FR", created.countryCode);
             assertEquals("fr", created.defaultLanguage);
             verify(created, times(1)).persist();
+            assertEquals(List.of("Intermarché France"), namedAtPersist);
         }
     }
 
@@ -326,156 +365,139 @@ class AdminEchelonResourceTest {
     // --------------------------------------------------------------- PDV
 
     /**
-     * {@code savePdv} refuses a number that is not exactly five digits
-     * (invalid-number arm).
+     * {@code savePdv} hands the posted point of sale to the registry — blank
+     * enseigne and adhérent read as null, the active box as checked — and
+     * redirects with the registry's notice and outcome.
      */
     @Test
-    void savePdvRejectsInvalidNumber() {
+    void savePdvDelegatesToTheRegistry() {
+        AdminEchelonResource resource = newResource();
+        MultivaluedMap<String, String> form = form();
+        form.putSingle("pdvNumber", " 12345 ");
+        form.putSingle("originalNumber", "54321");
+        form.putSingle("name", "Lyon");
+        form.putSingle("enseigneCode", " ");
+        form.putSingle("adherentCode", "AD1");
+        form.putSingle("active", "1");
+        when(resource.pdvRegistry.save("12345", "54321", "Lyon", null, "AD1", true,
+                com.intermarche.edge.domain.store.PdvHistory.Source.SCREEN))
+                .thenReturn(new com.intermarche.edge.service.PdvRegistryService.Result(
+                        true, "Point de vente enregistré.", new Pdv(), false));
+        Response response = resource.savePdv(form);
+        assertTrue(response.getLocation().toString().contains("noticeOk=true"));
+    }
+
+    /**
+     * {@code savePdv} reports a refusal of the registry, the active box absent.
+     */
+    @Test
+    void savePdvReportsTheRegistryRefusal() {
         AdminEchelonResource resource = newResource();
         MultivaluedMap<String, String> form = form();
         form.putSingle("pdvNumber", "12A4");
+        when(resource.pdvRegistry.save("12A4", "", "", null, null, false,
+                com.intermarche.edge.domain.store.PdvHistory.Source.SCREEN))
+                .thenReturn(new com.intermarche.edge.service.PdvRegistryService.Result(
+                        false, "Le numéro de PDV doit comporter exactement 5 chiffres.", null, false));
         Response response = resource.savePdv(form);
         assertTrue(response.getLocation().toString().contains("noticeOk=false"));
     }
 
     /**
-     * {@code savePdv} inserts a new PDV when the number is free (plain-insert
-     * arm) and reads the active flag as present (active-true arm).
+     * The inheritance view of a known point of sale hands the page its
+     * history, its inherited parameters, the VAT regimes, the templates and the
+     * accounts it receives (BO-02-05-01/02/04).
      */
     @Test
-    void savePdvInsertsWhenAbsent() {
+    void pageShowsTheInheritanceOfAKnownPdv() {
         AdminEchelonResource resource = newResource();
-        MultivaluedMap<String, String> form = form();
-        form.putSingle("pdvNumber", "12345");
-        form.putSingle("name", "Lyon");
-        form.putSingle("enseigneCode", "IF");
-        form.putSingle("adherentCode", "AD1");
-        form.putSingle("active", "1");
-        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
-             MockedConstruction<Pdv> construction = mockConstruction(Pdv.class)) {
-            stubPdv(panache, "12345", null);
-            resource.savePdv(form);
-            Pdv created = construction.constructed().get(0);
-            assertEquals("12345", created.pdvNumber);
-            assertEquals("IF", created.enseigneCode);
-            assertEquals("AD1", created.adherentCode);
-            assertTrue(created.active);
-            verify(created, times(1)).persist();
-        }
-    }
-
-    /**
-     * {@code savePdv} updates an existing PDV (plain-update arm), maps a blank
-     * adhérent to null and reads the missing active flag as false
-     * (active-false arm), constructing nothing.
-     */
-    @Test
-    void savePdvUpdatesWhenPresent() {
-        AdminEchelonResource resource = newResource();
-        Pdv existing = new Pdv();
-        existing.pdvNumber = "12345";
-        existing.active = true;
-        MultivaluedMap<String, String> form = form();
-        form.putSingle("pdvNumber", "12345");
-        form.putSingle("name", "Lyon 2");
-        form.putSingle("adherentCode", "  ");
-        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
-             MockedConstruction<Pdv> construction = mockConstruction(Pdv.class)) {
-            stubPdv(panache, "12345", existing);
-            resource.savePdv(form);
-            assertTrue(construction.constructed().isEmpty());
-            assertEquals("Lyon 2", existing.name);
-            assertNull(existing.adherentCode);
-            assertFalse(existing.active);
-        }
-    }
-
-    /**
-     * {@code savePdv} refuses a rename whose original number is unknown
-     * (rename-missing arm).
-     */
-    @Test
-    void savePdvRejectsRenameOfMissing() {
-        AdminEchelonResource resource = newResource();
-        MultivaluedMap<String, String> form = form();
-        form.putSingle("pdvNumber", "54321");
-        form.putSingle("originalNumber", "12345");
+        TemplateInstance instance = wireTemplate(resource);
+        Pdv viewed = new Pdv();
+        viewed.id = 4L;
+        viewed.pdvNumber = "07039";
+        List<EchelonSettingService.Inherited> inherited = List.of(
+                new EchelonSettingService.Inherited("menu.code", "M1", "ENSEIGNE", "IF"));
+        when(resource.echelonSettings.inheritedFor("07039")).thenReturn(inherited);
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
-            stubPdv(panache, "12345", null);
-            Response response = resource.savePdv(form);
-            assertTrue(response.getLocation().toString().contains("noticeOk=false"));
+            stubLists(panache);
+            stubPdv(panache, "07039", viewed);
+            resource.echelonsPage(null, true, null, null, " 07039 ");
         }
+        verify(instance).data("viewPdv", "07039");
+        verify(instance).data("viewed", viewed);
+        verify(instance).data("inherited", inherited);
+        verify(resource.refExportService).vatRatesFor("07039");
+        verify(resource.refExportService).templatesFor("07039");
+        verify(resource.refExportService).bindingsFor("07039");
     }
 
     /**
-     * {@code savePdv} refuses a rename whose target number is already taken
-     * (rename-collision arm).
+     * The inheritance view keeps only the bindings in force on the point of
+     * sale: the whole organisation, a scope left blank and its own enseigne
+     * are kept, another enseigne's binding is not.
      */
     @Test
-    void savePdvRejectsRenameCollision() {
+    void inForceKeepsOnlyTheBindingsCoveringThePdv() {
+        com.intermarche.edge.service.sync.RefPayloads.AccountProfileDto everywhere = binding("*");
+        com.intermarche.edge.service.sync.RefPayloads.AccountProfileDto unscoped = binding(null);
+        com.intermarche.edge.service.sync.RefPayloads.AccountProfileDto own = binding("ENSEIGNE:IP");
+        com.intermarche.edge.service.sync.RefPayloads.AccountProfileDto other = binding("ENSEIGNE:IF");
+        com.intermarche.edge.domain.store.NodeEchelon node =
+                new com.intermarche.edge.domain.store.NodeEchelon("10001", "IP", "PT");
+        assertEquals(List.of(everywhere, unscoped, own),
+                AdminEchelonResource.inForce(List.of(everywhere, unscoped, own, other), node));
+    }
+
+    /**
+     * Builds a profile binding of jdupont at a scope.
+     *
+     * @param scope the scope, possibly null
+     * @return the binding
+     */
+    private com.intermarche.edge.service.sync.RefPayloads.AccountProfileDto binding(String scope) {
+        com.intermarche.edge.service.sync.RefPayloads.AccountProfileDto dto =
+                new com.intermarche.edge.service.sync.RefPayloads.AccountProfileDto();
+        dto.loginName = "jdupont";
+        dto.profileName = "Caissier";
+        dto.echelonScope = scope;
+        return dto;
+    }
+
+    /**
+     * An unknown point of sale, and a blank one, show no inheritance at all.
+     */
+    @Test
+    void pageShowsNoInheritanceForAnUnknownOrBlankPdv() {
         AdminEchelonResource resource = newResource();
-        MultivaluedMap<String, String> form = form();
-        form.putSingle("pdvNumber", "54321");
-        form.putSingle("originalNumber", "12345");
-        Pdv source = new Pdv();
-        source.pdvNumber = "12345";
+        TemplateInstance instance = wireTemplate(resource);
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
-            stubPdv(panache, "12345", source);
-            stubPdv(panache, "54321", new Pdv());
-            Response response = resource.savePdv(form);
-            assertTrue(response.getLocation().toString().contains("noticeOk=false"));
+            stubLists(panache);
+            stubPdv(panache, "99999", null);
+            resource.echelonsPage(null, true, null, null, "99999");
+            resource.echelonsPage(null, true, null, null, "  ");
         }
+        verify(instance, times(2)).data("viewed", null);
+        verify(instance).data("viewPdv", "");
+        verify(resource.echelonSettings, never()).inheritedFor(anyString());
     }
 
     /**
-     * {@code savePdv} renames a PDV to a free number (rename-ok arm),
-     * re-numbering the existing row.
+     * The adhérent view groups the points of sale by adhérent code, in code
+     * order, and leaves the points of sale attached to none out
+     * (BO-02-05-05).
      */
     @Test
-    void savePdvRenamesToFreeNumber() {
-        AdminEchelonResource resource = newResource();
-        MultivaluedMap<String, String> form = form();
-        form.putSingle("pdvNumber", "54321");
-        form.putSingle("originalNumber", "12345");
-        form.putSingle("name", "Renumérotée");
-        Pdv source = new Pdv();
-        source.pdvNumber = "12345";
-        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
-            stubPdv(panache, "12345", source);
-            stubPdv(panache, "54321", null);
-            Response response = resource.savePdv(form);
-            assertTrue(response.getLocation().toString().contains("noticeOk=true"));
-            assertEquals("54321", source.pdvNumber);
-            assertEquals("Renumérotée", source.name);
-            // BO-02-05-01: the rename carries the echelon settings to the new number.
-            verify(resource.echelonSettings).migratePdv("12345", "54321");
-        }
-    }
-
-    /**
-     * {@code savePdv} treats an original number equal to the new number as a
-     * plain update, not a rename (the {@code !original.equals(number)} false
-     * arm): the row is looked up once by its number and updated in place, and no
-     * echelon-settings migration is triggered.
-     */
-    @Test
-    void savePdvTreatsEqualOriginalAsUpdate() {
-        AdminEchelonResource resource = newResource();
-        Pdv existing = new Pdv();
-        existing.pdvNumber = "12345";
-        MultivaluedMap<String, String> form = form();
-        form.putSingle("pdvNumber", "12345");
-        form.putSingle("originalNumber", "12345");
-        form.putSingle("name", "Sans renommage");
-        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
-             MockedConstruction<Pdv> construction = mockConstruction(Pdv.class)) {
-            stubPdv(panache, "12345", existing);
-            Response response = resource.savePdv(form);
-            assertTrue(response.getLocation().toString().contains("noticeOk=true"));
-            assertTrue(construction.constructed().isEmpty());
-            assertEquals("Sans renommage", existing.name);
-            verify(resource.echelonSettings, never()).migratePdv(anyString(), anyString());
-        }
+    void adherentsGroupThePointsOfSale() {
+        Pdv a1 = new Pdv();
+        a1.adherentCode = "B";
+        Pdv a2 = new Pdv();
+        a2.adherentCode = "A";
+        Pdv a3 = new Pdv();
+        a3.adherentCode = "B";
+        Pdv loose = new Pdv();
+        java.util.Map<String, List<Pdv>> grouped = AdminEchelonResource.adherents(List.of(a1, a2, a3, loose));
+        assertEquals(List.of("A", "B"), new ArrayList<>(grouped.keySet()));
+        assertEquals(List.of(a1, a3), grouped.get("B"));
     }
 
     // ----------------------------------------------------------- SETTINGS

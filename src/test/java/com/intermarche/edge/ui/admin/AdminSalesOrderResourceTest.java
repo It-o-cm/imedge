@@ -205,4 +205,17 @@ class AdminSalesOrderResourceTest {
             assertEquals(OrderStatus.CANCELLED, open.status);
         }
     }
+
+    /** LC-06-03-01: an absent order total is rejected before an order is created. */
+    @Test
+    void missingOrderTotalIsRefused() {
+        var resource = newResource();
+        var absent = query(null);
+        try (var base = mockStatic(PanacheEntityBase.class)) {
+            base.when(() -> CustomerOrder.find("code", "EMPTY-TOTAL")).thenReturn(absent);
+            assertTrue(resource.createOrder(form("code", "EMPTY-TOTAL", "kind", "COMMANDE"))
+                    .getLocation().toString().contains("noticeOk=false"));
+        }
+    }
+
 }

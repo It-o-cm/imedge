@@ -1,8 +1,9 @@
 package com.intermarche.edge.domain.sync;
 
-import java.time.LocalDateTime;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+
+import java.time.LocalDateTime;
 
 /**
  * Unit tests for {@link RefState}, targeting 100% branch coverage.

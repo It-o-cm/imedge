@@ -1,5 +1,9 @@
 package com.intermarche.edge.ui.admin;
 
+import io.quarkus.security.Authenticated;
+import com.intermarche.edge.security.FeatureAccess;
+import com.intermarche.edge.domain.setting.Feature;
+import com.intermarche.edge.domain.people.CrudOption;
 import com.intermarche.edge.domain.people.Employee;
 import com.intermarche.edge.domain.safe.BankDeposit;
 import com.intermarche.edge.domain.safe.CashPouch;
@@ -8,7 +12,6 @@ import com.intermarche.edge.service.SafeService;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
@@ -73,7 +76,8 @@ public class AdminBankDepositResource {
      * @return the deposits page
      */
     @GET
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SAFE_BANK_DEPOSIT)
     public TemplateInstance list(@QueryParam("notice") String notice,
                                  @QueryParam("noticeOk") @DefaultValue("true") boolean noticeOk) {
         LOGGER.info("Entering method list");
@@ -94,7 +98,8 @@ public class AdminBankDepositResource {
      * @return a 303 back to the list with the notice
      */
     @POST
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SAFE_BANK_DEPOSIT, option = CrudOption.CREATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response deposit(MultivaluedMap<String, String> form) {
@@ -135,7 +140,8 @@ public class AdminBankDepositResource {
      */
     @GET
     @Path("/{id}/bordereau")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SAFE_BANK_DEPOSIT)
     @Produces("text/plain; charset=UTF-8")
     public Response bordereau(@PathParam("id") Long id) {
         LOGGER.info("Entering method bordereau with id: " + id);
@@ -156,7 +162,8 @@ public class AdminBankDepositResource {
      */
     @GET
     @Path("/{id}/versement")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SAFE_BANK_DEPOSIT)
     @Produces("text/plain; charset=UTF-8")
     public Response versement(@PathParam("id") Long id) {
         LOGGER.info("Entering method versement with id: " + id);

@@ -62,10 +62,17 @@ class ReportServiceTest {
         when(definition.columns()).thenReturn(List.of());
         List<List<Object>> rows = List.of(List.of((Object) "a"), List.of((Object) "b"));
         when(definition.rows(criteria)).thenReturn(rows);
-        ReportData data = service.run(definition, criteria);
-        assertSame(definition, data.definition);
-        assertSame(rows, data.rows);
+        try (org.mockito.MockedStatic<com.intermarche.edge.domain.store.CheckoutPoint> points =
+                org.mockito.Mockito.mockStatic(com.intermarche.edge.domain.store.CheckoutPoint.class)) {
+            points.when(com.intermarche.edge.domain.store.CheckoutPoint::deactivatedTerminals)
+                    .thenReturn(List.of("C09"));
+            ReportData data = service.run(definition, criteria);
+            assertSame(definition, data.definition);
+            assertSame(rows, data.rows);
+        }
         verify(definition).rows(criteria);
+        // BO-03-09-01: the deactivated registers are handed to the criteria.
+        verify(criteria).excludeDeactivated(List.of("C09"));
     }
 
     /**
@@ -135,5 +142,96 @@ class ReportServiceTest {
         ReportCatalog catalog = mock(ReportCatalog.class);
         service.catalog = catalog;
         assertSame(catalog, service.catalog());
+    }
+
+    /**
+     * {@code restrictToSelection} leaves a report without a list untouched,
+     * restricts it to nothing for a list the point of sale does not know, and
+     * to the EANs of the list's articles otherwise (BO-02-03-31).
+     */
+    @Test
+    void restrictToSelectionResolvesTheListArticles() {
+        ReportService service = new ReportService();
+        ReportCriteria none = new ReportCriteria();
+        service.restrictToSelection(none);
+        assertNull(none.articleEans);
+        ReportCriteria unknown = new ReportCriteria();
+        unknown.selection = "Inconnue";
+        ReportCriteria known = new ReportCriteria();
+        known.selection = "Épicerie";
+        com.intermarche.edge.domain.catalog.ArticleSelection selection =
+                new com.intermarche.edge.domain.catalog.ArticleSelection();
+        selection.name = "Épicerie";
+        selection.criteria = "";
+        com.intermarche.edge.domain.catalog.Product product = new com.intermarche.edge.domain.catalog.Product();
+        product.ean = "300";
+        @SuppressWarnings("unchecked")
+        io.quarkus.hibernate.orm.panache.PanacheQuery<Object> empty = mock(io.quarkus.hibernate.orm.panache.PanacheQuery.class);
+        @SuppressWarnings("unchecked")
+        io.quarkus.hibernate.orm.panache.PanacheQuery<Object> found = mock(io.quarkus.hibernate.orm.panache.PanacheQuery.class);
+        when(found.firstResult()).thenReturn(selection);
+        @SuppressWarnings("unchecked")
+        io.quarkus.hibernate.orm.panache.PanacheQuery<Object> products = mock(io.quarkus.hibernate.orm.panache.PanacheQuery.class);
+        when(products.list()).thenReturn(List.of(product));
+        try (org.mockito.MockedStatic<io.quarkus.hibernate.orm.panache.PanacheEntityBase> panache =
+                     org.mockito.Mockito.mockStatic(io.quarkus.hibernate.orm.panache.PanacheEntityBase.class)) {
+            panache.when(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase
+                    .find("name = ?1 and pdvCode is null", "Inconnue")).thenReturn(empty);
+            panache.when(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase
+                    .find("name = ?1 and pdvCode is null", "Épicerie")).thenReturn(found);
+            panache.when(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase
+                    .find("from Product p order by p.ean")).thenReturn(products);
+            service.restrictToSelection(unknown);
+            service.restrictToSelection(known);
+        }
+        assertEquals(java.util.Set.of(), unknown.articleEans);
+        assertEquals(java.util.Set.of("300"), known.articleEans);
+    }
+
+    /**
+     * {@code pdv} answers null without the node service and the node's point
+     * of sale with it.
+     */
+    @Test
+    void pdvFollowsTheNode() {
+        ReportService service = new ReportService();
+        assertNull(service.pdv());
+        service.nodeEchelonService = mock(com.intermarche.edge.service.NodeEchelonService.class);
+        when(service.nodeEchelonService.currentPdv()).thenReturn("PDV1");
+        assertEquals("PDV1", service.pdv());
+    }
+
+    /**
+     * {@code prepare} leaves a report without island unrestricted, restricts it
+     * to the island's registers, and to none for an island the node does not
+     * know.
+     */
+    @Test
+    void prepareResolvesTheIsland() {
+        ReportService service = new ReportService();
+        ReportCriteria none = new ReportCriteria();
+        service.prepare(none);
+        assertNull(none.islandTerminals);
+        ReportCriteria known = new ReportCriteria();
+        known.island = "I1";
+        ReportCriteria unknown = new ReportCriteria();
+        unknown.island = "I9";
+        com.intermarche.edge.domain.store.CheckoutIsland island = new com.intermarche.edge.domain.store.CheckoutIsland();
+        island.code = "I1";
+        island.terminalIds = "C01;C02";
+        @SuppressWarnings("unchecked")
+        io.quarkus.hibernate.orm.panache.PanacheQuery<Object> found = mock(io.quarkus.hibernate.orm.panache.PanacheQuery.class);
+        when(found.firstResult()).thenReturn(island);
+        @SuppressWarnings("unchecked")
+        io.quarkus.hibernate.orm.panache.PanacheQuery<Object> missing = mock(io.quarkus.hibernate.orm.panache.PanacheQuery.class);
+        try (org.mockito.MockedStatic<io.quarkus.hibernate.orm.panache.PanacheEntityBase> panache =
+                     org.mockito.Mockito.mockStatic(io.quarkus.hibernate.orm.panache.PanacheEntityBase.class)) {
+            panache.when(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase.find("code", "I1")).thenReturn(found);
+            panache.when(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase.find("code", "I9")).thenReturn(missing);
+            service.prepare(known);
+            service.prepare(unknown);
+        }
+        assertEquals(java.util.Set.of("C01", "C02"), known.islandTerminals);
+        assertEquals(java.util.Set.of(), unknown.islandTerminals);
     }
 }

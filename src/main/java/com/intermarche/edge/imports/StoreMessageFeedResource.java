@@ -95,18 +95,31 @@ public class StoreMessageFeedResource {
             return Response.status(Response.Status.UNAUTHORIZED).entity("Jeton invalide").build();
         }
         java.time.LocalDateTime now = LocalDateTime.now();
-        StoreMessage message = resolve(terminal, now, triggerOf(moment));
+        StoreMessage.Trigger asked = triggerOf(moment);
+        StoreMessage message = resolve(terminal, now, asked);
         if (message == null) {
             // LC-01-08-05: the register that was shown a message the store has
             // taken down (deactivated, period over, audience changed) gets the
             // BLANK answer exactly once, so its banner goes — then nothing.
-            if (serving.consume(terminal)) {
+            // Only the ordinary poll says so: a TRANSACTION moment that has no
+            // survey of its own says nothing of the message on screen, and
+            // must not take down the survey the cashier is about to answer
+            // (BO-06-03-02).
+            if (asked == null && serving.consume(terminal)) {
                 LOGGER.info("Exiting method pending (message taken down, banner cleared)");
                 return Response.ok(new PendingMessage("", null, null,
                         null, false, null, null)).build();
             }
             LOGGER.info("Exiting method pending");
             return Response.noContent().build();
+        }
+        if (asked != null) {
+            // BO-06-03-01: a survey of the start or the end of the ticket is
+            // asked for THIS transaction: it is not the lane's banner, so the
+            // serving memory neither times it out nor lets the ordinary poll
+            // take it down — and the next transaction asks it again.
+            LOGGER.info("Exiting method pending (transaction moment)");
+            return Response.ok(pendingMessage(message)).build();
         }
         // LC-01-08-05: a message the register has already been shown for its
         // administered display duration is served the BLANK answer exactly
@@ -176,6 +189,14 @@ public class StoreMessageFeedResource {
      * @return the pending-message object for the register
      */
     PendingMessage pendingMessage(StoreMessage message) {
+        // BO-06-03-01: a YES / NO question is served as the choice of its two
+        // answers, which is what every register already knows how to show.
+        if (message.responseType == StoreMessage.ResponseType.YES_NO) {
+            String options = message.options == null || message.options.isBlank() ? "Oui;Non" : message.options;
+            return new PendingMessage(message.text, message.question, options,
+                    StoreMessage.ResponseType.OPTIONS.name(), message.required, message.postalFormat,
+                    message.postalCodes);
+        }
         return new PendingMessage(message.text, message.question, message.options,
                 message.responseType == null ? null : message.responseType.name(),
                 message.required, message.postalFormat, message.postalCodes);
@@ -231,11 +252,29 @@ public class StoreMessageFeedResource {
             if (moment != null && message.trigger != moment) {
                 continue;
             }
+            // BO-06-03-01: a survey of the start or the end of the ticket is
+            // asked ON DEMAND at that moment; the ordinary poll must not show
+            // it to a register that is at neither.
+            if (moment == null && isTransactionMoment(message.trigger)) {
+                continue;
+            }
             if (message.appliesTo(terminal, islandCode, now) && momentHasCome(message, terminal)) {
                 return message;
             }
         }
         return null;
+    }
+
+    /**
+     * Whether a display moment is one the register asks for on demand: the
+     * start or the end of the transaction.
+     *
+     * @param trigger the message's display moment, possibly null
+     * @return true for {@code TRANSACTION_START} and {@code TRANSACTION_END}
+     */
+    static boolean isTransactionMoment(StoreMessage.Trigger trigger) {
+        return trigger == StoreMessage.Trigger.TRANSACTION_START
+                || trigger == StoreMessage.Trigger.TRANSACTION_END;
     }
 
     /**

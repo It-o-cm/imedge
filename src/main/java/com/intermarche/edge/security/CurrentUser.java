@@ -15,7 +15,7 @@ import jakarta.inject.Named;
  * without every resource passing the information down.
  * <p>
  * This only drives what the interface DISPLAYS. Access itself is enforced
- * server side by the {@code @RolesAllowed} annotations on the resources, so
+ * server side by the {@code @FeatureAccess} declarations on the resources, so
  * hiding a link is a convenience, never a security measure.
  */
 @Named("currentUser")

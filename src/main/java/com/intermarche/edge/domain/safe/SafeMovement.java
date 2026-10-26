@@ -144,6 +144,23 @@ public class SafeMovement extends BaseEntity {
     }
 
     /**
+     * The VAT the breakdown states, all rates together: what the TVA column
+     * of the movements screen shows (BO-05-02-03).
+     *
+     * @return the sum of the lines' VAT, zero when the movement bears none
+     */
+    public BigDecimal vatAmount() {
+        BigDecimal total = BigDecimal.ZERO;
+        if (vatLines == null) {
+            return total;
+        }
+        for (SafeVatLine line : vatLines) {
+            total = total.add(line.amount == null ? BigDecimal.ZERO : line.amount);
+        }
+        return total;
+    }
+
+    /**
      * The tax-included total of the VAT breakdown.
      *
      * @return the sum of the lines, zero when the movement bears none

@@ -92,6 +92,8 @@ class RefPullServiceErrorMapTest {
         service.objectMapper = mapper;
         service.role = "register";
         service.pullSeconds = 300L;
+        // Unset, the field is 0, and an HttpRequest refuses a zero timeout.
+        service.requestTimeoutSeconds = 30L;
         service.token = Optional.empty();
         service.centralUrl = Optional.empty();
         setHttpClient(service, client);

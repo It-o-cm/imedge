@@ -1,8 +1,9 @@
 package com.intermarche.edge.domain.store;
 
-import java.util.Objects;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+
+import java.util.Objects;
 
 /**
  * Unit tests for {@link Address}, targeting 100% branch coverage.
@@ -58,7 +59,7 @@ class AddressTest {
     @Test
     void equalsSameReferenceIsTrue() {
         Address a = reference();
-        Assertions.assertTrue(a.equals(a));
+        Assertions.assertEquals(a, a);
     }
 
     /**
@@ -67,7 +68,7 @@ class AddressTest {
     @Test
     void equalsNullIsFalse() {
         Address a = reference();
-        Assertions.assertFalse(a.equals(null));
+        Assertions.assertNotEquals(null, a);
     }
 
     /**
@@ -76,6 +77,19 @@ class AddressTest {
     @Test
     void equalsDifferentClassIsFalse() {
         Address a = reference();
+        Assertions.assertNotEquals("not an address", a);
+    }
+
+    /**
+     * equals is called directly with a null and with a foreign type so both
+     * arms of the {@code o == null || getClass() != o.getClass()} guard are
+     * exercised: the surrounding {@code assertNotEquals(null, a)} passes its
+     * arguments in the order that never reaches {@code Address.equals}.
+     */
+    @Test
+    void equalsCalledDirectlyWithNullAndForeignType() {
+        Address a = reference();
+        Assertions.assertFalse(a.equals(null));
         Assertions.assertFalse(a.equals("not an address"));
     }
 
@@ -88,7 +102,7 @@ class AddressTest {
         Address a = reference();
         Address b = reference();
         Assertions.assertNotSame(a, b);
-        Assertions.assertTrue(a.equals(b));
+        Assertions.assertEquals(a, b);
     }
 
     /**
@@ -98,7 +112,7 @@ class AddressTest {
     void equalsDifferentStreetLine1IsFalse() {
         Address a = reference();
         Address b = new Address("X", "Bat A", "75008", "Paris", "France", 48.87, 2.30);
-        Assertions.assertFalse(a.equals(b));
+        Assertions.assertNotEquals(a, b);
     }
 
     /**
@@ -108,7 +122,7 @@ class AddressTest {
     void equalsDifferentStreetLine2IsFalse() {
         Address a = reference();
         Address b = new Address("10 Av", "X", "75008", "Paris", "France", 48.87, 2.30);
-        Assertions.assertFalse(a.equals(b));
+        Assertions.assertNotEquals(a, b);
     }
 
     /**
@@ -118,7 +132,7 @@ class AddressTest {
     void equalsDifferentPostalCodeIsFalse() {
         Address a = reference();
         Address b = new Address("10 Av", "Bat A", "X", "Paris", "France", 48.87, 2.30);
-        Assertions.assertFalse(a.equals(b));
+        Assertions.assertNotEquals(a, b);
     }
 
     /**
@@ -128,7 +142,7 @@ class AddressTest {
     void equalsDifferentCityIsFalse() {
         Address a = reference();
         Address b = new Address("10 Av", "Bat A", "75008", "X", "France", 48.87, 2.30);
-        Assertions.assertFalse(a.equals(b));
+        Assertions.assertNotEquals(a, b);
     }
 
     /**
@@ -138,7 +152,7 @@ class AddressTest {
     void equalsDifferentCountryIsFalse() {
         Address a = reference();
         Address b = new Address("10 Av", "Bat A", "75008", "Paris", "X", 48.87, 2.30);
-        Assertions.assertFalse(a.equals(b));
+        Assertions.assertNotEquals(a, b);
     }
 
     /**
@@ -148,7 +162,7 @@ class AddressTest {
     void equalsDifferentLatitudeIsFalse() {
         Address a = reference();
         Address b = new Address("10 Av", "Bat A", "75008", "Paris", "France", 0.0, 2.30);
-        Assertions.assertFalse(a.equals(b));
+        Assertions.assertNotEquals(a, b);
     }
 
     /**
@@ -158,7 +172,7 @@ class AddressTest {
     void equalsDifferentLongitudeIsFalse() {
         Address a = reference();
         Address b = new Address("10 Av", "Bat A", "75008", "Paris", "France", 48.87, 0.0);
-        Assertions.assertFalse(a.equals(b));
+        Assertions.assertNotEquals(a, b);
     }
 
     /**

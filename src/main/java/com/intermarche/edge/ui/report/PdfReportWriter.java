@@ -92,19 +92,30 @@ public class PdfReportWriter implements ReportWriter {
     @Override
     public byte[] write(ReportData data, ReportCriteria criteria) {
         LOGGER.info("Entering method write for report: " + data.definition.code());
+        com.intermarche.edge.ui.admin.BackOfficeMessages messages =
+                com.intermarche.edge.ui.admin.BackOfficeMessages.in(criteria.language);
         List<List<Object>> body = new ArrayList<>(data.rows);
         if (data.hasTotals()) {
             body.add(data.totals);
         }
-        int perPage = Math.max(1, (TABLE_TOP - TABLE_BOTTOM) / ROW_HEIGHT);
+        int top = TABLE_TOP - 11 * data.definition.preamble(criteria).size();
+        int bottom = TABLE_BOTTOM + (data.definition.signature() == null ? 0 : 2 * ROW_HEIGHT);
+        int perPage = Math.max(1, (top - bottom) / ROW_HEIGHT);
         int pageCount = Math.max(1, (body.size() + perPage - 1) / perPage);
-        int[] widths = widths(data);
+        int[] widths = widths(data, messages);
         List<String> pages = new ArrayList<>();
         for (int p = 0; p < pageCount; p++) {
             int from = p * perPage;
             int to = Math.min(from + perPage, body.size());
             boolean totalsHere = data.hasTotals() && to == body.size();
-            pages.add(content(data, criteria, body.subList(from, to), widths, p + 1, pageCount, totalsHere));
+            String page = content(data, criteria, body.subList(from, to), widths, p + 1, pageCount,
+                    totalsHere, messages);
+            if (p == pageCount - 1 && data.definition.signature() != null) {
+                // BO-06-06-08: the document is signed at the foot of its last page.
+                page += text("F2", 9, MARGIN, TABLE_BOTTOM + 6,
+                        messages.text(data.definition.signature()) + " : ______________________________");
+            }
+            pages.add(page);
         }
         LOGGER.info("Exiting method write");
         return assemble(pages);
@@ -119,13 +130,14 @@ public class PdfReportWriter implements ReportWriter {
      * share is bounded below so a narrow column still shows its header.
      *
      * @param data the executed report
+     * @param messages the language of the edition, the headings being measured as printed
      * @return one width in points per column
      */
-    private int[] widths(ReportData data) {
+    private int[] widths(ReportData data, com.intermarche.edge.ui.admin.BackOfficeMessages messages) {
         List<ReportColumn> columns = data.definition.columns();
         int[] longest = new int[columns.size()];
         for (int c = 0; c < columns.size(); c++) {
-            longest[c] = columns.get(c).label().length();
+            longest[c] = messages.text(columns.get(c).label()).length();
         }
         for (List<Object> row : data.rows) {
             for (int c = 0; c < columns.size() && c < row.size(); c++) {
@@ -155,19 +167,25 @@ public class PdfReportWriter implements ReportWriter {
      * @param page the 1-based page number
      * @param pageCount the number of pages
      * @param totalsLast whether the last row of this page is the total row
+     * @param messages the language of the edition (BO-06-01-02)
      * @return the page's content stream
      */
     private String content(ReportData data, ReportCriteria criteria, List<List<Object>> rows,
-                           int[] widths, int page, int pageCount, boolean totalsLast) {
+                           int[] widths, int page, int pageCount, boolean totalsLast,
+                           com.intermarche.edge.ui.admin.BackOfficeMessages messages) {
         List<ReportColumn> columns = data.definition.columns();
         StringBuilder out = new StringBuilder();
-        out.append(text("F2", 13, MARGIN, HEIGHT - 36, data.definition.label()));
+        out.append(text("F2", 13, MARGIN, HEIGHT - 36, messages.text(data.definition.label())));
         out.append(text("F1", 9, MARGIN, HEIGHT - 52,
-                ReportHeading.period(criteria) + "   —   " + data.definition.requirement()));
+                ReportHeading.period(criteria, messages) + "   —   " + data.definition.requirement()));
         int y = TABLE_TOP;
+        for (String note : data.definition.preamble(criteria)) {
+            out.append(text("F1", 8, MARGIN, y + 2, messages.text(note)));
+            y -= 11;
+        }
         int x = MARGIN;
         for (int c = 0; c < columns.size(); c++) {
-            out.append(text("F2", FONT_SIZE, x, y, clip(columns.get(c).label(), widths[c])));
+            out.append(text("F2", FONT_SIZE, x, y, clip(messages.text(columns.get(c).label()), widths[c])));
             x += widths[c];
         }
         out.append(rule(MARGIN, y - 4, WIDTH - MARGIN, y - 4));
@@ -182,16 +200,20 @@ public class PdfReportWriter implements ReportWriter {
             for (int c = 0; c < columns.size(); c++) {
                 Object value = c < row.size() ? row.get(c) : null;
                 String rendered = ReportFormat.cell(columns.get(c), value);
-                if (total && c == 0 && rendered.isEmpty()) {
-                    rendered = "TOTAL";
+                if (!columns.get(c).numeric()) {
+                    rendered = messages.text(rendered);
                 }
-                out.append(text(total ? "F2" : "F1", FONT_SIZE, x, y, clip(rendered, widths[c])));
+                if (total && c == 0 && rendered.isEmpty()) {
+                    rendered = messages.get("t.total-2");
+                }
+                boolean bold = total || ReportData.isSubtotal(row);
+                out.append(text(bold ? "F2" : "F1", FONT_SIZE, x, y, clip(rendered, widths[c])));
                 x += widths[c];
             }
             y -= ROW_HEIGHT;
         }
-        out.append(text("F1", 7, MARGIN, 22, data.size() + " ligne(s)"));
-        out.append(text("F1", 7, WIDTH - MARGIN - 60, 22, "Page " + page + " / " + pageCount));
+        out.append(text("F1", 7, MARGIN, 22, data.size() + " " + messages.get("t.ligne-s")));
+        out.append(text("F1", 7, WIDTH - MARGIN - 60, 22, messages.get("t.page") + " " + page + " / " + pageCount));
         return out.toString();
     }
 

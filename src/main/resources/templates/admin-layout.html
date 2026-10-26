@@ -31,11 +31,11 @@
  ! script: without it the menus still open, close and navigate.
 !}
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="{inject:i18n.language}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{#insert title}Noeud magasin{/}</title>
+    <title>{#insert title}{#if inject:nodeRole.central}{inject:i18n.get('t.w21-noeud-central')}{#else}{inject:i18n.get('t.noeud-magasin')}{/if}{/}</title>
     <link rel="stylesheet" href="/admin-assets/base.css">
     <link rel="stylesheet" href="/admin-assets/auth.css">
     <link rel="stylesheet" href="/admin-assets/dashboard.css">
@@ -45,20 +45,22 @@
     <link rel="stylesheet" href="/admin-assets/touches.css">
     <link rel="stylesheet" href="/admin-assets/sync.css">
     <link rel="stylesheet" href="/admin-assets/reports.css">
+    <link rel="stylesheet" href="/admin-assets/narrow.css">
+    <link rel="stylesheet" href="/admin-assets/control.css">
 </head>
 <body>
 <header class="app-header">
-    <a class="app-brand" href="/dashboard">
+    <a class="app-brand" href="/admin">
         <span class="app-brand-mark"></span>
-        <span class="app-brand-text">im<b>edge</b></span>
+        <span class="app-brand-text">{inject:i18n.get('t.im')}<b>{inject:i18n.get('t.edge')}</b></span>
     </a>
-    <nav class="app-nav" aria-label="Navigation principale">
+    <nav class="app-nav" aria-label="{inject:i18n.get('t.navigation-principale')}">
         {#for group in inject:backOfficeMenu.groups}
         <details class="app-menu" name="app-menu">
-            <summary class="app-menu-title">{group.label}</summary>
+            <summary class="app-menu-title">{inject:i18n.text(group.label)}</summary>
             <div class="app-menu-panel">
                 {#for entry in group.entries}
-                <a class="app-menu-item" href="{entry.path}">{entry.label}</a>
+                <a class="app-menu-item" href="{entry.path}">{inject:i18n.text(entry.label)}</a>
                 {/for}
             </div>
         </details>
@@ -67,21 +69,43 @@
     {#if inject:currentUser.authenticated}
     <div class="app-identity">
         <span class="app-identity-name">{inject:currentUser.fullName}</span>
-        <a class="app-identity-link" href="/admin/favorites">Mes favoris</a>
-        <a class="app-identity-link" href="/admin/password">Mot de passe</a>
+        <a class="app-identity-link" href="/admin/favorites">{inject:i18n.get('t.mes-favoris')}</a>
+        <a class="app-identity-link" href="/admin/password">{inject:i18n.get('t.mot-de-passe-2')}</a>
         <form method="post" action="/admin/logout" class="app-identity-form">
-            <button class="app-identity-link" type="submit">Se déconnecter</button>
+            <button class="app-identity-link" type="submit">{inject:i18n.get('t.se-deconnecter')}</button>
         </form>
     </div>
     {/if}
 </header>
 
 <main class="app-main">
+    {#if inject:currentUser.authenticated}
+    {! BO-04-03-01 : les indicateurs de controle en tete de chaque ecran, pour les
+     ! profils qui ont acces a la fonction ; BO-04-02-12 : l'alerte des demandes
+     ! de caisse, affichee dynamiquement quel que soit le menu. Remplis par le
+     ! script de pied de page ; un profil sans acces ne recoit rien. !}
+    <div class="control-bar" id="controlBar" hidden
+         data-revenue="{inject:i18n.get('t.ca-du-jour')}" data-customers="{inject:i18n.get('t.s21-clients-encaisses')}"
+         data-basket="{inject:i18n.get('t.s21-panier-moyen-quantite')}" data-last-year="{inject:i18n.get('t.s21-ecart-n-1')}"></div>
+    <div class="global-alert" id="globalAlert" hidden
+         data-count="{inject:i18n.get('t.s21-demandes-de-caisse-en-attente')}" data-asks="{inject:i18n.get('t.rc3-dash-demande-un-superviseur')}"
+         data-authorise="{inject:i18n.get('t.rc3-dash-autoriser')}" data-to-till="{inject:i18n.get('t.rc3-dash-a-traiter-en-caisse')}"
+         data-refuse="{inject:i18n.get('t.rc3-dash-refuser')}" data-ack="{inject:i18n.get('t.rc3-dash-acquitter')}"
+         data-reason="{inject:i18n.get('t.rc3-dash-motif-du-refus')}" data-refused="{inject:i18n.get('t.rc3-dash-demande-refusee')}">
+        <button class="btn btn-danger global-alert-toggle" type="button" id="globalAlertToggle"></button>
+        <div class="global-alert-panel" id="globalAlertPanel" hidden></div>
+    </div>
+    {/if}
+    {#if inject:releaseBanner.armedAt}
+    <div class="alert alert-ok" role="status">{inject:i18n.get('t.k2-banniere-armee')} {inject:releaseBanner.armedAt}. <a href="/admin/releases">{inject:i18n.get('t.k2-deploiements-programmes')}</a></div>
+    {#else if inject:releaseBanner.pendingCount > 0}
+    <div class="alert alert-ok" role="status">{inject:i18n.get('t.k2-banniere-retenus')} {inject:releaseBanner.pendingCount}. <a href="/admin/releases">{inject:i18n.get('t.k2-deploiements-programmes')}</a></div>
+    {/if}
     {#insert body}{/}
 </main>
 
 <footer class="app-footer">
-    <span>{#insert footer}Nœud magasin : référentiel et paramétrage du magasin, consolidation des ventes, supervision de la ligne.{/}</span>
+    <span>{#insert footer}{#if inject:nodeRole.central}{inject:i18n.get('t.w21-pied-central')}{#else}{inject:i18n.get('t.nud-magasin-referentiel-et-parametrage-du-magasi')}{/if}{/}</span>
 </footer>
 {|
 <script>
@@ -121,6 +145,83 @@
             closeAll();
         }
     });
+})();
+</script>
+<script>
+// BO-04-03-01: the control indicators bar, for the profiles granted it.
+(function () {
+    var bar = document.getElementById('controlBar');
+    if (!bar) {
+        return;
+    }
+    function refresh() {
+        fetch('/dashboard/control-data', { headers: { 'Accept': 'application/json' } })
+            .then(function (r) { if (!r.ok) { throw new Error(r.status); } return r.json(); })
+            .then(function (d) {
+                if (!d.enabled) { bar.hidden = true; return; }
+                var parts = [bar.dataset.revenue + ' ' + d.revenue + ' €',
+                    bar.dataset.customers + ' ' + d.customers,
+                    bar.dataset.basket + ' ' + d.basketQuantity,
+                    bar.dataset.lastYear + ' ' + d.difference + ' € (' + d.differencePercent + ' %)'];
+                (d.detail || []).forEach(function (f) { parts.push((f.label && f.label !== f.code ? f.code + ' ' + f.label : f.code) + ' ' + f.revenue + ' €'); });
+                bar.textContent = parts.join(' · ');
+                bar.hidden = false;
+            })
+            .catch(function () { bar.hidden = true; clearInterval(timer); });
+    }
+    var timer = setInterval(refresh, 30000);
+    refresh();
+})();
+// BO-04-02-12: the registers' requests, shown at once on every screen.
+(function () {
+    var zone = document.getElementById('globalAlert');
+    if (!zone) {
+        return;
+    }
+    var toggle = document.getElementById('globalAlertToggle');
+    var panel = document.getElementById('globalAlertPanel');
+    var t = zone.dataset;
+    toggle.addEventListener('click', function () { panel.hidden = !panel.hidden; });
+    function act(url) {
+        fetch(url).then(poll);
+    }
+    function button(label, css, onclick) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'btn btn-small ' + css;
+        b.textContent = label;
+        b.addEventListener('click', onclick);
+        return b;
+    }
+    function poll() {
+        fetch('/dashboard/alerts', { headers: { 'Accept': 'application/json' } })
+            .then(function (r) { if (!r.ok) { throw new Error(r.status); } return r.json(); })
+            .then(function (d) {
+                var calls = d.enabled ? d.calls : [];
+                zone.hidden = calls.length === 0;
+                toggle.textContent = t.count.replace('%1', calls.length);
+                panel.innerHTML = '';
+                calls.forEach(function (c) {
+                    var row = document.createElement('div');
+                    row.className = 'global-alert-row';
+                    var text = document.createElement('span');
+                    text.textContent = c.terminal + ' ' + t.asks + ' — ' + (c.reasonLabel || c.reason)
+                        + (c.message ? ' — ' + (c.gesture || c.message) : '') + ' (' + c.operator + ', ' + c.time + ')';
+                    row.appendChild(text);
+                    row.appendChild(button(t.authorise, 'btn-primary', function () { act('/dashboard/call/' + c.id + '/authorise'); }));
+                    row.appendChild(button(t.toTill, '', function () { act('/dashboard/call/' + c.id + '/to-till'); }));
+                    row.appendChild(button(t.refuse, 'btn-danger', function () {
+                        var reason = window.prompt(t.reason, t.refused);
+                        if (reason !== null) { act('/dashboard/call/' + c.id + '/refuse?reason=' + encodeURIComponent(reason)); }
+                    }));
+                    row.appendChild(button(t.ack, 'btn-danger', function () { act('/dashboard/ack/' + c.id); }));
+                    panel.appendChild(row);
+                });
+            })
+            .catch(function () { zone.hidden = true; clearInterval(timer); });
+    }
+    var timer = setInterval(poll, 3000);
+    poll();
 })();
 </script>
 |}

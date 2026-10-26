@@ -1,5 +1,9 @@
 package com.intermarche.edge.ui.admin;
 
+import io.quarkus.security.Authenticated;
+import com.intermarche.edge.security.FeatureAccess;
+import com.intermarche.edge.domain.setting.Feature;
+import com.intermarche.edge.domain.people.CrudOption;
 import com.intermarche.edge.domain.catalog.Product;
 import com.intermarche.edge.domain.catalog.ProductFamily;
 import com.intermarche.edge.ui.journal.JournalPage;
@@ -7,7 +11,6 @@ import io.quarkus.hibernate.orm.panache.PanacheQuery;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
@@ -41,10 +44,12 @@ import org.jboss.logging.Logger;
  *   <li>BO-03-01-02 — rename, re-parent (attach a group under another existing
  *       group) and delete a group;</li>
  *   <li>BO-03-01-03 — duplicate a group into a new code, carrying its
- *       description, flags and member articles;</li>
+ *       description, flags, touch configuration and member articles, under the
+ *       same parents, its whole sub-tree duplicated with it;</li>
  *   <li>BO-03-01-04 / BO-03-01-16 — add articles to a group, one by one or in
- *       bulk, by exact code (EAN, internal code or PLU), by EAN range or by
- *       copying another group's members;</li>
+ *       bulk, by exact code (EAN, internal code or PLU), by EAN or internal code
+ *       range, by family (sub-families included), by label, by copying another
+ *       group's members, or by importing an Excel or CSV list;</li>
  *   <li>BO-03-01-05 — add an article at level 0, i.e. directly onto the
  *       reserved {@value #LEVEL_ZERO_CODE} group so it needs no group touch;</li>
  *   <li>BO-03-01-17 — deactivate (and reactivate) a member article through its
@@ -68,7 +73,37 @@ public class AdminProductFamilyResource {
      * directly on the till without a group touch (BO-03-01-05). Created on
      * demand the first time an article is added at level 0.
      */
-    static final String LEVEL_ZERO_CODE = "NIVEAU-0";
+    static final String LEVEL_ZERO_CODE = ProductFamily.LEVEL_ZERO_CODE;
+
+    /** The separator between a duplicate's code and its sub-groups' own codes (BO-03-01-03). */
+    static final String COPY_SEPARATOR = "-";
+
+    /** The longest code a group may carry, the column's length. */
+    static final int MAX_CODE_LENGTH = 50;
+
+    /**
+     * The article-list upload of a group (BO-03-01-16): the target group and
+     * the file — an Excel workbook (.xlsx) or a CSV/text list, one article code
+     * per cell or per token.
+     */
+    public static class ImportForm {
+
+        /** The id of the group the articles are added to. */
+        @jakarta.ws.rs.FormParam("id")
+        @org.jboss.resteasy.annotations.providers.multipart.PartType(MediaType.TEXT_PLAIN)
+        public String id;
+
+        /** The uploaded list. */
+        @jakarta.ws.rs.FormParam("file")
+        @org.jboss.resteasy.annotations.providers.multipart.PartType(MediaType.APPLICATION_OCTET_STREAM)
+        public java.io.InputStream file;
+
+        /**
+         * Builds an empty form, as the multipart reader requires.
+         */
+        public ImportForm() {
+        }
+    }
 
     /** The groups administration template. */
     @Inject
@@ -102,7 +137,8 @@ public class AdminProductFamilyResource {
      * @return the administration page
      */
     @GET
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.ARTICLE_GROUP)
     public TemplateInstance list(@QueryParam("notice") String notice,
                                  @QueryParam("noticeOk") @DefaultValue("true") boolean noticeOk,
                                  @QueryParam("page") @DefaultValue("1") int page,
@@ -147,7 +183,8 @@ public class AdminProductFamilyResource {
      * @return a 303 redirect carrying the outcome notice
      */
     @POST
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.ARTICLE_GROUP, option = CrudOption.CREATE, updateKey = "id")
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response save(MultivaluedMap<String, String> form) {
@@ -214,7 +251,8 @@ public class AdminProductFamilyResource {
      */
     @POST
     @Path("/delete")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.ARTICLE_GROUP, option = CrudOption.DELETE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response delete(MultivaluedMap<String, String> form) {
@@ -232,16 +270,24 @@ public class AdminProductFamilyResource {
     }
 
     /**
-     * Duplicates a group into a new code, copying its description, flags and
-     * member articles (the sub-tree is not copied — the new group is created at
-     * root level).
+     * Duplicates a group into a new code (BO-03-01-03), reproducing its place in
+     * the tree: the copy hangs under every parent the source hangs under, and
+     * the source's whole sub-tree is duplicated with it, each sub-group under
+     * the code {@code <new code>-<its own code>}. Every copy carries the
+     * description, the flags, the member articles and the touch configuration
+     * of its original.
+     *
+     * <p>Every derived code is checked BEFORE anything is written: a derived
+     * code already taken, or longer than the column, refuses the whole
+     * duplication rather than leaving half a tree.
      *
      * @param form the posted form (sourceId and newCode required)
      * @return a 303 redirect carrying the outcome notice
      */
     @POST
     @Path("/duplicate")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.ARTICLE_GROUP, option = CrudOption.CREATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response duplicate(MultivaluedMap<String, String> form) {
@@ -257,18 +303,90 @@ public class AdminProductFamilyResource {
             LOGGER.info("Exiting method duplicate");
             return redirect(source.id, "Le code du nouveau groupe est obligatoire.", false);
         }
-        if (ProductFamily.count("code", newCode) > 0) {
-            LOGGER.info("Exiting method duplicate");
-            return redirect(source.id, "Un groupe porte déjà le code « " + newCode + " ».", false);
+        java.util.Map<ProductFamily, String> codes = new java.util.LinkedHashMap<>();
+        planCopy(source, newCode, codes);
+        for (String code : codes.values()) {
+            if (code.length() > MAX_CODE_LENGTH) {
+                LOGGER.info("Exiting method duplicate");
+                return redirect(source.id, "Le code « " + code + " » dépasse 50 caractères.", false);
+            }
+            if (ProductFamily.count("code", code) > 0) {
+                LOGGER.info("Exiting method duplicate");
+                return redirect(source.id, "Un groupe porte déjà le code « " + code + " ».", false);
+            }
         }
-        ProductFamily copy = new ProductFamily();
-        copy.code = newCode;
-        copy.description = source.description;
-        copy.flags = source.flags;
-        copy.products.addAll(source.products);
-        copy.persist();
+        java.util.Map<ProductFamily, ProductFamily> copies = new java.util.LinkedHashMap<>();
+        for (java.util.Map.Entry<ProductFamily, String> planned : codes.entrySet()) {
+            copies.put(planned.getKey(), copyOf(planned.getKey(), planned.getValue()));
+        }
+        for (java.util.Map.Entry<ProductFamily, ProductFamily> copied : copies.entrySet()) {
+            for (ProductFamily child : copied.getKey().productFamilies) {
+                copied.getValue().productFamilies.add(copies.get(child));
+            }
+        }
+        ProductFamily copy = copies.get(source);
+        for (ProductFamily parent : ProductFamily.<ProductFamily>find(
+                "select p from ProductFamily p join p.productFamilies c where c.id = ?1", source.id).list()) {
+            parent.productFamilies.add(copy);
+        }
         LOGGER.info("Exiting method duplicate");
-        return redirect(copy.id, "Groupe « " + source.code + " » dupliqué en « " + newCode + " ».", true);
+        return redirect(copy.id, "Groupe « " + source.code + " » dupliqué en « " + newCode + " » avec "
+                + (codes.size() - 1) + " sous-groupe(s).", true);
+    }
+
+    /**
+     * Gives every group of a sub-tree the code its copy will carry: the root
+     * the code typed, each descendant the code of its copied parent, a dash and
+     * its own code. A group reached twice — the tree is a graph, one group may
+     * hang under two others — is copied once.
+     *
+     * @param group the group to plan
+     * @param code the code its copy carries
+     * @param codes the plan being built, by original group
+     */
+    private void planCopy(ProductFamily group, String code, java.util.Map<ProductFamily, String> codes) {
+        if (codes.containsKey(group)) {
+            return;
+        }
+        codes.put(group, code);
+        for (ProductFamily child : group.productFamilies) {
+            planCopy(child, code + COPY_SEPARATOR + child.code, codes);
+        }
+    }
+
+    /**
+     * Creates the copy of one group: its description, flags and members, and
+     * its touch configuration when it has one, every mandatory column set
+     * before the row is persisted.
+     *
+     * @param original the group copied
+     * @param code the code of the copy
+     * @return the persisted copy
+     */
+    private ProductFamily copyOf(ProductFamily original, String code) {
+        ProductFamily copy = new ProductFamily();
+        copy.code = code;
+        copy.description = original.description;
+        copy.flags = original.flags;
+        copy.products.addAll(original.products);
+        copy.persist();
+        com.intermarche.edge.domain.setting.TouchGroupSetting touch =
+                com.intermarche.edge.domain.setting.TouchGroupSetting.findByFamilyCode(original.code);
+        if (touch != null) {
+            com.intermarche.edge.domain.setting.TouchGroupSetting copied =
+                    new com.intermarche.edge.domain.setting.TouchGroupSetting();
+            copied.familyCode = code;
+            copied.pinned = touch.pinned;
+            copied.buttonSize = touch.buttonSize;
+            copied.displayOrder = touch.displayOrder;
+            copied.salesVolume = touch.salesVolume;
+            copied.islandCodes = touch.islandCodes;
+            copied.terminalIds = touch.terminalIds;
+            copied.tpvTypes = touch.tpvTypes;
+            copied.labels = touch.labels;
+            copied.persist();
+        }
+        return copy;
     }
 
     /**
@@ -281,7 +399,8 @@ public class AdminProductFamilyResource {
      */
     @POST
     @Path("/articles")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.ARTICLE_GROUP, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response addArticles(MultivaluedMap<String, String> form) {
@@ -306,7 +425,8 @@ public class AdminProductFamilyResource {
      */
     @POST
     @Path("/level-zero/articles")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.ARTICLE_GROUP, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response addAtLevelZero(MultivaluedMap<String, String> form) {
@@ -323,15 +443,86 @@ public class AdminProductFamilyResource {
     }
 
     /**
+     * Adds to a group every article an uploaded list names (BO-03-01-16): an
+     * Excel workbook — every cell of its first sheet — or a CSV or text list —
+     * every token between separators — each read as an EAN, an internal code
+     * or a PLU. A header or a code the catalog does not know is counted, not
+     * refused: one unknown line must not cost the rest of the list. The
+     * articles reach the registers with the group at their next pull.
+     *
+     * @param form the posted group id and file
+     * @return a 303 redirect carrying the outcome notice
+     */
+    @POST
+    @Path("/import")
+    @Authenticated
+    @FeatureAccess(value = Feature.ARTICLE_GROUP, option = CrudOption.UPDATE)
+    @Consumes(MediaType.MULTIPART_FORM_DATA)
+    @Transactional
+    public Response importArticles(@org.jboss.resteasy.annotations.providers.multipart.MultipartForm ImportForm form) {
+        LOGGER.info("Entering method importArticles");
+        Long id = form == null ? null : parseId(form.id);
+        ProductFamily family = id == null ? null : ProductFamily.<ProductFamily>findById(id);
+        if (family == null) {
+            LOGGER.info("Exiting method importArticles");
+            return redirect(null, "Groupe introuvable.", false);
+        }
+        List<String> tokens;
+        try {
+            tokens = ArticleListReader.read(form.file);
+        } catch (java.io.IOException e) {
+            LOGGER.info("Exiting method importArticles");
+            return redirect(family.id, "Fichier illisible.", false);
+        }
+        Set<Product> found = new LinkedHashSet<>();
+        int unknown = 0;
+        for (String token : withoutHeading(tokens)) {
+            Product product = resolveProduct(token);
+            if (product == null) {
+                unknown++;
+            } else {
+                found.add(product);
+            }
+        }
+        if (found.isEmpty()) {
+            LOGGER.info("Exiting method importArticles");
+            return redirect(family.id, "Aucun article reconnu dans le fichier.", false);
+        }
+        family.products.addAll(found);
+        LOGGER.info("Exiting method importArticles");
+        return redirect(family.id, found.size() + " article(s) importé(s) dans le groupe « " + family.code
+                + " », " + unknown + " code(s) inconnu(s).", true);
+    }
+
+    /**
      * Removes an article from a group's members (the article itself is
      * untouched, only its membership in this group is dropped).
      *
      * @param form the posted form (id of the group, productId of the article)
      * @return a 303 redirect carrying the outcome notice
      */
+    /**
+     * Drops the heading of an imported list ({@code BO-03-01-16}): the words a
+     * spreadsheet or a CSV carries above its codes — « EAN », « Code article »
+     * — are column titles, not article codes, and counting them as unknown
+     * codes told the user of a code the file never held. Every token up to the
+     * first one carrying a digit is the heading.
+     *
+     * @param tokens the tokens of the file, in order
+     * @return the tokens from the first code on
+     */
+    private static List<String> withoutHeading(List<String> tokens) {
+        int first = 0;
+        while (first < tokens.size() && !tokens.get(first).matches(".*\\d.*")) {
+            first++;
+        }
+        return tokens.subList(first, tokens.size());
+    }
+
     @POST
     @Path("/articles/remove")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.ARTICLE_GROUP, option = CrudOption.DELETE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response removeArticle(MultivaluedMap<String, String> form) {
@@ -363,7 +554,8 @@ public class AdminProductFamilyResource {
      */
     @POST
     @Path("/articles/toggle")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.ARTICLE_GROUP, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response toggleArticle(MultivaluedMap<String, String> form) {
@@ -402,8 +594,10 @@ public class AdminProductFamilyResource {
     /**
      * Builds the set of articles designated by the posted selectors, deduplicated
      * and in insertion order: exact codes (EAN, internal code or PLU, one per
-     * whitespace/comma/semicolon token), an inclusive EAN range, every member of a
-     * named source group, and a case-insensitive label (commercial name) match.
+     * whitespace/comma/semicolon token), an inclusive EAN range, an inclusive
+     * internal-code range, every member of a named source group, every article
+     * of a family and of its sub-families, and a case-insensitive label
+     * (commercial name) match (BO-03-01-04).
      *
      * @param form the posted form
      * @return the selected articles, never null, possibly empty
@@ -427,6 +621,19 @@ public class AdminProductFamilyResource {
         if (!from.isEmpty() && !to.isEmpty()) {
             result.addAll(Product.<Product>find("ean >= ?1 and ean <= ?2 order by ean", from, to).list());
         }
+        String internalFrom = trimmed(form.getFirst("internalFrom"));
+        String internalTo = trimmed(form.getFirst("internalTo"));
+        if (!internalFrom.isEmpty() && !internalTo.isEmpty()) {
+            result.addAll(Product.<Product>find("internalCode >= ?1 and internalCode <= ?2 order by internalCode",
+                    internalFrom, internalTo).list());
+        }
+        String familyCode = trimmed(form.getFirst("familyCode"));
+        if (!familyCode.isEmpty()) {
+            ProductFamily family = ProductFamily.findByCode(familyCode);
+            if (family != null) {
+                result.addAll(familyArticles(family));
+            }
+        }
         String source = trimmed(form.getFirst("sourceFamily"));
         if (!source.isEmpty()) {
             ProductFamily family = ProductFamily.findByCode(source);
@@ -440,6 +647,36 @@ public class AdminProductFamilyResource {
                     "%" + label.toLowerCase() + "%").list());
         }
         return result;
+    }
+
+    /**
+     * Every article of a family and of its sub-families (BO-03-01-04).
+     *
+     * <p>A nomenclature node holds its descendants by CODE — a sous-famille's
+     * code starts with its famille's — so they are read in one query over the
+     * scheme. A shop's own group holds its sub-groups by edge, walked once each.
+     *
+     * @param family the family named
+     * @return its articles and those of every family under it
+     */
+    private Set<Product> familyArticles(ProductFamily family) {
+        Set<Product> articles = new LinkedHashSet<>();
+        if (family.nomenclature != null) {
+            articles.addAll(Product.<Product>find("select distinct p from ProductFamily pf join pf.products p"
+                    + " where pf.nomenclature.id = ?1 and pf.code like ?2 order by p.ean",
+                    family.nomenclature.id, family.code + "%").list());
+            return articles;
+        }
+        java.util.Deque<ProductFamily> pending = new java.util.ArrayDeque<>(List.of(family));
+        Set<ProductFamily> walked = new java.util.HashSet<>();
+        while (!pending.isEmpty()) {
+            ProductFamily current = pending.pop();
+            if (walked.add(current)) {
+                articles.addAll(current.products);
+                pending.addAll(current.productFamilies);
+            }
+        }
+        return articles;
     }
 
     /**

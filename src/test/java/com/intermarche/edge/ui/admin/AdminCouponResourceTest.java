@@ -225,6 +225,15 @@ class AdminCouponResourceTest {
             when(islandQuery.list()).thenReturn(islands);
             panache.when(() -> com.intermarche.edge.domain.store.CheckoutIsland
                     .find("order by code")).thenReturn(islandQuery);
+            // BO-03-06-08: the tenders a scanned range may be bound to.
+            PanacheQuery<com.intermarche.edge.domain.payment.TenderDefinition> tenderQuery =
+                    mock(PanacheQuery.class);
+            List<com.intermarche.edge.domain.payment.TenderDefinition> tenders =
+                    List.of(new com.intermarche.edge.domain.payment.TenderDefinition());
+            when(tenderQuery.list()).thenReturn(tenders);
+            panache.when(() -> com.intermarche.edge.domain.payment.TenderDefinition
+                    .find("code in ?1 order by functionalId", AdminCouponResource.SCANNED_TENDERS))
+                    .thenReturn(tenderQuery);
             assertSame(instance, resource.couponsPage("n", false));
             verify(resource.adminCoupons).data("types", types);
             verify(instance).data("articleRanges", ranges);
@@ -238,6 +247,9 @@ class AdminCouponResourceTest {
             verify(instance).data("sources", CouponType.AmountSource.values());
             verify(instance).data("notice", "n");
             verify(instance).data("noticeOk", false);
+            verify(instance).data("functions", com.intermarche.edge.domain.barcode.RegisterFunction.values());
+            verify(instance).data("tenders", tenders);
+            verify(instance).data("issuedKinds", AdminCouponResource.ISSUED_KINDS);
         }
     }
 
@@ -1020,6 +1032,44 @@ class AdminCouponResourceTest {
     }
 
     /**
+     * BO-03-06-43 / -41: a promotion type other than PERCENT or AMOUNT is
+     * refused; PERCENT and AMOUNT are written on the range with the field of
+     * the partner's answer, and a blank type means a promotion named only.
+     */
+    @Test
+    void saveArticleRangeKeepsThePromotionDefinitionAndTheResponseField() {
+        AdminCouponResource resource = newResource();
+        when(resource.couponPatterns.validateRange(any())).thenReturn(List.of());
+        ArticleBarcodeRange stored = articleRange("BALANCE");
+        MultivaluedMap<String, String> form = articleForm("BALANCE");
+        form.putSingle("promotionType", "GIFT");
+        assertTrue(java.net.URLDecoder.decode(resource.saveArticleRange(form).getLocation().toString(),
+                java.nio.charset.StandardCharsets.UTF_8).contains("Type de promotion inconnu."));
+        form.putSingle("promotionType", "PERCENT");
+        form.putSingle("lookupField", " statut.message ");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            stubRangeFind(panache, "BALANCE", stored);
+            assertTrue(resource.saveArticleRange(form).getLocation().toString().contains("noticeOk=true"));
+        }
+        assertEquals("PERCENT", stored.promotionType);
+        assertEquals("statut.message", stored.lookupField);
+        form.putSingle("promotionType", "AMOUNT");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            stubRangeFind(panache, "BALANCE", stored);
+            resource.saveArticleRange(form);
+        }
+        assertEquals("AMOUNT", stored.promotionType);
+        form.putSingle("promotionType", " ");
+        form.putSingle("lookupField", "");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            stubRangeFind(panache, "BALANCE", stored);
+            resource.saveArticleRange(form);
+        }
+        assertNull(stored.promotionType);
+        assertNull(stored.lookupField);
+    }
+
+    /**
      * A description the generator refuses is not written at all: no row is
      * constructed and no pattern is regenerated (refused arm).
      */
@@ -1245,5 +1295,133 @@ class AdminCouponResourceTest {
             assertEquals(1, existing.controls.size());
             assertTrue(existing.controls.contains(other));
         }
+    }
+    /** BO-03: an absent optional form value retains the documented empty/default interpretation. */
+    @Test
+    void absentOptionalFormValueKeepsItsFallback() throws Exception {
+        var method = AdminCouponResource.class.getDeclaredMethod("parsePurpose", String.class);
+        method.setAccessible(true);
+        org.junit.jupiter.api.Assertions.assertEquals(com.intermarche.edge.domain.barcode.ArticleBarcodeRange.Purpose.ARTICLE, method.invoke(new AdminCouponResource(), (Object) null));
+    }
+
+
+    // ------------------------------------------------------------ BO-03-06-08/30/54
+
+    /**
+     * {@code saveType} refuses binding a range to a tender a scan cannot settle
+     * (BO-03-06-08): only the purchase voucher and the meal ticket are offered.
+     */
+    @Test
+    void saveTypeRejectsATenderAScanCannotSettle() {
+        AdminCouponResource resource = newResource();
+        MultivaluedMap<String, String> form = form();
+        form.putSingle("code", "GIFT");
+        form.putSingle("amountSource", "MANUAL");
+        form.putSingle("codeKind", "NUMERIC");
+        form.putSingle("tenderCode", "CB");
+        Response response = resource.saveType(form);
+        assertTrue(response.getLocation().toString().contains("noticeOk=false"));
+        verify(resource.couponPatterns, never()).regenerate(any());
+    }
+
+    /**
+     * {@code saveType} refuses an issuing kind it cannot hold (BO-03-06-30): an
+     * unknown kind, a range that is not a registry range, a registry range with
+     * no administered length.
+     */
+    @Test
+    void saveTypeRejectsAnIssuingKindItCannotHold() {
+        AdminCouponResource resource = newResource();
+        MultivaluedMap<String, String> form = form();
+        form.putSingle("code", "AVOIR");
+        form.putSingle("amountSource", "REGISTRY");
+        form.putSingle("codeKind", "NUMERIC");
+        form.putSingle("codeLength", "40");
+        form.putSingle("issuedKind", "LOTTERY");
+        assertTrue(resource.saveType(form).getLocation().toString().contains("noticeOk=false"));
+        form.putSingle("issuedKind", "CREDIT_NOTE");
+        form.putSingle("amountSource", "MANUAL");
+        assertTrue(resource.saveType(form).getLocation().toString().contains("noticeOk=false"));
+        form.putSingle("amountSource", "REGISTRY");
+        form.putSingle("codeLength", "");
+        assertTrue(resource.saveType(form).getLocation().toString().contains("noticeOk=false"));
+        verify(resource.couponPatterns, never()).regenerate(any());
+    }
+
+    /**
+     * {@code saveType} writes the tender binding and the issuing kind on the
+     * stored range (BO-03-06-08 and -30).
+     */
+    @Test
+    void saveTypeKeepsTheTenderAndTheIssuingKind() {
+        AdminCouponResource resource = newResource();
+        CouponType existing = stored("AVOIR");
+        MultivaluedMap<String, String> form = form();
+        form.putSingle("code", "AVOIR");
+        form.putSingle("amountSource", "REGISTRY");
+        form.putSingle("codeKind", "NUMERIC");
+        form.putSingle("codeLength", "40");
+        form.putSingle("tenderCode", " VOUCHER ");
+        form.putSingle("issuedKind", " CREDIT_NOTE ");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            stubFind(panache, "AVOIR", existing);
+            assertTrue(resource.saveType(form).getLocation().toString().contains("noticeOk=true"));
+        }
+        assertEquals("VOUCHER", existing.tenderCode);
+        assertEquals("CREDIT_NOTE", existing.issuedKind);
+    }
+
+    /**
+     * {@code saveArticleRange} writes the register function a FUNCTION range
+     * calls, and a blank one as null (BO-03-06-54).
+     */
+    @Test
+    void saveArticleRangeKeepsThePostedFunction() {
+        AdminCouponResource resource = newResource();
+        when(resource.couponPatterns.validateRange(any())).thenReturn(List.of());
+        ArticleBarcodeRange stored = articleRange("FONCTION");
+        MultivaluedMap<String, String> form = articleForm("FONCTION");
+        form.putSingle("purpose", "FUNCTION");
+        form.putSingle("functionCode", "  SURVEY  ");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            stubRangeFind(panache, "FONCTION", stored);
+            assertTrue(resource.saveArticleRange(form).getLocation().toString().contains("noticeOk=true"));
+        }
+        assertEquals(ArticleBarcodeRange.Purpose.FUNCTION, stored.purpose);
+        assertEquals("SURVEY", stored.functionCode);
+        form.putSingle("functionCode", "  ");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            stubRangeFind(panache, "FONCTION", stored);
+            assertTrue(resource.saveArticleRange(form).getLocation().toString().contains("noticeOk=true"));
+        }
+        assertNull(stored.functionCode);
+    }
+
+    /**
+     * BO-03-02-37: the protocol of a prepaid range is chosen from a list — an
+     * unknown one is refused, a known one stored, a blank one stored as none.
+     */
+    @Test
+    void saveTypeKeepsTheCardProtocolOfAPrepaidRange() {
+        AdminCouponResource resource = newResource();
+        MultivaluedMap<String, String> form = form();
+        form.putSingle("code", "CADEAU");
+        form.putSingle("amountSource", "REGISTRY");
+        form.putSingle("codeKind", "NUMERIC");
+        form.putSingle("cardProtocol", "MAGIC");
+        assertTrue(resource.saveType(form).getLocation().toString().contains("noticeOk=false"));
+        CouponType existing = stored("CADEAU");
+        form.putSingle("cardProtocol", " NEXO ");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            stubFind(panache, "CADEAU", existing);
+            assertTrue(resource.saveType(form).getLocation().toString().contains("noticeOk=true"));
+        }
+        assertEquals("NEXO", existing.cardProtocol);
+        form.putSingle("cardProtocol", " ");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            stubFind(panache, "CADEAU", existing);
+            resource.saveType(form);
+        }
+        assertNull(existing.cardProtocol);
     }
 }

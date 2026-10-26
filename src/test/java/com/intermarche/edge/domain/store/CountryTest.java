@@ -1,9 +1,18 @@
 package com.intermarche.edge.domain.store;
 
+import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
+import io.quarkus.hibernate.orm.panache.PanacheQuery;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
+
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for {@link Country}.
@@ -41,5 +50,25 @@ class CountryTest {
         country.name = name;
         country.defaultLanguage = language;
         return country;
+    }
+
+    /**
+     * The two finders delegate to Panache with their query and hand back
+     * what the store answers: {@code findByCode} the first match of the
+     * code, {@code listAllOrdered} every row ordered by code.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void findersDelegateToPanache() {
+        Country france = country("FR", "France", "fr");
+        PanacheQuery<Country> query = mock(PanacheQuery.class);
+        when(query.firstResult()).thenReturn(france);
+        List<Country> all = List.of(france);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> Country.find("code", "FR")).thenReturn(query);
+            mocked.when(() -> Country.list("order by code")).thenReturn(all);
+            assertSame(france, Country.findByCode("FR"));
+            assertSame(all, Country.listAllOrdered());
+        }
     }
 }

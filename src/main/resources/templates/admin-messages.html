@@ -10,226 +10,266 @@
 !}
 {#include admin-layout}
 
-{#title}Messages aux caisses{/title}
+{#title}{inject:i18n.get('t.messages-aux-caisses')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Messages aux caisses</h1>
-        <p class="page-sub">Ce que le magasin dit a ses caisses : un texte ou un sondage, une periode de diffusion, une population, un moment d'affichage et un accuse de lecture nominatif. La caisse recupere le message a son prochain sondage, dans les vingt secondes.</p>
+        <h1>{inject:i18n.get('t.messages-aux-caisses')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.ce-que-le-magasin-dit-a-ses')}</p>
     </div>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 <div class="card">
-    <h2 class="card-title">Ecrire un message</h2>
-    <p class="card-sub">Un message sans texte ni question ne dit rien et est refuse. Pour retirer une consigne, la desactiver.</p>
+    <h2 class="card-title">{inject:i18n.get('t.ecrire-un-message')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.un-message-sans-texte-ni-question-ne')}</p>
     <form method="post" action="/admin/messages/save">
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="m-text">Texte</label>
+                <label class="field-label" for="m-text">{inject:i18n.get('t.texte')}</label>
                 <input class="input-control" id="m-text" type="text" name="text" maxlength="500">
             </div>
             <div class="field">
-                <label class="field-label" for="m-question">Question (sondage)</label>
+                <label class="field-label" for="m-question">{inject:i18n.get('t.question-sondage')}</label>
                 <input class="input-control" id="m-question" type="text" name="question" maxlength="300">
             </div>
             <div class="field">
-                <label class="field-label" for="m-options">Reponses proposees</label>
+                <label class="field-label" for="m-options">{inject:i18n.get('t.reponses-proposees')}</label>
                 <input class="input-control" id="m-options" type="text" name="options" maxlength="500">
-                <span class="field-hint">Separees par des points-virgules : Oui;Non;Sans avis</span>
+                <span class="field-hint">{inject:i18n.get('t.separees-par-des-points-virgules-oui-non')}</span>
             </div>
             <div class="field">
-                <label class="field-label" for="m-response-type">Type de reponse (sondage)</label>
+                <label class="field-label" for="m-response-type">{inject:i18n.get('t.type-de-reponse-sondage')}</label>
                 <select class="input-control" id="m-response-type" name="responseType">
                     {#for responseType in responseTypes}
-                    <option value="{responseType}">{responseType.label}</option>
+                    <option value="{responseType}">{inject:i18n.text(responseType.label)}</option>
                     {/for}
                 </select>
-                <span class="field-hint">LC-03-07-06 a -09 : options, nombre saisi, code postal ou message informatif a valider.</span>
+                <span class="field-hint">{inject:i18n.get('t.lc-03-07-06-a-09-options')}</span>
             </div>
             <div class="field">
-                <label class="field-label" for="m-required">Reponse obligatoire</label>
+                <label class="field-label" for="m-required">{inject:i18n.get('t.reponse-obligatoire')}</label>
                 <select class="input-control" id="m-required" name="required">
-                    <option value="">Non — l'operateur peut passer outre</option>
-                    <option value="on">Oui — le sondage reste jusqu'a reponse</option>
+                    <option value="">{inject:i18n.get('t.non-l-operateur-peut-passer-outre')}</option>
+                    <option value="on">{inject:i18n.get('t.oui-le-sondage-reste-jusqu-a-reponse')}</option>
                 </select>
-                <span class="field-hint">LC-03-07-10.</span>
+                <span class="field-hint">{inject:i18n.get('t.lc-03-07-10')}</span>
             </div>
             <div class="field">
-                <label class="field-label" for="m-postal-format">Format du code postal</label>
+                <label class="field-label" for="m-postal-format">{inject:i18n.get('t.format-du-code-postal')}</label>
                 <input class="input-control" id="m-postal-format" type="text" name="postalFormat" maxlength="20">
-                <span class="field-hint">LC-03-07-07 : C par chiffre — CCCCC (France), CCCC (Belgique), CCCC-CCC (Portugal).</span>
+                <span class="field-hint">{inject:i18n.get('t.lc-03-07-07-c-par-chiffre')}</span>
             </div>
             <div class="field">
-                <label class="field-label" for="m-postal-codes">Codes postaux valides</label>
-                <input class="input-control" id="m-postal-codes" type="text" name="postalCodes" maxlength="500">
-                <span class="field-hint">LC-03-07-08 : separes par des points-virgules ; vide, seul le format controle.</span>
+                <label class="field-label" for="m-postal-codes">{inject:i18n.get('t.codes-postaux-valides')}</label>
+                <input class="input-control" id="m-postal-codes" type="text" name="postalCodes" maxlength="20000">
+                <span class="field-hint">{inject:i18n.get('t.lc-03-07-08-separes-par-des')}</span>
             </div>
             <div class="field">
-                <label class="field-label" for="m-audience">Population</label>
+                <label class="field-label" for="m-audience">{inject:i18n.get('t.population')}</label>
                 <select class="input-control" id="m-audience" name="audience">
                     {#for audience in audiences}
-                    <option value="{audience}">{audience.label}</option>
+                    <option value="{audience}">{inject:i18n.text(audience.label)}</option>
                     {/for}
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="m-audience-value">Ilot, caisse ou operateur</label>
-                <input class="input-control" id="m-audience-value" type="text" name="audienceValue" maxlength="50">
-                <span class="field-hint">Obligatoire des que la population n'est pas « toutes les caisses ».</span>
+                <label class="field-label" for="m-audience-value">{inject:i18n.get('t.ilot-caisse-ou-operateur')}</label>
+                <input class="input-control" id="m-audience-value" type="text" name="audienceValue" maxlength="200">
+                <span class="field-hint">{inject:i18n.get('t.obligatoire-des-que-la-population-n-est')}</span>
             </div>
             <div class="field">
-                <label class="field-label" for="m-trigger">Moment d'affichage</label>
+                <label class="field-label" for="m-trigger">{inject:i18n.get('t.moment-d-affichage')}</label>
                 <select class="input-control" id="m-trigger" name="trigger">
                     {#for trigger in triggers}
-                    <option value="{trigger}">{trigger.label}</option>
+                    <option value="{trigger}">{inject:i18n.text(trigger.label)}</option>
                     {/for}
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="m-starts">Debut de diffusion</label>
-                <input class="input-control" id="m-starts" type="text" name="startsAt" maxlength="16" placeholder="JJ/MM/AAAA HH:MM">
+                <label class="field-label" for="m-starts">{inject:i18n.get('t.debut-de-diffusion')}</label>
+                <input class="input-control" id="m-starts" type="text" name="startsAt" maxlength="16" placeholder="{inject:i18n.get('t.jj-mm-aaaa-hh-mm')}">
             </div>
             <div class="field">
-                <label class="field-label" for="m-ends">Fin de diffusion</label>
-                <input class="input-control" id="m-ends" type="text" name="endsAt" maxlength="16" placeholder="JJ/MM/AAAA HH:MM">
+                <label class="field-label" for="m-ends">{inject:i18n.get('t.fin-de-diffusion')}</label>
+                <input class="input-control" id="m-ends" type="text" name="endsAt" maxlength="16" placeholder="{inject:i18n.get('t.jj-mm-aaaa-hh-mm')}">
             </div>
             <div class="field">
-                <label class="field-label" for="m-duration">Duree d'affichage (s)</label>
+                <label class="field-label" for="m-duration">{inject:i18n.get('t.duree-d-affichage-s')}</label>
                 <input class="input-control" id="m-duration" type="number" name="durationSeconds" min="0" value="0">
-                <span class="field-hint">0 : la banniere reste jusqu'a ce qu'un autre message la remplace.</span>
+                <span class="field-hint">{inject:i18n.get('t.0-la-banniere-reste-jusqu-a-ce')}</span>
             </div>
             <div class="field">
-                <label class="field-label" for="m-confirmation">Confirmation attendue</label>
+                <label class="field-label" for="m-confirmation">{inject:i18n.get('t.confirmation-attendue')}</label>
                 <select class="input-control" id="m-confirmation" name="confirmation">
                     {#for confirmation in confirmations}
-                    <option value="{confirmation}">{confirmation.label}</option>
+                    <option value="{confirmation}">{inject:i18n.text(confirmation.label)}</option>
                     {/for}
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="m-active">Actif</label>
+                <span class="field-label">{inject:i18n.get('t.r21v-jours-d-activation')}</span>
+                <span class="survey-days">{#for d in dayNumbers}<label><input type="checkbox" name="day" value="{d}"> {inject:i18n.code('t.r21v-jour-', d)}</label> {/for}</span>
+                <span class="field-hint">{inject:i18n.get('t.r21v-aucun-jour-tous-les-jours')}</span>
+            </div>
+            <div class="field">
+                <label class="field-label" for="m-daily-from">{inject:i18n.get('t.r21v-heure-de-debut')}</label>
+                <input class="input-control" id="m-daily-from" type="time" name="dailyFrom">
+            </div>
+            <div class="field">
+                <label class="field-label" for="m-daily-to">{inject:i18n.get('t.r21v-heure-de-fin')}</label>
+                <input class="input-control" id="m-daily-to" type="time" name="dailyTo">
+            </div>
+            <div class="field">
+                <label class="field-label" for="m-active">{inject:i18n.get('t.actif')}</label>
                 <input id="m-active" type="checkbox" name="active" checked>
             </div>
         </div>
-        <div class="page-actions"><button class="btn btn-primary" type="submit">Enregistrer le message</button></div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer-le-message')}</button></div>
     </form>
 </div>
 
 {#for row in rows}
 <div class="card">
-    <h2 class="card-title">{#if row.message.text.isEmpty()}(sans texte){#else}{row.message.text}{/if}</h2>
+    <h2 class="card-title">{#if row.message.text.isEmpty()}{inject:i18n.get('t.sans-texte')}{#else}{row.message.text}{/if}</h2>
     <p class="card-sub">
-        {row.message.audience.label}{#if row.message.audienceValue} — {row.message.audienceValue}{/if}
-        · {row.message.trigger.label}
-        · {row.message.confirmation.label}
+        {inject:i18n.get('t.r21v-numero')} {row.message.id} ·
+        {inject:i18n.text(row.message.audience.label)}{#if row.message.audienceValue} — {row.message.audienceValue}{/if}
+        · {inject:i18n.text(row.message.trigger.label)}
+        · {inject:i18n.text(row.message.confirmation.label)}
         · {row.period}
-        {#if row.message.active} · diffuse{#else} · arrete{/if}
+        {#if row.message.active} {inject:i18n.get('t.diffuse')}{#else} {inject:i18n.get('t.arrete')}{/if}
+        {#if !row.message.days.isEmpty()} · {#for d in row.message.days}{inject:i18n.code('t.r21v-jour-', d)} {/for}{/if}
+        {#if row.message.dailyFrom || row.message.dailyTo} · {row.message.dailyFrom ?: '00:00'} – {row.message.dailyTo ?: '24:00'}{/if}
+        {#if row.message.responseType} · {inject:i18n.text(row.message.responseType.label)}{/if}
     </p>
     {#if row.message.question}
-    <p class="card-sub">Sondage : {row.message.question} — {row.message.options ?: 'aucune reponse proposee'}</p>
+    <p class="card-sub">{inject:i18n.get('t.sondage')} {row.message.question} — {#if row.message.options}{row.message.options}{#else}{inject:i18n.get('t.r21v-aucune-reponse-proposee')}{/if}</p>
     {/if}
     <form method="post" action="/admin/messages/save">
         <input type="hidden" name="id" value="{row.message.id}">
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="e-text-{row.message.id}">Texte</label>
+                <label class="field-label" for="e-text-{row.message.id}">{inject:i18n.get('t.texte')}</label>
                 <input class="input-control" id="e-text-{row.message.id}" type="text" name="text" maxlength="500" value="{row.message.text}">
             </div>
             <div class="field">
-                <label class="field-label" for="e-question-{row.message.id}">Question</label>
+                <label class="field-label" for="e-question-{row.message.id}">{inject:i18n.get('t.question')}</label>
                 <input class="input-control" id="e-question-{row.message.id}" type="text" name="question" maxlength="300" value="{row.message.question ?: ''}">
             </div>
             <div class="field">
-                <label class="field-label" for="e-options-{row.message.id}">Reponses</label>
+                <label class="field-label" for="e-options-{row.message.id}">{inject:i18n.get('t.reponses')}</label>
                 <input class="input-control" id="e-options-{row.message.id}" type="text" name="options" maxlength="500" value="{row.message.options ?: ''}">
             </div>
             <div class="field">
-                <label class="field-label" for="e-response-type-{row.message.id}">Type de reponse</label>
+                <label class="field-label" for="e-response-type-{row.message.id}">{inject:i18n.get('t.type-de-reponse')}</label>
                 <select class="input-control" id="e-response-type-{row.message.id}" name="responseType">
                     {#for responseType in responseTypes}
-                    <option value="{responseType}" {#if row.message.responseType == responseType}selected{/if}>{responseType.label}</option>
+                    <option value="{responseType}" {#if row.message.responseType == responseType}selected{/if}>{inject:i18n.text(responseType.label)}</option>
                     {/for}
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="e-required-{row.message.id}">Reponse obligatoire</label>
+                <label class="field-label" for="e-required-{row.message.id}">{inject:i18n.get('t.reponse-obligatoire')}</label>
                 <select class="input-control" id="e-required-{row.message.id}" name="required">
-                    <option value="" {#if !row.message.required}selected{/if}>Non — l'operateur peut passer outre</option>
-                    <option value="on" {#if row.message.required}selected{/if}>Oui — le sondage reste jusqu'a reponse</option>
+                    <option value="" {#if !row.message.required}selected{/if}>{inject:i18n.get('t.non-l-operateur-peut-passer-outre')}</option>
+                    <option value="on" {#if row.message.required}selected{/if}>{inject:i18n.get('t.oui-le-sondage-reste-jusqu-a-reponse')}</option>
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="e-postal-format-{row.message.id}">Format du code postal</label>
+                <label class="field-label" for="e-postal-format-{row.message.id}">{inject:i18n.get('t.format-du-code-postal')}</label>
                 <input class="input-control" id="e-postal-format-{row.message.id}" type="text" name="postalFormat" maxlength="20" value="{row.message.postalFormat ?: ''}">
             </div>
             <div class="field">
-                <label class="field-label" for="e-postal-codes-{row.message.id}">Codes postaux valides</label>
-                <input class="input-control" id="e-postal-codes-{row.message.id}" type="text" name="postalCodes" maxlength="500" value="{row.message.postalCodes ?: ''}">
+                <label class="field-label" for="e-postal-codes-{row.message.id}">{inject:i18n.get('t.codes-postaux-valides')}</label>
+                <input class="input-control" id="e-postal-codes-{row.message.id}" type="text" name="postalCodes" maxlength="20000" value="{row.message.postalCodes ?: ''}">
             </div>
             <div class="field">
-                <label class="field-label" for="e-audience-{row.message.id}">Population</label>
+                <label class="field-label" for="e-audience-{row.message.id}">{inject:i18n.get('t.population')}</label>
                 <select class="input-control" id="e-audience-{row.message.id}" name="audience">
                     {#for audience in audiences}
-                    <option value="{audience}" {#if row.message.audience == audience}selected{/if}>{audience.label}</option>
+                    <option value="{audience}" {#if row.message.audience == audience}selected{/if}>{inject:i18n.text(audience.label)}</option>
                     {/for}
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="e-value-{row.message.id}">Ilot, caisse ou operateur</label>
-                <input class="input-control" id="e-value-{row.message.id}" type="text" name="audienceValue" maxlength="50" value="{row.message.audienceValue ?: ''}">
+                <label class="field-label" for="e-value-{row.message.id}">{inject:i18n.get('t.ilot-caisse-ou-operateur')}</label>
+                <input class="input-control" id="e-value-{row.message.id}" type="text" name="audienceValue" maxlength="200" value="{row.message.audienceValue ?: ''}">
             </div>
             <div class="field">
-                <label class="field-label" for="e-trigger-{row.message.id}">Moment</label>
+                <label class="field-label" for="e-trigger-{row.message.id}">{inject:i18n.get('t.moment')}</label>
                 <select class="input-control" id="e-trigger-{row.message.id}" name="trigger">
                     {#for trigger in triggers}
-                    <option value="{trigger}" {#if row.message.trigger == trigger}selected{/if}>{trigger.label}</option>
+                    <option value="{trigger}" {#if row.message.trigger == trigger}selected{/if}>{inject:i18n.text(trigger.label)}</option>
                     {/for}
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="e-duration-{row.message.id}">Duree (s)</label>
+                <label class="field-label" for="e-duration-{row.message.id}">{inject:i18n.get('t.duree-s')}</label>
                 <input class="input-control" id="e-duration-{row.message.id}" type="number" name="durationSeconds" min="0" value="{row.message.durationSeconds}">
             </div>
             <div class="field">
-                <label class="field-label" for="e-confirmation-{row.message.id}">Confirmation</label>
+                <label class="field-label" for="e-confirmation-{row.message.id}">{inject:i18n.get('t.confirmation')}</label>
                 <select class="input-control" id="e-confirmation-{row.message.id}" name="confirmation">
                     {#for confirmation in confirmations}
-                    <option value="{confirmation}" {#if row.message.confirmation == confirmation}selected{/if}>{confirmation.label}</option>
+                    <option value="{confirmation}" {#if row.message.confirmation == confirmation}selected{/if}>{inject:i18n.text(confirmation.label)}</option>
                     {/for}
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="e-active-{row.message.id}">Actif</label>
+                <span class="field-label">{inject:i18n.get('t.r21v-jours-d-activation')}</span>
+                <span class="survey-days">{#for d in dayNumbers}<label><input type="checkbox" name="day" value="{d}" {#if row.message.days.contains(d)}checked{/if}> {inject:i18n.code('t.r21v-jour-', d)}</label> {/for}</span>
+            </div>
+            <div class="field">
+                <label class="field-label" for="e-daily-from-{row.message.id}">{inject:i18n.get('t.r21v-heure-de-debut')}</label>
+                <input class="input-control" id="e-daily-from-{row.message.id}" type="time" name="dailyFrom" value="{row.message.dailyFrom ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="e-daily-to-{row.message.id}">{inject:i18n.get('t.r21v-heure-de-fin')}</label>
+                <input class="input-control" id="e-daily-to-{row.message.id}" type="time" name="dailyTo" value="{row.message.dailyTo ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="e-active-{row.message.id}">{inject:i18n.get('t.actif')}</label>
                 <input id="e-active-{row.message.id}" type="checkbox" name="active" {#if row.message.active}checked{/if}>
             </div>
         </div>
-        <div class="page-actions"><button class="btn btn-primary" type="submit">Enregistrer</button></div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer')}</button></div>
     </form>
+    {#if row.message.responseType && row.message.responseType.name == 'POSTAL_CODE'}
+    <form method="post" action="/admin/messages/postal-codes" enctype="multipart/form-data" class="field-grid">
+        <input type="hidden" name="id" value="{row.message.id}">
+        <div class="field">
+            <label class="field-label" for="e-postal-file-{row.message.id}">{inject:i18n.get('t.r21v-importer-une-liste-de-codes-postaux')}</label>
+            <input class="input-control" id="e-postal-file-{row.message.id}" type="file" name="file" accept=".xlsx,.csv,.txt">
+            <span class="field-hint">{inject:i18n.get('t.r21v-classeur-excel-ou-fichier-texte')}</span>
+        </div>
+        <div class="field"><button class="btn btn-muted" type="submit">{inject:i18n.get('t.r21v-importer')}</button></div>
+    </form>
+    {/if}
     <form method="post" action="/admin/messages/delete">
         <input type="hidden" name="id" value="{row.message.id}">
-        <div class="page-actions"><button class="btn btn-danger" type="submit">Supprimer</button></div>
+        <div class="page-actions"><button class="btn btn-danger" type="submit">{inject:i18n.get('t.supprimer')}</button></div>
     </form>
     <details class="panel">
-        <summary class="panel-title">Accuses de lecture<span class="panel-count">{row.acks.size()}</span></summary>
+        <summary class="panel-title">{inject:i18n.get('t.accuses-de-lecture')}<span class="panel-count">{row.acks.size()}</span></summary>
         {#if row.acks.size() > 0}
         <table class="data-table">
-            <tr><th>Caisse</th><th>Operateur</th><th>Reponse</th><th>Confirme le</th></tr>
+            <tr><th>{inject:i18n.get('t.caisse')}</th><th>{inject:i18n.get('t.operateur')}</th><th>{inject:i18n.get('t.reponse')}</th><th>{inject:i18n.get('t.confirme-le')}</th></tr>
             {#for ack in row.acks}
             <tr>
                 <td>{ack.terminalId}</td>
                 <td>{ack.operatorName ?: '—'}</td>
-                <td>{ack.answer ?: '—'}</td>
+                <td>{#if ack.answer}{inject:i18n.text(ack.answer)}{#else}—{/if}</td>
                 <td>{ack.confirmedAt.format('dd/MM/yyyy HH:mm')}</td>
             </tr>
             {/for}
         </table>
         {#else}
-        <p class="card-sub">Aucune caisse n'a encore confirme ce message.</p>
+        <p class="card-sub">{inject:i18n.get('t.aucune-caisse-n-a-encore-confirme-ce')}</p>
         {/if}
     </details>
 </div>

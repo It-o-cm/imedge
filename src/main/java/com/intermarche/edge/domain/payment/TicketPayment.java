@@ -33,6 +33,19 @@ public abstract class TicketPayment extends BaseEntity {
     @Column(name = "payment_index", nullable = false)
     public int paymentIndex;
 
+    /** LC-07-07-03: actual Verifone server returned by VWAY, synchronized with the payment. */
+    @Column(name = "monetic_server", length = 16)
+    public String moneticServer;
+
+    /**
+     * The administered TENDER this settlement was taken as (BO-03-02-01/-44),
+     * or null when it was taken as its nature itself — a tender the store
+     * added ("AMEX" settled as CARD) keeps its own name on the ticket, on the
+     * receipt and in the store's states.
+     */
+    @Column(name = "tender_code", length = 20)
+    public String tenderCode;
+
     /** The amount applied to the ticket. */
     @Column(name = "amount", nullable = false, precision = 19, scale = 4)
     @NotNull

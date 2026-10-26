@@ -1,5 +1,9 @@
 package com.intermarche.edge.ui.admin;
 
+import io.quarkus.security.Authenticated;
+import com.intermarche.edge.security.FeatureAccess;
+import com.intermarche.edge.domain.setting.Feature;
+import com.intermarche.edge.domain.people.CrudOption;
 import com.intermarche.edge.domain.people.Employee;
 import com.intermarche.edge.domain.safe.CashPouch;
 import com.intermarche.edge.domain.session.CashSession;
@@ -8,7 +12,6 @@ import com.intermarche.edge.service.SafeService;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
@@ -63,6 +66,10 @@ public class AdminCashPouchResource {
     @Inject
     CurrentUser currentUser;
 
+    /** The sequence and the count of the pouches, as administered (BO-05-02-10). */
+    @Inject
+    com.intermarche.edge.service.PosSettingsService posSettingsService;
+
     /**
      * Shows the pouches and what the registers withdrew on a day.
      *
@@ -72,7 +79,8 @@ public class AdminCashPouchResource {
      * @return the pouches page
      */
     @GET
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SAFE_POUCH)
     public TemplateInstance list(@QueryParam("day") String day,
                                  @QueryParam("notice") String notice,
                                  @QueryParam("noticeOk") @DefaultValue("true") boolean noticeOk) {
@@ -85,6 +93,8 @@ public class AdminCashPouchResource {
                 .data("day", examined.toString())
                 .data("withdrawn", format(withdrawnOf(sessions)))
                 .data("terminals", terminalsOf(sessions))
+                .data("validation", com.intermarche.edge.domain.safe.SafeDayValidation.forDay(examined))
+                .data("validationRequired", posSettingsService.pouchRequiresDayValidation())
                 .data("notice", notice)
                 .data("noticeOk", noticeOk);
     }
@@ -96,7 +106,8 @@ public class AdminCashPouchResource {
      * @return a 303 back to the list with the notice
      */
     @POST
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SAFE_POUCH, option = CrudOption.CREATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response deposit(MultivaluedMap<String, String> form) {
@@ -115,11 +126,17 @@ public class AdminCashPouchResource {
             LOGGER.info("Exiting method deposit: unusable amount");
             return back("Montant obligatoire et strictement positif.", false);
         }
+        LocalDate day = AdminForms.day(form.getFirst("accountingDay"));
+        LocalDate accountingDay = day == null ? LocalDate.now() : day;
+        String sequence = sequenceRefusal(accountingDay);
+        if (sequence != null) {
+            LOGGER.info("Exiting method deposit: " + sequence);
+            return back(sequence, false);
+        }
         CashPouch pouch = new CashPouch();
         pouch.pouchNumber = number;
         pouch.label = AdminForms.text(form, "label");
-        LocalDate day = AdminForms.day(form.getFirst("accountingDay"));
-        pouch.accountingDay = day == null ? LocalDate.now() : day;
+        pouch.accountingDay = accountingDay;
         pouch.amount = amount;
         pouch.terminals = AdminForms.text(form, "terminals");
         String refusal = safeService.depositPouch(pouch, signedIn());
@@ -130,6 +147,28 @@ public class AdminCashPouchResource {
         LOGGER.infof("Pochette %s de %s remise au coffre", number, amount);
         LOGGER.info("Exiting method deposit");
         return back("Pochette remise au coffre.", true);
+    }
+
+    /**
+     * The refusal the sequence of the safe imposes on a pouch
+     * ({@code BO-05-02-10}): the movements of the day are validated, then its
+     * net revenue, and only then are its takings sealed — in one or two
+     * pouches, as administered.
+     *
+     * @param day the accounting day of the pouch
+     * @return the refusal, or null when the pouch may be declared
+     */
+    String sequenceRefusal(LocalDate day) {
+        if (posSettingsService.pouchRequiresDayValidation()
+                && com.intermarche.edge.domain.safe.SafeDayValidation.forDay(day) == null) {
+            return "La journée comptable n'est pas validée : validez les mouvements des caissières puis "
+                    + "le chiffre d'affaires de la journée avant la remise au coffre.";
+        }
+        int limit = posSettingsService.pouchesPerDay();
+        if (limit > 0 && CashPouch.count("accountingDay", day) >= limit) {
+            return "Cette journée comptable compte déjà " + limit + " pochette(s) remise(s) au coffre.";
+        }
+        return null;
     }
 
     /**

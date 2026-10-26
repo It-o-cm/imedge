@@ -10,7 +10,6 @@ import com.intermarche.edge.service.sync.RefPullService;
 import com.intermarche.edge.service.sync.ScheduledDeliveryService;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.ws.rs.core.Response;
 import org.junit.jupiter.api.Test;
 
@@ -62,6 +61,7 @@ class SyncSupervisionResourceTest {
         resource.cashSessionService = mock(CashSessionService.class);
         resource.technicalEventService = mock(TechnicalEventService.class);
         resource.currentUser = mock(CurrentUser.class);
+        resource.integrationPullService = mock(com.intermarche.edge.service.sync.IntegrationPullService.class);
         resource.outboundFlowService = mock(
                 com.intermarche.edge.service.export.OutboundFlowService.class);
         resource.ticketStreamService = mock(
@@ -373,24 +373,64 @@ class SyncSupervisionResourceTest {
     }
 
     /**
-     * Normative case 5 — access: every JAX-RS handler of the screen is reserved to
-     * the node's admin (ADMIN role). A non-admin profile therefore renders no
-     * action and an anonymous caller is refused; both are enforced by the
-     * container from these annotations (proven live by the security IT), so a
-     * handler missing the annotation is the regression this test guards.
+     * Normative case 5 — access: every JAX-RS handler of the screen requires a
+     * signed-in account and declares the SYNC feature, so the access filter
+     * opens it only to the profiles granting it (BO-01-04-01) — the ADMIN
+     * superuser always. A handler missing either annotation is the regression
+     * this test guards.
      */
     @Test
-    void everyHandlerIsReservedToAdmin() {
+    void everyHandlerIsGuardedBySyncFeature() {
         for (Method method : SyncSupervisionResource.class.getDeclaredMethods()) {
             boolean handler = method.isAnnotationPresent(jakarta.ws.rs.GET.class)
                     || method.isAnnotationPresent(jakarta.ws.rs.POST.class);
             if (!handler) {
                 continue;
             }
-            RolesAllowed roles = method.getAnnotation(RolesAllowed.class);
-            assertNotNull(roles, "handler " + method.getName() + " must carry @RolesAllowed");
-            assertEquals(1, roles.value().length);
-            assertEquals("ADMIN", roles.value()[0]);
+            assertNotNull(method.getAnnotation(io.quarkus.security.Authenticated.class),
+                    "handler " + method.getName() + " must carry @Authenticated");
+            com.intermarche.edge.security.FeatureAccess access =
+                    method.getAnnotation(com.intermarche.edge.security.FeatureAccess.class);
+            assertNotNull(access, "handler " + method.getName() + " must carry @FeatureAccess");
+            assertEquals(com.intermarche.edge.domain.setting.Feature.SYNC, access.value());
         }
+    }
+    /** BO-11-03-01: regeneration checks each date leg and reports empty, written and failed outputs. */
+    @Test
+    void outboundRegenerationHandlesEveryDateAndOutcome() throws Exception {
+        SyncSupervisionResource resource = newResource();
+        var yesterday = java.time.LocalDate.now().minusDays(1);
+        assertTrue(resource.regenerateOutboundFlows(null).getLocation().toString().contains("noticeOk=true"));
+        assertTrue(resource.regenerateOutboundFlows(" ").getLocation().toString().contains("noticeOk=true"));
+        verify(resource.outboundFlowService, org.mockito.Mockito.times(2)).produceAll(yesterday);
+        assertTrue(resource.regenerateOutboundFlows("invalid").getLocation().toString().contains("noticeOk=false"));
+        var day = java.time.LocalDate.of(2026, 10, 19);
+        when(resource.outboundFlowService.produceAll(day)).thenReturn(java.util.List.of(java.nio.file.Path.of("sales.csv")));
+        String written = java.net.URLDecoder.decode(resource.regenerateOutboundFlows(" 2026-10-19 ").getLocation()
+                .toString(), java.nio.charset.StandardCharsets.UTF_8);
+        assertTrue(written.contains("noticeOk=true"));
+        assertTrue(written.contains("1 flux produit(s) pour le 19/10/2026."));
+        when(resource.outboundFlowService.produceAll(day.plusDays(1))).thenReturn(java.util.List.of());
+        assertTrue(java.net.URLDecoder.decode(resource.regenerateOutboundFlows("2026-10-20").getLocation().toString(),
+                java.nio.charset.StandardCharsets.UTF_8).contains("Aucun flux produit pour le 20/10/2026 :"));
+        when(resource.outboundFlowService.produceAll(day)).thenThrow(new java.io.IOException("disk unavailable"));
+        assertTrue(resource.regenerateOutboundFlows("2026-10-19").getLocation().toString().contains("noticeOk=false"));
+    }
+
+    /**
+     * BO-11-01-01: the manual pull of the integration feeds redirects with its
+     * counts, as a success when nothing failed and as a failure otherwise.
+     */
+    @Test
+    void theIntegrationPullIsLaunchedFromTheConsole() {
+        SyncSupervisionResource resource = newResource();
+        when(resource.integrationPullService.pullNow(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new com.intermarche.edge.service.sync.IntegrationPullService.Outcome(2, 1, 0),
+                        new com.intermarche.edge.service.sync.IntegrationPullService.Outcome(0, 0, 3));
+        String ok = java.net.URLDecoder.decode(resource.pullIntegrationFeeds().getLocation().toString(),
+                java.nio.charset.StandardCharsets.UTF_8);
+        assertTrue(ok.contains("noticeOk=true"));
+        assertTrue(ok.contains("Flux d'intégration : 2 intégré(s), 1 inchangé(s), 0 en échec."));
+        assertTrue(resource.pullIntegrationFeeds().getLocation().toString().contains("noticeOk=false"));
     }
 }

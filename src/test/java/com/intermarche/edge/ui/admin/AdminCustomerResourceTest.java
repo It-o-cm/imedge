@@ -70,6 +70,8 @@ class AdminCustomerResourceTest {
         // be opened at all, so the collaborator belongs to the fixture.
         resource.posSettingsService =
                 mock(com.intermarche.edge.service.PosSettingsService.class);
+        resource.customerUplinkService =
+                mock(com.intermarche.edge.service.sync.CustomerUplinkService.class);
         return resource;
     }
 
@@ -400,6 +402,12 @@ class AdminCustomerResourceTest {
         form.add("dueDate", "2026-10-31");
         form.add("discountPercent", "2,50");
         form.add("creditLimit", "1000.00");
+        form.add("profession", "Boulanger");
+        form.add("billingType", "SUPPLEMENT");
+        form.add("supplementCode", "S1");
+        form.add("billingStreet", "2 rue Basse");
+        form.add("billingPostalCode", "75002");
+        form.add("billingCity", "Paris");
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
             panache.when(() -> AccountCustomer.findById(1L)).thenReturn(customer);
             Response response = resource.save(form);
@@ -416,6 +424,16 @@ class AdminCustomerResourceTest {
         assertEquals(new BigDecimal("1000.00"), customer.creditLimit);
         assertEquals("A1", customer.accountNumber);
         assertEquals(AccountCustomer.Origin.INTEGRATED, customer.origin);
+        // BO-06-03-04: what the customer list states beyond the identity.
+        assertEquals("Boulanger", customer.profession);
+        assertEquals("SUPPLEMENT", customer.billingType);
+        assertEquals("S1", customer.supplementCode);
+        assertEquals("2 rue Basse", customer.billingAddress.streetLine1);
+        assertEquals("75002", customer.billingAddress.postalCode);
+        assertEquals("Paris", customer.billingAddress.city);
+        // BO-02-04-13: the correction is filed for the commercial management.
+        org.mockito.Mockito.verify(resource.customerUplinkService).enqueue(customer,
+                com.intermarche.edge.domain.sync.CustomerUplink.Source.BACK_OFFICE);
         verify(customer).persist();
     }
 
@@ -447,6 +465,31 @@ class AdminCustomerResourceTest {
         assertNull(customer.dueDate);
         assertNull(customer.discountPercent);
         assertNull(customer.creditLimit);
+        verify(customer).persist();
+    }
+
+    /**
+     * BO-06-03-04: a billing address emptied on the form is cleared, the
+     * address kept.
+     */
+    @Test
+    void anEmptiedBillingAddressIsCleared() {
+        AdminCustomerResource resource = newResource();
+        AccountCustomer customer = mock(AccountCustomer.class);
+        customer.address = new Address();
+        customer.billingAddress = new Address();
+        customer.billingAddress.streetLine1 = "2 rue Basse";
+        customer.billingAddress.city = "Paris";
+        MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
+        form.add("id", "1");
+        form.add("companyName", "Acme");
+        form.add("billingStreet", " ");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> AccountCustomer.findById(1L)).thenReturn(customer);
+            resource.save(form);
+        }
+        assertNull(customer.billingAddress.streetLine1);
+        assertNull(customer.billingAddress.city);
         verify(customer).persist();
     }
 
@@ -788,5 +831,37 @@ class AdminCustomerResourceTest {
             assertNull(written.taxId);
             assertFalse(written.blocked);
         }
+    }
+    /**
+     * BO-02-04-13: replaying the uplink without an administered address says
+     * so and comes back to the list when no file is named.
+     */
+    @Test
+    void replayingWithoutAnAddressIsRefused() {
+        AdminCustomerResource resource = newResource();
+        when(resource.posSettingsService.customerUplinkUrl()).thenReturn("");
+        Response response = resource.replayUplink(new MultivaluedHashMap<>());
+        assertTrue(response.getLocation().toString().startsWith("/admin/customers?"));
+        assertTrue(response.getLocation().toString().contains("noticeOk=false"));
+        org.mockito.Mockito.verify(resource.customerUplinkService, org.mockito.Mockito.never()).deliverPending();
+    }
+
+    /**
+     * BO-02-04-13: replaying the uplink delivers the pending files at once and
+     * comes back to the file it was asked from, with the count acknowledged.
+     */
+    @Test
+    void replayingDeliversThePendingFiles() {
+        AdminCustomerResource resource = newResource();
+        when(resource.posSettingsService.customerUplinkUrl()).thenReturn("http://gc/clients");
+        when(resource.customerUplinkService.deliverPending()).thenReturn(2);
+        MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
+        form.add("id", "7");
+        Response response = resource.replayUplink(form);
+        String location = response.getLocation().toString();
+        assertTrue(location.startsWith("/admin/customers/edit?id=7&"));
+        assertTrue(location.contains("noticeOk=true"));
+        assertTrue(java.net.URLDecoder.decode(location, java.nio.charset.StandardCharsets.UTF_8)
+                .contains("2 fiche(s) acquittée(s)"));
     }
 }

@@ -136,19 +136,20 @@ public class PriceForcingReport implements ReportDefinition {
     public List<List<Object>> rows(ReportCriteria criteria) {
         LOGGER.info("Entering method rows");
         String option = criteria.optionOr("all");
-        List<Object[]> lines = entityManager.createQuery(
+        var query = entityManager.createQuery(
                         "select t.closingDate, t.terminalId, t.ticketNumber, t.cashier, l.modifierLabel,"
                                 + " l.ean, l.plu, l.familyCode, l.productLabel, l.originalUnitPrice,"
                                 + " l.unitPrice, l.quantity"
                                 + " from Ticket t join t.lines l"
                                 + " where t.status = :closed and t.closingDate >= :from and t.closingDate < :to"
                                 + " and l.originalUnitPrice is not null and l.modifierType is not null"
-                                + " and l.cancelled = false"
+                                + " and l.cancelled = false" + criteria.terminalFilter("t.terminalId")
                                 + " order by t.closingDate", Object[].class)
                 .setParameter("closed", Ticket.TicketStatus.CLOSED)
                 .setParameter("from", criteria.from())
-                .setParameter("to", criteria.to())
-                .getResultList();
+                .setParameter("to", criteria.to());
+        criteria.bindTerminals(query);
+        List<Object[]> lines = query.getResultList();
         List<List<Object>> rows = new ArrayList<>();
         for (Object[] line : lines) {
             BigDecimal retail = (BigDecimal) line[9];

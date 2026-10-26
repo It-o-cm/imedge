@@ -62,6 +62,33 @@ public class JournalTicketDetail {
      */
     public final List<FidelityGroup> fidelityGroups;
 
+    /** The VAT ventilation by rate (BO-04-01-55). */
+    public final List<JournalService.VatRow> vatRows = new java.util.ArrayList<>();
+
+    /** « Mode école » of the ticket, O or N (BO-04-01-50). */
+    public String trainingMode = "N";
+
+    /** « Autonome » of the ticket, O for a self-scanning basket (BO-04-01-41/50). */
+    public String autonomous = "N";
+
+    /** Whether the hostess decided the self-scanning control (BO-04-01-42). */
+    public boolean selfScanControlled;
+
+    /** Whether the system decided the self-scanning control (BO-04-01-43). */
+    public boolean selfScanVerified;
+
+    /** Whether the sale was made while the register was offline (BO-04-01-14). */
+    public boolean offline;
+
+    /** The codes scanned during the ticket that no article answered (BO-04-01-34). */
+    public final List<String> unknownCodes = new java.util.ArrayList<>();
+
+    /** The settlements cancelled on the ticket, method and amount (BO-04-01-19). */
+    public final List<String> cancelledPayments = new java.util.ArrayList<>();
+
+    /** The invoices and delivery notes issued for the ticket (BO-04-01-53). */
+    public final List<Document> documents = new java.util.ArrayList<>();
+
     /**
      * Builds a ticket detail.
      *
@@ -184,16 +211,34 @@ public class JournalTicketDetail {
         public final String entryMode;
 
         /**
+         * The authorization number the cheque-guarantee service gave a cheque
+         * (BO-03-02-24), or null for any other payment and for a cheque no
+         * service guaranteed.
+         */
+        public final String guaranteeAuthorization;
+
+        /**
+         * The cheque-guarantee provider that authorized the cheque
+         * (BO-03-02-24), or null when none did.
+         */
+        public final String guaranteeProvider;
+
+        /**
          * Builds a detail payment.
          *
          * @param method the method key
          * @param amount the formatted amount
          * @param entryMode the card entry mode, or null
+         * @param guaranteeAuthorization the cheque-guarantee authorization number, or null
+         * @param guaranteeProvider the cheque-guarantee provider, or null
          */
-        public Payment(String method, String amount, String entryMode) {
+        public Payment(String method, String amount, String entryMode,
+                       String guaranteeAuthorization, String guaranteeProvider) {
             this.method = method;
             this.amount = amount;
             this.entryMode = entryMode;
+            this.guaranteeAuthorization = guaranteeAuthorization;
+            this.guaranteeProvider = guaranteeProvider;
         }
     }
 
@@ -241,6 +286,35 @@ public class JournalTicketDetail {
         public FidelityAdvantage(String label, String amount) {
             this.label = label == null ? "" : label;
             this.amount = amount;
+        }
+    }
+
+    /**
+     * An invoice or a delivery note issued for the ticket (BO-04-01-53), which
+     * the back office reprints as a duplicate.
+     */
+    public static class Document {
+
+        /** The document's id on this node. */
+        public final Long id;
+
+        /** The document's number. */
+        public final String number;
+
+        /** The document's title: FACTURE or BON DE LIVRAISON. */
+        public final String title;
+
+        /**
+         * Builds the row of one document.
+         *
+         * @param id its id on this node
+         * @param number its number
+         * @param title its title
+         */
+        public Document(Long id, String number, String title) {
+            this.id = id;
+            this.number = number;
+            this.title = title;
         }
     }
 }

@@ -61,11 +61,10 @@ import java.util.Map;
  * under one {@code produce}. Adding a flow is one catalogue entry, one fold and
  * one activation key — never a branch in the engine.
  *
- * <p>What is NOT here, and is not a missing builder: the vignettes (BO-11-01-20)
- * need a cash-side capture that does not exist on the register, and Catalina,
- * SAFT, NEXO and the electronic labels are third-party protocols — each its own
- * chantier, and each declaring its endpoint in the provider table rather than in
- * a flow.
+ * <p>What is NOT here, and is not a missing builder: Catalina, SAFT, NEXO and
+ * the electronic labels are third-party protocols spoken at the flow or on
+ * demand, each declaring its endpoint in the provider table rather than writing
+ * a file.
  */
 @ApplicationScoped
 public class OutboundFlowService {
@@ -75,6 +74,10 @@ public class OutboundFlowService {
 
     /** The column separator of the flow files: the plain-file convention here. */
     private static final String SEPARATOR = ";";
+
+    /** The shape of an instant in a flow row, to the second. */
+    private static final java.time.format.DateTimeFormatter STAMP =
+            java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
 
     /**
      * The payment discriminator of a fidelity settlement.
@@ -92,6 +95,10 @@ public class OutboundFlowService {
     /** Resolves which accounting day a ticket is counted on. */
     @Inject
     AccountingDay accountingDay;
+
+    /** Tells which vouchers a closed sale of the shop consumed (BO-11-01-18). */
+    @Inject
+    com.intermarche.edge.service.sync.VoucherBurnService voucherBurnService;
 
     /**
      * The last accounting day whose flows were produced by the loop, or null
@@ -226,7 +233,11 @@ public class OutboundFlowService {
         if (flow.isArchive()) {
             writeArchive(target, members);
         } else {
-            writeFile(target, members.values().iterator().next());
+            // BO-11-01-12: a flow of several flat files writes each beside the
+            // first, under its own name; a one-file flow writes its one member.
+            for (Map.Entry<String, List<String>> member : members.entrySet()) {
+                writeFile(target.resolveSibling(member.getKey()), member.getValue());
+            }
         }
         LOGGER.infof("Flux %s produit: %s, %d membre(s).",
                 flow.getStem(), target, members.size());
@@ -297,6 +308,9 @@ public class OutboundFlowService {
             case FIDELITY_VAT -> posSettingsService.exportFidelityVatEnabled();
             case ORDER_VAT -> posSettingsService.exportOrderVatEnabled();
             case PANELS -> posSettingsService.exportPanelsEnabled();
+            case PLANEXA -> posSettingsService.planexaExportEnabled();
+            case GS1_PAYMENTS -> posSettingsService.exportGs1PaymentsEnabled();
+            case VIGNETTES -> posSettingsService.exportVignettesEnabled();
         };
         LOGGER.info("Exiting method isActivated");
         return activated;
@@ -400,11 +414,13 @@ public class OutboundFlowService {
             case PERIOD_SUMMARY -> ticketFold(flow, day, this::periodSummaryRows);
             case CASHIER_PRODUCTIVITY -> ticketFold(flow, day, this::cashierProductivityRows);
             case FIDELITY_VAT -> ticketFold(flow, day, this::fidelityVatRows);
-            case CUSTOMER_INVOICES ->
-                    invoiceFold(flow, day, (period, invoices) -> customerInvoiceRecords(invoices));
+            case CUSTOMER_INVOICES -> customerInvoiceMembers(day);
             case ERP_INVOICES -> invoiceFold(flow, day, this::erpInvoiceRows);
             case ORDER_VAT -> orderFold(flow, day, this::orderVatRows);
             case PANELS -> panelArchive(day);
+            case PLANEXA -> ticketFold(flow, day, this::planexaRows);
+            case GS1_PAYMENTS -> gs1Members(flow, day);
+            case VIGNETTES -> vignetteMembers(flow, day);
         };
     }
 
@@ -526,8 +542,10 @@ public class OutboundFlowService {
      * @throws IOException when the file cannot be written
      */
     private void writeFile(Path target, List<String> rows) throws IOException {
-        Files.write(target, String.join("\n", rows).concat("\n")
-                .getBytes(StandardCharsets.UTF_8));
+        // A member with no record is an EMPTY file, not one blank line: a flat
+        // file reader counts lines, and a blank one is a malformed record.
+        String content = rows.isEmpty() ? "" : String.join("\n", rows).concat("\n");
+        Files.write(target, content.getBytes(StandardCharsets.UTF_8));
     }
 
     /**
@@ -579,25 +597,37 @@ public class OutboundFlowService {
      */
     private List<String> revenueRows(LocalDate day, List<Ticket> tickets) {
         VatBreakdown breakdown = new VatBreakdown();
+        BigDecimal thirdParty = BigDecimal.ZERO;
         for (Ticket ticket : tickets) {
             for (TicketLine line : ticket.lines) {
                 if (line.cancelled) {
                     continue;
                 }
-                breakdown.add(line.vatRate, line.totalPrice);
+                // BO-02-03-43: a sale on behalf of a third party counts in the
+                // takings, but its VAT is the third party's: it is stated on a
+                // row of its own and kept out of the store's VAT.
+                if (line.thirdPartySale) {
+                    thirdParty = thirdParty.add(line.totalPrice == null ? BigDecimal.ZERO : line.totalPrice);
+                    continue;
+                }
+                breakdown.add(line.vatRate, line.totalPrice, line.vatExempt, false);
             }
         }
         List<String> rows = new ArrayList<>();
         rows.add(String.join(SEPARATOR, "JOURNEE", "TAUX_TVA", "TOTAL_TTC",
                 "TOTAL_HT", "TVA", "NB_TICKETS"));
         for (VatBreakdown.Bucket bucket : breakdown.getBuckets()) {
-            rows.add(String.join(SEPARATOR, day.toString(), rate(bucket.rate),
+            rows.add(String.join(SEPARATOR, day.toString(), bucket.exempt ? "EXO" : rate(bucket.rate),
                     amount(bucket.totalIncludingTax), amount(bucket.totalExcludingTax),
                     amount(bucket.vatAmount), String.valueOf(tickets.size())));
         }
+        if (thirdParty.signum() != 0) {
+            rows.add(String.join(SEPARATOR, day.toString(), "COMPTE_TIERS",
+                    amount(thirdParty), amount(thirdParty), amount(BigDecimal.ZERO), String.valueOf(tickets.size())));
+        }
         rows.add(String.join(SEPARATOR, day.toString(), "TOTAL",
-                amount(breakdown.getTotalIncludingTax()),
-                amount(breakdown.getTotalExcludingTax()),
+                amount(breakdown.getTotalIncludingTax().add(thirdParty)),
+                amount(breakdown.getTotalExcludingTax().add(thirdParty)),
                 amount(breakdown.getTotalVat()), String.valueOf(tickets.size())));
         return rows;
     }
@@ -605,6 +635,11 @@ public class OutboundFlowService {
     /**
      * Builds the CASH-BOOK rows (BO-11-01-04): the amount settled by payment
      * method over the accounting day, with the number of settlements.
+     *
+     * <p>The settlements of an integrated transaction — an e-commerce order, a
+     * mobility sale — are booked on rows of their own, keyed
+     * {@code CHANNEL/MEANS} by the means the third-party system stated
+     * (BO-07-01-04), so the cash book isolates them from the lanes' takings.
      *
      * <p>Keyed by the payment's own method key and not by a list written here, so
      * a tender put in service in the back office appears in the flow without this
@@ -619,8 +654,15 @@ public class OutboundFlowService {
         Map<String, BigDecimal> totals = new LinkedHashMap<>();
         Map<String, Integer> counts = new LinkedHashMap<>();
         for (Ticket ticket : tickets) {
+            com.intermarche.edge.domain.sale.SalesChannel channel =
+                    com.intermarche.edge.domain.sale.SalesChannel.of(ticket.salesChannel);
             for (TicketPayment payment : ticket.payments) {
-                String method = payment.getMethodKey();
+                // BO-07-01-04: an integrated settlement is booked apart, under
+                // its channel and the means the third-party system stated.
+                String method = channel.isThirdParty()
+                        ? channel.name() + "/" + (payment.tenderCode == null || payment.tenderCode.isBlank()
+                                ? payment.getMethodKey() : payment.tenderCode)
+                        : payment.getMethodKey();
                 BigDecimal amount = payment.amount == null ? BigDecimal.ZERO : payment.amount;
                 totals.merge(method, amount, BigDecimal::add);
                 counts.merge(method, 1, Integer::sum);
@@ -638,7 +680,35 @@ public class OutboundFlowService {
         }
         rows.add(String.join(SEPARATOR, day.toString(), "TOTAL",
                 amount(grandTotal), String.valueOf(settlements)));
+        // BO-02-03-43: the VAT collected on behalf of third parties is not the
+        // store's; the cash book states it and the takings net of it.
+        BigDecimal thirdPartyVat = thirdPartyVat(tickets);
+        if (thirdPartyVat.signum() != 0) {
+            rows.add(String.join(SEPARATOR, day.toString(), "TVA_COMPTE_TIERS",
+                    amount(thirdPartyVat.negate()), "0"));
+            rows.add(String.join(SEPARATOR, day.toString(), "TOTAL_HORS_TVA_TIERS",
+                    amount(grandTotal.subtract(thirdPartyVat)), String.valueOf(settlements)));
+        }
         return rows;
+    }
+
+    /**
+     * The VAT the day's tickets collected on behalf of third parties
+     * (BO-02-03-43), ventilated per rate like any VAT.
+     *
+     * @param tickets the closed tickets of the day
+     * @return the third parties' VAT, zero when none was sold
+     */
+    private BigDecimal thirdPartyVat(List<Ticket> tickets) {
+        VatBreakdown breakdown = new VatBreakdown();
+        for (Ticket ticket : tickets) {
+            for (TicketLine line : ticket.lines) {
+                if (line.thirdPartySale && !line.cancelled) {
+                    breakdown.add(line.vatRate, line.totalPrice);
+                }
+            }
+        }
+        return breakdown.getTotalVat();
     }
 
     /**
@@ -755,75 +825,421 @@ public class OutboundFlowService {
     }
 
     /**
-     * Builds the CUSTOMER-INVOICE records (BO-11-01-12), the {@code clifact.dat}
-     * flat file: one {@code H} record per document carrying the customer identity,
-     * the coordinates, the due date, the totals and the eco-tax, followed by one
-     * {@code L} record per billed line.
+     * Builds the FOUR customer-invoice files (BO-11-01-12) of the documents
+     * issued during the day, or nothing when the day issued none.
      *
-     * <p>The lines are read from the TICKET the document states, because an
-     * invoice never copies them — it is derived from a closed ticket and
-     * recomputing it is forbidden. A document whose ticket is no longer attached
-     * therefore exports its header alone rather than nothing: accounting needs the
-     * document, and a missing header is a missing receivable.
+     * <ul>
+     *   <li>{@code clifact.dat}: one {@code H} record per document — the
+     *       customer identity, civility and coordinates, the due date, the
+     *       totals and the eco-tax;</li>
+     *   <li>{@code clilfact.dat}: one {@code L} record per billed line;</li>
+     *   <li>{@code cliregl.dat}: one {@code R} record per settlement of the
+     *       ticket the document states, the customer credit among them;</li>
+     *   <li>{@code clitva.dat}: one {@code T} record per VAT rate of the billed
+     *       lines, then one {@code E} eco-tax record where the store
+     *       administers it.</li>
+     * </ul>
      *
-     * <p>Cancelled lines are left out: a cancelled line was never billed.
+     * <p>The lines and settlements are read from the TICKET the document
+     * states, because an invoice never copies them — it is derived from a
+     * closed ticket and recomputing it is forbidden. A document whose ticket is
+     * no longer attached still exports its header and one VAT record carrying
+     * its own totals: accounting needs the document, and a missing header is a
+     * missing receivable. Cancelled lines are left out: they were never billed.
      *
-     * @param invoices the documents issued during the day
-     * @return the flat records, no header row — a flat file has none
+     * @param day the accounting day
+     * @return the four members, keyed by file name, or an empty map
      */
-    private List<String> customerInvoiceRecords(List<Invoice> invoices) {
-        List<String> records = new ArrayList<>();
+    private Map<String, List<String>> customerInvoiceMembers(LocalDate day) {
+        List<Invoice> invoices = invoicesOf(day);
+        if (invoices.isEmpty()) {
+            return Map.of();
+        }
+        boolean ecoTax = posSettingsService.invoiceExportEcoTax();
+        List<String> headers = new ArrayList<>();
+        List<String> lines = new ArrayList<>();
+        List<String> settlements = new ArrayList<>();
+        List<String> vat = new ArrayList<>();
         for (Invoice invoice : invoices) {
-            String civility = invoice.customer == null ? "" : invoice.customer.civility;
-            Address address = invoice.customerAddress;
-            records.add(new FlatRecord()
-                    .text("H", 1)
-                    .text(invoice.documentNumber, 20)
-                    .text(invoice.documentType == null ? "" : invoice.documentType.getPrefix(), 1)
-                    .instant(invoice.issueDate)
-                    .text(invoice.terminalId, 10)
-                    .text(invoice.ticketNumber, 30)
-                    .text(invoice.customerAccountNumber, 15)
-                    .text(civility, 10)
-                    .text(invoice.customerName, 40)
-                    .text(invoice.customerContact, 40)
-                    .text(address == null ? "" : address.streetLine1, 40)
-                    .text(address == null ? "" : address.streetLine2, 40)
-                    .text(address == null ? "" : address.postalCode, 10)
-                    .text(address == null ? "" : address.city, 30)
-                    .text(address == null ? "" : address.country, 3)
-                    .text(invoice.customerSiret, 14)
-                    .text(invoice.customerVatNumber, 15)
-                    .text(invoice.customerTaxId, 15)
-                    .date(invoice.customerDueDate)
-                    .amount(invoice.totalExcludingTax, 13)
-                    .amount(invoice.totalIncludingTax, 13)
-                    .amount(invoice.totalVat, 13)
-                    .amount(invoice.totalEcoTax, 13)
-                    .line());
-            if (invoice.ticket == null) {
-                continue;
-            }
-            for (TicketLine line : invoice.ticket.lines) {
-                if (line.cancelled) {
-                    continue;
+            headers.add(invoiceHeader(invoice));
+            VatBreakdown breakdown = new VatBreakdown();
+            if (invoice.ticket != null) {
+                for (TicketLine line : invoice.ticket.lines) {
+                    if (line.cancelled) {
+                        continue;
+                    }
+                    lines.add(invoiceLine(invoice, line));
+                    breakdown.add(line.vatRate, line.totalPrice);
                 }
-                records.add(new FlatRecord()
-                        .text("L", 1)
-                        .text(invoice.documentNumber, 20)
-                        .number(line.lineNumber, 5)
-                        .text(line.ean, 13)
-                        .text(line.plu, 10)
-                        .text(line.productLabel, 40)
-                        .text(line.familyCode, 10)
-                        .amount(line.quantity, 11)
-                        .amount(line.unitPrice, 11)
-                        .number(basisPoints(line.vatRate), 6)
-                        .amount(line.totalPrice, 13)
-                        .line());
+                for (TicketPayment payment : invoice.ticket.payments) {
+                    settlements.add(invoiceSettlement(invoice, payment));
+                }
+            }
+            if (breakdown.getBuckets().isEmpty()) {
+                vat.add(vatRecord(invoice.documentNumber, null, invoice.totalExcludingTax,
+                        invoice.totalVat, invoice.totalIncludingTax));
+            }
+            for (VatBreakdown.Bucket bucket : breakdown.getBuckets()) {
+                vat.add(vatRecord(invoice.documentNumber, bucket.rate, bucket.totalExcludingTax,
+                        bucket.vatAmount, bucket.totalIncludingTax));
+            }
+            if (ecoTax) {
+                vat.add(new FlatRecord().text("E", 1).text(invoice.documentNumber, 20)
+                        .amount(invoice.totalEcoTax, 13).line());
             }
         }
-        return records;
+        Map<String, List<String>> members = new LinkedHashMap<>();
+        members.put(OutboundFlow.CUSTOMER_INVOICES.fileName(day), headers);
+        members.put(datFile("clilfact", day), lines);
+        members.put(datFile("cliregl", day), settlements);
+        members.put(datFile("clitva", day), vat);
+        return members;
+    }
+
+    /**
+     * Names one member of the customer-invoice flow: its stem, the day and the
+     * flat-file extension, the same shape as the flow's own name.
+     *
+     * @param stem the member's stem
+     * @param day the accounting day
+     * @return the file name
+     */
+    private String datFile(String stem, LocalDate day) {
+        return stem + "-" + day.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd")) + ".dat";
+    }
+
+    /**
+     * Builds the {@code H} record of one document (clifact.dat).
+     *
+     * @param invoice the document
+     * @return the record
+     */
+    private String invoiceHeader(Invoice invoice) {
+        String civility = invoice.customer == null ? "" : invoice.customer.civility;
+        Address address = invoice.customerAddress;
+        return new FlatRecord()
+                .text("H", 1)
+                .text(invoice.documentNumber, 20)
+                .text(invoice.documentType == null ? "" : invoice.documentType.getPrefix(), 1)
+                .instant(invoice.issueDate)
+                .text(invoice.terminalId, 10)
+                .text(invoice.ticketNumber, 30)
+                .text(invoice.customerAccountNumber, 15)
+                .text(civility, 10)
+                .text(invoice.customerName, 40)
+                .text(invoice.customerContact, 40)
+                .text(address == null ? "" : address.streetLine1, 40)
+                .text(address == null ? "" : address.streetLine2, 40)
+                .text(address == null ? "" : address.postalCode, 10)
+                .text(address == null ? "" : address.city, 30)
+                .text(address == null ? "" : address.country, 3)
+                .text(invoice.customerSiret, 14)
+                .text(invoice.customerVatNumber, 15)
+                .text(invoice.customerTaxId, 15)
+                .date(invoice.customerDueDate)
+                .amount(invoice.totalExcludingTax, 13)
+                .amount(invoice.totalIncludingTax, 13)
+                .amount(invoice.totalVat, 13)
+                .amount(invoice.totalEcoTax, 13)
+                .line();
+    }
+
+    /**
+     * Builds the {@code L} record of one billed line (clilfact.dat).
+     *
+     * @param invoice the document
+     * @param line the billed line
+     * @return the record
+     */
+    private String invoiceLine(Invoice invoice, TicketLine line) {
+        return new FlatRecord()
+                .text("L", 1)
+                .text(invoice.documentNumber, 20)
+                .number(line.lineNumber, 5)
+                .text(line.ean, 13)
+                .text(line.plu, 10)
+                .text(line.productLabel, 40)
+                .text(line.familyCode, 10)
+                .amount(line.quantity, 11)
+                .amount(line.unitPrice, 11)
+                .number(basisPoints(line.vatRate), 6)
+                .amount(line.totalPrice, 13)
+                .line();
+    }
+
+    /**
+     * Builds the {@code R} record of one settlement (cliregl.dat): its rank,
+     * its tender, the administered tender it was taken as, its amount and the
+     * card authorisation when it is a card one.
+     *
+     * @param invoice the document
+     * @param payment the settlement
+     * @return the record
+     */
+    private String invoiceSettlement(Invoice invoice, TicketPayment payment) {
+        String authorisation = payment instanceof com.intermarche.edge.domain.payment.CardPayment card
+                ? card.authorizationNumber : null;
+        return new FlatRecord()
+                .text("R", 1)
+                .text(invoice.documentNumber, 20)
+                .number(payment.paymentIndex, 3)
+                .text(payment.getMethodKey(), 12)
+                .text(payment.tenderCode, 20)
+                .amount(payment.amount, 13)
+                .text(authorisation, 12)
+                .line();
+    }
+
+    /**
+     * Builds one {@code T} VAT record (clitva.dat).
+     *
+     * @param documentNumber the document number
+     * @param rate the VAT rate as a fraction, or null when the document states none
+     * @param excludingTax the taxable base
+     * @param vatAmount the VAT
+     * @param includingTax the tax-included amount
+     * @return the record
+     */
+    private String vatRecord(String documentNumber, BigDecimal rate, BigDecimal excludingTax,
+            BigDecimal vatAmount, BigDecimal includingTax) {
+        return new FlatRecord()
+                .text("T", 1)
+                .text(documentNumber, 20)
+                .number(basisPoints(rate), 6)
+                .amount(excludingTax, 13)
+                .amount(vatAmount, 13)
+                .amount(includingTax, 13)
+                .line();
+    }
+
+    /**
+     * Reads the payment codes read at the tills during one accounting day
+     * (BO-11-01-18).
+     *
+     * <p>Package-private so a test can serve readings without a database.
+     *
+     * @param day the accounting day
+     * @return the readings of that day
+     */
+    List<com.intermarche.edge.domain.barcode.ScannedBarcode> scannedBarcodesOf(LocalDate day) {
+        return com.intermarche.edge.domain.barcode.ScannedBarcode.listBetween(
+                accountingDay.startOf(day), accountingDay.endOf(day));
+    }
+
+    /**
+     * Builds the GS1 PAYMENTS flow (BO-11-01-18): one {@code SCAN} row per
+     * payment code read at a till — GS1 or not, known or not — and one
+     * {@code REGLEMENT} row per voucher settled on a closed ticket, then one
+     * TOTAL row; or nothing when the day holds neither.
+     *
+     * <p>The BRULE column is the centralised burn: a code is burned once ANY
+     * closed sale of the shop settled it, on whichever register and whichever
+     * day, which is what the central voucher management reconciles on.
+     *
+     * @param flow the flow, for its file name
+     * @param day the accounting day
+     * @return the single member, or an empty map
+     */
+    private Map<String, List<String>> gs1Members(OutboundFlow flow, LocalDate day) {
+        List<Ticket> tickets = closedTicketsOf(day);
+        List<com.intermarche.edge.domain.barcode.ScannedBarcode> readings = scannedBarcodesOf(day);
+        if (tickets.isEmpty() && readings.isEmpty()) {
+            return Map.of();
+        }
+        java.util.Set<String> codes = new java.util.LinkedHashSet<>();
+        java.util.Set<String> gs1Codes = new java.util.HashSet<>();
+        for (com.intermarche.edge.domain.barcode.ScannedBarcode reading : readings) {
+            codes.add(reading.code);
+            if (reading.gs1) {
+                gs1Codes.add(reading.code);
+            }
+        }
+        java.util.Set<String> burned = voucherBurnService.burnedAmong(codes);
+        List<String> rows = new ArrayList<>();
+        rows.add(String.join(SEPARATOR, "JOURNEE", "SOURCE", "TERMINAL", "NUM_TICKET", "DATE_HEURE",
+                "CODE", "GS1", "TYPE", "LIBELLE", "MONTANT", "CONNU", "BRULE"));
+        int settled = 0;
+        BigDecimal settledAmount = BigDecimal.ZERO;
+        for (com.intermarche.edge.domain.barcode.ScannedBarcode reading : readings) {
+            rows.add(String.join(SEPARATOR, day.toString(), "SCAN", text(reading.terminalId),
+                    text(reading.ticketNumber), stamp(reading.scannedAt),
+                    text(reading.code), reading.gs1 || isGs1(reading.code) ? "O" : "N", text(reading.typeCode),
+                    text(reading.typeLabel), amount(reading.amount), reading.found ? "O" : "N",
+                    burned.contains(reading.code) ? "O" : "N"));
+        }
+        for (Ticket ticket : tickets) {
+            for (TicketPayment payment : ticket.payments) {
+                if (!(payment instanceof com.intermarche.edge.domain.payment.VoucherPayment voucher)) {
+                    continue;
+                }
+                rows.add(String.join(SEPARATOR, day.toString(), "REGLEMENT", text(ticket.terminalId),
+                        text(ticket.ticketNumber), stamp(ticket.closingDate), text(voucher.voucherNumber),
+                        gs1Codes.contains(voucher.voucherNumber) || isGs1(voucher.voucherNumber) ? "O" : "N",
+                        text(voucher.tenderCode), text(voucher.voucherLabel), amount(voucher.amount), "O", "O"));
+                settled++;
+                settledAmount = settledAmount.add(nullSafe(voucher.amount));
+            }
+        }
+        rows.add(String.join(SEPARATOR, day.toString(), "TOTAL", "", "", "", String.valueOf(readings.size()),
+                "", "", "", amount(settledAmount), "", String.valueOf(settled)));
+        return single(flow, day, rows);
+    }
+
+    /**
+     * Renders an instant of a flow row to the second, or empty when absent:
+     * always {@code yyyy-MM-ddTHH:mm:ss}, never the minute alone nor a fraction.
+     *
+     * @param value the instant, possibly null
+     * @return the rendered instant
+     */
+    static String stamp(LocalDateTime value) {
+        return value == null ? "" : value.format(STAMP);
+    }
+
+    /**
+     * Tells whether a payment code is a GS1 payload: an Element String with
+     * its application identifiers in parentheses or its FNC1 separators, a
+     * symbology identifier (DataMatrix, QR, Databar, GS1-128) or a Digital
+     * Link address.
+     *
+     * @param code the code as it was read, possibly null
+     * @return true for a GS1 payload
+     */
+    static boolean isGs1(String code) {
+        if (code == null || code.isBlank()) {
+            return false;
+        }
+        String trimmed = code.trim();
+        return trimmed.startsWith("(") || trimmed.indexOf('\u001d') >= 0 || trimmed.startsWith("]d2")
+                || trimmed.startsWith("]Q3") || trimmed.startsWith("]e0") || trimmed.startsWith("]C1")
+                || trimmed.contains("/01/");
+    }
+
+    /**
+     * Reads the vignette declarations made at the tills during one accounting
+     * day (BO-11-01-20).
+     *
+     * <p>Package-private so a test can serve declarations without a database.
+     *
+     * @param day the accounting day
+     * @return the declarations, oldest first
+     */
+    List<com.intermarche.edge.domain.session.TechnicalEvent> vignetteDeclarationsOf(LocalDate day) {
+        return com.intermarche.edge.domain.session.TechnicalEvent.list(
+                "eventType = ?1 and eventDate >= ?2 and eventDate < ?3 order by eventDate, id",
+                com.intermarche.edge.domain.session.TechnicalEvent.EventType.VIGNETTES_DECLARED,
+                accountingDay.startOf(day), accountingDay.endOf(day));
+    }
+
+    /**
+     * Builds the VIGNETTES flow (BO-11-01-20): per register and per shift, the
+     * tickets, the vignettes the administered formula makes due, the vignettes
+     * the cashier declared and the gap, then one TOTAL row; or nothing when the
+     * day holds neither a sale nor a declaration.
+     *
+     * <p>A declaration made on a shift that rang no sale still makes its row: a
+     * cashier who handed out vignettes without selling is precisely the gap the
+     * flow is there to show. A sale rung on no shift — an e-commerce order —
+     * makes no vignette due and no row.
+     *
+     * @param flow the flow, for its file name
+     * @param day the accounting day
+     * @return the single member, or an empty map
+     */
+    private Map<String, List<String>> vignetteMembers(OutboundFlow flow, LocalDate day) {
+        List<Ticket> tickets = closedTicketsOf(day);
+        List<com.intermarche.edge.domain.session.TechnicalEvent> declarations = vignetteDeclarationsOf(day);
+        if (tickets.isEmpty() && declarations.isEmpty()) {
+            return Map.of();
+        }
+        BigDecimal step = posSettingsService.vignetteAmountStep();
+        int perStep = posSettingsService.vignettePerStep();
+        java.util.TreeMap<String, long[]> cells = new java.util.TreeMap<>();
+        Map<String, String> cashiers = new java.util.HashMap<>();
+        for (Ticket ticket : tickets) {
+            if (ticket.session == null) {
+                // Vignettes are handed out at a till, on a shift: a sale rung on
+                // no shift (an e-commerce order) makes none due.
+                continue;
+            }
+            String key = text(ticket.terminalId) + SEPARATOR + text(ticket.session.sessionNumber);
+            long[] cell = cells.computeIfAbsent(key, k -> new long[3]);
+            cell[0]++;
+            cell[1] += vignettesFor(ticket.totalIncludingTax, step, perStep);
+            cashiers.putIfAbsent(key, cashierOf(ticket));
+        }
+        for (com.intermarche.edge.domain.session.TechnicalEvent declaration : declarations) {
+            Map<String, String> detail = detailOf(declaration.detail);
+            String key = text(declaration.terminalId) + SEPARATOR + text(detail.get("session"));
+            cells.computeIfAbsent(key, k -> new long[3])[2] += parseCount(detail.get("count"));
+        }
+        List<String> rows = new ArrayList<>();
+        rows.add(String.join(SEPARATOR, "JOURNEE", "TERMINAL", "PRISE_DE_POSTE", "CAISSIERE",
+                "NB_TICKETS", "VIGNETTES_THEORIQUES", "VIGNETTES_DECLAREES", "ECART"));
+        long[] total = new long[3];
+        for (Map.Entry<String, long[]> entry : cells.entrySet()) {
+            long[] cell = entry.getValue();
+            rows.add(String.join(SEPARATOR, day.toString(), entry.getKey(),
+                    cashiers.getOrDefault(entry.getKey(), ""), String.valueOf(cell[0]),
+                    String.valueOf(cell[1]), String.valueOf(cell[2]), String.valueOf(cell[2] - cell[1])));
+            for (int index = 0; index < 3; index++) {
+                total[index] += cell[index];
+            }
+        }
+        rows.add(String.join(SEPARATOR, day.toString(), "TOTAL", "", "", String.valueOf(total[0]),
+                String.valueOf(total[1]), String.valueOf(total[2]), String.valueOf(total[2] - total[1])));
+        return single(flow, day, rows);
+    }
+
+    /**
+     * The vignettes a sale makes due under the administered formula
+     * (BO-11-01-20): the whole purchase steps of its tax-included total, times
+     * the vignettes per step.
+     *
+     * @param total the tax-included total, possibly null
+     * @param step the purchase step, zero meaning no vignette
+     * @param perStep the vignettes per whole step
+     * @return the vignettes due, never negative
+     */
+    static long vignettesFor(BigDecimal total, BigDecimal step, int perStep) {
+        if (total == null || total.signum() <= 0 || step.signum() <= 0) {
+            return 0L;
+        }
+        return total.divide(step, 0, java.math.RoundingMode.DOWN).longValue() * perStep;
+    }
+
+    /**
+     * Reads the {@code key=value;key=value} detail of a declaration.
+     *
+     * @param detail the detail, possibly null
+     * @return the keys and their values, empty when there are none
+     */
+    private Map<String, String> detailOf(String detail) {
+        Map<String, String> values = new java.util.HashMap<>();
+        if (detail == null) {
+            return values;
+        }
+        for (String part : detail.split(";")) {
+            int separator = part.indexOf('=');
+            if (separator > 0) {
+                values.put(part.substring(0, separator).trim(), part.substring(separator + 1).trim());
+            }
+        }
+        return values;
+    }
+
+    /**
+     * Reads a declared count, a missing or unreadable one counting as none.
+     *
+     * @param raw the count, possibly null
+     * @return the count, zero when unreadable or negative
+     */
+    private long parseCount(String raw) {
+        try {
+            return Math.max(0L, Long.parseLong(raw));
+        } catch (NumberFormatException unreadable) {
+            return 0L;
+        }
     }
 
     /**
@@ -853,7 +1269,7 @@ public class OutboundFlowService {
         for (Invoice invoice : invoices) {
             rows.add(String.join(SEPARATOR, day.toString(), text(invoice.documentNumber),
                     invoice.documentType == null ? "" : invoice.documentType.name(),
-                    invoice.issueDate == null ? "" : invoice.issueDate.toString(),
+                    stamp(invoice.issueDate),
                     text(invoice.terminalId), text(invoice.ticketNumber),
                     text(invoice.customerAccountNumber), text(invoice.customerName),
                     text(invoice.customerSiret), text(invoice.customerVatNumber),
@@ -908,7 +1324,7 @@ public class OutboundFlowService {
             Integer lines = counts.get(bucket.rate.stripTrailingZeros());
             rows.add(String.join(SEPARATOR, day.toString(), rate(bucket.rate),
                     amount(bucket.totalIncludingTax), amount(bucket.totalExcludingTax),
-                    amount(bucket.vatAmount), String.valueOf(lines == null ? 0 : lines)));
+                    amount(bucket.vatAmount), String.valueOf(lines)));
         }
         rows.add(String.join(SEPARATOR, day.toString(), "TOTAL",
                 amount(breakdown.getTotalIncludingTax()),
@@ -965,7 +1381,7 @@ public class OutboundFlowService {
                 "NB_ARTICLES", "TOTAL_TTC"));
         for (Ticket ticket : tickets) {
             log.add(String.join(SEPARATOR, day.toString(), text(ticket.ticketNumber),
-                    ticket.closingDate == null ? "" : ticket.closingDate.toString(),
+                    stamp(ticket.closingDate),
                     text(ticket.terminalId), String.valueOf(ticket.itemCount),
                     amount(ticket.totalIncludingTax)));
         }
@@ -1014,6 +1430,24 @@ public class OutboundFlowService {
     }
 
     /**
+     * Reads the codes of the islands excluded from the Planexa flow
+     * (BO-03-10-06).
+     *
+     * <p>Package-private for the same reason as {@link #checkoutPoints()}.
+     *
+     * @return the excluded island codes, empty when none is
+     */
+    java.util.Set<String> planexaExcludedIslands() {
+        java.util.Set<String> excluded = new java.util.HashSet<>();
+        for (com.intermarche.edge.domain.store.CheckoutIsland island
+                : com.intermarche.edge.domain.store.CheckoutIsland
+                        .<com.intermarche.edge.domain.store.CheckoutIsland>list("planexaExcluded = true")) {
+            excluded.add(island.code);
+        }
+        return excluded;
+    }
+
+    /**
      * Indexes the park by terminal, so the island of a ticket is one lookup.
      *
      * <p>A point without a terminal identifier is skipped rather than indexed
@@ -1034,6 +1468,57 @@ public class OutboundFlowService {
     }
 
     /**
+     * Builds the PLANEXA rows (BO-03-10-06): one row per register and per hour
+     * slot of the day — tickets, articles and takings — the base of the
+     * hostesses' planning, then one TOTAL row.
+     *
+     * <p>The registers of an island EXCLUDED from Planexa are left out entirely:
+     * a self-service bank or a drive needs no hostess, and counting its
+     * transactions would plan hostesses for lanes nobody staffs.
+     *
+     * @param day the accounting day
+     * @param tickets the closed tickets of that day
+     * @return the rows, header first
+     */
+    private List<String> planexaRows(LocalDate day, List<Ticket> tickets) {
+        Map<String, String> islands = islandByTerminal();
+        java.util.Set<String> excluded = planexaExcludedIslands();
+        java.util.TreeMap<String, long[]> counts = new java.util.TreeMap<>();
+        java.util.TreeMap<String, BigDecimal> takings = new java.util.TreeMap<>();
+        long ticketCount = 0;
+        long itemCount = 0;
+        BigDecimal total = BigDecimal.ZERO;
+        for (Ticket ticket : tickets) {
+            String terminal = text(ticket.terminalId);
+            String island = islands.getOrDefault(terminal, "");
+            if (excluded.contains(island)) {
+                continue;
+            }
+            String slot = ticket.closingDate == null ? "" : String.format("%02d:00", ticket.closingDate.getHour());
+            String key = terminal + SEPARATOR + island + SEPARATOR + slot;
+            long[] cell = counts.computeIfAbsent(key, k -> new long[2]);
+            cell[0]++;
+            cell[1] += ticket.itemCount;
+            BigDecimal amount = ticket.totalIncludingTax == null ? BigDecimal.ZERO : ticket.totalIncludingTax;
+            takings.merge(key, amount, BigDecimal::add);
+            ticketCount++;
+            itemCount += ticket.itemCount;
+            total = total.add(amount);
+        }
+        List<String> rows = new ArrayList<>();
+        rows.add(String.join(SEPARATOR, "JOURNEE", "TERMINAL", "CODE_ILOT", "TRANCHE",
+                "NB_TICKETS", "NB_ARTICLES", "TOTAL_TTC"));
+        for (Map.Entry<String, long[]> entry : counts.entrySet()) {
+            rows.add(String.join(SEPARATOR, day.toString(), entry.getKey(),
+                    String.valueOf(entry.getValue()[0]), String.valueOf(entry.getValue()[1]),
+                    amount(takings.get(entry.getKey()))));
+        }
+        rows.add(String.join(SEPARATOR, day.toString(), "TOTAL", "", "", String.valueOf(ticketCount),
+                String.valueOf(itemCount), amount(total)));
+        return rows;
+    }
+
+    /**
      * Builds the FAMILY-SALES rows (BO-11-01-08): one row per product family and
      * per checkout island, with the quantity, the VAT breakdown, the discount
      * granted on the lines and the number of tickets concerned, then one TOTAL
@@ -1042,12 +1527,13 @@ public class OutboundFlowService {
      * <p>CANCELLED lines are left out, as in the revenue flow: they were not sold.
      *
      * <p>The DISCOUNT column holds what the lines themselves carry — the gap
-     * between the original unit price and the one charged. The immediate discounts
-     * REFUNDED BY THE UPSTREAM that the requirement also mentions are not in it:
-     * they are fidelity advantages, and a fidelity advantage is attached to the
-     * ticket, not to a line, so the node cannot attribute it to a family without
-     * inventing the attribution. Rather than a wrong figure in a right column, the
-     * column holds only what is attributable.
+     * between the original unit price and the one charged. The UPSTREAM column
+     * holds the immediate discounts the upstream refunds: the advantages the
+     * promotion engine ALLOCATED to each line it valued, kept with the ticket
+     * line by line, so each one is attributed to the family of the line that
+     * carries it — never spread by a key of the node's invention. Which offers
+     * the upstream refunds is administered by their label (all of them when
+     * nothing is administered).
      *
      * @param day the accounting day
      * @param tickets the closed tickets of that day
@@ -1055,6 +1541,7 @@ public class OutboundFlowService {
      */
     private List<String> familySalesRows(LocalDate day, List<Ticket> tickets) {
         Map<String, String> islands = islandByTerminal();
+        Map<String, BigDecimal> upstream = upstreamDiscounts(tickets);
         Map<String, FamilyCell> cells = new LinkedHashMap<>();
         for (Ticket ticket : tickets) {
             String island = islands.getOrDefault(ticket.terminalId, "");
@@ -1065,33 +1552,103 @@ public class OutboundFlowService {
                 String familyCode = text(line.familyCode);
                 FamilyCell cell = cells.computeIfAbsent(island + "|" + familyCode,
                         key -> new FamilyCell(island, familyCode));
-                cell.add(line, text(ticket.ticketNumber), lineDiscount(line));
+                cell.add(line, text(ticket.ticketNumber), lineDiscount(line),
+                        upstream.getOrDefault(ticket.id + "|" + line.lineUid, BigDecimal.ZERO));
             }
         }
         List<String> rows = new ArrayList<>();
         rows.add(String.join(SEPARATOR, "JOURNEE", "CODE_ILOT", "CODE_FAMILLE",
                 "LIBELLE_FAMILLE", "QUANTITE", "TOTAL_TTC", "TOTAL_HT", "TVA",
-                "REMISES", "NB_TICKETS"));
+                "REMISES", "REMISES_AMONT", "NB_TICKETS"));
         BigDecimal totalIncludingTax = BigDecimal.ZERO;
         BigDecimal totalExcludingTax = BigDecimal.ZERO;
         BigDecimal totalVat = BigDecimal.ZERO;
         BigDecimal totalDiscount = BigDecimal.ZERO;
+        BigDecimal totalUpstream = BigDecimal.ZERO;
         for (FamilyCell cell : cells.values()) {
             rows.add(String.join(SEPARATOR, day.toString(), cell.island, cell.familyCode,
                     cell.familyLabel, quantity(cell.quantity),
                     amount(cell.breakdown.getTotalIncludingTax()),
                     amount(cell.breakdown.getTotalExcludingTax()),
                     amount(cell.breakdown.getTotalVat()), amount(cell.discount),
-                    String.valueOf(cell.tickets.size())));
+                    amount(cell.upstream), String.valueOf(cell.tickets.size())));
             totalIncludingTax = totalIncludingTax.add(cell.breakdown.getTotalIncludingTax());
             totalExcludingTax = totalExcludingTax.add(cell.breakdown.getTotalExcludingTax());
             totalVat = totalVat.add(cell.breakdown.getTotalVat());
             totalDiscount = totalDiscount.add(cell.discount);
+            totalUpstream = totalUpstream.add(cell.upstream);
         }
         rows.add(String.join(SEPARATOR, day.toString(), "TOTAL", "", "", "",
                 amount(totalIncludingTax), amount(totalExcludingTax), amount(totalVat),
-                amount(totalDiscount), String.valueOf(tickets.size())));
+                amount(totalDiscount), amount(totalUpstream), String.valueOf(tickets.size())));
         return rows;
+    }
+
+    /**
+     * Reads the engine valuations of the given tickets, line by line
+     * (BO-11-01-08).
+     *
+     * <p>Package-private so a test can serve valuations without a database.
+     *
+     * @param ticketIds the ids of the tickets, never empty
+     * @return their line valuations
+     */
+    List<com.intermarche.edge.domain.sale.TicketLineValuation> lineValuationsOf(List<Long> ticketIds) {
+        return com.intermarche.edge.domain.sale.TicketLineValuation.list("ticket.id in ?1", ticketIds);
+    }
+
+    /**
+     * Sums, line by line, the immediate discounts the upstream refunds
+     * (BO-11-01-08): the advantage the engine allocated to each valued line,
+     * when its offer is one the upstream refunds.
+     *
+     * @param tickets the closed tickets of the day
+     * @return the upstream discount of each line, keyed by ticket id and line uid
+     */
+    private Map<String, BigDecimal> upstreamDiscounts(List<Ticket> tickets) {
+        List<Long> ids = new ArrayList<>();
+        for (Ticket ticket : tickets) {
+            if (ticket.id != null) {
+                ids.add(ticket.id);
+            }
+        }
+        Map<String, BigDecimal> discounts = new java.util.HashMap<>();
+        if (ids.isEmpty()) {
+            return discounts;
+        }
+        List<String> prefixes = posSettingsService.exportUpstreamOffers();
+        for (com.intermarche.edge.domain.sale.TicketLineValuation valuation : lineValuationsOf(ids)) {
+            if (valuation.advantageAmount == null || valuation.advantageAmount.signum() == 0
+                    || !refundedUpstream(valuation.offerLabel, prefixes)) {
+                continue;
+            }
+            discounts.merge(valuation.ticket.id + "|" + valuation.lineUid,
+                    valuation.advantageAmount.abs(), BigDecimal::add);
+        }
+        return discounts;
+    }
+
+    /**
+     * Tells whether the upstream refunds an offer: every offer when no label is
+     * administered, otherwise the offers whose label starts with one of them.
+     *
+     * @param offerLabel the offer label of the valuation, possibly null
+     * @param prefixes the administered label prefixes
+     * @return true when the upstream refunds the offer
+     */
+    private boolean refundedUpstream(String offerLabel, List<String> prefixes) {
+        if (prefixes.isEmpty()) {
+            return true;
+        }
+        if (offerLabel == null) {
+            return false;
+        }
+        for (String prefix : prefixes) {
+            if (offerLabel.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -1115,7 +1672,7 @@ public class OutboundFlowService {
                 "QUANTITE", "PRIX_UNITAIRE", "PRIX_ORIGINE", "REMISE", "TOTAL_TTC",
                 "TAUX_TVA", "ANNULEE"));
         for (Ticket ticket : tickets) {
-            String moment = ticket.closingDate == null ? "" : ticket.closingDate.toString();
+            String moment = stamp(ticket.closingDate);
             String cashier = cashierOf(ticket);
             for (TicketLine line : ticket.lines) {
                 rows.add(String.join(SEPARATOR, day.toString(), text(ticket.ticketNumber),
@@ -1174,6 +1731,25 @@ public class OutboundFlowService {
     }
 
     /**
+     * LC-01-03-01: load only the operator's pause transitions on this register,
+     * within the shift bounds, including an unfinished final pause.
+     * @param terminal register identifier
+     * @param badge operator badge, not the display login
+     * @param from shift opening
+     * @param to shift closing or last sale
+     * @return ordered pause/resume journal entries
+     */
+    List<com.intermarche.edge.domain.session.TechnicalEvent> pauseEvents(
+            String terminal, String badge, LocalDateTime from, LocalDateTime to) {
+        return com.intermarche.edge.domain.session.TechnicalEvent.list(
+                "terminalId = ?1 and operatorBadgeId = ?2 and eventDate >= ?3 and eventDate <= ?4"
+                        + " and eventType in (?5, ?6) order by eventDate, id",
+                terminal, badge, from, to,
+                com.intermarche.edge.domain.session.TechnicalEvent.EventType.REGISTER_LOCKED,
+                com.intermarche.edge.domain.session.TechnicalEvent.EventType.REGISTER_UNLOCKED);
+    }
+
+    /**
      * Builds the PRODUCTIVITY rows (BO-11-01-21): one row per cashier and per
      * SHIFT, with the tickets, the items, the revenue, the shift's duration and
      * the two indicators the requirement asks for — items an hour and average
@@ -1195,7 +1771,7 @@ public class OutboundFlowService {
             CashSession session = ticket.session;
             String shift = session == null ? "" : text(session.sessionNumber);
             String cashier = cashierOf(ticket);
-            ShiftCell cell = cells.computeIfAbsent(shift + "|" + cashier,
+            ShiftCell cell = cells.computeIfAbsent(shift + "|" + cashier + "|" + text(ticket.terminalId),
                     key -> new ShiftCell(shift, cashier, text(ticket.terminalId)));
             cell.add(ticket, session);
         }
@@ -1204,7 +1780,13 @@ public class OutboundFlowService {
                 "NB_TICKETS", "NB_ARTICLES", "TOTAL_TTC", "DUREE_MINUTES",
                 "ARTICLES_PAR_HEURE", "PANIER_MOYEN"));
         for (ShiftCell cell : cells.values()) {
-            long minutes = cell.minutes();
+            LocalDateTime end = cell.closedAt == null ? cell.lastSale : cell.closedAt;
+            List<com.intermarche.edge.domain.session.TechnicalEvent> pauses = List.of();
+            if (cell.openedAt != null && end != null && end.isAfter(cell.openedAt)
+                    && cell.badge != null && !cell.badge.isBlank()) {
+                pauses = pauseEvents(cell.terminal, cell.badge, cell.openedAt, end);
+            }
+            long minutes = cell.minutes(pauses);
             rows.add(String.join(SEPARATOR, day.toString(), cell.shift, cell.cashier,
                     cell.terminal, String.valueOf(cell.tickets), String.valueOf(cell.items),
                     amount(cell.total), String.valueOf(minutes),
@@ -1340,6 +1922,9 @@ public class OutboundFlowService {
         /** The discount granted on the lines of the cell. */
         private BigDecimal discount = BigDecimal.ZERO;
 
+        /** The immediate discounts of the cell the upstream refunds (BO-11-01-08). */
+        private BigDecimal upstream = BigDecimal.ZERO;
+
         /** The tickets the cell was sold on, each counted once. */
         private final java.util.Set<String> tickets = new java.util.LinkedHashSet<>();
 
@@ -1365,13 +1950,16 @@ public class OutboundFlowService {
          * @param line the line, already known not to be cancelled
          * @param ticketNumber the ticket the line belongs to
          * @param lineDiscount the discount the line carries
+         * @param upstreamDiscount the discount on the line the upstream refunds
          */
-        private void add(TicketLine line, String ticketNumber, BigDecimal lineDiscount) {
+        private void add(TicketLine line, String ticketNumber, BigDecimal lineDiscount,
+                BigDecimal upstreamDiscount) {
             breakdown.add(line.vatRate, line.totalPrice);
             if (line.quantity != null) {
                 quantity = quantity.add(line.quantity);
             }
             discount = discount.add(lineDiscount);
+            upstream = upstream.add(upstreamDiscount);
             tickets.add(ticketNumber);
             if (familyLabel.isEmpty() && line.familyLabel != null) {
                 familyLabel = line.familyLabel.replace(SEPARATOR, " ");
@@ -1455,6 +2043,9 @@ public class OutboundFlowService {
         /** The register of the shift, empty when the ticket carries none. */
         private final String terminal;
 
+        /** LC-01-03-01: journal identity, distinct from the exported cashier login. */
+        private String badge;
+
         /** The number of tickets rung during the shift. */
         private int tickets;
 
@@ -1493,6 +2084,7 @@ public class OutboundFlowService {
          * @param session the session the ticket was rung in, possibly null
          */
         private void add(Ticket ticket, CashSession session) {
+            badge = ticket.cashier == null ? null : ticket.cashier.badgeId;
             tickets++;
             items += ticket.itemCount;
             if (ticket.totalIncludingTax != null) {
@@ -1515,15 +2107,31 @@ public class OutboundFlowService {
          * order — a clock set back during the shift, which must not produce a
          * negative duration the receiving side would divide by.
          *
-         * @return the duration in whole minutes, never negative
+         * @param pauses ordered pause transitions within this shift
+     * @return the duration in whole minutes, never negative
          */
-        private long minutes() {
+        private long minutes(List<com.intermarche.edge.domain.session.TechnicalEvent> pauses) {
             LocalDateTime end = closedAt == null ? lastSale : closedAt;
             if (openedAt == null || end == null) {
                 return 0L;
             }
-            long elapsed = java.time.Duration.between(openedAt, end).toMinutes();
-            return elapsed < 0L ? 0L : elapsed;
+            long elapsed = java.time.Duration.between(openedAt, end).toMillis();
+            // LC-01-03-01: a first resume means this cashier was absent before it.
+            LocalDateTime pauseStart = !pauses.isEmpty()
+                    && pauses.get(0).eventType == com.intermarche.edge.domain.session.TechnicalEvent.EventType.REGISTER_UNLOCKED
+                    ? openedAt : null;
+            long paused = 0L;
+            for (var event : pauses) {
+                if (event.eventType == com.intermarche.edge.domain.session.TechnicalEvent.EventType.REGISTER_LOCKED) {
+                    if (pauseStart == null) pauseStart = event.eventDate;
+                } else if (pauseStart != null) {
+                    paused += java.time.Duration.between(pauseStart, event.eventDate).toMillis();
+                    pauseStart = null;
+                }
+            }
+            if (pauseStart != null) paused += java.time.Duration.between(pauseStart, end).toMillis();
+            // Round once after subtracting all pauses, not once per interval.
+            return Math.max(0L, elapsed - paused) / 60_000L;
         }
 
         /**

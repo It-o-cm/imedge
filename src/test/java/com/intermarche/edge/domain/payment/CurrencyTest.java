@@ -177,4 +177,21 @@ class CurrencyTest {
         Currency currency = currency(BigDecimal.ONE, "   ");
         assertEquals("CHF", currency.displayUnit());
     }
+
+    /**
+     * BO-03-02-39: no change tender, a blank one, or the cash gives the change
+     * in euros; any other tender gives it in the currency.
+     */
+    @org.junit.jupiter.api.Test
+    void theChangeIsGivenInTheCurrencyOnlyWhenAnotherTenderIsNamed() {
+        Currency currency = new Currency();
+        currency.code = "CHF";
+        org.junit.jupiter.api.Assertions.assertFalse(currency.changeInCurrency());
+        currency.changeTenderCode = "  ";
+        org.junit.jupiter.api.Assertions.assertFalse(currency.changeInCurrency());
+        currency.changeTenderCode = " cash ";
+        org.junit.jupiter.api.Assertions.assertFalse(currency.changeInCurrency());
+        currency.changeTenderCode = "DEVISE";
+        org.junit.jupiter.api.Assertions.assertTrue(currency.changeInCurrency());
+    }
 }

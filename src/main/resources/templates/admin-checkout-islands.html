@@ -3,24 +3,24 @@
  ! via formaction; a new-island form sits at the bottom. Mirrors admin-vat-rates. !}
 {#include admin-layout}
 
-{#title}Îlots de caisse{/title}
+{#title}{inject:i18n.get('t.ilots-de-caisse')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Îlots de caisse</h1>
-        <p class="page-sub">Le groupe de caisses qu'un magasin pilote ensemble — ligne avant, comptoir, drive. L'îlot porte son point de vente, son canal de promotion et le rendu monnaie ; les caisses s'y rattachent depuis l'écran des points de caisse (BO-03-10).</p>
+        <h1>{inject:i18n.get('t.ilots-de-caisse')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.le-groupe-de-caisses-qu-un-magasin')}</p>
     </div>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 <div class="card">
-    <h2 class="card-title">Îlots</h2>
+    <h2 class="card-title">{inject:i18n.get('t.ilots')}</h2>
     {#if islands.isEmpty()}
-    <p class="page-sub">Aucun îlot n'est administré.</p>
+    <p class="page-sub">{inject:i18n.get('t.aucun-ilot-n-est-administre')}</p>
     {#else}
     {#for island in islands}
     <form method="post" action="/admin/checkout-islands/save" class="field-grid">
@@ -30,11 +30,11 @@
             <span class="field-hint">{#for terminal in island.terminals()}{terminal} {/for}</span>
         </div>
         <div class="field">
-            <label class="field-label" for="il-{island.code}">Libellé</label>
+            <label class="field-label" for="il-{island.code}">{inject:i18n.get('t.libelle')}</label>
             <input class="input-control" id="il-{island.code}" type="text" name="label" maxlength="100" value="{island.label ?: ''}">
         </div>
         <div class="field">
-            <label class="field-label" for="ip-{island.code}">Point de vente</label>
+            <label class="field-label" for="ip-{island.code}">{inject:i18n.get('t.point-de-vente')}</label>
             <select class="input-control" id="ip-{island.code}" name="pdvNumber">
                 <option value="">—</option>
                 {#for pdv in pdvs}
@@ -43,28 +43,38 @@
             </select>
         </div>
         <div class="field">
-            <label class="field-label" for="ic-{island.code}">Canal de promotion</label>
+            <label class="field-label" for="ic-{island.code}">{inject:i18n.get('t.canal-de-promotion')}</label>
             <select class="input-control" id="ic-{island.code}" name="promotionChannel">
                 {#for channel in channels}
-                <option value="{channel}" {#if island.promotionChannel == channel}selected{/if}>{channel.label}</option>
+                <option value="{channel}" {#if island.promotionChannel == channel}selected{/if}>{inject:i18n.text(channel.label)}</option>
                 {/for}
             </select>
         </div>
         <div class="field">
-            <label class="field-label" for="ig-{island.code}">Rendu monnaie</label>
+            <label class="field-label" for="ig-{island.code}">{inject:i18n.get('t.rendu-monnaie')}</label>
             <input id="ig-{island.code}" type="checkbox" name="changeGivingAllowed" {#if island.changeGivingAllowed}checked{/if}>
         </div>
         <div class="field">
-            <label class="field-label" for="iac-{island.code}">Déclaration auto. fin de période</label>
+            <label class="field-label" for="iac-{island.code}">{inject:i18n.get('t.declaration-auto-fin-de-periode')}</label>
             <input id="iac-{island.code}" type="checkbox" name="autoPeriodCloseDeclaration" {#if island.autoPeriodCloseDeclaration}checked{/if}>
         </div>
         <div class="field">
-            <label class="field-label" for="ia-{island.code}">Actif</label>
+            <label class="field-label" for="ih-{island.code}">{inject:i18n.get('t.r20-hotes-rattaches')}</label>
+            <input class="input-control" id="ih-{island.code}" type="text" name="hostBadges" maxlength="1000" value="{island.hostBadges ?: ''}" placeholder="00000001;00000002">
+            <span class="field-hint">{inject:i18n.get('t.r20-hotes-rattaches-aide')}</span>
+        </div>
+        <div class="field">
+            <label class="field-label" for="ipx-{island.code}">{inject:i18n.get('t.k19-exclu-du-flux-planexa')}</label>
+            <input id="ipx-{island.code}" type="checkbox" name="planexaExcluded" {#if island.planexaExcluded}checked{/if}>
+        </div>
+        <div class="field">
+            <label class="field-label" for="ia-{island.code}">{inject:i18n.get('t.actif')}</label>
             <input id="ia-{island.code}" type="checkbox" name="active" {#if island.active}checked{/if}>
         </div>
         <div class="page-actions">
-            <button class="btn btn-primary" type="submit">Enregistrer</button>
-            <button class="btn btn-muted" type="submit" formaction="/admin/checkout-islands/delete">Supprimer</button>
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer')}</button>
+            <button class="btn btn-muted" type="submit" formaction="/admin/checkout-islands/delete">{inject:i18n.get('t.supprimer')}</button>
+            <a class="btn btn-ghost" href="/admin/register-config?level=ISLAND&code={island.code}">{inject:i18n.get('t.k19-configurer')}</a>
         </div>
     </form>
     {/for}
@@ -72,18 +82,18 @@
 </div>
 
 <div class="card">
-    <h2 class="card-title">Nouvel îlot</h2>
+    <h2 class="card-title">{inject:i18n.get('t.nouvel-ilot')}</h2>
     <form method="post" action="/admin/checkout-islands/save" class="field-grid">
         <div class="field">
-            <label class="field-label" for="new-code">Code</label>
+            <label class="field-label" for="new-code">{inject:i18n.get('t.code')}</label>
             <input class="input-control" id="new-code" type="text" name="code" maxlength="50" required>
         </div>
         <div class="field">
-            <label class="field-label" for="new-label">Libellé</label>
+            <label class="field-label" for="new-label">{inject:i18n.get('t.libelle')}</label>
             <input class="input-control" id="new-label" type="text" name="label" maxlength="100">
         </div>
         <div class="field">
-            <label class="field-label" for="new-pdv">Point de vente</label>
+            <label class="field-label" for="new-pdv">{inject:i18n.get('t.point-de-vente')}</label>
             <select class="input-control" id="new-pdv" name="pdvNumber">
                 <option value="">—</option>
                 {#for pdv in pdvs}
@@ -92,22 +102,22 @@
             </select>
         </div>
         <div class="field">
-            <label class="field-label" for="new-channel">Canal de promotion</label>
+            <label class="field-label" for="new-channel">{inject:i18n.get('t.canal-de-promotion')}</label>
             <select class="input-control" id="new-channel" name="promotionChannel">
                 {#for channel in channels}
-                <option value="{channel}">{channel.label}</option>
+                <option value="{channel}">{inject:i18n.text(channel.label)}</option>
                 {/for}
             </select>
         </div>
         <div class="field">
-            <label class="field-label" for="new-change">Rendu monnaie</label>
+            <label class="field-label" for="new-change">{inject:i18n.get('t.rendu-monnaie')}</label>
             <input id="new-change" type="checkbox" name="changeGivingAllowed" checked>
         </div>
         <div class="field">
-            <label class="field-label" for="new-active">Actif</label>
+            <label class="field-label" for="new-active">{inject:i18n.get('t.actif')}</label>
             <input id="new-active" type="checkbox" name="active" checked>
         </div>
-        <div class="page-actions"><button class="btn btn-primary" type="submit">Créer l'îlot</button></div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.creer-l-ilot')}</button></div>
     </form>
 </div>
 {/body}

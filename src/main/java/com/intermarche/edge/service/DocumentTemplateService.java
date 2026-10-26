@@ -120,6 +120,16 @@ public class DocumentTemplateService {
     /**
      * Hands the template its typesetting primitives and its paper width.
      *
+     * <p>{@code fmt} carries the alignment, centring and wrapping the register
+     * uses for its own layouts, already bound to THIS template's width — so a
+     * template writing {@code {fmt.line("TOTAL TTC", totals.includingTax)}}
+     * produces the very characters the built-in receipt does, instead of
+     * padding with spaces its author counted by hand. {@code width} is exposed
+     * beside it for a template that needs the number itself.
+     *
+     * <p>Until now the administered width decided nothing: it was validated,
+     * stored, distributed by the referential pull, and read by no renderer.
+     *
      * <p>THE PREVIEW MUST TYPESET AS THE REGISTER DOES. {@code fmt} is the same
      * class on both sides, bound to the same administered width, so a
      * paramétreur who writes {@code {fmt.centre(...)}} sees here the very
@@ -127,7 +137,9 @@ public class DocumentTemplateService {
      * an error on a layout the register renders perfectly, which is worse than
      * no preview at all.
      *
-     * <p>The caller's map is COPIED, never enriched in place.
+     * <p>The caller's map is COPIED, never enriched in place: the values a
+     * printer assembles for one document must not grow a key because they were
+     * passed through here.
      *
      * @param template the template being rendered, for its width
      * @param data the values the caller assembled, possibly null
@@ -259,12 +271,19 @@ public class DocumentTemplateService {
     public Map<String, Object> sampleData(DocumentTemplate.DocumentType type) {
         LOGGER.info("Entering method sampleData with type: " + type);
         Map<String, Object> data = new HashMap<>();
-        data.put("store", Map.of(
-                "name", "INTERMARCHE VAUCRESSON",
-                "street", "15 RUE DE LA GARE",
-                "postalCode", "92420",
-                "city", "VAUCRESSON",
-                "siret", "12345678900012"));
+        data.put("store", Map.ofEntries(
+                Map.entry("name", "INTERMARCHE VAUCRESSON"),
+                Map.entry("legalName", "SAS VAUCRESSON DISTRIBUTION"),
+                Map.entry("street", "15 RUE DE LA GARE"),
+                Map.entry("street2", ""),
+                Map.entry("postalCode", "92420"),
+                Map.entry("city", "VAUCRESSON"),
+                Map.entry("country", "FR"),
+                Map.entry("siret", "12345678900012"),
+                // BO-03-10-19/20: the whole store record a header may read.
+                Map.entry("vatNumber", "FR12345678901"),
+                Map.entry("phone", "01 23 45 67 89"),
+                Map.entry("bankAccount", "30004 00001 00012345678 12")));
         data.put("terminal", "C04");
         data.put("operator", "MARIE");
         data.put("date", "15/09/2026");
@@ -273,57 +292,65 @@ public class DocumentTemplateService {
             LOGGER.info("Exiting method sampleData");
             return data;
         }
-        switch (type) {
-            case SALE_RECEIPT, REFUND_RECEIPT, INVOICE, INVOICE_A4,
-                    TICKET_HEADER, TICKET_FOOTER, INVOICE_HEADER, INVOICE_FOOTER,
-                    FRAGMENT, FS, FT, NC, RC -> {
-                data.put("document", type == DocumentTemplate.DocumentType.REFUND_RECEIPT
-                        ? Map.of("number", "C04-R000012", "originalNumber", "C04-000123",
-                                "method", "ESPECES")
-                        : Map.of("number", "C04-000123", "duplicate", false,
-                                "duplicateNumber", "0", "digitalPath", "/t/42/3f9a1c"));
-                data.put("lines", List.of(
-                        Map.of("label", "LAIT DEMI-ECREME 1L", "ean", "3250390000013",
-                                "family", "CREMERIE", "unit", "", "quantity", "2",
-                                "unitPrice", "1,15", "total", "2,30", "vatRate", "5.5"),
-                        Map.of("label", "PAIN COMPLET 500G", "ean", "3250390000020",
-                                "family", "BOULANGERIE", "unit", "", "quantity", "1",
-                                "unitPrice", "2,30", "total", "2,30", "vatRate", "5.5")));
+        // BO-03-05: the compiler checks every document kind; no unreachable fall-through remains.
+        Map<String, Object> described = switch (type) {
+            case SALE_RECEIPT, TICKET_HEADER, TICKET_FOOTER, FRAGMENT -> {
+                data.put("document", Map.of("number", "C04-000123", "duplicate", false,
+                        "duplicateNumber", "0", "digitalPath", "/t/42/3f9a1c", "taxId", "123456789", "taxIdLabel", "123456789", "taxIdCountry", "PT", "taxIdNumber", "123456789", "identificationCode", "[[BARCODE C04-000123]]"));
+                data.put("lines", sampleSaleLines());
                 data.put("totals", Map.of("excludingTax", "4,36", "vat", "0,24",
-                        "includingTax", "4,60", "discount", ""));
+                        "includingTax", "4,60", "discount", "",
+                        "immediateDiscount", "0,20"));
+                // BO-03-03-04: the VAT code beside each rate, the one the
+                // invoice's table states too.
                 data.put("vatRows", List.of(
-                        Map.of("rate", "5,5", "base", "4,36", "vat", "0,24")));
+                        Map.of("rate", "5,50%", "base", "4,36", "vat", "0,24", "code", "B")));
                 data.put("payments", List.of(
-                        Map.of("label", "CASH", "key", "CASH", "amount", "4,60")));
+                        Map.of("label", "ESPECES", "key", "CASH", "amount", "4,60")));
                 data.put("fidelity", sampleFidelity());
-                if (type == DocumentTemplate.DocumentType.INVOICE
-                        || type == DocumentTemplate.DocumentType.INVOICE_A4
-                        || type == DocumentTemplate.DocumentType.INVOICE_HEADER
-                        || type == DocumentTemplate.DocumentType.INVOICE_FOOTER
-                        || type == DocumentTemplate.DocumentType.FS
-                        || type == DocumentTemplate.DocumentType.FT
-                        || type == DocumentTemplate.DocumentType.NC
-                        || type == DocumentTemplate.DocumentType.RC) {
-                    // The invoice names a seller and an addressee the receipt
-                    // never carries, and states its own kind of document.
-                    data.put("document", Map.of("title", "FACTURE",
-                            "number", "C04-F000042", "issueDate", "15/09/2026",
-                            "saleDate", "15/09/2026", "ticketNumber", "C04-000123",
-                            "duplicate", false, "duplicateNumber", "0",
-                            "legalFooter", "", "legalMentions", "", "logo", ""));
-                    data.put("seller", Map.of("name", "INTERMARCHE VAUCRESSON",
-                            "legalName", "ITM VAUCRESSON SAS", "contact", "",
-                            "addressLines", List.of("15 RUE DE LA GARE", "92420 VAUCRESSON"),
-                            "phone", "", "fax", "", "siret", "12345678900012",
-                            "vatNumber", "FR00123456789", "accountNumber", ""));
-                    data.put("customer", Map.of("name", "SARL DUPONT",
-                            "legalName", "SARL DUPONT", "contact", "",
-                            "addressLines", List.of("3 RUE DES LILAS", "92100 BOULOGNE"),
-                            "phone", "", "fax", "", "siret", "98765432100011",
-                            "vatNumber", "", "accountNumber", "C000123"));
-                    data.put("totals", Map.of("excludingTax", "4,36", "vat", "0,24",
-                            "includingTax", "4,60", "methods", "ESPECES"));
-                }
+                yield data;
+            }
+            case REFUND_RECEIPT -> {
+                // The refund carries NEITHER payments nor a loyalty zone, and
+                // its totals hold the one figure a return has: what was given
+                // back. Advertising the receipt's keys here would promise a
+                // paramétreur values that render empty on the paper.
+                data.put("document", Map.of("number", "C04-R000012",
+                        "originalNumber", "C04-000123", "method", "ESPECES",
+                        "returnReason", "ARTICLE ABIME"));
+                data.put("lines", List.of(
+                        Map.of("label", "LAIT DEMI-ECREME 1L", "quantity", "1",
+                                "unitPrice", "1,15", "total", "1,15", "vatRate", "0.055")));
+                data.put("totals", Map.of("includingTax", "1,15"));
+                data.put("vatRows", List.of(
+                        Map.of("rate", "5,50%", "base", "1,09", "vat", "0,06")));
+                data.put("recalculation", Map.of("status", "OK", "withdrawn", "0,28",
+                        "keptAdvantages", "SOCLE", "loyaltySent", "1"));
+                yield data;
+            }
+            case INVOICE, INVOICE_A4, INVOICE_HEADER, INVOICE_FOOTER,
+                    FS, FT, NC, RC -> {
+                // The invoice names a seller and an addressee the receipt never
+                // carries, states its own kind of document, and describes its
+                // articles with BOTH unit prices. Its store block is the SELLER
+                // as a party and not the receipt's postal block, so it is
+                // replaced here rather than inherited.
+                data.put("store", sampleSeller());
+                data.put("seller", sampleSeller());
+                data.put("customer", sampleCustomer());
+                data.put("date", "15/09/2026");
+                data.put("time", "");
+                data.put("operator", "");
+                data.put("document", sampleInvoiceDocument());
+                data.put("lines", sampleInvoiceLines());
+                data.put("vatRows", List.of(
+                        Map.of("rate", "5,50 %", "base", "4,36", "vat", "0,24",
+                                "includingTax", "4,60", "code", "B")));
+                data.put("payments", List.of(
+                        Map.of("label", "ESPECES", "amount", "4,60")));
+                data.put("totals", Map.of("excludingTax", "4,36", "vat", "0,24",
+                        "includingTax", "4,60", "methods", "ESPECES"));
+                yield data;
             }
             case X_REPORT, Z_REPORT -> {
                 data.put("session", Map.of("number", "C04-S00012",
@@ -345,6 +372,7 @@ public class DocumentTemplateService {
                 data.put("tenders", List.of(
                         Map.of("label", "CASH", "amount", "1154,30"),
                         Map.of("label", "CARD", "amount", "2258,25")));
+                yield data;
             }
             case WITHDRAWAL_TICKET, TRANSFER_TICKET -> {
                 boolean transfer = type == DocumentTemplate.DocumentType.TRANSFER_TICKET;
@@ -357,24 +385,40 @@ public class DocumentTemplateService {
                 data.put("counts", transfer ? List.of() : List.of(
                         Map.of("label", "Billets 50", "amount", "8"),
                         Map.of("label", "Billets 20", "amount", "5")));
+                yield data;
             }
-            case GIFT_CARD_VOUCHER, CREDIT_NOTE_VOUCHER -> data.put("instrument", Map.of(
-                    "number", type == DocumentTemplate.DocumentType.GIFT_CARD_VOUCHER
-                            ? "296000000000042" : "297000000000042",
-                    "amount", "30,00"));
-            case CARD_RECEIPT -> data.put("card", Map.of(
+            case GIFT_CARD_VOUCHER, CREDIT_NOTE_VOUCHER -> {
+                boolean giftCard = type == DocumentTemplate.DocumentType.GIFT_CARD_VOUCHER;
+                String number = giftCard ? "296000000000042" : "297000000000042";
+                data.put("instrument", Map.of(
+                        "number", number,
+                        "amount", "30,00",
+                        // BO-03-03-08: the end of validity the registry holds,
+                        // and the barcode as the DIRECTIVE the bridge encodes —
+                        // the two values the credit note was missing.
+                        "validUntil", giftCard ? "" : "15/03/2027",
+                        "barcode", "[[BARCODE " + number + "]]"));
+                yield data;
+            }
+            case CARD_RECEIPT -> {
+                data.put("card", Map.of(
                     "kind", "CREDIT", "amount", "4,60", "frame", ""));
+                yield data;
+            }
             case LOYALTY_RECEIPT -> {
                 data.put("document", Map.of("number", "C04-000123"));
                 data.put("fidelity", sampleFidelity());
                 data.put("settlement", Map.of("amount", "3,00"));
+                yield data;
             }
             // BO-10-03-05: the four loyalty ZONES read the loyalty values and
             // nothing else — no store address, no ticket number, because they
             // are printed inside a receipt that already carries both.
             case LOYALTY_ONLINE, LOYALTY_OFFLINE,
-                    LOYALTY_NON_HOLDER_ONLINE, LOYALTY_NON_HOLDER_OFFLINE ->
-                    data.put("fidelity", sampleFidelity());
+                    LOYALTY_NON_HOLDER_ONLINE, LOYALTY_NON_HOLDER_OFFLINE -> {
+                data.put("fidelity", sampleFidelity());
+                yield data;
+            }
             case EXIT_TICKET -> {
                 // BO-03-03-36: the exit ticket states a total, a count and the
                 // dearest articles — and the barcode as the DIRECTIVE the
@@ -388,24 +432,41 @@ public class DocumentTemplateService {
                                 "unitPrice", "18,90", "total", "18,90"),
                         Map.of("label", "LAIT DEMI-ECREME 1L", "quantity", "6",
                                 "unitPrice", "1,15", "total", "6,90")));
+                yield data;
             }
             case UNKNOWN_ARTICLE_TICKET -> {
                 // BO-03-10-05: the code as it was READ, which is the whole
                 // point of the paper — a code nobody recognized is a string and
                 // not an article, so there is no article block to offer.
                 data.put("document", Map.of("code", "2912345678901"));
+                yield data;
+            }
+            case PARKED_TICKET -> {
+                // BO-03-03-06: the five values the questionnaire lists — the
+                // title, the barcode, its number in clear, the moment it was
+                // printed and the ticket number — and the articles put aside.
+                data.put("document", Map.of("title", "TICKET EN ATTENTE",
+                        "number", "C04-000124", "barcode", "[[BARCODE C04-000124]]",
+                        "barcodeNumber", "C04-000124", "printDate", "15/09/2026 11:24"));
+                data.put("lines", List.of(
+                        Map.of("label", "LAIT DEMI-ECREME 1L", "quantity", "2",
+                                "total", "2,30")));
+                data.put("totals", Map.of("includingTax", "2,30"));
+                yield data;
             }
             case PARKED_TICKET_RESUME -> {
                 // BO-03-03-07: the two numbers, which is what the document is
                 // for — on an inter-till resume they differ.
                 data.put("document", Map.of("number", "C04-000124",
                         "originalNumber", "C03-000087"));
+                yield data;
             }
             case PAYMENT_CANCELLATION -> {
                 // BO-03-02-35: which tender was given back, for how much, and
                 // on which ticket — the three things a dispute turns on.
                 data.put("document", Map.of("number", "C04-000124",
                         "tenderLabel", "CHEQUE", "amount", "42,50"));
+                yield data;
             }
             case DEPOSIT_RECEIPT -> {
                 // BO-03-03-09: the order, the customer, the amount and the
@@ -413,19 +474,28 @@ public class DocumentTemplateService {
                 data.put("document", Map.of("number", "AC-000045",
                         "orderNumber", "CMD-2026-0187", "customerName", "MARTIN Claire",
                         "amount", "150,00", "barcode", "[[BARCODE AC-000045]]"));
+                // BO-03-03-09: the recap per rate states the code, the base,
+                // the tax and the total, as the sale ticket's table does.
                 data.put("vatLines", List.of(
-                        Map.of("rate", "5,50", "base", "94,79", "amount", "5,21"),
-                        Map.of("rate", "20,00", "base", "41,67", "amount", "8,33")));
+                        Map.of("rate", "5,50", "code", "B", "base", "94,79", "amount", "5,21",
+                                "includingTax", "100,00"),
+                        Map.of("rate", "20,00", "code", "D", "base", "41,67", "amount", "8,33",
+                                "includingTax", "50,00")));
+                yield data;
             }
             case GIFT_CARD_PAYMENT -> {
                 // BO-03-03-11: what was spent and what the card still carries.
                 data.put("document", Map.of("number", "C04-000124",
                         "cardNumber", "****4321", "amount", "30,00",
-                        "remainingBalance", "20,00"));
+                        "balanceBefore", "50,00", "remainingBalance", "20,00",
+                        "provider", "ILLICADO", "approval", "P000124",
+                        "transaction", "HUB00000124",
+                        "providerMessage", "Vous avez regle 30,00 - solde 20,00"));
+                yield data;
             }
-        }
+        };
         LOGGER.info("Exiting method sampleData");
-        return data;
+        return described;
     }
 
     /**
@@ -449,8 +519,8 @@ public class DocumentTemplateService {
         fidelity.put("earnTotal", "1,03");
         fidelity.put("lines", List.of(
                 sampleFidelityLine("SOCLE", "Cagnotte socle", "0,28",
-                        "REMISE", "Remises immediates", "10"),
-                sampleFidelityLine("F&L", "Fruits & legumes", "0,75",
+                        "REMISE", "Remises immédiates", "10"),
+                sampleFidelityLine("F&L", "Fruits & légumes", "0,75",
                         "CAGNOTTE", "Cagnotte", "20")));
         fidelity.put("availableBalance", "42,30");
         fidelity.put("projectedAfterEarn", "43,33");
@@ -460,6 +530,13 @@ public class DocumentTemplateService {
         fidelity.put("usedAmount", "3,00");
         fidelity.put("unavailable", false);
         fidelity.put("message", "");
+        // BO-03-03-26 / -27 / -35: the short advantage message printed before
+        // the advantages, the commercial messages printed at the end of the
+        // zone, and the balance of every pot of the card.
+        fidelity.put("shortMessage", List.of("VOS AVANTAGES DU JOUR", "MERCI DE VOTRE FIDELITE"));
+        fidelity.put("commercialMessages", List.of(
+                Map.of("lines", List.of("-20% SUR LE RAYON BIO", "DU 16 AU 22 SEPTEMBRE"))));
+        fidelity.put("pots", List.of(Map.of("label", "CAGNOTTE FIDELIDADE", "balance", "12,40")));
         return fidelity;
     }
 
@@ -488,6 +565,131 @@ public class DocumentTemplateService {
         line.put("advantageCategory", advantageType);
         line.put("advantageCategoryLabel", advantageTypeLabel);
         return line;
+    }
+
+    /**
+     * The ARTICLE ROWS of the demonstration receipt (BO-03-03-03,
+     * BO-03-03-22).
+     *
+     * <p>Both unit prices and the line's own modification are in them, because
+     * the register hands both: a layout can print the tax-excluded price per
+     * line and name the rebate under the article.
+     *
+     * @return the demonstration article rows
+     */
+    private List<Map<String, Object>> sampleSaleLines() {
+        return List.of(
+                sampleSaleLine("LAIT DEMI-ECREME 1L", "3250390000013", "CREMERIE",
+                        "2", "1,15", "1,09", "2,30", "", ""),
+                sampleSaleLine("PAIN COMPLET 500G", "3250390000020", "BOULANGERIE",
+                        "1", "2,30", "2,18", "2,10", "Remise -0,20\u20ac", "0,20"));
+    }
+
+    /**
+     * One article row of the demonstration receipt.
+     *
+     * @param label the article's wording
+     * @param ean the article's code
+     * @param family the article's family
+     * @param quantity the quantity sold, already written
+     * @param unitPrice the tax-included unit price, already written
+     * @param unitExcludingTax the tax-excluded unit price, already written
+     * @param total the line total, already written
+     * @param discountLabel the wording of the line's modification, empty for none
+     * @param discount what that modification took off, empty for none
+     * @return the demonstration row
+     */
+    private Map<String, Object> sampleSaleLine(String label, String ean, String family,
+            String quantity, String unitPrice, String unitExcludingTax, String total,
+            String discountLabel, String discount) {
+        Map<String, Object> line = new java.util.LinkedHashMap<>();
+        line.put("label", label);
+        line.put("ean", ean);
+        line.put("family", family);
+        line.put("unit", "");
+        line.put("quantity", quantity);
+        line.put("unitPrice", unitPrice);
+        line.put("unitExcludingTax", unitExcludingTax);
+        line.put("total", total);
+        line.put("vatRate", "0.055");
+        line.put("discountLabel", discountLabel);
+        line.put("discount", discount);
+        return line;
+    }
+
+    /**
+     * The ARTICLE ROWS of the demonstration invoice (BO-03-03-03).
+     *
+     * <p>Not the receipt's: an invoice row names the article's attributes and
+     * both unit prices, and carries neither family nor unit.
+     *
+     * @return the demonstration invoice rows
+     */
+    private List<Map<String, Object>> sampleInvoiceLines() {
+        return List.of(
+                Map.of("label", "LAIT DEMI-ECREME 1L", "attributes", "Famille : CREMERIE",
+                        "ean", "3250390000013", "quantity", "2", "vatRate", "5,50 %",
+                        "unitExcludingTax", "1,0900", "unitIncludingTax", "1,15",
+                        "total", "2,30"),
+                Map.of("label", "PAIN COMPLET 500G", "attributes", "Famille : BOULANGERIE",
+                        "ean", "3250390000020", "quantity", "1", "vatRate", "5,50 %",
+                        "unitExcludingTax", "2,1800", "unitIncludingTax", "2,30",
+                        "total", "2,30"));
+    }
+
+    /**
+     * The DOCUMENT block of the demonstration invoice (BO-03-03-02).
+     *
+     * @return the demonstration values, the due date of BO-02-04-08 included
+     */
+    private Map<String, Object> sampleInvoiceDocument() {
+        Map<String, Object> document = new java.util.LinkedHashMap<>();
+        document.put("title", "FACTURE");
+        document.put("number", "C04-F000042");
+        document.put("issueDate", "15/09/2026");
+        document.put("saleDate", "15/09/2026");
+        document.put("ticketNumber", "C04-000123");
+        document.put("duplicate", false);
+        document.put("duplicateNumber", "0");
+        document.put("dueDate", "15/10/2026");
+        document.put("legalFooter", "");
+        document.put("legalMentions", "");
+        document.put("logo", "");
+        // BO-03-03-02: the order number typed at the register, and the address
+        // the foot of the document carries (BO-03-05-08).
+        document.put("orderNumber", "CMD-2026-0187");
+        document.put("dueOnReceipt", false);
+        document.put("footerUrl", "https://www.intermarche.com");
+        return document;
+    }
+
+    /**
+     * The SELLER of the demonstration invoice, as a party.
+     *
+     * @return the demonstration seller
+     */
+    private Map<String, Object> sampleSeller() {
+        return Map.of("name", "INTERMARCHE VAUCRESSON",
+                "legalName", "ITM VAUCRESSON SAS", "contact", "",
+                "city", "VAUCRESSON",
+                "addressLines", List.of("15 RUE DE LA GARE", "92420 VAUCRESSON"),
+                "phone", "", "fax", "", "siret", "12345678900012",
+                "vatNumber", "FR00123456789", "accountNumber", "");
+    }
+
+    /**
+     * The ADDRESSEE of the demonstration invoice, as a party.
+     *
+     * @return the demonstration customer, carrying the tax id only an addressee
+     *         has (BO-10-04-15/-16)
+     */
+    private Map<String, Object> sampleCustomer() {
+        return Map.of("name", "SARL DUPONT",
+                "legalName", "SARL DUPONT", "contact", "",
+                "addressLines", List.of("3 RUE DES LILAS", "92100 BOULOGNE"),
+                "phone", "", "fax", "", "siret", "98765432100011",
+                "vatNumber", "", "accountNumber", "C000123",
+                "taxId", "");
     }
 
     /**
@@ -717,6 +919,7 @@ public class DocumentTemplateService {
                     ---
                     Caisse {terminal}  {date} {time}
                     Ticket {document.number}
+                    {#if document.taxIdLabel}NIF : {document.taxIdLabel}{/if}
                     ---
                     {#for line in lines}
                     {line.label}
@@ -732,6 +935,7 @@ public class DocumentTemplateService {
                     {/for}
                     ---
                     Merci de votre visite
+                    {document.identificationCode}
                     """;
             case REFUND_RECEIPT -> """
                     {store.name}
@@ -760,10 +964,11 @@ public class DocumentTemplateService {
                     {#for address in customer.addressLines}
                     {address}
                     {/for}
+                    Echeance {document.dueDate}
                     ---
                     {#for line in lines}
                     {line.label}
-                      {line.quantity} x {line.unitPrice}   {line.total}
+                      {line.quantity} x {line.unitIncludingTax}   {line.total}
                     {/for}
                     ---
                     TOTAL HT   {totals.excludingTax}
@@ -782,7 +987,8 @@ public class DocumentTemplateService {
                       .parties { display: flex; gap: 60px; margin-top: 24px; }
                     </style></head><body>
                     <h1>{document.title} {document.number}</h1>
-                    <p>Du {document.issueDate} — ticket {document.ticketNumber}</p>
+                    <p>Du {document.issueDate} — ticket {document.ticketNumber}
+                       — echeance {document.dueDate}</p>
                     <div class="parties">
                       <div><b>{seller.legalName}</b>
                         {#for address in seller.addressLines}<br>{address}{/for}
@@ -795,7 +1001,8 @@ public class DocumentTemplateService {
                           <th class="num">PU</th><th class="num">Total</th></tr>
                       {#for line in lines}
                       <tr><td>{line.label}</td><td class="num">{line.quantity}</td>
-                          <td class="num">{line.unitPrice}</td><td class="num">{line.total}</td></tr>
+                          <td class="num">{line.unitIncludingTax}</td>
+                          <td class="num">{line.total}</td></tr>
                       {/for}
                     </table>
                     <p>Total HT {totals.excludingTax} — TVA {totals.vat}
@@ -873,7 +1080,7 @@ public class DocumentTemplateService {
                     {fmt.rule()}
                     {#for line in lines}
                     {line.label}
-                      {line.quantity} x {line.unitPrice}   {line.total}
+                      {line.quantity} x {line.unitIncludingTax}   {line.total}
                     {/for}
                     {fmt.rule()}
                     {fmt.line("TOTAL", totals.includingTax)}
@@ -917,6 +1124,15 @@ public class DocumentTemplateService {
                     {fmt.line("DATE", date)}
                     {fmt.line("HEURE", time)}
                     {fmt.rule()}
+                    """;
+            case PARKED_TICKET -> """
+                    {fmt.centre(document.title)}
+                    {fmt.centre(document.barcodeNumber)}
+                    {document.barcode}
+                    {fmt.rule()}
+                    {fmt.line("IMPRIME LE", document.printDate)}
+                    {fmt.line("TICKET", document.number)}
+                    {fmt.line("TOTAL", totals.includingTax)}
                     """;
             case PARKED_TICKET_RESUME -> """
                     {fmt.centre("TICKET DE REPRISE")}

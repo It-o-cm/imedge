@@ -7,95 +7,95 @@
 !}
 {#include admin-layout}
 
-{#title}Point de vente{/title}
+{#title}{inject:i18n.get('t.point-de-vente')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Point de vente</h1>
-        <p class="page-sub">Informations administratives du point de vente de ce nœud.</p>
+        <h1>{inject:i18n.get('t.point-de-vente')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.informations-administratives-du-point-de-vente-d')}</p>
     </div>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 {#if store}
 <form method="post" action="/admin/store">
     <div class="card">
-        <h2 class="card-title">Identification</h2>
+        <h2 class="card-title">{inject:i18n.get('t.identification')}</h2>
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="f-code">N° Point De Vente</label>
+                <label class="field-label" for="f-code">{inject:i18n.get('t.n-point-de-vente')}</label>
                 <input class="input-control" id="f-code" type="text" value="{store.code}" disabled>
-                <span class="field-hint">Non modifiable depuis cet écran.</span>
+                <span class="field-hint">{inject:i18n.get('t.non-modifiable-depuis-cet-ecran')}</span>
             </div>
             <div class="field">
-                <label class="field-label" for="f-name">Nom magasin</label>
+                <label class="field-label" for="f-name">{inject:i18n.get('t.nom-magasin')}</label>
                 <input class="input-control" id="f-name" type="text" name="name" value="{store.name}" maxlength="120" required>
             </div>
         </div>
     </div>
 
     <div class="card">
-        <h2 class="card-title">Adresse</h2>
+        <h2 class="card-title">{inject:i18n.get('t.adresse')}</h2>
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="f-street1">Adresse</label>
+                <label class="field-label" for="f-street1">{inject:i18n.get('t.adresse')}</label>
                 <input class="input-control" id="f-street1" type="text" name="streetLine1" value="{store.address.streetLine1}" maxlength="120">
             </div>
             <div class="field">
-                <label class="field-label" for="f-street2">Complément d'adresse</label>
+                <label class="field-label" for="f-street2">{inject:i18n.get('t.complement-d-adresse')}</label>
                 <input class="input-control" id="f-street2" type="text" name="streetLine2" value="{store.address.streetLine2}" maxlength="120">
             </div>
             <div class="field">
-                <label class="field-label" for="f-postal">Code postal</label>
+                <label class="field-label" for="f-postal">{inject:i18n.get('t.code-postal')}</label>
                 <input class="input-control" id="f-postal" type="text" name="postalCode" value="{store.address.postalCode}" maxlength="20">
             </div>
             <div class="field">
-                <label class="field-label" for="f-city">Ville</label>
+                <label class="field-label" for="f-city">{inject:i18n.get('t.ville')}</label>
                 <input class="input-control" id="f-city" type="text" name="city" value="{store.address.city}" maxlength="80">
             </div>
             <div class="field">
-                <label class="field-label" for="f-country">Pays</label>
+                <label class="field-label" for="f-country">{inject:i18n.get('t.pays')}</label>
                 <input class="input-control" id="f-country" type="text" name="country" value="{store.address.country}" maxlength="80">
             </div>
         </div>
     </div>
 
     <div class="card">
-        <h2 class="card-title">Administratif</h2>
+        <h2 class="card-title">{inject:i18n.get('t.administratif')}</h2>
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="f-vat">Numéro TVA intracommunautaire</label>
+                <label class="field-label" for="f-vat">{inject:i18n.get('t.numero-tva-intracommunautaire')}</label>
                 <input class="input-control" id="f-vat" type="text" name="vatNumber" value="{store.vatNumber}" maxlength="32">
             </div>
             <div class="field">
-                <label class="field-label" for="f-siret">N° Siret</label>
+                <label class="field-label" for="f-siret">{inject:i18n.get('t.n-siret')}</label>
                 <input class="input-control" id="f-siret" type="text" name="siret" value="{store.siret}" maxlength="32">
             </div>
             <div class="field">
-                <label class="field-label" for="f-phone">N° téléphone</label>
+                <label class="field-label" for="f-phone">{inject:i18n.get('t.n-telephone')}</label>
                 <input class="input-control" id="f-phone" type="text" name="phone" value="{store.phone}" maxlength="32">
             </div>
             <div class="field">
-                <label class="field-label" for="f-bank">N° compte (chèque)</label>
+                <label class="field-label" for="f-bank">{inject:i18n.get('t.n-compte-cheque')}</label>
                 <input class="input-control" id="f-bank" type="text" name="bankAccountNumber" value="{store.bankAccountNumber}" maxlength="64">
             </div>
         </div>
     </div>
 
     <div class="page-actions" style="margin-top: 6px;">
-        <button class="btn btn-primary" type="submit">Enregistrer</button>
-        <a class="btn btn-ghost" href="/admin/store">Annuler</a>
+        <button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer')}</button>
+        <a class="btn btn-ghost" href="/admin/store">{inject:i18n.get('t.annuler')}</a>
     </div>
 </form>
 {#else}
 <div class="card">
-    <p>Aucun point de vente n'est encore configuré sur ce nœud. Importez-le via <code>/feeds/import/STORES</code> avant de renseigner ses informations.</p>
+    <p>{inject:i18n.get('t.aucun-point-de-vente-n-est-encore')} <code>{inject:i18n.get('t.feeds-import-stores')}</code> {inject:i18n.get('t.avant-de-renseigner-ses-informations')}</p>
 </div>
 {/if}
 {/body}
 
-{#footer}Ces informations restent locales à ce nœud : le point de vente est en dehors du tirage référentiel.{/footer}
+{#footer}{inject:i18n.get('t.ces-informations-restent-locales-a-ce-nud')}{/footer}

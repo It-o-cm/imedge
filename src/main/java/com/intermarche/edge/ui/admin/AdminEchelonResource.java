@@ -1,15 +1,20 @@
 package com.intermarche.edge.ui.admin;
 
+import io.quarkus.security.Authenticated;
+import com.intermarche.edge.security.FeatureAccess;
+import com.intermarche.edge.domain.setting.Feature;
+import com.intermarche.edge.domain.people.CrudOption;
 import com.intermarche.edge.domain.store.Country;
 import com.intermarche.edge.domain.setting.EchelonLevel;
 import com.intermarche.edge.domain.store.Enseigne;
 import com.intermarche.edge.domain.store.Pdv;
+import com.intermarche.edge.domain.store.PdvHistory;
 import com.intermarche.edge.service.EchelonSettingService;
+import com.intermarche.edge.service.PdvRegistryService;
 import com.intermarche.edge.service.PosSettingsService;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
@@ -44,7 +49,7 @@ import org.jboss.logging.Logger;
  * enseigne default (BO-03-12-07).
  * <p>
  * Same admin cycle as the other back-office pages: POST &rarr; 303 &rarr; a
- * one-shot notice, {@code @RolesAllowed("ADMIN")} throughout.
+ * one-shot notice, {@code @FeatureAccess} throughout (BO-01-04-01).
  */
 @Path("/admin/echelons")
 public class AdminEchelonResource {
@@ -61,22 +66,35 @@ public class AdminEchelonResource {
     @Inject
     EchelonSettingService echelonSettings;
 
+    /** The registry every point-of-sale write goes through (BO-02-05-01/02/05). */
+    @Inject
+    PdvRegistryService pdvRegistry;
+
+    /** What a point of sale receives down the referential pull (BO-02-05-04). */
+    @Inject
+    com.intermarche.edge.service.sync.store.RefExportService refExportService;
+
     /**
-     * Shows the echelons page: the tree, the parameter catalog and, when a key
-     * and an enseigne are selected, the personalisation view.
+     * Shows the echelons page: the tree, the parameter catalog, the values
+     * programmed for a later day (current and pending, BO-03-12-03) and, when a
+     * key and an enseigne are selected, the personalisation view.
      *
      * @param notice the one-shot outcome message, or null
      * @param noticeOk whether the message reports a success
      * @param viewEnseigne the enseigne code of the personalisation view, or null
      * @param viewKey the catalog key of the personalisation view, or null
+     * @param viewPdv the point of sale of the inheritance view, or null
      * @return the page
      */
     @GET
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.ECHELON)
+    @Transactional
     public TemplateInstance echelonsPage(@QueryParam("notice") String notice,
                                          @QueryParam("noticeOk") @DefaultValue("true") boolean noticeOk,
                                          @QueryParam("viewEnseigne") String viewEnseigne,
-                                         @QueryParam("viewKey") String viewKey) {
+                                         @QueryParam("viewKey") String viewKey,
+                                         @QueryParam("viewPdv") String viewPdv) {
         LOGGER.info("Entering method echelonsPage with notice: " + notice + ", noticeOk: " + noticeOk + ", viewEnseigne: " + viewEnseigne + ", viewKey: " + viewKey);
         List<Pdv> personalised;
         if (viewEnseigne != null && !viewEnseigne.isBlank() && viewKey != null && !viewKey.isBlank()) {
@@ -84,15 +102,30 @@ public class AdminEchelonResource {
         } else {
             personalised = List.of();
         }
+        List<Pdv> pdvs = Pdv.listAllOrdered();
+        Pdv viewed = viewPdv == null || viewPdv.isBlank() ? null : Pdv.findByNumber(viewPdv.trim());
         LOGGER.info("Exiting method echelonsPage");
         return adminEchelons.data("countries", Country.listAllOrdered())
                 .data("enseignes", Enseigne.listAllOrdered())
-                .data("pdvs", Pdv.listAllOrdered())
+                .data("pdvs", pdvs)
+                .data("adherents", adherents(pdvs))
+                .data("viewPdv", viewPdv == null ? "" : viewPdv.trim())
+                .data("viewed", viewed)
+                .data("history", viewed == null ? List.of() : PdvHistory.listForPdv(viewed.id))
+                .data("inherited", viewed == null ? List.of() : echelonSettings.inheritedFor(viewed.pdvNumber))
+                .data("inheritedVat", viewed == null ? List.of() : refExportService.vatRatesFor(viewed.pdvNumber))
+                .data("inheritedTemplates", viewed == null ? List.of()
+                        : refExportService.templatesFor(viewed.pdvNumber))
+                .data("inheritedAccounts", viewed == null ? List.of()
+                        : inForce(refExportService.bindingsFor(viewed.pdvNumber),
+                                com.intermarche.edge.domain.store.NodeEchelon.of(viewed.pdvNumber)))
                 .data("keys", PosSettingsService.CATALOG)
                 .data("closedValues", closedValuesJson())
+                .data("secretKeys", secretKeysJson())
                 .data("viewEnseigne", viewEnseigne)
                 .data("viewKey", viewKey)
                 .data("personalised", personalised)
+                .data("programmed", echelonSettings.programmed())
                 .data("notice", notice)
                 .data("noticeOk", noticeOk);
     }
@@ -105,7 +138,8 @@ public class AdminEchelonResource {
      */
     @POST
     @Path("/country")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.ECHELON, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response saveCountry(MultivaluedMap<String, String> form) {
@@ -116,13 +150,18 @@ public class AdminEchelonResource {
             return redirect("Le code pays est obligatoire.", false);
         }
         Country country = Country.findByCode(code);
-        if (country == null) {
+        boolean created = country == null;
+        if (created) {
             country = new Country();
             country.code = code;
-            country.persist();
         }
         country.name = trimmed(form, "name");
         country.defaultLanguage = blankToNull(trimmed(form, "defaultLanguage"));
+        if (created) {
+            // Persisted once filled: the identity insert runs at persist, and
+            // the name column refuses null (a new country used to answer 500).
+            country.persist();
+        }
         LOGGER.info("Exiting method saveCountry");
         return redirect("Pays enregistré.", true);
     }
@@ -135,7 +174,8 @@ public class AdminEchelonResource {
      */
     @POST
     @Path("/enseigne")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.ECHELON, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response saveEnseigne(MultivaluedMap<String, String> form) {
@@ -146,14 +186,18 @@ public class AdminEchelonResource {
             return redirect("Le code enseigne est obligatoire.", false);
         }
         Enseigne enseigne = Enseigne.findByCode(code);
-        if (enseigne == null) {
+        boolean created = enseigne == null;
+        if (created) {
             enseigne = new Enseigne();
             enseigne.code = code;
-            enseigne.persist();
         }
         enseigne.name = trimmed(form, "name");
         enseigne.countryCode = blankToNull(trimmed(form, "countryCode"));
         enseigne.defaultLanguage = blankToNull(trimmed(form, "defaultLanguage"));
+        if (created) {
+            // Persisted once filled: the name column refuses null at the insert.
+            enseigne.persist();
+        }
         LOGGER.info("Exiting method saveEnseigne");
         return redirect("Enseigne enregistrée.", true);
     }
@@ -169,46 +213,18 @@ public class AdminEchelonResource {
      */
     @POST
     @Path("/pdv")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.ECHELON, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response savePdv(MultivaluedMap<String, String> form) {
         LOGGER.info("Entering method savePdv with form: " + form);
-        String number = trimmed(form, "pdvNumber");
-        if (!Pdv.isValidNumber(number)) {
-            LOGGER.info("Exiting method savePdv");
-            return redirect("Le numéro de PDV doit comporter exactement 5 chiffres.", false);
-        }
-        String original = trimmed(form, "originalNumber");
-        Pdv pdv;
-        if (!original.isEmpty() && !original.equals(number)) {
-            pdv = Pdv.findByNumber(original);
-            if (pdv == null) {
-                LOGGER.info("Exiting method savePdv");
-                return redirect("PDV à renommer introuvable.", false);
-            }
-            if (Pdv.findByNumber(number) != null) {
-                LOGGER.info("Exiting method savePdv");
-                return redirect("Ce numéro de PDV est déjà utilisé.", false);
-            }
-            pdv.pdvNumber = number;
-            // BO-02-05-01: carry the echelon settings posed at this PDV over to
-            // its new number, or the rename would orphan them.
-            echelonSettings.migratePdv(original, number);
-        } else {
-            pdv = Pdv.findByNumber(number);
-            if (pdv == null) {
-                pdv = new Pdv();
-                pdv.pdvNumber = number;
-                pdv.persist();
-            }
-        }
-        pdv.name = trimmed(form, "name");
-        pdv.enseigneCode = blankToNull(trimmed(form, "enseigneCode"));
-        pdv.adherentCode = blankToNull(trimmed(form, "adherentCode"));
-        pdv.active = form.getFirst("active") != null;
+        PdvRegistryService.Result result = pdvRegistry.save(trimmed(form, "pdvNumber"),
+                trimmed(form, "originalNumber"), trimmed(form, "name"),
+                blankToNull(trimmed(form, "enseigneCode")), blankToNull(trimmed(form, "adherentCode")),
+                form.getFirst("active") != null, PdvHistory.Source.SCREEN);
         LOGGER.info("Exiting method savePdv");
-        return redirect("Point de vente enregistré.", true);
+        return redirect(result.message(), result.ok());
     }
 
     /**
@@ -221,7 +237,8 @@ public class AdminEchelonResource {
      */
     @POST
     @Path("/setting")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.ECHELON, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     public Response saveSetting(MultivaluedMap<String, String> form) {
         LOGGER.info("Entering method saveSetting with form: " + form);
@@ -270,7 +287,8 @@ public class AdminEchelonResource {
      */
     @POST
     @Path("/setting/clear")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.ECHELON, option = CrudOption.DELETE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     public Response clearSetting(MultivaluedMap<String, String> form) {
         LOGGER.info("Entering method clearSetting with form: " + form);
@@ -291,33 +309,56 @@ public class AdminEchelonResource {
     }
 
     /**
+     * Groups the points of sale by the adhérent operating them (BO-02-05-05):
+     * the regrouping view of the organisation by adhérent, the points of sale
+     * attached to none left out.
+     *
+     * @param pdvs every point of sale, by number
+     * @return one entry per adhérent, by code, each listing its points of sale
+     */
+    static Map<String, List<Pdv>> adherents(List<Pdv> pdvs) {
+        Map<String, List<Pdv>> grouped = new java.util.TreeMap<>();
+        for (Pdv pdv : pdvs) {
+            if (pdv.adherentCode != null) {
+                grouped.computeIfAbsent(pdv.adherentCode, code -> new java.util.ArrayList<>()).add(pdv);
+            }
+        }
+        return grouped;
+    }
+
+    /**
      * Serialises the closed value sets as the JSON the page's script reads to
      * turn the value field into a list when the chosen key is a closed set.
      *
      * <p>Built here rather than assembled in the template, where a comma
      * between two loops is one edit away from a broken page. No escaping: the
      * keys and the values are CONSTANTS of the catalogue — letters, digits,
-     * dots, dashes and the empty string — and a value needing to be escaped
-     * would be a mistake in the catalogue before being one here.
+     * dots, dashes and the empty string — written by the JSON library all the
+     * same, so no value can break the page's script.
      *
      * @return the JSON object, key to array of allowed values
      */
     private String closedValuesJson() {
-        StringBuilder json = new StringBuilder("{");
+        com.fasterxml.jackson.databind.node.ObjectNode json =
+                com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode();
         for (Map.Entry<String, List<String>> closed : PosSettingsService.CLOSED_VALUES.entrySet()) {
-            if (json.length() > 1) {
-                json.append(',');
-            }
-            json.append('"').append(closed.getKey()).append("\":[");
-            for (int i = 0; i < closed.getValue().size(); i++) {
-                if (i > 0) {
-                    json.append(',');
-                }
-                json.append('"').append(closed.getValue().get(i)).append('"');
-            }
-            json.append(']');
+            closed.getValue().forEach(json.putArray(closed.getKey())::add);
         }
-        return json.append('}').toString();
+        return json.toString();
+    }
+
+    /**
+     * Serialises the SECRET keys of the catalogue (BO-10-03-08) as the JSON
+     * array the page's script reads to mask the value field while one of them
+     * is chosen. Constants of the catalogue, written by the JSON library.
+     *
+     * @return the JSON array of secret keys, sorted
+     */
+    private String secretKeysJson() {
+        com.fasterxml.jackson.databind.node.ArrayNode json =
+                com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.arrayNode();
+        PosSettingsService.SECRET_KEYS.stream().sorted().forEach(json::add);
+        return json.toString();
     }
 
     /**
@@ -368,5 +409,25 @@ public class AdminEchelonResource {
         String target = "/admin/echelons?noticeOk=" + ok + "&notice="
                 + URLEncoder.encode(notice, StandardCharsets.UTF_8);
         return Response.seeOther(URI.create(target)).build();
+    }
+
+    /**
+     * The profile bindings a point of sale really receives (BO-02-05-02,
+     * BO-02-05-04): an account travels with all its bindings, each carrying
+     * its scope, and only those whose scope covers the point of sale — the
+     * whole organisation, its country, its enseigne or itself — are in force
+     * there; a binding scoped to another enseigne is not inherited.
+     *
+     * @param bindings the bindings of the accounts the point of sale receives
+     * @param node the point of sale's place in the organisation
+     * @return the bindings in force on that point of sale, in their order
+     */
+    static List<com.intermarche.edge.service.sync.RefPayloads.AccountProfileDto> inForce(
+            List<com.intermarche.edge.service.sync.RefPayloads.AccountProfileDto> bindings,
+            com.intermarche.edge.domain.store.NodeEchelon node) {
+        return bindings.stream()
+                .filter(binding -> com.intermarche.edge.domain.people.EchelonScope.admitsNode(
+                        java.util.Arrays.asList(binding.echelonScope), node))
+                .toList();
     }
 }

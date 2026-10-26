@@ -1,178 +1,166 @@
 package com.intermarche.edge.ui.report;
 
-import com.intermarche.edge.domain.sale.Ticket;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.TypedQuery;
+import com.intermarche.edge.domain.sale.SalesChannel;
+import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
+import java.util.Map;
 
+import static com.intermarche.edge.ui.report.QueryStub.row;
+import static com.intermarche.edge.ui.report.QueryStub.rows;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.contains;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.mockStatic;
 
 /**
  * Unit tests for {@link FamilySalesReport}.
  * <p>
- * The report runs two JPQL grouping queries on a mocked {@link EntityManager} —
- * one for the sold lines, one for the cancelled ones — then folds each sold row
- * into a display row, joining its cancellation figures by family code. Every
- * collaborator is a Mockito mock, query results are fed as raw {@code Object[]}
- * rows and assertions bear absolute expected values. The tests cover both arms
- * of every ternary of {@code rows()} (null code, null label, null amount, null
- * quantity, zero lines, present/absent/amount-less cancellation), the two arms
- * of the {@code share()} guard, the descending sort, the empty-result and
- * empty-grouping cases, and the constant metadata methods.
+ * The report reads the sold lines, the coupons and the cancelled lines through
+ * a {@link QueryStub}, and the rayons through a stubbed nomenclature. Branches
+ * covered: a line outside the hours; a return line; an e-commerce line; the
+ * listed price from the original price, from the unit price when the original
+ * is null or zero; a discount above and below a cent; a ticket with a coupon,
+ * without, and with a zero total; a family without code; a label kept, filled
+ * later, absent; a cancellation inside and outside the hours; a family known
+ * only by its cancellations (no customer, zero shares); the null decimals.
  */
 class FamilySalesReportTest {
 
+    /** A moment inside the period. */
+    private static final LocalDateTime AT = LocalDateTime.of(2026, 10, 20, 10, 0);
+
     /**
-     * Creates a fresh {@link TypedQuery} mock, confining the unchecked cast to
-     * a single suppression point.
+     * Builds a sold line.
      *
-     * @param <T> the query result type
-     * @return a bare typed-query mock
+     * @param ticket the ticket id
+     * @param when the closing moment
+     * @param channel the channel
+     * @param family the family code
+     * @param label the family label
+     * @param total the line total
+     * @param quantity the quantity
+     * @param unit the unit price
+     * @param original the original unit price
+     * @param returned whether it is a return line
+     * @return the line
      */
-    @SuppressWarnings("unchecked")
-    private <T> TypedQuery<T> typedQueryMock() {
-        return mock(TypedQuery.class);
+    private Object[] line(long ticket, LocalDateTime when, SalesChannel channel, String family, String label,
+                          String total, String quantity, String unit, String original, boolean returned) {
+        return row(ticket, when, channel, family, label, total == null ? null : new BigDecimal(total),
+                new BigDecimal(quantity), new BigDecimal(unit), original == null ? null : new BigDecimal(original),
+                returned, new BigDecimal("0.20"));
     }
 
     /**
-     * Builds a {@link FamilySalesReport} whose entity-manager field routes the
-     * sold-lines query to {@code sold} and the cancelled-lines query to
-     * {@code cancelled}, each returning itself from any {@code setParameter}.
+     * Runs the report over the stub, the nomenclature labelling its nodes.
      *
-     * @param sold the rows the sold-lines query returns
-     * @param cancelled the rows the cancelled-lines query returns
-     * @return a report ready under test
+     * @param stub the query stub
+     * @param criteria the edition parameters
+     * @return the rows
      */
-    private FamilySalesReport reportWith(List<Object[]> sold, List<Object[]> cancelled) {
-        EntityManager entityManager = mock(EntityManager.class);
-        TypedQuery<Object[]> soldQuery = typedQueryMock();
-        when(entityManager.createQuery(contains("l.familyLabel"), eq(Object[].class))).thenReturn(soldQuery);
-        when(soldQuery.setParameter(anyString(), any())).thenReturn(soldQuery);
-        when(soldQuery.getResultList()).thenReturn(sold);
-        TypedQuery<Object[]> cancelledQuery = typedQueryMock();
-        when(entityManager.createQuery(contains("l.cancellationDate"), eq(Object[].class))).thenReturn(cancelledQuery);
-        when(cancelledQuery.setParameter(anyString(), any())).thenReturn(cancelledQuery);
-        when(cancelledQuery.getResultList()).thenReturn(cancelled);
+    private List<List<Object>> run(QueryStub stub, ReportCriteria criteria) {
         FamilySalesReport report = new FamilySalesReport();
-        report.entityManager = entityManager;
-        return report;
+        report.entityManager = stub.entityManager;
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            NomenclatureFixture.scheme(panache, Map.of("1002", "BOUCHERIE", "2020", "CREMERIE"));
+            return report.rows(criteria);
+        }
     }
 
     /**
-     * With two families whose sold rows carry non-null values and a cancellation
-     * list holding a null-code line then an F1 line, {@code rows()} takes the
-     * non-null arm of every ternary, matches F1's cancellation by equality
-     * (finding null-code first and continuing), leaves F2 without a match, uses
-     * the divide arm of the average and the non-zero arm of the share, and
-     * sorts the two rows by descending net sales.
+     * The figures of a family: sales, returns, discounts, gross sales, coupons
+     * apportioned, e-commerce, customers and the shares read against the rayon.
      */
     @Test
-    void rowsPopulatedMatchedAndSorted() {
-        List<Object[]> sold = List.of(
-                new Object[]{"F1", "Fruits", new BigDecimal("40.00"), 4L, 8L},
-                new Object[]{"F2", "Légumes", new BigDecimal("60.00"), 3L, 6L});
-        List<Object[]> cancelled = List.of(
-                new Object[]{null, 9L, new BigDecimal("9.00")},
-                new Object[]{"F1", 2L, new BigDecimal("5.00")});
-        FamilySalesReport report = reportWith(sold, cancelled);
-        List<List<Object>> rows = report.rows(new ReportCriteria());
+    void theFamilyFiguresAreReadAgainstTheirRayon() {
+        QueryStub stub = new QueryStub()
+                .answer("type(p) = :voucher", rows(row(1L, new BigDecimal("12.00"), new BigDecimal("120.00")),
+                        row(3L, null, BigDecimal.ZERO)))
+                .answer("l.cancelled = false", rows(
+                        line(1, AT, SalesChannel.STORE, "10020200", "Bovin", "100.00", "2", "60.00", null, false),
+                        line(1, AT, SalesChannel.STORE, "10020200", null, "20.00", "1", "20.00", "0", false),
+                        line(2, AT, SalesChannel.ECOMMERCE, "10020400", "Porc", "50.00", "1", "50.00", "60.00", false),
+                        line(2, AT, SalesChannel.STORE, "10020400", "Porc", "-10.00", "-1", "10.00", null, true),
+                        line(3, AT, SalesChannel.STORE, "10020400", "Porc", "30.00", "1", "30.00", "30.004", false)))
+                .answer("l.cancelled = true", rows());
+        List<List<Object>> rows = run(stub, new ReportCriteria());
         assertEquals(2, rows.size());
-        List<Object> first = rows.get(0);
-        assertEquals("F2", first.get(0));
-        assertEquals("Légumes", first.get(1));
-        assertEquals(new BigDecimal("60.00"), first.get(2));
-        assertEquals(new BigDecimal("60.0"), first.get(3));
-        assertEquals(3L, first.get(4));
-        assertEquals(6L, first.get(5));
-        assertEquals(new BigDecimal("20.00"), first.get(6));
-        assertEquals(0L, first.get(7));
-        assertEquals(BigDecimal.ZERO, first.get(8));
-        List<Object> second = rows.get(1);
-        assertEquals("F1", second.get(0));
-        assertEquals("Fruits", second.get(1));
-        assertEquals(new BigDecimal("40.00"), second.get(2));
-        assertEquals(new BigDecimal("40.0"), second.get(3));
-        assertEquals(4L, second.get(4));
-        assertEquals(8L, second.get(5));
-        assertEquals(new BigDecimal("10.00"), second.get(6));
-        assertEquals(2L, second.get(7));
-        assertEquals(new BigDecimal("5.00"), second.get(8));
+        List<Object> bovin = rows.get(0);
+        assertEquals("1002", bovin.get(0));
+        assertEquals("BOUCHERIE", bovin.get(1));
+        assertEquals("10020200", bovin.get(2));
+        assertEquals("Bovin", bovin.get(3));
+        assertEquals(new BigDecimal("120.00"), bovin.get(4));
+        assertEquals(new BigDecimal("63.2"), bovin.get(5));
+        assertEquals(2L, bovin.get(6));
+        assertEquals(new BigDecimal("120.00"), bovin.get(7));
+        assertEquals(new BigDecimal("20.00"), bovin.get(8));
+        assertEquals(1L, bovin.get(9));
+        assertEquals(new BigDecimal("120.00"), bovin.get(10));
+        assertEquals(BigDecimal.ZERO, bovin.get(11));
+        assertEquals(0L, bovin.get(12));
+        assertEquals(new BigDecimal("140.00"), bovin.get(15));
+        assertEquals(new BigDecimal("12.00"), bovin.get(16));
+        assertEquals(new BigDecimal("10.00"), bovin.get(17));
+        assertEquals(BigDecimal.ZERO, bovin.get(18));
+        assertEquals(1L, bovin.get(19));
+        assertEquals(new BigDecimal("33.3"), bovin.get(20));
+        List<Object> porc = rows.get(1);
+        assertEquals("Porc", porc.get(3));
+        assertEquals(new BigDecimal("70.00"), porc.get(4));
+        assertEquals(new BigDecimal("10.00"), porc.get(11));
+        assertEquals(1L, porc.get(12));
+        assertEquals(new BigDecimal("10.00"), porc.get(8));
+        assertEquals(new BigDecimal("50.00"), porc.get(18));
+        assertEquals(2L, porc.get(19));
+        assertEquals(new BigDecimal("35.00"), porc.get(7));
+        assertEquals(BigDecimal.ZERO, porc.get(16));
     }
 
     /**
-     * With a single sold row whose amount is null, {@code rows()} takes the null
-     * arm of the total accumulation and of the net ternary, yielding a zero net,
-     * and the zero-total arm of the share guard, yielding a zero share.
+     * The hours keep only their lines and cancellations; a family known by its
+     * cancellations alone has no customer and zero shares; a line without
+     * family is filed under a dash, its rayon a dash too.
      */
     @Test
-    void rowNullAmountGivesZeroNetAndShare() {
-        List<Object[]> sold = List.<Object[]>of(
-                new Object[]{"F1", "Fruits", null, 2L, 4L});
-        FamilySalesReport report = reportWith(sold, List.of());
-        List<List<Object>> rows = report.rows(new ReportCriteria());
-        assertEquals(1, rows.size());
-        List<Object> row = rows.get(0);
-        assertEquals("F1", row.get(0));
-        assertEquals(BigDecimal.ZERO, row.get(2));
-        assertEquals(BigDecimal.ZERO, row.get(3));
-        assertEquals(2L, row.get(4));
-        assertEquals(new BigDecimal("0.00"), row.get(6));
-        assertEquals(0L, row.get(7));
-        assertEquals(BigDecimal.ZERO, row.get(8));
+    void hoursCancellationsAndUnknownFamilies() {
+        QueryStub stub = new QueryStub()
+                .answer("l.cancelled = false", rows(
+                        line(1, AT, SalesChannel.STORE, null, null, null, "1", "5.00", null, false),
+                        line(2, AT.withHour(20), SalesChannel.STORE, "20200200", "Lait", "5.00", "1", "5.00", null, false)))
+                .answer("l.cancelled = true", rows(row("20200200", "Lait", AT, new BigDecimal("3.00")),
+                        row("20200200", "Lait", AT.withHour(21), new BigDecimal("4.00")),
+                        row("20220000", "Surgelés", AT, null)));
+        ReportCriteria criteria = new ReportCriteria();
+        criteria.hourTo = LocalTime.of(19, 0);
+        List<List<Object>> rows = run(stub, criteria);
+        assertEquals(3, rows.size());
+        assertEquals("2020", rows.get(0).get(0));
+        assertEquals("CREMERIE", rows.get(0).get(1));
+        assertEquals(1L, rows.get(0).get(14));
+        assertEquals(new BigDecimal("3.00"), rows.get(0).get(13));
+        assertEquals(0L, rows.get(0).get(19));
+        assertEquals(BigDecimal.ZERO, rows.get(0).get(7));
+        assertEquals(BigDecimal.ZERO, rows.get(0).get(5));
+        assertEquals(BigDecimal.ZERO, rows.get(0).get(20));
+        assertEquals("2022", rows.get(1).get(0));
+        assertEquals("", rows.get(1).get(1));
+        assertEquals(BigDecimal.ZERO, rows.get(1).get(13));
+        assertEquals("—", rows.get(2).get(0));
+        assertEquals("—", rows.get(2).get(2));
+        assertEquals("", rows.get(2).get(3));
+        assertEquals(1L, rows.get(2).get(19));
+        assertTrue(stub.asked("t.closingDate < :to and l.cancelled = false"));
     }
 
     /**
-     * With a sold row whose code, label and quantity are null and whose line
-     * count is zero, {@code rows()} takes the null arm of the code, label and
-     * quantity ternaries and the zero arm of the average ternary, and matches a
-     * null-code cancellation whose amount is null, taking the amount-less leg of
-     * the compound cancellation guard.
-     */
-    @Test
-    void rowNullCodeLabelQuantityAndZeroLines() {
-        List<Object[]> sold = List.<Object[]>of(
-                new Object[]{null, null, new BigDecimal("30.00"), 0L, null});
-        List<Object[]> cancelled = List.<Object[]>of(
-                new Object[]{null, 3L, null});
-        FamilySalesReport report = reportWith(sold, cancelled);
-        List<List<Object>> rows = report.rows(new ReportCriteria());
-        assertEquals(1, rows.size());
-        List<Object> row = rows.get(0);
-        assertEquals("—", row.get(0));
-        assertEquals("", row.get(1));
-        assertEquals(new BigDecimal("30.00"), row.get(2));
-        assertEquals(new BigDecimal("100.0"), row.get(3));
-        assertEquals(0L, row.get(4));
-        assertEquals(0L, row.get(5));
-        assertEquals(BigDecimal.ZERO, row.get(6));
-        assertEquals(3L, row.get(7));
-        assertEquals(BigDecimal.ZERO, row.get(8));
-    }
-
-    /**
-     * With no sold rows and no cancellations, {@code rows()} skips its folding
-     * loop entirely and returns an empty list, the zero-sales case.
-     */
-    @Test
-    void rowsEmptyResultIsEmptyList() {
-        FamilySalesReport report = reportWith(List.of(), List.of());
-        List<List<Object>> rows = report.rows(new ReportCriteria());
-        assertTrue(rows.isEmpty());
-    }
-
-    /**
-     * The metadata methods return their constant contract values, including the
-     * nine columns and the chart indices.
+     * The metadata: code, title, requirement, family, chart, break and filters,
+     * and the twenty-one columns of the requirement.
      */
     @Test
     void metadataIsConstant() {
@@ -181,18 +169,12 @@ class FamilySalesReportTest {
         assertEquals("État ventes par famille", report.label());
         assertEquals("BO-06-04-01", report.requirement());
         assertEquals(ReportFamily.SALES, report.family());
-        assertEquals(9, report.columns().size());
-        assertEquals("code", report.columns().get(0).key());
-        assertEquals(2, report.chartColumn());
-        assertEquals(1, report.chartLabelColumn());
-    }
-
-    /**
-     * Sanity anchor tying the sold-lines query to the CLOSED ticket status,
-     * proving the routed query is the sales query and not the cancellation one.
-     */
-    @Test
-    void closedStatusEnumIsReferenced() {
-        assertEquals("CLOSED", Ticket.TicketStatus.CLOSED.name());
+        assertEquals(4, report.chartColumn());
+        assertEquals(3, report.chartLabelColumn());
+        assertEquals("rayon", report.breakKey());
+        assertEquals(java.util.EnumSet.of(ReportFilter.TERMINALS, ReportFilter.ISLAND, ReportFilter.HOURS,
+                ReportFilter.ARTICLES), report.filters());
+        assertEquals(21, report.columns().size());
+        assertEquals("% clients du rayon", report.columns().get(20).label());
     }
 }

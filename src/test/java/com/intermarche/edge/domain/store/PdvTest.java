@@ -1,10 +1,16 @@
 package com.intermarche.edge.domain.store;
 
+import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
+
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.mockito.Mockito.mockStatic;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -88,5 +94,55 @@ class PdvTest {
         pdv.adherentCode = adherent;
         pdv.active = active;
         return pdv;
+    }
+
+    /**
+     * The two list finders delegate to Panache with their query and hand back
+     * what the store answers: {@code listByEnseigne} the PDVs of one enseigne
+     * ordered by number, {@code listAllOrdered} every PDV ordered by number.
+     */
+    @Test
+    void listFindersDelegateToPanache() {
+        List<Pdv> ofEnseigne = List.of(new Pdv());
+        List<Pdv> all = List.of(new Pdv(), new Pdv());
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> Pdv.list("enseigneCode = ?1 order by pdvNumber", "ITM")).thenReturn(ofEnseigne);
+            mocked.when(() -> Pdv.list("order by pdvNumber")).thenReturn(all);
+            assertSame(ofEnseigne, Pdv.listByEnseigne("ITM"));
+            assertSame(all, Pdv.listAllOrdered());
+        }
+    }
+    /**
+     * BO-02-05-05: the points of sale of one adhérent are listed by number, and
+     * the adhérent of a point of sale is read — none for a null number, an
+     * unknown point of sale or one attached to none.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void theAdherentFindersReadTheGrouping() {
+        Pdv operated = new Pdv();
+        operated.adherentCode = "AD1";
+        Pdv loose = new Pdv();
+        try (org.mockito.MockedStatic<io.quarkus.hibernate.orm.panache.PanacheEntityBase> panache =
+                     org.mockito.Mockito.mockStatic(io.quarkus.hibernate.orm.panache.PanacheEntityBase.class)) {
+            panache.when(() -> Pdv.list("adherentCode = ?1 order by pdvNumber", "AD1"))
+                    .thenReturn(java.util.List.of(operated));
+            assertEquals(java.util.List.of(operated), Pdv.listByAdherent("AD1"));
+            io.quarkus.hibernate.orm.panache.PanacheQuery<Pdv> one =
+                    org.mockito.Mockito.mock(io.quarkus.hibernate.orm.panache.PanacheQuery.class);
+            org.mockito.Mockito.when(one.firstResult()).thenReturn(operated);
+            io.quarkus.hibernate.orm.panache.PanacheQuery<Pdv> two =
+                    org.mockito.Mockito.mock(io.quarkus.hibernate.orm.panache.PanacheQuery.class);
+            org.mockito.Mockito.when(two.firstResult()).thenReturn(loose);
+            io.quarkus.hibernate.orm.panache.PanacheQuery<Pdv> none =
+                    org.mockito.Mockito.mock(io.quarkus.hibernate.orm.panache.PanacheQuery.class);
+            panache.when(() -> Pdv.find("pdvNumber", "10001")).thenReturn(one);
+            panache.when(() -> Pdv.find("pdvNumber", "10002")).thenReturn(two);
+            panache.when(() -> Pdv.find("pdvNumber", "10003")).thenReturn(none);
+            assertEquals("AD1", Pdv.adherentOf("10001"));
+            org.junit.jupiter.api.Assertions.assertNull(Pdv.adherentOf("10002"));
+            org.junit.jupiter.api.Assertions.assertNull(Pdv.adherentOf("10003"));
+            org.junit.jupiter.api.Assertions.assertNull(Pdv.adherentOf(null));
+        }
     }
 }

@@ -139,7 +139,7 @@ class SettlementReportTest {
             ms.when(() -> TenderDefinition.find("code", "CASH")).thenReturn(cashQuery);
             rows = reportWith(entityManager).rows(new ReportCriteria());
         }
-        assertEquals(3, rows.size());
+        assertEquals(2, rows.size());
         assertEquals(List.of("Carte bancaire", "CARD", "002", "Carte bancaire", 3L,
                 new BigDecimal("50.00")), rows.get(0));
         assertEquals(List.of("Espèces", "CASH", "001", "Espèces", 5L,
@@ -169,7 +169,7 @@ class SettlementReportTest {
             ms.when(() -> TenderDefinition.find("code", "CASH")).thenReturn(cashQuery);
             rows = reportWith(entityManager).rows(criteria);
         }
-        assertEquals(2, rows.size());
+        assertEquals(1, rows.size());
         assertEquals(List.of("Espèces", "CASH", "001", "Espèces", 2L, new BigDecimal("10.00")), rows.get(0));
         ArgumentCaptor<String> jpql = ArgumentCaptor.forClass(String.class);
         verify(entityManager).createQuery(jpql.capture(), eq(Object[].class));
@@ -194,7 +194,7 @@ class SettlementReportTest {
             ms.when(() -> TenderDefinition.find("code", "CASH")).thenReturn(cashQuery);
             rows = reportWith(entityManager).rows(new ReportCriteria());
         }
-        assertEquals(2, rows.size());
+        assertEquals(1, rows.size());
         assertEquals(List.of("Espèces", "CASH", "001", "Espèces", 4L, BigDecimal.ZERO), rows.get(0));
     }
 
@@ -218,8 +218,8 @@ class SettlementReportTest {
             ms.when(() -> TenderDefinition.find("code", "CASH")).thenReturn(cashQuery);
             rows = reportWith(entityManager).rows(new ReportCriteria());
         }
-        assertEquals(2, rows.size());
-        assertEquals(List.of("CASH", "CASH", "", "CASH", 1L, new BigDecimal("5.00")), rows.get(0));
+        assertEquals(1, rows.size());
+        assertEquals(List.of("Espèces", "CASH", "", "Espèces", 1L, new BigDecimal("5.00")), rows.get(0));
     }
 
     /**
@@ -241,8 +241,8 @@ class SettlementReportTest {
             ms.when(() -> TenderDefinition.find("code", "CASH")).thenReturn(cashQuery);
             rows = reportWith(entityManager).rows(new ReportCriteria());
         }
-        assertEquals(2, rows.size());
-        assertEquals(List.of("CASH", "CASH", "", "CASH", 1L, new BigDecimal("5.00")), rows.get(0));
+        assertEquals(1, rows.size());
+        assertEquals(List.of("Espèces", "CASH", "", "Espèces", 1L, new BigDecimal("5.00")), rows.get(0));
     }
 
     /**
@@ -263,8 +263,8 @@ class SettlementReportTest {
             ms.when(() -> TenderDefinition.find("code", "CASH")).thenReturn(cashQuery);
             rows = reportWith(entityManager).rows(new ReportCriteria());
         }
-        assertEquals(2, rows.size());
-        assertEquals(List.of("CASH", "CASH", "007", "CASH", 1L, new BigDecimal("5.00")), rows.get(0));
+        assertEquals(1, rows.size());
+        assertEquals(List.of("Espèces", "CASH", "007", "Espèces", 1L, new BigDecimal("5.00")), rows.get(0));
     }
 
     /**
@@ -297,7 +297,7 @@ class SettlementReportTest {
             ms.when(() -> TenderDefinition.find("code", "String")).thenReturn(unknownQuery);
             rows = reportWith(entityManager).rows(new ReportCriteria());
         }
-        assertEquals(2, rows.size());
+        assertEquals(1, rows.size());
         assertEquals(List.of("String", "String", "", "String", 1L, new BigDecimal("5.00")), rows.get(0));
     }
 
@@ -318,7 +318,7 @@ class SettlementReportTest {
             ms.when(() -> TenderDefinition.find("code", "mystery")).thenReturn(mysteryQuery);
             rows = reportWith(entityManager).rows(new ReportCriteria());
         }
-        assertEquals(2, rows.size());
+        assertEquals(1, rows.size());
         assertEquals(List.of("mystery", "mystery", "", "mystery", 1L, new BigDecimal("5.00")), rows.get(0));
     }
 
@@ -382,16 +382,15 @@ class SettlementReportTest {
             panache.when(() -> TenderDefinition.find("code", "CARD")).thenReturn(cardQuery);
             panache.when(() -> TenderDefinition.find("code", "CHEQUE")).thenReturn(chequeQuery);
             List<List<Object>> rows = reportWith(entityManager).rows(new ReportCriteria());
-            assertEquals(5, rows.size());
+            assertEquals(4, rows.size());
             assertEquals("Cartes", rows.get(0).get(0));
             assertEquals("Cartes", rows.get(1).get(0));
             assertEquals("Total Cartes", rows.get(2).get(3));
             assertEquals(5L, rows.get(2).get(4));
             assertEquals(new BigDecimal("80.00"), rows.get(2).get(5));
+            assertTrue(ReportData.isSubtotal(rows.get(2)));
             assertEquals("Espèces", rows.get(3).get(0));
-            assertEquals("Total", rows.get(4).get(3));
-            assertEquals(10L, rows.get(4).get(4));
-            assertEquals(new BigDecimal("200.00"), rows.get(4).get(5));
+            assertFalse(ReportData.isSubtotal(rows.get(3)));
         }
     }
 
@@ -434,9 +433,10 @@ class SettlementReportTest {
     }
 
     /**
-     * BO-06-06-09: the state closes on its TOTAL row — the counts and the
-     * amounts of every method above it — and an empty state carries none,
-     * because a total of nothing is a line nobody reads.
+     * BO-06-06-09: the state closes on the frame's TOTAL row — the counts and
+     * the amounts of every method above it, the group sub-totals counted once
+     * — and the report writes no total of its own, which the frame would add
+     * a second time.
      */
     @Test
     void theStateClosesOnItsTotal() {
@@ -445,16 +445,64 @@ class SettlementReportTest {
         stubQuery(entityManager, query, List.of(
                 new Object[]{CashPayment.class, 5L, new BigDecimal("120.00")},
                 new Object[]{CardPayment.class, 3L, new BigDecimal("50.00")}));
-        PanacheQuery<TenderDefinition> cashQuery = queryOf(tender("001", "Espèces"));
-        PanacheQuery<TenderDefinition> cardQuery = queryOf(tender("002", "Carte bancaire"));
+        TenderDefinition cash = tender("001", "Espèces");
+        cash.groupLabel = "Monnaie";
+        TenderDefinition card = tender("002", "Carte bancaire");
+        card.groupLabel = "Monnaie";
+        PanacheQuery<TenderDefinition> cashQuery = queryOf(cash);
+        PanacheQuery<TenderDefinition> cardQuery = queryOf(card);
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
             panache.when(() -> TenderDefinition.find("code", "CASH")).thenReturn(cashQuery);
             panache.when(() -> TenderDefinition.find("code", "CARD")).thenReturn(cardQuery);
-            List<List<Object>> rows = reportWith(entityManager).rows(new ReportCriteria());
-            List<Object> total = rows.get(rows.size() - 1);
-            assertEquals("Total", total.get(3));
-            assertEquals(8L, total.get(4));
-            assertEquals(new BigDecimal("170.00"), total.get(5));
+            SettlementReport report = reportWith(entityManager);
+            List<List<Object>> rows = report.rows(new ReportCriteria());
+            assertEquals(3, rows.size());
+            assertEquals("Total Monnaie", rows.get(2).get(3));
+            ReportData data = new ReportData(report, rows);
+            assertEquals(8L, data.totals.get(4));
+            assertEquals(new BigDecimal("170.00"), data.totals.get(5));
         }
     }
+
+    /** BO-06-06-09: the final multi-method group receives its subtotal before the overall total. */
+    @Test
+    void finalPaymentGroupReceivesItsSubtotal() throws Exception {
+        var report = new SettlementReport();
+        var method = SettlementReport.class.getDeclaredMethod("withTotals", List.class);
+        method.setAccessible(true);
+        List<List<Object>> input = List.of(List.of("CARDS", "CARD", "1", "CARD", 1L, BigDecimal.TEN), List.of("CARDS", "TRD", "2", "TRD", 2L, BigDecimal.ONE));
+        var rows = (List<List<Object>>) method.invoke(report, input);
+        assertEquals(3, rows.size());
+        assertEquals("Total CARDS", rows.get(2).get(3));
+        assertEquals(3L, rows.get(2).get(4));
+        assertEquals(new BigDecimal("11"), rows.get(2).get(5));
+    }
+
+    /**
+     * A state without any settlement gets no sub-total row at all.
+     *
+     * @throws Exception when the private method cannot be reached
+     */
+    @Test
+    void emptyStateGetsNoSubtotal() throws Exception {
+        var method = SettlementReport.class.getDeclaredMethod("withTotals", List.class);
+        method.setAccessible(true);
+        assertTrue(((List<?>) method.invoke(new SettlementReport(), List.of())).isEmpty());
+    }
+
+    /** BO-06-06-09: a blank group label uses its own tender's wording rather than an empty shared group. */
+    @Test
+    void blankGroupLabelFallsBackToTheTenderLabel() {
+        var manager = mock(EntityManager.class);
+        var query = typedQueryMock();
+        stubQuery(manager, query, java.util.Collections.singletonList(new Object[]{CashPayment.class, 1L, BigDecimal.TEN}));
+        var tender = tender("001", "CASH WORDING");
+        tender.groupLabel = " ";
+        var lookup = queryOf(tender);
+        try (var base = mockStatic(PanacheEntityBase.class)) {
+            base.when(() -> PanacheEntityBase.find("code", "CASH")).thenReturn(lookup);
+            assertEquals("CASH WORDING", reportWith(manager).rows(new ReportCriteria()).get(0).get(0));
+        }
+    }
+
 }

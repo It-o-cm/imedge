@@ -34,7 +34,13 @@ public class RefApplyAudit extends PanacheEntity {
         APPLIED,
 
         /** The snapshot was refused; the node kept what it had. */
-        FAILED
+        FAILED,
+
+        /**
+         * The snapshot waits for the sale in progress to end (BO-10-08-25);
+         * the node keeps what it had and tries again shortly.
+         */
+        DEFERRED
     }
 
     /** The referential domain this attempt concerned. */

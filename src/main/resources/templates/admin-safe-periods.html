@@ -6,89 +6,86 @@
 !}
 {#include admin-layout}
 
-{#title}Clôture du coffre{/title}
+{#title}{inject:i18n.get('t.cloture-du-coffre')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Clôture du coffre</h1>
-        <p class="page-sub">Périodes comptables : une seule ouverte à la fois, close une fois ses mouvements validés.</p>
+        <h1>{inject:i18n.get('t.cloture-du-coffre')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.periodes-comptables-une-seule-ouverte-a-la')}</p>
     </div>
     <div class="page-actions">
-        <a class="btn btn-ghost" href="/admin/safe/movements">Mouvements</a>
-        <a class="btn btn-ghost" href="/admin/safe/journal">Journal</a>
+        <a class="btn btn-ghost" href="/admin/safe/movements">{inject:i18n.get('t.mouvements')}</a>
+        <a class="btn btn-ghost" href="/admin/safe/journal">{inject:i18n.get('t.journal')}</a>
     </div>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 {#if open}
 <div class="card">
-    <h2 class="card-title">Période ouverte : {open.label}</h2>
+    <h2 class="card-title">{inject:i18n.get('t.periode-ouverte')} {inject:i18n.text(open.label)}</h2>
     <p class="card-sub">
-        Ouverte le {open.startDate} avec {open.openingBalance} € ·
-        solde actuel <strong>{balance} €</strong> ·
-        mouvements non validés <strong>{pending}</strong>
+        {inject:i18n.get('t.ouverte-le')} {open.startDate.format('dd/MM/yyyy')} {inject:i18n.get('t.avec')} {inject:i18n.money(open.openingBalance)} {inject:i18n.get('t.solde-actuel')} <strong>{inject:i18n.money(balance)} €</strong> {inject:i18n.get('t.mouvements-non-valides-2')} <strong>{pending}</strong>
     </p>
     {#if pending > 0}
     <div class="alert alert-error" role="status">
-        La clôture est refusée tant que des mouvements ne sont pas validés.
-        Pointez-les depuis l'écran <a class="link-strong" href="/admin/safe/movements">Mouvements du coffre</a>.
+        {inject:i18n.get('t.la-cloture-est-refusee-tant-que-des')} <a class="link-strong" href="/admin/safe/movements">{inject:i18n.get('t.mouvements-du-coffre')}</a>.
     </div>
     {/if}
     <form method="post" action="/admin/safe/periods/close">
         <div class="page-actions" style="margin-top: 6px;">
-            <button class="btn btn-primary" type="submit">Clôturer la période</button>
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.cloturer-la-periode')}</button>
         </div>
     </form>
 </div>
 {#else}
 <div class="card">
-    <h2 class="card-title">Ouvrir une période</h2>
-    <p class="card-sub">Le solde d'ouverture est celui que le coffre porte aujourd'hui : c'est le solde de clôture de la période précédente.</p>
+    <h2 class="card-title">{inject:i18n.get('t.ouvrir-une-periode')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.le-solde-d-ouverture-est-celui-que')}</p>
     <form method="post" action="/admin/safe/periods">
         <div class="field-grid">
             <div class="field">
-                <label class="field-label" for="p-label">Libellé</label>
+                <label class="field-label" for="p-label">{inject:i18n.get('t.libelle')}</label>
                 <input class="input-control" id="p-label" type="text" name="label" maxlength="40" value="{suggestedLabel}" required>
             </div>
             <div class="field">
-                <label class="field-label" for="p-start">Premier jour</label>
+                <label class="field-label" for="p-start">{inject:i18n.get('t.premier-jour')}</label>
                 <input class="input-control" id="p-start" type="date" name="startDate" value="{today}">
             </div>
         </div>
         <div class="page-actions" style="margin-top: 6px;">
-            <button class="btn btn-primary" type="submit">Ouvrir la période</button>
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.ouvrir-la-periode')}</button>
         </div>
     </form>
 </div>
 {/if}
 
 <div class="card">
-    <h2 class="card-title">Historique des périodes</h2>
+    <h2 class="card-title">{inject:i18n.get('t.historique-des-periodes')}</h2>
     {#if periods.isEmpty()}
     <div class="empty-state">
-        <p>Aucune période comptable.</p>
-        <p class="empty-hint">Ouvrez-en une pour que le coffre commence à compter.</p>
+        <p>{inject:i18n.get('t.aucune-periode-comptable')}</p>
+        <p class="empty-hint">{inject:i18n.get('t.ouvrez-en-une-pour-que-le-coffre')}</p>
     </div>
     {#else}
     <table class="data-table">
         <thead>
-        <tr><th>Libellé</th><th>Du</th><th>Au</th><th>Solde d'ouverture €</th><th>Solde de clôture €</th><th>État</th></tr>
+        <tr><th>{inject:i18n.get('t.libelle')}</th><th>{inject:i18n.get('t.du')}</th><th>{inject:i18n.get('t.au')}</th><th>{inject:i18n.get('t.solde-d-ouverture')}</th><th>{inject:i18n.get('t.solde-de-cloture')}</th><th>{inject:i18n.get('t.etat')}</th></tr>
         </thead>
         <tbody>
         {#for period in periods}
         <tr>
-            <td>{period.label}</td>
-            <td>{period.startDate}</td>
-            <td>{period.endDate ?: '—'}</td>
-            <td>{period.openingBalance}</td>
-            <td>{period.closingBalance ?: '—'}</td>
+            <td>{inject:i18n.text(period.label)}</td>
+            <td>{period.startDate.format('dd/MM/yyyy')}</td>
+            <td>{#if period.endDate}{period.endDate.format('dd/MM/yyyy')}{#else}—{/if}</td>
+            <td>{inject:i18n.money(period.openingBalance)}</td>
+            <td>{#if period.closingBalance != null}{inject:i18n.money(period.closingBalance)}{#else}—{/if}</td>
             <td>
-                {#if period.open}<span class="badge badge-ok">Ouverte</span>
-                {#else}<span class="badge badge-off">Close</span>{/if}
+                {#if period.open}<span class="badge badge-ok">{inject:i18n.get('t.ouverte')}</span>
+                {#else}<span class="badge badge-off">{inject:i18n.get('t.close')}</span>{/if}
             </td>
         </tr>
         {/for}

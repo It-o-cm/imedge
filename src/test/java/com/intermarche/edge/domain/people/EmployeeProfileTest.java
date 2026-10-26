@@ -120,4 +120,21 @@ class EmployeeProfileTest {
     void checksumIsDeterministic() {
         assertEquals(binding("*").getChecksum(), binding("*").getChecksum());
     }
+
+    /**
+     * BO-01-03-04: a binding scoped on an enseigne applies on the nodes of that
+     * enseigne; a register scope places no profile on a node.
+     */
+    @Test
+    void appliesToTheNodesOfItsEchelon() {
+        EmployeeProfile binding = new EmployeeProfile();
+        binding.echelonScope = "ENSEIGNE:ITM";
+        org.junit.jupiter.api.Assertions.assertTrue(binding.appliesTo(
+                new com.intermarche.edge.domain.store.NodeEchelon("07039", "ITM", "FR")));
+        org.junit.jupiter.api.Assertions.assertFalse(binding.appliesTo(
+                new com.intermarche.edge.domain.store.NodeEchelon("07039", "SUPER", "FR")));
+        binding.echelonScope = "TPV:POS01";
+        org.junit.jupiter.api.Assertions.assertFalse(binding.appliesTo(
+                new com.intermarche.edge.domain.store.NodeEchelon("07039", "ITM", "FR")));
+    }
 }

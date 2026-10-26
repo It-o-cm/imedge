@@ -1,5 +1,8 @@
 package com.intermarche.edge.ui.admin;
 
+import com.intermarche.edge.security.FeatureAccess;
+import com.intermarche.edge.domain.setting.Feature;
+import com.intermarche.edge.domain.people.CrudOption;
 import com.intermarche.edge.domain.people.Employee;
 import com.intermarche.edge.service.PosSettingsService;
 import io.quarkus.qute.Location;
@@ -7,7 +10,6 @@ import io.quarkus.security.Authenticated;
 import io.quarkus.security.identity.SecurityIdentity;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DefaultValue;
@@ -67,6 +69,10 @@ public class AdminSettingsResource {
     @Inject
     SecurityIdentity identity;
 
+    /** The signed-in operator's navigation, whose first screen an operator lands on. */
+    @Inject
+    BackOfficeMenu backOfficeMenu;
+
     /**
      * One render-ready catalog entry: the definition flattened for Qute plus
      * the current effective value and the section-break marker.
@@ -88,6 +94,13 @@ public class AdminSettingsResource {
         public boolean integer;
         /** The values to pick from, empty for a free text field. */
         public List<String> choices;
+        /**
+         * True for a SECRET (BO-10-03-08): the field is a masked one, offered
+         * empty — the stored value never travels back to the page.
+         */
+        public boolean secret;
+        /** True when a secret holds a stored value, which the empty field keeps. */
+        public boolean secretSet;
     }
 
     /**
@@ -149,14 +162,16 @@ public class AdminSettingsResource {
      * Routes the back-office root to the entry point the signed-in operator
      * may actually reach.
      * <p>
-     * An administrator lands on the parameters; a manager, who has no
-     * business there, lands on the supervision. Without this the single
-     * landing page of form authentication would send half the operators
-     * onto a refusal, and the header brand would do the same. Kept in this
-     * resource rather than in a class of its own: a redirect does not
-     * warrant one.
+     * An administrator lands on the parameters; an operator whose profiles
+     * open the supervision — a manager among them — lands on the supervision;
+     * any other operator on the first screen of their navigation (their
+     * favorites first, BO-01-04-08), and an operator whom no screen is opened
+     * to on their favorites, which say so. Without this the single landing
+     * page of form authentication would send operators onto a refusal, and
+     * the header brand would do the same. Kept in this resource rather than
+     * in a class of its own: a redirect does not warrant one.
      *
-     * @return a 303 redirect to the parameters or to the supervision
+     * @return a 303 redirect to the operator's entry point
      */
     @GET
     @Path("/admin")
@@ -164,8 +179,19 @@ public class AdminSettingsResource {
     public Response adminRoot() {
         LOGGER.info("Entering method adminRoot");
         boolean admin = identity != null && identity.hasRole(Employee.EmployeeRole.ADMIN.name());
+        String target = admin ? "/admin/settings" : "/dashboard";
+        if (!admin && backOfficeMenu != null) {
+            List<BackOfficeMenu.Group> groups = backOfficeMenu.getGroups();
+            boolean supervision = groups.stream().anyMatch(group -> group.getEntries().stream()
+                    .anyMatch(entry -> "/dashboard".equals(entry.getPath())));
+            if (groups.isEmpty()) {
+                target = "/admin/favorites";
+            } else if (!supervision) {
+                target = groups.get(0).getEntries().get(0).getPath();
+            }
+        }
         LOGGER.info("Exiting method adminRoot");
-        return Response.seeOther(URI.create(admin ? "/admin/settings" : "/dashboard")).build();
+        return Response.seeOther(URI.create(target)).build();
     }
 
     /**
@@ -177,7 +203,8 @@ public class AdminSettingsResource {
      */
     @GET
     @Path("/admin/settings")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SETTINGS)
     public TemplateInstance settingsPage(@QueryParam("notice") String notice,
                                          @QueryParam("noticeOk") @DefaultValue("true") boolean noticeOk) {
         LOGGER.info("Entering method settingsPage with notice: " + notice + ", noticeOk: " + noticeOk);
@@ -207,6 +234,13 @@ public class AdminSettingsResource {
                 choices = widened;
             }
             entry.choices = choices;
+            // BO-10-03-08: a secret is never sent back to the page; the field
+            // only says whether one is stored.
+            entry.secret = PosSettingsService.isSecret(def.key());
+            if (entry.secret) {
+                entry.secretSet = entry.value != null && !entry.value.isEmpty();
+                entry.value = "";
+            }
             if (current == null || !current.label.equals(def.section())) {
                 current = new Section(def.section());
                 sections.add(current);
@@ -230,7 +264,8 @@ public class AdminSettingsResource {
      */
     @POST
     @Path("/admin/settings")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SETTINGS, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     public Response save(MultivaluedMap<String, String> form) {
         LOGGER.info("Entering method save with form: " + form);
@@ -263,6 +298,11 @@ public class AdminSettingsResource {
                     return redirect("Valeur invalide pour « " + def.label()
                             + " » — attendu : " + String.join(", ", choices) + ".", false);
                 }
+            }
+            // BO-10-03-08: a secret field left empty keeps the stored secret —
+            // the page never shows it, so empty means "unchanged".
+            if (PosSettingsService.isSecret(def.key()) && value.isEmpty()) {
+                continue;
             }
             posSettingsService.store(def.key(), value);
             saved++;

@@ -1,5 +1,9 @@
 package com.intermarche.edge.ui.admin;
 
+import io.quarkus.security.Authenticated;
+import com.intermarche.edge.security.FeatureAccess;
+import com.intermarche.edge.domain.setting.Feature;
+import com.intermarche.edge.domain.people.CrudOption;
 import com.intermarche.edge.domain.people.Employee;
 import com.intermarche.edge.domain.safe.CoinOrder;
 import com.intermarche.edge.domain.safe.CoinOrderLine;
@@ -9,7 +13,6 @@ import com.intermarche.edge.service.SafeService;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
@@ -73,7 +76,8 @@ public class AdminCoinOrderResource {
      * @return the orders page
      */
     @GET
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SAFE_COIN_ORDER)
     public TemplateInstance list(@QueryParam("notice") String notice,
                                  @QueryParam("noticeOk") @DefaultValue("true") boolean noticeOk) {
         LOGGER.info("Entering method list");
@@ -94,7 +98,8 @@ public class AdminCoinOrderResource {
      * @return a 303 back to the list with the notice
      */
     @POST
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SAFE_COIN_ORDER, option = CrudOption.CREATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response order(MultivaluedMap<String, String> form) {
@@ -135,7 +140,8 @@ public class AdminCoinOrderResource {
      */
     @POST
     @Path("/receive")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SAFE_COIN_ORDER, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response receive(MultivaluedMap<String, String> form) {
@@ -167,7 +173,8 @@ public class AdminCoinOrderResource {
      */
     @POST
     @Path("/cancel")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SAFE_COIN_ORDER, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response cancel(MultivaluedMap<String, String> form) {
@@ -196,7 +203,8 @@ public class AdminCoinOrderResource {
      */
     @GET
     @Path("/{id}/slip")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.SAFE_COIN_ORDER)
     @Produces("text/plain; charset=UTF-8")
     public Response slip(@PathParam("id") Long id) {
         LOGGER.info("Entering method slip with id: " + id);

@@ -48,4 +48,13 @@ public class JournalEventRow {
         this.time = time;
         this.detail = detail == null ? "" : detail;
     }
+
+    /** The code the event carries — a method, a code scanned (BO-04-01-19/34), or empty. */
+    public String code = "";
+
+    /** The amount the event bears, written (BO-04-01-19), or empty. */
+    public String amount = "";
+
+    /** The ticket the event is about, or empty (BO-04-01-19/34). */
+    public String ticketNumber = "";
 }

@@ -1,18 +1,19 @@
 package com.intermarche.edge.service;
 
-import com.intermarche.edge.domain.sync.SyncOutbox;
 import com.intermarche.edge.domain.session.TechnicalEvent;
+import com.intermarche.edge.domain.sync.SyncOutbox;
 import com.intermarche.edge.service.sync.register.SyncOutboxService;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedConstruction;
 
 import java.time.LocalDateTime;
 
+import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.*;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.times;
@@ -72,7 +73,7 @@ class TechnicalEventServiceTest {
             assertEquals("C04-00000123", event.detail);
             assertNull(event.operatorBadgeId);
             assertNotNull(event.eventDate);
-            assertTrue(!event.eventDate.isBefore(before));
+            assertFalse(event.eventDate.isBefore(before));
             assertNotNull(event.eventUid);
             assertEquals(36, event.eventUid.length());
             verify(event, times(1)).persist();
@@ -118,7 +119,7 @@ class TechnicalEventServiceTest {
             TechnicalEvent second = created.constructed().get(1);
             assertNotNull(first.eventUid);
             assertNotNull(second.eventUid);
-            assertTrue(!first.eventUid.equals(second.eventUid));
+            assertFalse(first.eventUid.equals(second.eventUid));
         }
     }
 
@@ -137,5 +138,59 @@ class TechnicalEventServiceTest {
             verify(service.syncOutboxService, times(1))
                     .enqueue(SyncOutbox.EntityType.EVENT, EVENT_ID);
         }
+    }
+
+    /**
+     * {@code record} stores the searchable facts beside the event and cuts a
+     * long detail and a long code to their columns (BO-04-01-19/34).
+     */
+    @Test
+    void recordStoresTheSearchableFacts() {
+        TechnicalEventService service = newService();
+        try (MockedConstruction<TechnicalEvent> created = mockConstruction(TechnicalEvent.class,
+                (mock, context) -> mock.id = EVENT_ID)) {
+            TechnicalEvent event = service.record(TechnicalEvent.EventType.PAYMENT_CANCELLED, "T1 CHEQUE", "1",
+                    "T1", java.math.BigDecimal.TEN, "CHEQUE");
+            assertSame(created.constructed().get(0), event);
+            assertEquals("T1", event.ticketNumber);
+            assertEquals(java.math.BigDecimal.TEN, event.amount);
+            assertEquals("CHEQUE", event.code);
+            assertEquals("1", event.operatorBadgeId);
+            assertEquals(TERMINAL, event.terminalId);
+            verify(service.syncOutboxService).enqueue(SyncOutbox.EntityType.EVENT, EVENT_ID);
+            TechnicalEvent cut = service.record(TechnicalEvent.EventType.CONTROL_ALERT, "d".repeat(300), null,
+                    null, null, "c".repeat(200));
+            assertEquals(255, cut.detail.length());
+            assertEquals(120, cut.code.length());
+            TechnicalEvent bare = service.record(TechnicalEvent.EventType.DRAWER_OPENED, null, null, null, null, null);
+            assertNull(bare.detail);
+            assertNull(bare.code);
+        }
+    }
+
+    /**
+     * {@code attachTicket} names the ticket of an event that had none and pushes
+     * it again; an unknown event or one already named is left alone (BO-04-01-34).
+     */
+    @Test
+    void attachTicketNamesAnUnnamedEvent() {
+        TechnicalEventService service = newService();
+        TechnicalEvent unnamed = mock(TechnicalEvent.class);
+        unnamed.id = EVENT_ID;
+        TechnicalEvent named = mock(TechnicalEvent.class);
+        named.ticketNumber = "T0";
+        try (org.mockito.MockedStatic<io.quarkus.hibernate.orm.panache.PanacheEntityBase> panache =
+                     mockStatic(io.quarkus.hibernate.orm.panache.PanacheEntityBase.class)) {
+            panache.when(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase.findById(1L)).thenReturn(unnamed);
+            panache.when(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase.findById(2L)).thenReturn(named);
+            service.attachTicket(1L, "T9");
+            service.attachTicket(2L, "T9");
+            service.attachTicket(3L, "T9");
+        }
+        assertEquals("T9", unnamed.ticketNumber);
+        verify(unnamed).persist();
+        assertEquals("T0", named.ticketNumber);
+        verify(named, never()).persist();
+        verify(service.syncOutboxService, times(1)).enqueue(SyncOutbox.EntityType.EVENT, EVENT_ID);
     }
 }

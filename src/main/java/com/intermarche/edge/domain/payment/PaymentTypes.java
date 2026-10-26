@@ -17,6 +17,10 @@ import java.util.Map;
  */
 public final class PaymentTypes {
 
+    /** Prevents instantiation of the static payment registry (BO-04-01-06). */
+    private PaymentTypes() {
+    }
+
     /** The immutable key → entity-class registry, in display order. */
     private static final Map<String, Class<?>> BY_KEY = new LinkedHashMap<>();
 
@@ -31,10 +35,21 @@ public final class PaymentTypes {
         BY_KEY.put("ARRONDI", RoundingPayment.class);
         BY_KEY.put("DEVISE", ForeignCurrencyPayment.class);
         BY_KEY.put("SECOURS", BackupPayment.class);
-        // LC-06-03-07: appended at the END (like every prior addition) so a
-        // shop that bookmarked its journal-filter order is not shuffled — the
+        // EXP-58/60/66/67: appended at the END (like every prior addition) so a
+        // shop that bookmarked its journal-filter order is not shuffled.
+        // LC-07-07-04: the store node mirrors these register identities so
+        // mapped terminal settlements can be ingested.
+        BY_KEY.put("TRD", TrdCardPayment.class);
+        BY_KEY.put("RESTOFLASH", RestoFlashPayment.class);
+        BY_KEY.put("GIFTCARD", SupplierGiftCardPayment.class);
+        BY_KEY.put("SOGEC", SogecPayment.class);
+        // LC-06-03-07: appended at the END, like every prior addition — the
         // deposit recovery of an order recalled at the till.
         BY_KEY.put("ACOMPTE", DepositPayment.class);
+        // LC-07-05-05: a separate accounting tender for deferred bank deposits.
+        BY_KEY.put("CHEQUE_DEFERRED", DeferredChequePayment.class);
+        // LC-08-01-06: the social purchase card, appended at the END like every prior addition.
+        BY_KEY.put("CAS", SocialCardPayment.class);
     }
 
     /**

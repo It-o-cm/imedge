@@ -66,7 +66,20 @@ public class ServiceProvider extends PanacheEntity {
         FISCAL("Fiscal"),
 
         /** Video surveillance, single-queue and other floor systems. */
-        EXPLOITATION("Exploitation magasin");
+        EXPLOITATION("Exploitation magasin"),
+
+        /**
+         * The commercial service: the gestion commerciale that publishes the
+         * articles, nomenclature, customers and VAT the node pulls
+         * (BO-11-01-01), and receives the unit sales (BO-11-02-01).
+         */
+        COMMERCIAL("Service commercial"),
+
+        /**
+         * An e-commerce platform, told the integration status of its orders
+         * (BO-11-04-03).
+         */
+        ECOMMERCE("E-commerce");
 
         /** The operator-facing label. */
         private final String label;
@@ -118,7 +131,25 @@ public class ServiceProvider extends PanacheEntity {
         EEG("Étiquettes (EEG)"),
 
         /** A plain credentialed HTTP/JSON exchange. */
-        HTTP_JSON("HTTP/JSON");
+        HTTP_JSON("HTTP/JSON"),
+
+        /**
+         * TFREMA, the real-time JSON stream of the cash events toward the
+         * centralised gestion commerciale (BO-11-02-01).
+         */
+        TFREMA("TFREMA"),
+
+        /**
+         * DS ventes, the unit sales as positioned-field records toward a local
+         * gestion commerciale (BO-11-02-01).
+         */
+        DS_VENTES("DS ventes"),
+
+        /**
+         * Anaveo, the text journal a video-surveillance system overlays on its
+         * images (BO-11-02-04).
+         */
+        ANAVEO("Anaveo");
 
         /** The operator-facing label. */
         private final String label;
@@ -309,6 +340,17 @@ public class ServiceProvider extends PanacheEntity {
      */
     public static List<ServiceProvider> listActiveOfType(ProviderType providerType) {
         return list("providerType = ?1 and active = true order by code", providerType);
+    }
+
+    /**
+     * Lists the providers that speak one protocol and are in service
+     * (BO-03-09-20: the Catalina servers).
+     *
+     * @param protocol the protocol
+     * @return the active providers speaking it, in code order
+     */
+    public static List<ServiceProvider> listActiveOfProtocol(ProviderProtocol protocol) {
+        return list("protocol = ?1 and active = true order by code", protocol);
     }
 
     /**

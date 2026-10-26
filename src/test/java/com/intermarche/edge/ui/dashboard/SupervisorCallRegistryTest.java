@@ -294,4 +294,17 @@ class SupervisorCallRegistryTest {
         assertEquals(1, registry.cancelPendingFor("T12"));
         assertSame(settled, registry.getPending().get(0));
     }
+
+    /** BO-04-02-04: settling a later call skips an unrelated pending call without changing it. */
+    @Test
+    void settlingALaterCallPreservesEarlierPendingCalls() {
+        var registry = new SupervisorCallRegistry();
+        registry.add("C01", "OP1", "FIRST", "");
+        registry.add("C02", "OP2", "SECOND", "");
+        var first = registry.getPending().get(0);
+        var second = registry.getPending().get(1);
+        assertEquals(second, registry.settle(second.id, SupervisorCallRegistry.CallStatus.REFUSED, "REFUSED", false));
+        assertEquals(List.of(first), registry.getPending());
+    }
+
 }

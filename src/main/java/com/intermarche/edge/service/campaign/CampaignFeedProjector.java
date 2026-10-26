@@ -1,6 +1,7 @@
 package com.intermarche.edge.service.campaign;
 
 import com.intermarche.edge.domain.campaign.Campaign;
+import com.intermarche.edge.domain.util.SeedFeedProjector;
 import com.intermarche.edge.service.sync.EngineFeedService;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -19,10 +20,11 @@ import java.math.RoundingMode;
  * BEFORE the OFFERS feed, supervision) with no code specific to this feed
  * anywhere downstream. The store node is the source of the ENGINE_FEEDS:
  * projecting on every campaign save keeps the engine's budget view in step with
- * the back office.
+ * the back office. It is also the {@link SeedFeedProjector} the dev seed
+ * refreshes once it has written its demonstration campaign.
  */
 @ApplicationScoped
-public class CampaignFeedProjector {
+public class CampaignFeedProjector implements SeedFeedProjector {
 
     /** Logger for this projector. */
     private static final Logger LOGGER = Logger.getLogger(CampaignFeedProjector.class);
@@ -43,6 +45,7 @@ public class CampaignFeedProjector {
      *
      * @return the stored version (SHA-256 hex)
      */
+    @Override
     @Transactional
     public String project() {
         LOGGER.info("Entering method project");

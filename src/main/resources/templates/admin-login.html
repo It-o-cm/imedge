@@ -7,14 +7,16 @@
  !
  ! The form posts to /j_security_check — Quarkus form authentication, not a
  ! handler of ours. The credential is the BACK-OFFICE password, never the
- ! register PIN: same staff file, two doors, two secrets.
+ ! register PIN: same staff file, two doors, two secrets. When the node offers
+ ! the group's single sign-on (BO-01-02-01, `ssoEnabled`), a third door leads
+ ! to the identity provider through /admin/sso/login.
 !}
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="{inject:i18n.language}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Connexion — POS admin</title>
+    <title>{inject:i18n.get('t.connexion-pos-admin')}</title>
     <link rel="stylesheet" href="/admin-assets/base.css">
     <link rel="stylesheet" href="/admin-assets/auth.css">
 </head>
@@ -22,32 +24,36 @@
 <main class="login-panel">
     <div class="login-brand">
         <span class="app-brand-mark"></span>
-        <span class="app-brand-text">POS<b>admin</b></span>
+        <span class="app-brand-text">{inject:i18n.get('t.pos')}<b>{inject:i18n.get('t.admin')}</b></span>
     </div>
 
     {#if error}
-    <div class="alert alert-error" role="alert">{error}</div>
+    <div class="alert alert-error" role="alert">{inject:i18n.text(error)}</div>
     {/if}
     {#if notice}
-    <div class="alert alert-ok" role="status">{notice}</div>
+    <div class="alert alert-ok" role="status">{inject:i18n.text(notice)}</div>
     {/if}
 
     <form class="login-form" method="post" action="/j_security_check">
         <label class="field">
-            <span class="field-label">Identifiant</span>
+            <span class="field-label">{inject:i18n.get('t.identifiant')}</span>
             <input type="text" name="j_username" autocomplete="username" required autofocus>
         </label>
 
         <label class="field">
-            <span class="field-label">Mot de passe</span>
+            <span class="field-label">{inject:i18n.get('t.mot-de-passe-2')}</span>
             <input type="password" name="j_password" autocomplete="current-password" required>
         </label>
 
-        <button class="btn btn-primary login-submit" type="submit">Se connecter</button>
+        <button class="btn btn-primary login-submit" type="submit">{inject:i18n.get('t.se-connecter')}</button>
     </form>
 
+    {#if ssoEnabled}
+    <a class="btn login-submit login-sso" href="/admin/sso/login">{inject:i18n.get('t.se-connecter-avec-le-sso-du-groupement')}</a>
+    {/if}
+
     <p class="field-hint" style="margin-top:14px;text-align:center">
-        Mot de passe du back-office, distinct du code PIN de la caisse.
+        {inject:i18n.get('t.mot-de-passe-du-back-office-distinct')}
     </p>
 </main>
 </body>

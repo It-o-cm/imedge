@@ -53,6 +53,10 @@ public class SyncOutboxService {
     @Inject
     com.intermarche.edge.service.PosSettingsService posSettingsService;
 
+    /** This register's identifier, the reporter of the instruments it pushes. */
+    @org.eclipse.microprofile.config.inject.ConfigProperty(name = "pos.terminal.id", defaultValue = "POS01")
+    String terminalId;
+
     /**
      * A payload ready to push: the target path suffix and the JSON body.
      */
@@ -119,17 +123,38 @@ public class SyncOutboxService {
      * Returns the next batch of outbox rows in drain order (sessions, then
      * tickets, then refunds; oldest first within a kind).
      *
+     * <p>An entity queued twice in the batch travels ONCE: a payload is the
+     * entity as it stands when it is prepared, after this read, so its last
+     * row carries every change the earlier ones were queued for, and the
+     * earlier rows are dropped here (BO-05-01-05, BO-11-04-02: a sale queued at
+     * its closing and again once its fiscal documents are sealed reaches the
+     * store node once). Only rows this read saw are dropped, all committed with
+     * their changes, so nothing queued later is lost.
+     *
      * @param batchSize the maximum number of rows
      * @return the ids of the rows to process
      */
     @Transactional
     public List<Long> nextBatchIds(int batchSize) {
         LOGGER.info("Entering method nextBatchIds with batchSize: " + batchSize);
-        LOGGER.info("Exiting method nextBatchIds");
-        return SyncOutbox.<SyncOutbox>find("order by entityType, id")
+        List<SyncOutbox> rows = SyncOutbox.<SyncOutbox>find("order by entityType, id")
                 .page(0, batchSize)
-                .list()
-                .stream().map(row -> row.id).toList();
+                .list();
+        java.util.Map<String, SyncOutbox> latest = new java.util.HashMap<>();
+        for (SyncOutbox row : rows) {
+            SyncOutbox superseded = latest.put(row.entityType + ":" + row.entityId, row);
+            if (superseded != null) {
+                superseded.delete();
+            }
+        }
+        List<Long> ids = new java.util.ArrayList<>();
+        for (SyncOutbox row : rows) {
+            if (latest.get(row.entityType + ":" + row.entityId) == row) {
+                ids.add(row.id);
+            }
+        }
+        LOGGER.info("Exiting method nextBatchIds");
+        return ids;
     }
 
     /**
@@ -177,6 +202,39 @@ public class SyncOutboxService {
                             com.intermarche.edge.domain.payment.AccountCustomer.findById(row.entityId);
                     yield customer == null ? null
                             : new PreparedItem("customer", objectMapper.writeValueAsString(toDto(customer)));
+                }
+                case PRINTOUT -> {
+                    com.intermarche.edge.domain.sale.PrintedTicket printout =
+                            com.intermarche.edge.domain.sale.PrintedTicket.findById(row.entityId);
+                    yield printout == null ? null
+                            : new PreparedItem("printout", objectMapper.writeValueAsString(toDto(printout)));
+                }
+                case TRAINING -> {
+                    com.intermarche.edge.domain.sale.TrainingTicket training =
+                            com.intermarche.edge.domain.sale.TrainingTicket.findById(row.entityId);
+                    yield training == null ? null
+                            : new PreparedItem("training", objectMapper.writeValueAsString(toDto(training)));
+                }
+                case PARKING -> {
+                    com.intermarche.edge.domain.sale.ParkedTicketRecord parking =
+                            com.intermarche.edge.domain.sale.ParkedTicketRecord.findById(row.entityId);
+                    yield parking == null ? null
+                            : new PreparedItem("parking", objectMapper.writeValueAsString(toDto(parking)));
+                }
+                // BO-03-06-62/63: the instruments and the barcode readings are a
+                // register's to push; a store node receives them and never queues
+                // them, so these two arms only ever run on a register.
+                case STORED_VALUE -> {
+                    com.intermarche.edge.domain.payment.StoredValue instrument =
+                            com.intermarche.edge.domain.payment.StoredValue.findById(row.entityId);
+                    yield instrument == null ? null
+                            : new PreparedItem("stored-value", objectMapper.writeValueAsString(toDto(instrument)));
+                }
+                case SCANNED_BARCODE -> {
+                    com.intermarche.edge.domain.barcode.ScannedBarcode reading =
+                            com.intermarche.edge.domain.barcode.ScannedBarcode.findById(row.entityId);
+                    yield reading == null ? null
+                            : new PreparedItem("scanned-barcode", objectMapper.writeValueAsString(toDto(reading)));
                 }
                 case DOCUMENT -> {
                     com.intermarche.edge.domain.sale.Invoice document =
@@ -308,6 +366,12 @@ public class SyncOutboxService {
         dto.variance = session.variance;
         dto.withdrawnAmount = session.withdrawnAmount;
         dto.countDetail = session.countDetail;
+        // EXP-82/83/95: the opposable-close facts ride the wire so the store node's
+        // consolidated Z is faithful — who arbitrated the écart, the paper-tender
+        // declaration, and whether it was a floating no-count evening.
+        dto.varianceEndorsedBy = session.varianceEndorsedBy;
+        dto.paperDeclaration = session.paperDeclaration;
+        dto.floatingNoCount = session.floatingNoCount;
         return dto;
     }
 
@@ -329,9 +393,47 @@ public class SyncOutboxService {
         dto.reason = movement.reason;
         dto.movementDate = iso(movement.movementDate);
         dto.endorsedBy = movement.endorsedBy;
+        // EXP-87/85: carry the safe-deposit flag and the acompte's order reference
+        // over the wire so the store node can account the coffre and impute the
+        // down-payment to its order.
         dto.safeDeposit = movement.safeDeposit;
         dto.orderReference = movement.orderReference;
+        // BO-05-02-09: the tender, the transfer's destination and the counted
+        // denominations, so the back office validates each movement by tender.
+        dto.paymentMethod = movement.paymentMethod;
+        dto.transferTo = movement.transferTo;
+        dto.denominationDetail = movement.denominationDetail;
         return dto;
+    }
+
+    /**
+     * Maps the valuation trace of a ticket (BO-06-08-02): which offer valued
+     * each line and what it took off.
+     *
+     * @param ticket the ticket entity
+     * @return the traces, empty for a ticket never valued
+     */
+    private List<SyncPayloads.ValuationDto> valuationDtos(Ticket ticket) {
+        List<SyncPayloads.ValuationDto> dtos = new java.util.ArrayList<>();
+        if (ticket.id == null) {
+            return dtos;
+        }
+        for (com.intermarche.edge.domain.sale.TicketLineValuation trace
+                : com.intermarche.edge.domain.sale.TicketLineValuation
+                        .<com.intermarche.edge.domain.sale.TicketLineValuation>list("ticket.id", ticket.id)) {
+            SyncPayloads.ValuationDto dto = new SyncPayloads.ValuationDto();
+            dto.lineUid = trace.lineUid;
+            dto.localTotal = trace.localTotal;
+            dto.valuedTotal = trace.valuedTotal;
+            dto.offerLabel = trace.offerLabel;
+            dto.advantageLabel = trace.advantageLabel;
+            dto.advantageAmount = trace.advantageAmount;
+            dto.advantagePrintMode = trace.advantagePrintMode;
+            dto.correctionLabel = trace.correctionLabel;
+            dto.correctionAmount = trace.correctionAmount;
+            dtos.add(dto);
+        }
+        return dtos;
     }
 
     /**
@@ -342,7 +444,10 @@ public class SyncOutboxService {
      */
     private SyncPayloads.TicketDto toDto(Ticket ticket) {
         SyncPayloads.TicketDto dto = new SyncPayloads.TicketDto();
+        dto.fiscalDocuments = fiscalDtos(com.intermarche.edge.domain.sale.FiscalDocument
+                .<com.intermarche.edge.domain.sale.FiscalDocument>list("ticketId", ticket.id));
         dto.formattedContent = ticket.formattedContent;
+        dto.customerLanguage = ticket.customerLanguage;
         dto.ticketNumber = ticket.ticketNumber;
         dto.terminalId = ticket.terminalId;
         dto.status = ticket.status.name();
@@ -350,6 +455,8 @@ public class SyncOutboxService {
         dto.parkedAt = iso(ticket.parkedAt);
         dto.resumedAt = iso(ticket.resumedAt);
         dto.resumedTerminalId = ticket.resumedTerminalId;
+        dto.paymentStartedAt = iso(ticket.paymentStartedAt);
+        dto.valuations = valuationDtos(ticket);
         dto.closingDate = iso(ticket.closingDate);
         dto.storeCode = ticket.store != null ? ticket.store.code : null;
         dto.cashierLogin = ticket.cashier != null ? ticket.cashier.loginName : null;
@@ -365,6 +472,8 @@ public class SyncOutboxService {
         dto.fidelityBalanceAfter = ticket.fidelityBalanceAfter;
         dto.fidelityAnonymousProjection = ticket.fidelityAnonymousProjection;
         dto.fidelityUnavailable = ticket.fidelityUnavailable;
+        dto.fidelityPotBalances = ticket.fidelityPotBalances;
+        dto.fidelityMessages = ticket.fidelityMessages;
         for (com.intermarche.edge.domain.sale.TicketFidelityLine earnLine : ticket.fidelityLines) {
             SyncPayloads.FidelityLineDto earnDto = new SyncPayloads.FidelityLineDto();
             earnDto.ruleCode = earnLine.ruleCode;
@@ -377,9 +486,24 @@ public class SyncOutboxService {
             earnDto.advantageCategoryLabel = earnLine.advantageCategoryLabel;
             dto.fidelityLines.add(earnDto);
         }
+        // GB-01-07-05/06: the offer messages the sale showed, frozen at closing.
+        // The node prints duplicata of sales made on other registers, and a
+        // duplicata that dropped them would not be the same document either.
+        for (com.intermarche.edge.domain.sale.TicketMessage message : ticket.messages) {
+            SyncPayloads.MessageDto messageDto = new SyncPayloads.MessageDto();
+            messageDto.code = message.code;
+            messageDto.text = message.text;
+            messageDto.printMode = message.printMode;
+            dto.messages.add(messageDto);
+        }
         dto.digitalKey = ticket.digitalKey;
         dto.customerEmail = ticket.customerEmail;
+        dto.customerTaxId = ticket.customerTaxId;
         dto.itemCount = ticket.itemCount;
+        dto.selfScanning = ticket.selfScanning;
+        dto.selfScanControlled = ticket.selfScanControlled;
+        dto.selfScanVerified = ticket.selfScanVerified;
+        dto.offline = ticket.offline;
         dto.totalExcludingTax = ticket.totalExcludingTax;
         dto.totalIncludingTax = ticket.totalIncludingTax;
         dto.totalVat = ticket.totalVat;
@@ -391,12 +515,19 @@ public class SyncOutboxService {
             SyncPayloads.LineDto lineDto = new SyncPayloads.LineDto();
             lineDto.lineNumber = line.lineNumber;
             lineDto.lineUid = line.lineUid;
+            lineDto.linkedParentUid = line.linkedParentUid;
+            lineDto.linkedArticleEan = line.linkedArticleEan;
+            lineDto.linkedRecordedQuantity = line.linkedRecordedQuantity;
             lineDto.ean = line.ean;
             lineDto.plu = line.plu;
             lineDto.productLabel = line.productLabel;
             lineDto.quantity = line.quantity;
             lineDto.unitPrice = line.unitPrice;
             lineDto.vatRate = line.vatRate;
+            lineDto.vatNumber = line.vatNumber;
+            lineDto.vatExempt = line.vatExempt;
+            lineDto.thirdPartySale = line.thirdPartySale;
+            lineDto.service = line.service;
             lineDto.modifierLabel = line.modifierLabel;
             // The wire keeps the WORD: a node of another version must be able to read
             // a gesture it does not know without the payload failing to parse.
@@ -415,18 +546,30 @@ public class SyncOutboxService {
             lineDto.cancelledBy = line.cancelledBy;
             lineDto.cancellationReasonCode = line.cancellationReasonCode;
             lineDto.cancellationReasonLabel = line.cancellationReasonLabel;
+            // BO-03-13-12: the return type a return line was rung under.
+            lineDto.returnTypeCode = line.returnTypeCode;
+            lineDto.returnTypeLabel = line.returnTypeLabel;
+            // BO-03-13-11/-12: the node tells a return line from a deposit voucher
+            // and files it under its return type only if it knows it is one.
+            lineDto.returnLine = line.returnLine;
             // Money-instrument flag (R12) and last-line-cancellation flag (R10):
             // both are needed by the store node's financial states — the first to
             // keep gift cards out of the turnover, the second to tell a corrected
             // mis-scan from the endorsed cancellation that is the fraud indicator.
             lineDto.moneyProduct = line.moneyProduct;
             lineDto.cancelledLast = line.cancelledLast;
+            lineDto.scanned = line.scanned;
+            lineDto.priceEntered = line.priceEntered;
+            lineDto.carriedOut = line.carriedOut;
+            lineDto.appliedTareKg = line.appliedTareKg;
             dto.lines.add(lineDto);
         }
         for (TicketPayment payment : ticket.payments) {
             SyncPayloads.PaymentDto paymentDto = new SyncPayloads.PaymentDto();
             paymentDto.paymentIndex = payment.paymentIndex;
             paymentDto.methodKey = payment.getMethodKey();
+            paymentDto.moneticServer = payment.moneticServer;
+            paymentDto.tenderCode = payment.tenderCode;
             paymentDto.amount = payment.amount;
             if (payment instanceof CashPayment cash) {
                 paymentDto.tenderedAmount = cash.tenderedAmount;
@@ -438,9 +581,15 @@ public class SyncOutboxService {
             if (payment instanceof com.intermarche.edge.domain.payment.CardPayment card) {
                 paymentDto.authorizationNumber = card.authorizationNumber;
                 paymentDto.degradedMode = card.degradedMode;
+                // EXP-54: the real CB entry mode (SANS_CONTACT / CODE) rides the
+                // wire so the store node can surface it in the BO card states.
+                paymentDto.cardEntryMode = card.cardEntryMode;
             }
             if (payment instanceof com.intermarche.edge.domain.payment.ChequePayment cheque) {
                 paymentDto.magneticLine = cheque.magneticLine;
+                paymentDto.chequeAccountNumber = cheque.accountNumber;
+                paymentDto.chequeGuaranteeAuthorization = cheque.guaranteeAuthorization;
+                paymentDto.chequeGuaranteeProvider = cheque.guaranteeProvider;
             }
             if (payment instanceof com.intermarche.edge.domain.payment.BackupPayment secours) {
                 paymentDto.backupMethodLabel = secours.methodLabel;
@@ -457,6 +606,13 @@ public class SyncOutboxService {
                 paymentDto.creditAccountName = credit.accountName;
                 paymentDto.creditOverLimit = credit.overLimit;
             }
+            if (payment instanceof com.intermarche.edge.domain.payment.DepositPayment acompte) {
+                // LC-06-03-08: the deposit recovery rides with its per-rate VAT
+                // detail and its order code, so the store node accounts it by
+                // rate against the order it settles.
+                paymentDto.depositVatDetail = acompte.vatDetail;
+                paymentDto.depositOrderCode = acompte.orderCode;
+            }
             dto.payments.add(paymentDto);
         }
         return dto;
@@ -471,10 +627,13 @@ public class SyncOutboxService {
      */
     private SyncPayloads.RefundDto toDto(Refund refund) {
         SyncPayloads.RefundDto dto = new SyncPayloads.RefundDto();
+        dto.fiscalDocuments = fiscalDtos(com.intermarche.edge.domain.sale.FiscalDocument
+                .<com.intermarche.edge.domain.sale.FiscalDocument>list("refundId", refund.id));
         dto.refundNumber = refund.refundNumber;
         dto.terminalId = refund.terminalId;
         dto.status = refund.status.name();
         dto.refundMethod = refund.refundMethod != null ? refund.refundMethod.name() : null;
+        dto.moneticServer = refund.moneticServer;
         Ticket original = Ticket.findById(refund.originalTicketId);
         dto.originalTicketNumber = original != null ? original.ticketNumber : null;
         dto.sessionNumber = refund.session != null ? refund.session.sessionNumber : null;
@@ -523,6 +682,8 @@ public class SyncOutboxService {
         dto.vatNumber = customer.vatNumber;
         dto.phone = customer.phone;
         dto.email = customer.email;
+        dto.taxId = customer.taxId;
+        dto.origin = customer.origin == null ? null : customer.origin.name();
         return dto;
     }
 
@@ -567,6 +728,9 @@ public class SyncOutboxService {
         dto.totalEcoTax = posSettingsService.invoiceExportEcoTax()
                 ? document.totalEcoTax : null;
         dto.printCount = document.printCount;
+        dto.orderNumber = document.orderNumber;
+        dto.documentCode = document.documentCode;
+        dto.documentTitle = document.documentTitle;
         return dto;
     }
 
@@ -584,7 +748,47 @@ public class SyncOutboxService {
         dto.detail = event.detail;
         dto.operatorBadgeId = event.operatorBadgeId;
         dto.eventDate = iso(event.eventDate);
+        dto.ticketNumber = event.ticketNumber;
+        dto.amount = event.amount;
+        dto.code = event.code;
         return dto;
+    }
+
+    /**
+     * Maps the Portuguese documents of a sale or a return to their payloads
+     * (BO-10-06-03).
+     *
+     * @param documents the documents, empty when none was issued
+     * @return the payloads, in the order given
+     */
+    private java.util.List<SyncPayloads.FiscalDocumentDto> fiscalDtos(
+            java.util.List<com.intermarche.edge.domain.sale.FiscalDocument> documents) {
+        java.util.List<SyncPayloads.FiscalDocumentDto> dtos = new java.util.ArrayList<>();
+        for (com.intermarche.edge.domain.sale.FiscalDocument document : documents) {
+            SyncPayloads.FiscalDocumentDto dto = new SyncPayloads.FiscalDocumentDto();
+            dto.documentType = document.documentType.name();
+            dto.series = document.series;
+            dto.rank = document.rank;
+            dto.number = document.number;
+            dto.atcud = document.atcud;
+            dto.saftDocumentId = document.saftDocumentId;
+            dto.terminalId = document.terminalId;
+            dto.issuedAt = iso(document.issuedAt);
+            dto.part = document.part;
+            dto.lineUids = document.lineUids;
+            dto.sourceNumber = document.sourceNumber;
+            dto.customerTaxId = document.customerTaxId;
+            dto.customerName = document.customerName;
+            dto.customerAddress = document.customerAddress;
+            dto.grossTotal = document.grossTotal;
+            dto.taxTotal = document.taxTotal;
+            dto.hash = document.hash;
+            dto.previousHash = document.previousHash;
+            dto.qrPayload = document.qrPayload;
+            dto.cancelled = document.cancelled;
+            dtos.add(dto);
+        }
+        return dtos;
     }
 
     /**
@@ -595,5 +799,112 @@ public class SyncOutboxService {
      */
     private String iso(LocalDateTime dateTime) {
         return dateTime != null ? dateTime.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME) : null;
+    }
+
+    /**
+     * Maps a printed ticket to its push payload (LC-08-02-02).
+     *
+     * @param printout the printed ticket
+     * @return the payload, keyed by the register's id
+     */
+    private SyncPayloads.PrintoutDto toDto(com.intermarche.edge.domain.sale.PrintedTicket printout) {
+        SyncPayloads.PrintoutDto dto = new SyncPayloads.PrintoutDto();
+        dto.sourceId = printout.id;
+        dto.terminalId = printout.terminalId;
+        dto.source = printout.source;
+        dto.audience = printout.audience == null ? null : printout.audience.name();
+        dto.issuedAt = printout.issuedAt == null ? null : printout.issuedAt.toString();
+        dto.content = printout.content;
+        return dto;
+    }
+
+    /**
+     * Maps a training sale to its push payload (LC-13-05-06).
+     *
+     * @param training the training sale
+     * @return the payload, keyed by the register's id
+     */
+    private SyncPayloads.TrainingTicketDto toDto(com.intermarche.edge.domain.sale.TrainingTicket training) {
+        SyncPayloads.TrainingTicketDto dto = new SyncPayloads.TrainingTicketDto();
+        dto.sourceId = training.id;
+        dto.terminalId = training.terminalId;
+        dto.cashierLogin = training.cashierLogin;
+        dto.issuedAt = training.issuedAt == null ? null : training.issuedAt.toString();
+        dto.itemCount = training.itemCount;
+        dto.totalIncludingTax = training.totalIncludingTax;
+        dto.content = training.content;
+        dto.parkedAt = training.parkedAt == null ? null : training.parkedAt.toString();
+        dto.parkedBy = training.parkedBy;
+        dto.resumedAt = training.resumedAt == null ? null : training.resumedAt.toString();
+        dto.resumedTerminalId = training.resumedTerminalId;
+        dto.resumedBy = training.resumedBy;
+        return dto;
+    }
+
+    /**
+     * Maps the signed trace of a ticket on hold to its push payload (LC-04-01-03).
+     *
+     * @param parking the record
+     * @return the payload, keyed by the register's id
+     */
+    private SyncPayloads.ParkedTicketDto toDto(com.intermarche.edge.domain.sale.ParkedTicketRecord parking) {
+        SyncPayloads.ParkedTicketDto dto = new SyncPayloads.ParkedTicketDto();
+        dto.sourceId = parking.id;
+        dto.terminalId = parking.terminalId;
+        dto.ticketNumber = parking.ticketNumber;
+        dto.event = parking.event == null ? null : parking.event.name();
+        dto.eventDate = parking.eventDate == null ? null : parking.eventDate.toString();
+        dto.operator = parking.operator;
+        dto.itemCount = parking.itemCount;
+        dto.totalAmount = parking.totalAmount;
+        dto.content = parking.content;
+        dto.previousSignature = parking.previousSignature;
+        dto.signature = parking.signature;
+        return dto;
+    }
+
+    /**
+     * Maps an instrument this register knows to its push payload
+     * (BO-03-06-62, -48): under its issuer's key, whoever reports it.
+     *
+     * @param instrument the instrument
+     * @return the payload
+     */
+    private SyncPayloads.StoredValueDto toDto(com.intermarche.edge.domain.payment.StoredValue instrument) {
+        SyncPayloads.StoredValueDto dto = new SyncPayloads.StoredValueDto();
+        dto.terminalId = terminalId;
+        dto.issuingTerminalId = instrument.issuingTerminalId == null ? terminalId : instrument.issuingTerminalId;
+        dto.number = instrument.number;
+        dto.kind = instrument.kind == null ? null : instrument.kind.name();
+        dto.initialAmount = instrument.initialAmount;
+        dto.balance = instrument.balance;
+        dto.status = instrument.status == null ? null : instrument.status.name();
+        dto.issuedAt = instrument.issuedAt == null ? null : instrument.issuedAt.toString();
+        dto.validUntil = instrument.validUntil == null ? null : instrument.validUntil.toString();
+        dto.exhaustedAt = instrument.exhaustedAt == null ? null : instrument.exhaustedAt.toString();
+        dto.issuingDocumentNumber = instrument.issuingDocumentNumber;
+        return dto;
+    }
+
+    /**
+     * Maps a payment barcode read at this till to its push payload (BO-03-06-63).
+     *
+     * @param reading the reading
+     * @return the payload, keyed by the register's id
+     */
+    private SyncPayloads.ScannedBarcodeDto toDto(com.intermarche.edge.domain.barcode.ScannedBarcode reading) {
+        SyncPayloads.ScannedBarcodeDto dto = new SyncPayloads.ScannedBarcodeDto();
+        dto.sourceId = reading.id;
+        dto.terminalId = reading.terminalId;
+        dto.code = reading.code;
+        dto.typeCode = reading.typeCode;
+        dto.typeLabel = reading.typeLabel;
+        dto.ticketNumber = reading.ticketNumber;
+        dto.amount = reading.amount;
+        dto.validUntil = reading.validUntil == null ? null : reading.validUntil.toString();
+        dto.scannedAt = reading.scannedAt == null ? null : reading.scannedAt.toString();
+        dto.found = reading.found;
+        dto.gs1 = reading.gs1;
+        return dto;
     }
 }

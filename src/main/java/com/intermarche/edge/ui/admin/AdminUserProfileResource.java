@@ -1,10 +1,12 @@
 package com.intermarche.edge.ui.admin;
 
 import com.intermarche.edge.domain.people.CrudOption;
+import com.intermarche.edge.domain.people.EchelonScope;
 import com.intermarche.edge.domain.people.Employee;
 import com.intermarche.edge.domain.people.EmployeeProfile;
 import com.intermarche.edge.domain.setting.Feature;
 import com.intermarche.edge.domain.people.Profile;
+import com.intermarche.edge.security.FeatureAccess;
 import com.intermarche.edge.service.PermissionService;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
@@ -75,6 +77,10 @@ public class AdminUserProfileResource {
         public String profileName;
         /** The echelon scope of the binding. */
         public String scope;
+        /** The operator-facing label of the echelon. */
+        public String scopeLabel;
+        /** Whether the central node distributed the binding. */
+        public boolean central;
     }
 
     /** One rendered employee with its bindings. */
@@ -87,6 +93,8 @@ public class AdminUserProfileResource {
         public String loginName;
         /** The employee's fixed role name. */
         public String role;
+        /** The account's hierarchical level. */
+        public int hierarchyLevel;
         /** The bindings currently attached to the employee. */
         public List<BindingRow> bindings = new ArrayList<>();
     }
@@ -108,6 +116,7 @@ public class AdminUserProfileResource {
      */
     @GET
     @Authenticated
+    @FeatureAccess(value = Feature.USER, selfGuarded = true)
     public Object listPage(@QueryParam("notice") String notice,
                            @QueryParam("noticeOk") @DefaultValue("true") boolean noticeOk) {
         LOGGER.info("Entering method listPage with notice: " + notice + ", noticeOk: " + noticeOk);
@@ -132,6 +141,7 @@ public class AdminUserProfileResource {
         LOGGER.info("Exiting method listPage");
         return adminUsers.data("users", users)
                 .data("profiles", profiles)
+                .data("echelons", EchelonChoices.nodeLevel())
                 .data("notice", notice)
                 .data("noticeOk", noticeOk);
     }
@@ -146,6 +156,7 @@ public class AdminUserProfileResource {
     @Path("/assign")
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Authenticated
+    @FeatureAccess(value = Feature.USER, option = CrudOption.UPDATE, selfGuarded = true)
     @Transactional
     public Response assign(MultivaluedMap<String, String> form) {
         LOGGER.info("Entering method assign with form: " + form);
@@ -166,7 +177,20 @@ public class AdminUserProfileResource {
             LOGGER.info("Exiting method assign");
             return redirect("Utilisateur ou profil introuvable.", false);
         }
+        Employee actor = actor();
+        if (!permissionService.outranks(actor, employee)) {
+            LOGGER.info("Exiting method assign");
+            return redirect("Vous n'administrez que les comptes d'un niveau inférieur au vôtre.", false);
+        }
+        if (!permissionService.mayAssign(actor, profile)) {
+            LOGGER.info("Exiting method assign");
+            return redirect("Le profil « " + profile.name + " » est d'un niveau supérieur au vôtre.", false);
+        }
         String scope = scope(form.getFirst("echelonScope"));
+        if (scope == null) {
+            LOGGER.info("Exiting method assign");
+            return redirect("Échelon invalide : un pays, une enseigne, un point de vente ou « * ».", false);
+        }
         if (EmployeeProfile.exists(employeeId, profileId, scope)) {
             LOGGER.info("Exiting method assign");
             return redirect("Ce profil est déjà affecté à cet échelon.", false);
@@ -190,6 +214,7 @@ public class AdminUserProfileResource {
     @Path("/unassign")
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Authenticated
+    @FeatureAccess(value = Feature.USER, option = CrudOption.DELETE, selfGuarded = true)
     @Transactional
     public Response unassign(MultivaluedMap<String, String> form) {
         LOGGER.info("Entering method unassign with form: " + form);
@@ -203,6 +228,14 @@ public class AdminUserProfileResource {
         if (binding == null) {
             LOGGER.info("Exiting method unassign");
             return redirect("Affectation introuvable.", false);
+        }
+        Employee actor = actor();
+        Employee holder = Employee.findById(binding.employeeId);
+        Profile profile = Profile.findById(binding.profileId);
+        if (!permissionService.outranks(actor, holder)
+                || (profile != null && !permissionService.mayAssign(actor, profile))) {
+            LOGGER.info("Exiting method unassign");
+            return redirect("Cette affectation dépasse votre niveau hiérarchique.", false);
         }
         binding.delete();
         LOGGER.info("Exiting method unassign");
@@ -222,12 +255,15 @@ public class AdminUserProfileResource {
         row.fullName = employee.getFullName();
         row.loginName = employee.loginName;
         row.role = employee.role == null ? "" : employee.role.name();
+        row.hierarchyLevel = employee.hierarchyLevel;
         for (EmployeeProfile binding : EmployeeProfile.forEmployee(employee.id)) {
             BindingRow bindingRow = new BindingRow();
             bindingRow.id = binding.id;
             String name = profileNames.get(binding.profileId);
             bindingRow.profileName = name == null ? "(profil supprimé)" : name;
             bindingRow.scope = binding.echelonScope;
+            bindingRow.scopeLabel = EchelonScope.label(binding.echelonScope);
+            bindingRow.central = binding.centralManaged;
             row.bindings.add(bindingRow);
         }
         return row;
@@ -250,16 +286,29 @@ public class AdminUserProfileResource {
     }
 
     /**
-     * Normalizes a posted scope: an empty scope means the global echelon.
+     * Returns the signed-in operator's account (BO-01-03-03).
+     *
+     * @return the active account of the identity, or null
+     */
+    Employee actor() {
+        return Employee.findActiveLogin(identity.getPrincipal().getName());
+    }
+
+    /**
+     * Normalizes a posted scope (BO-01-03-04): an empty scope means the global
+     * echelon; a profile applies to a country, an enseigne or a point of sale,
+     * never to a register.
      *
      * @param raw the posted scope
-     * @return the trimmed scope, or {@link EmployeeProfile#GLOBAL} when blank
+     * @return the canonical scope, {@link EmployeeProfile#GLOBAL} when blank,
+     *         or null when the scope is invalid or names a register
      */
     private String scope(String raw) {
         if (raw == null || raw.isBlank()) {
             return EmployeeProfile.GLOBAL;
         }
-        return raw.trim();
+        String canonical = EchelonScope.normalize(raw);
+        return canonical == null || !EchelonScope.isNodeLevel(canonical) ? null : canonical;
     }
 
     /**

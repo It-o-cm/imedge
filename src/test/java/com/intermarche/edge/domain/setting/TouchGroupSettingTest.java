@@ -301,4 +301,12 @@ class TouchGroupSettingTest {
         setting.labels = "nl=Zuivel";
         assertNotEquals(before, setting.getChecksum());
     }
+
+    /** BO-03-01-19: a matching language with whitespace-only wording still falls back to the base label. */
+    @org.junit.jupiter.api.Test
+    void coverageTranslatedLabelWithEmptyMatchingWording() {
+        TouchGroupSetting group = new TouchGroupSetting();
+        group.labels = "nl=   ;pt=Leite";
+        org.junit.jupiter.api.Assertions.assertNull(group.translatedLabel("nl"));
+    }
 }

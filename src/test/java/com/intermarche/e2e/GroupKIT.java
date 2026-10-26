@@ -225,7 +225,7 @@ class GroupKIT {
                 .then().log().ifValidationFails().statusCode(200)
                 .contentType(containsString("text/csv"))
                 .header("Content-Disposition", containsString("filename=\"journal.csv\""))
-                .body(containsString("TPV;Transaction;Caissiere;Date;Heure;Montant;Articles"));
+                .body(containsString("TPV;Transaction;Caissière;Date;Heure;Montant;Articles"));
     }
 
     // ================= K4 / K8 — dashboard data =================

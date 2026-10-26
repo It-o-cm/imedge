@@ -6,7 +6,6 @@ import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import org.jboss.logging.Logger;
 
-import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -81,6 +80,26 @@ public class VatRegimeReport implements ReportDefinition {
     /**
      * {@inheritDoc}
      *
+     * @return the column the chart draws (BO-06-01-04)
+     */
+    @Override
+    public int chartColumn() {
+        return 5;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * @return the column naming each bar
+     */
+    @Override
+    public int chartLabelColumn() {
+        return 2;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
      * @return the columns a conformity check reads
      */
     @Override
@@ -113,7 +132,7 @@ public class VatRegimeReport implements ReportDefinition {
                     regime.country == null ? "" : regime.country,
                     regime.legalMention == null ? "" : regime.legalMention,
                     pricedArticles(regime),
-                    exempt(regime) ? "Oui" : "Non"));
+                    exempt(regime)));
         }
         LOGGER.info("Exiting method rows with " + rows.size() + " row(s)");
         return rows;
@@ -136,12 +155,17 @@ public class VatRegimeReport implements ReportDefinition {
     }
 
     /**
-     * Whether a regime exempts what it taxes: a rate of zero and nothing else.
+     * Whether a regime exempts what it taxes (BO-02-02-01): its EXEMPTION flag,
+     * which a zero rate alone does not raise — a zero-rated donation is not an
+     * exemption — followed by the administration's code when it carries one.
      *
      * @param regime the regime examined
-     * @return true when its rate is zero
+     * @return "Oui", "Oui (code)" or "Non"
      */
-    private boolean exempt(VatRate regime) {
-        return regime.rate != null && regime.rate.compareTo(BigDecimal.ZERO) == 0;
+    private String exempt(VatRate regime) {
+        if (!regime.exempt) {
+            return "Non";
+        }
+        return regime.exemptionCode == null ? "Oui" : "Oui (" + regime.exemptionCode + ")";
     }
 }

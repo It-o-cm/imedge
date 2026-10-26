@@ -181,7 +181,7 @@ class AdminSafeInventoryResourceTest {
                         })) {
             String location = resource.count(form).getLocation().toString();
             assertTrue(location.contains("noticeOk=false"));
-            assertTrue(location.contains("-15.00"));
+            assertTrue(location.contains("-15%2C00"));
         }
     }
 

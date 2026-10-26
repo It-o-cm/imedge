@@ -1,5 +1,6 @@
 package com.intermarche.edge.imports;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.intermarche.edge.domain.safe.AccountingPeriod;
 import com.intermarche.edge.domain.safe.SafeMovement;
 import com.intermarche.edge.domain.safe.SafeMovementType;
@@ -27,6 +28,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockConstruction;
@@ -44,7 +46,7 @@ import static org.mockito.Mockito.when;
  * optional VAT triplet.
  *
  * <p>Branch enumeration: {@code processLineLogic} — an unreadable, absent, zero
- * and negative amount; a new row with and without an open period; an existing
+ * and negative amount; a blank, readable and unreadable day; a new row with and without an open period; an existing
  * row correctable and frozen. {@code decimal} and {@code date} — the readable,
  * the blank, the null and the unreadable. {@code vatLinesOf} — a stated triplet
  * and a blank one.
@@ -133,23 +135,44 @@ class SafeReceiptCsvResourceTest {
 
     /**
      * A row with an unusable amount writes nothing at all — the four legs of
-     * that guard: absent, unreadable, zero, negative.
+     * that guard: absent, unreadable and negative are refused with their value
+     * named, so the import counts them as errors; zero is passed over.
      */
     @Test
     void arowWithAnUnusableAmountWritesNothing() {
         int[] counters = new int[2];
         Map<String, Object> known = new HashMap<>();
-        resource.processLineLogic(row("R-1", "Station", "", "2026-09-15"), known, counters);
-        resource.processLineLogic(row("R-1", "Station", "beaucoup", "2026-09-15"), known, counters);
+        IllegalArgumentException absent = assertThrows(IllegalArgumentException.class,
+                () -> resource.processLineLogic(row("R-1", "Station", "", "2026-09-15"), known, counters));
+        assertEquals("Montant absent, illisible ou négatif : «  »", absent.getMessage());
+        IllegalArgumentException unreadable = assertThrows(IllegalArgumentException.class,
+                () -> resource.processLineLogic(row("R-1", "Station", " beaucoup ", "2026-09-15"), known, counters));
+        assertEquals("Montant absent, illisible ou négatif : « beaucoup »", unreadable.getMessage());
+        assertThrows(IllegalArgumentException.class,
+                () -> resource.processLineLogic(row("R-1", "Station", "-12,00", "2026-09-15"), known, counters));
         resource.processLineLogic(row("R-1", "Station", "0", "2026-09-15"), known, counters);
-        resource.processLineLogic(row("R-1", "Station", "-12,00", "2026-09-15"), known, counters);
         assertEquals(0, counters[0]);
         assertEquals(0, counters[1]);
     }
 
     /**
+     * A day the feed wrote but that cannot be read is refused with its value
+     * named, before anything is looked up or written.
+     */
+    @Test
+    void arowWithAnUnreadableDayIsRefused() {
+        int[] counters = new int[2];
+        IllegalArgumentException refused = assertThrows(IllegalArgumentException.class,
+                () -> resource.processLineLogic(row("R-1", "Station", "120,00", " 32/13/2026 "),
+                        new HashMap<>(), counters));
+        assertEquals("Date illisible : « 32/13/2026 »", refused.getMessage());
+        assertEquals(0, counters[0]);
+    }
+
+    /**
      * A reference the safe has never seen writes nothing when NO period is open:
-     * the one door, shut for the feed as for the screens.
+     * the one door, shut for the feed as for the screens — and the line is
+     * refused, so the import reports it instead of losing it.
      */
     @Test
     void anewRowWritesNothingWithoutAnOpenPeriod() {
@@ -159,8 +182,10 @@ class SafeReceiptCsvResourceTest {
             when(query.firstResult()).thenReturn(null);
             panache.when(() -> AccountingPeriod.find("status = ?1 order by startDate desc",
                     AccountingPeriod.PeriodStatus.OPEN)).thenReturn(query);
-            resource.processLineLogic(row("R-1", "Station", "120,00", "2026-09-15"),
-                    new HashMap<>(), counters);
+            IllegalStateException refused = assertThrows(IllegalStateException.class,
+                    () -> resource.processLineLogic(row("R-1", "Station", "120,00", "2026-09-15"),
+                            new HashMap<>(), counters));
+            assertEquals("Aucune période du coffre ouverte : recette non intégrée.", refused.getMessage());
         }
         assertEquals(0, counters[0]);
     }
@@ -340,5 +365,140 @@ class SafeReceiptCsvResourceTest {
         Response response = resource.importReceipts(stream);
         assertEquals(Response.Status.BAD_REQUEST.getStatusCode(), response.getStatus());
         assertTrue(response.getEntity().toString().contains(SafeReceiptCsvResource.COL_AMOUNT));
+    }
+
+    /**
+     * A receipt bearing several rates states one VAT line per triplet, the
+     * second to fifth suffixed; a blank triplet is no line (BO-05-02-03).
+     */
+    @Test
+    void severalVatTripletsAreRead() {
+        Map<String, Integer> header = new LinkedHashMap<>();
+        List<String> columns = List.of("REFERENCE", "AMOUNT", "VAT_RATE", "VAT_BASE", "VAT_AMOUNT",
+                "VAT_RATE_2", "VAT_BASE_2", "VAT_AMOUNT_2", "VAT_RATE_5", "VAT_BASE_5", "VAT_AMOUNT_5");
+        for (int index = 0; index < columns.size(); index++) {
+            header.put(columns.get(index), index);
+        }
+        ImporterCsvResource.LineData data = new ImporterCsvResource.LineData(1, header, new String[] {
+            "R-1", "35,00", "20", "25,00", "5,00", "0", "5,00", "0", "", "", ""}, "REFERENCE");
+        List<SafeVatLine> lines = resource.vatLinesOf(data);
+        assertEquals(2, lines.size());
+        assertEquals(new BigDecimal("25.00"), lines.get(0).base);
+        assertEquals(new BigDecimal("5.00"), lines.get(1).base);
+    }
+
+    /**
+     * Builds the resource as a spy whose canonical import answers a given
+     * response, its flow service mocked.
+     *
+     * @param answer what the canonical import answers
+     * @return the spied resource
+     */
+    private SafeReceiptCsvResource flowResource(Response answer) {
+        SafeReceiptCsvResource spied = org.mockito.Mockito.spy(new SafeReceiptCsvResource());
+        spied.receiptFlowService = mock(com.intermarche.edge.service.ReceiptFlowService.class);
+        org.mockito.Mockito.doReturn(answer).when(spied).importReceipts(org.mockito.ArgumentMatchers.any(InputStream.class));
+        return spied;
+    }
+
+    /**
+     * Stubs the flow a code resolves to.
+     *
+     * @param panache the active PanacheEntityBase mock
+     * @param code the code, upper case
+     * @param flow the flow, or null
+     */
+    @SuppressWarnings("unchecked")
+    private void stubFlow(org.mockito.MockedStatic<io.quarkus.hibernate.orm.panache.PanacheEntityBase> panache,
+            String code, com.intermarche.edge.domain.safe.ReceiptFlow flow) {
+        io.quarkus.hibernate.orm.panache.PanacheQuery<com.intermarche.edge.domain.safe.ReceiptFlow> query =
+                mock(io.quarkus.hibernate.orm.panache.PanacheQuery.class);
+        when(query.firstResult()).thenReturn(flow);
+        panache.when(() -> com.intermarche.edge.domain.safe.ReceiptFlow.find("code", code)).thenReturn(query);
+    }
+
+    /**
+     * A file of an existing feed is rewritten in the canonical layout, then
+     * integrated, and the flow records the answer (BO-05-02-03).
+     */
+    @Test
+    void afeedsFileIsTranslatedThenIntegrated() {
+        SafeReceiptCsvResource spied = flowResource(Response.ok("{\"createdCount\":1}").build());
+        com.intermarche.edge.domain.safe.ReceiptFlow flow = new com.intermarche.edge.domain.safe.ReceiptFlow();
+        flow.code = "STATION";
+        flow.active = true;
+        when(spied.receiptFlowService.translate(flow, "NUM_REMISE;MONTANT_TTC\n1;10\n")).thenReturn("REFERENCE|AMOUNT\n");
+        try (org.mockito.MockedStatic<io.quarkus.hibernate.orm.panache.PanacheEntityBase> panache =
+                org.mockito.Mockito.mockStatic(io.quarkus.hibernate.orm.panache.PanacheEntityBase.class)) {
+            stubFlow(panache, "STATION", flow);
+            Response answer = spied.importReceipts(new ByteArrayInputStream(
+                    "NUM_REMISE;MONTANT_TTC\n1;10\n".getBytes(StandardCharsets.UTF_8)), " station ");
+            assertEquals(200, answer.getStatus());
+        }
+        org.mockito.Mockito.verify(spied.receiptFlowService).ensureDefaults();
+        org.mockito.Mockito.verify(spied.receiptFlowService).recordImport("STATION",
+                "Flux STATION : 1 recette(s) créée(s), 0 mise(s) à jour, 0 erreur(s).");
+    }
+
+    /**
+     * An answer without body is recorded as an empty file, and a file
+     * without flow is integrated as it is.
+     */
+    @Test
+    void anAnswerWithoutBodyAndACanonicalFile() {
+        SafeReceiptCsvResource spied = flowResource(Response.noContent().build());
+        com.intermarche.edge.domain.safe.ReceiptFlow flow = new com.intermarche.edge.domain.safe.ReceiptFlow();
+        flow.code = "GAZ";
+        when(spied.receiptFlowService.translate(org.mockito.ArgumentMatchers.eq(flow),
+                org.mockito.ArgumentMatchers.anyString())).thenReturn("REFERENCE|AMOUNT\n");
+        try (org.mockito.MockedStatic<io.quarkus.hibernate.orm.panache.PanacheEntityBase> panache =
+                org.mockito.Mockito.mockStatic(io.quarkus.hibernate.orm.panache.PanacheEntityBase.class)) {
+            stubFlow(panache, "GAZ", flow);
+            spied.importReceipts(new ByteArrayInputStream(new byte[0]), "GAZ");
+        }
+        org.mockito.Mockito.verify(spied.receiptFlowService).recordImport("GAZ", "Flux GAZ : aucune recette dans le fichier.");
+        assertEquals(204, spied.importReceipts(new ByteArrayInputStream(new byte[0]), null).getStatus());
+        assertEquals(204, spied.importReceipts(new ByteArrayInputStream(new byte[0]), " ").getStatus());
+    }
+
+    /**
+     * An unknown or inactive flow is refused, and so is an unreadable file;
+     * each refusal is a JSON error a parser reads.
+     *
+     * @throws Exception never, the refusals being valid JSON
+     */
+    @Test
+    void anUnknownInactiveOrUnreadableFlowIsRefused() throws Exception {
+        SafeReceiptCsvResource spied = flowResource(Response.ok().build());
+        com.intermarche.edge.domain.safe.ReceiptFlow inactive = new com.intermarche.edge.domain.safe.ReceiptFlow();
+        inactive.code = "OLD";
+        inactive.active = false;
+        com.intermarche.edge.domain.safe.ReceiptFlow live = new com.intermarche.edge.domain.safe.ReceiptFlow();
+        live.code = "LIVE";
+        InputStream broken = new InputStream() {
+            /**
+             * Fails every read.
+             *
+             * @return never
+             * @throws java.io.IOException always
+             */
+            @Override
+            public int read() throws java.io.IOException {
+                throw new java.io.IOException("cassé");
+            }
+        };
+        try (org.mockito.MockedStatic<io.quarkus.hibernate.orm.panache.PanacheEntityBase> panache =
+                org.mockito.Mockito.mockStatic(io.quarkus.hibernate.orm.panache.PanacheEntityBase.class)) {
+            stubFlow(panache, "NONE", null);
+            stubFlow(panache, "OLD", inactive);
+            stubFlow(panache, "LIVE", live);
+            assertEquals(400, spied.importReceipts(new ByteArrayInputStream(new byte[0]), "NONE").getStatus());
+            assertEquals(400, spied.importReceipts(new ByteArrayInputStream(new byte[0]), "OLD").getStatus());
+            Response unreadable = spied.importReceipts(broken, "LIVE");
+            assertEquals(500, unreadable.getStatus());
+            assertEquals("Fichier illisible", new ObjectMapper().readTree((String) unreadable.getEntity()).get("error").asText());
+            assertEquals("Flux de recettes inconnu ou inactif", new ObjectMapper().readTree(
+                    (String) spied.importReceipts(new ByteArrayInputStream(new byte[0]), "NONE").getEntity()).get("error").asText());
+        }
     }
 }

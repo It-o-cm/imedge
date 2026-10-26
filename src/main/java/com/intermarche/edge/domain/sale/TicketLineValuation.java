@@ -1,13 +1,7 @@
 package com.intermarche.edge.domain.sale;
 
 import io.quarkus.hibernate.orm.panache.PanacheEntity;
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.FetchType;
-import jakarta.persistence.Index;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
-import jakarta.persistence.Table;
+import jakarta.persistence.*;
 
 import java.math.BigDecimal;
 
@@ -58,6 +52,15 @@ public class TicketLineValuation extends PanacheEntity {
     /** The advantage amount allocated on this line (tax included), or null. */
     @Column(name = "advantage_amount", precision = 19, scale = 2)
     public BigDecimal advantageAmount;
+
+    /**
+     * Where the advantage on this line is printed (GB-01-07-10): {@code "LINE"}
+     * under the article, {@code "FOOTER"} in the ticket footer. Null when the
+     * engine named no placement, which the printer reads as FOOTER — the general
+     * case, and the value stored for every advantage that spans several lines.
+     */
+    @Column(name = "advantage_print_mode", length = 10)
+    public String advantagePrintMode;
 
     /**
      * The label of the CORRECTION that put money back on this line, or null

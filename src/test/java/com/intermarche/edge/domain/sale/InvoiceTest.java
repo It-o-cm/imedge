@@ -2,11 +2,12 @@ package com.intermarche.edge.domain.sale;
 
 import com.intermarche.edge.domain.payment.AccountCustomer;
 import com.intermarche.edge.domain.store.Address;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.Objects;
-import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests for {@link Invoice}, targeting 100% branch coverage.
@@ -244,5 +245,21 @@ class InvoiceTest {
         int before = invoice.getChecksum();
         invoice.documentNumber = "C04-F000124";
         Assertions.assertNotEquals(before, invoice.getChecksum());
+    }
+
+    /**
+     * BO-03-03-02 / BO-03-04-09: the printed title is the administered
+     * document's name when the paper was drawn as one, the kind's title when
+     * none — or a blank one — was frozen.
+     */
+    @Test
+    void thePrintedTitleIsTheAdministeredName() {
+        Invoice document = new Invoice();
+        document.documentType = DocumentType.BON_LIVRAISON;
+        Assertions.assertEquals("BON DE LIVRAISON", document.printedTitle());
+        document.documentTitle = "  ";
+        Assertions.assertEquals("BON DE LIVRAISON", document.printedTitle());
+        document.documentTitle = "FACTURE PRO";
+        Assertions.assertEquals("FACTURE PRO", document.printedTitle());
     }
 }

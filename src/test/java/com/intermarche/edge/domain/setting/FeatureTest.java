@@ -69,4 +69,13 @@ class FeatureTest {
     void fromKeyReturnsNullOnUnknownKey() {
         assertNull(Feature.fromKey("nope"));
     }
+
+    /**
+     * Each feature exposes the path of the back-office screen serving it.
+     */
+    @Test
+    void exposesThePathOfItsScreen() {
+        assertEquals("/admin/settings", Feature.SETTINGS.getPath());
+        assertEquals("/admin/store", Feature.STORE.getPath());
+    }
 }

@@ -82,7 +82,7 @@ public class StoreMessage extends PanacheEntity {
      * (LC-03-07-08), separated by semicolons, or null when the format alone
      * decides.
      */
-    @Column(name = "postal_codes", length = 500)
+    @Column(name = "postal_codes", length = 20000)
     public String postalCodes;
 
     /** When the message starts being served, or null for at once. */
@@ -102,9 +102,28 @@ public class StoreMessage extends PanacheEntity {
     @Column(name = "audience", nullable = false, length = 20)
     public Audience audience = Audience.ALL;
 
-    /** The island, terminal or employee the audience names; blank for everyone. */
-    @Column(name = "audience_value", length = 50)
+    /**
+     * The island, terminal or employee the audience names; blank for everyone.
+     * An ISLAND audience may name several islands, separated by semicolons
+     * (BO-06-03-01).
+     */
+    @Column(name = "audience_value", length = 200)
     public String audienceValue;
+
+    /**
+     * The days of the week the message is served on, ISO numbers (1 for Monday)
+     * separated by semicolons, or null for every day (BO-06-03-01).
+     */
+    @Column(name = "active_days", length = 20)
+    public String activeDays;
+
+    /** The first time of day it is served, inclusive, or null from midnight (BO-06-03-01). */
+    @Column(name = "daily_from")
+    public java.time.LocalTime dailyFrom;
+
+    /** The time of day it stops being served, or null to midnight (BO-06-03-01). */
+    @Column(name = "daily_to")
+    public java.time.LocalTime dailyTo;
 
     /** When the register shows it. */
     @Enumerated(EnumType.STRING)
@@ -147,12 +166,67 @@ public class StoreMessage extends PanacheEntity {
         if (endsAt != null && now.isAfter(endsAt)) {
             return false;
         }
+        if (!servedOn(now)) {
+            return false;
+        }
         return switch (audience) {
             case ALL -> true;
             case TERMINAL -> audienceValue != null && audienceValue.equals(terminalId);
-            case ISLAND -> audienceValue != null && audienceValue.equals(islandCode);
+            case ISLAND -> islandCode != null && islands().contains(islandCode);
             case EMPLOYEE -> true;
         };
+    }
+
+    /**
+     * Whether the message is served on the day and at the time of a moment:
+     * its days of the week and its daily hours (BO-06-03-01).
+     *
+     * @param now the moment
+     * @return true when no day or hour restricts it, or the moment is inside them
+     */
+    public boolean servedOn(LocalDateTime now) {
+        if (activeDays != null && !activeDays.isBlank()
+                && !days().contains(now.getDayOfWeek().getValue())) {
+            return false;
+        }
+        java.time.LocalTime time = now.toLocalTime();
+        return (dailyFrom == null || !time.isBefore(dailyFrom)) && (dailyTo == null || time.isBefore(dailyTo));
+    }
+
+    /**
+     * Reads the days of the week the message is served on.
+     *
+     * @return the ISO day numbers, empty for every day
+     */
+    public java.util.List<Integer> days() {
+        java.util.List<Integer> days = new java.util.ArrayList<>();
+        if (activeDays == null) {
+            return days;
+        }
+        for (String raw : activeDays.split(";")) {
+            if (raw.trim().matches("[1-7]")) {
+                days.add(Integer.parseInt(raw.trim()));
+            }
+        }
+        return days;
+    }
+
+    /**
+     * Reads the islands an ISLAND audience names.
+     *
+     * @return the island codes, empty when none
+     */
+    public java.util.List<String> islands() {
+        java.util.List<String> islands = new java.util.ArrayList<>();
+        if (audienceValue == null) {
+            return islands;
+        }
+        for (String raw : audienceValue.split(";")) {
+            if (!raw.isBlank()) {
+                islands.add(raw.trim());
+            }
+        }
+        return islands;
     }
 
     /**
@@ -289,7 +363,13 @@ public class StoreMessage extends PanacheEntity {
          * A label to validate with nothing to type (LC-03-07-09) — declared
          * as such, not an options list of one.
          */
-        INFORMATIVE("Message informatif à valider");
+        INFORMATIVE("Message informatif à valider"),
+
+        /**
+         * A YES / NO question (BO-06-03-01): served to the register as a
+         * choice of the two answers « Oui » and « Non ».
+         */
+        YES_NO("Oui / Non");
 
         /** The label shown on the administration screen. */
         private final String label;

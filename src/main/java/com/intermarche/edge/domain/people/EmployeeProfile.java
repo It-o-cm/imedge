@@ -9,6 +9,7 @@ import jakarta.persistence.Table;
 import java.util.List;
 import java.util.Objects;
 import com.intermarche.edge.domain.BaseEntity;
+import com.intermarche.edge.domain.store.NodeEchelon;
 
 /**
  * The binding of a {@link Profile} to an {@link Employee} at one echelon scope
@@ -17,7 +18,10 @@ import com.intermarche.edge.domain.BaseEntity;
  * A separate link rather than a many-to-many join because the binding carries
  * its own datum — the {@link #echelonScope} — which is the "&times; echelon"
  * of the profile model: the same profile can be granted to an account on one
- * point of sale and withheld on another. The scope is kept deliberately
+ * point of sale and withheld on another. The scope is an {@link EchelonScope}:
+ * the whole organisation, a country, an enseigne or a point of sale
+ * (BO-01-03-04); a bare code, the form of the first assignments, reads as a
+ * point of sale. Historically the scope was kept deliberately
  * simple against what the suite actually models today: {@link #GLOBAL} (every
  * node) or a point-of-sale {@link Store#code}. The country/enseigne tree the
  * AO describes is an open topology arbitrage; when it lands, the scope
@@ -52,8 +56,16 @@ public class EmployeeProfile extends BaseEntity {
      * The echelon this binding applies to: {@link #GLOBAL} for every node, or
      * a {@link Store#code} to confine it to one point of sale.
      */
-    @Column(name = "echelon_scope", nullable = false, length = 20)
+    @Column(name = "echelon_scope", nullable = false, length = 60)
     public String echelonScope = GLOBAL;
+
+    /**
+     * Whether the binding was distributed by the central node (BO-01-03-04):
+     * a central assignment is replaced by the next distribution, a local one
+     * is the store's own and is never touched by it.
+     */
+    @Column(name = "central_managed", nullable = false)
+    public boolean centralManaged = false;
 
     /**
      * Indicates whether this binding applies on a node whose point-of-sale
@@ -68,10 +80,22 @@ public class EmployeeProfile extends BaseEntity {
      * @return true when this binding is in force on that node
      */
     public boolean appliesTo(String nodePdv) {
+        return appliesTo(new NodeEchelon(nodePdv, null, null));
+    }
+
+    /**
+     * Indicates whether this binding applies on a node placed in the
+     * organisation: its scope must be the whole organisation or name the
+     * node's country, enseigne or point of sale.
+     *
+     * @param node the node's place, possibly null
+     * @return true when this binding is in force on that node
+     */
+    public boolean appliesTo(NodeEchelon node) {
         if (echelonScope == null || GLOBAL.equals(echelonScope)) {
             return true;
         }
-        return echelonScope.equals(nodePdv);
+        return EchelonScope.isNodeLevel(echelonScope) && EchelonScope.coversNode(echelonScope, node);
     }
 
     /**

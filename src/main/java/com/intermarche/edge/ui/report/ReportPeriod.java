@@ -15,6 +15,11 @@ import java.time.temporal.TemporalAdjusters;
  * « la semaine » means the same interval on the cashier report and on the
  * settlement report.
  *
+ * <p>The PREVIOUS periods — J-1, S-1, M-1 and A-1 (BO-06-06-06) — are the
+ * day, week, month or year just before the one holding the chosen date: the
+ * state a shop checks every morning is yesterday's, and the reader should not
+ * have to compute the date of yesterday to edit it.
+ *
  * <p>A period is resolved to a HALF-OPEN interval [from, to[ whose bounds are
  * date-times, never dates: a ticket closed at 23:59:30 belongs to its day, and
  * an interval ending at midnight would drop it.
@@ -37,7 +42,19 @@ public enum ReportPeriod {
     YEAR("Année"),
 
     /** The free range the operator typed, bound to bound. */
-    RANGE("Plage de dates");
+    RANGE("Plage de dates"),
+
+    /** The day BEFORE the chosen date, J-1 (BO-06-06-06). */
+    PREVIOUS_DAY("Jour précédent (J-1)"),
+
+    /** The week before the one containing the chosen date, S-1 (BO-06-06-06). */
+    PREVIOUS_WEEK("Semaine précédente (S-1)"),
+
+    /** The month before the one containing the chosen date, M-1 (BO-06-06-06). */
+    PREVIOUS_MONTH("Mois précédent (M-1)"),
+
+    /** The year before the one containing the chosen date, A-1 (BO-06-06-06). */
+    PREVIOUS_YEAR("Année précédente (A-1)");
 
     /** The label shown in the period selector. */
     private final String label;
@@ -76,6 +93,10 @@ public enum ReportPeriod {
             case MONTH -> day.withDayOfMonth(1).atStartOfDay();
             case YEAR -> day.withDayOfYear(1).atStartOfDay();
             case RANGE -> (rangeFrom == null ? day : rangeFrom).atStartOfDay();
+            case PREVIOUS_DAY -> day.minusDays(1).atStartOfDay();
+            case PREVIOUS_WEEK -> WEEK.from(day.minusWeeks(1), null);
+            case PREVIOUS_MONTH -> MONTH.from(day.minusMonths(1), null);
+            case PREVIOUS_YEAR -> YEAR.from(day.minusYears(1), null);
         };
     }
 
@@ -101,6 +122,10 @@ public enum ReportPeriod {
             case MONTH -> day.withDayOfMonth(1).plusMonths(1).atStartOfDay();
             case YEAR -> day.withDayOfYear(1).plusYears(1).atStartOfDay();
             case RANGE -> (rangeTo == null ? day : rangeTo).plusDays(1).atStartOfDay();
+            case PREVIOUS_DAY -> day.atStartOfDay();
+            case PREVIOUS_WEEK -> WEEK.from(day, null);
+            case PREVIOUS_MONTH -> MONTH.from(day, null);
+            case PREVIOUS_YEAR -> YEAR.from(day, null);
         };
     }
 }

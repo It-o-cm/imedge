@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.verify;
@@ -159,17 +160,96 @@ class PostalCodeCsvResourceTest {
     }
 
     /**
+     * A pair the chunk does not carry is a CREATION: the null arm of the
+     * {@code postalCode == null} guard builds a fresh row, sets its three
+     * fields, counts one creation and persists it through the entity manager.
+     */
+    @Test
+    void anUnknownPairIsCreatedAndPersisted() {
+        List<String> columns = List.of(PostalCodeCsvResource.COL_CODE,
+                PostalCodeCsvResource.COL_PLACE, PostalCodeCsvResource.COL_COUNTRY);
+        int[] counters = {0, 0};
+        try (MockedStatic<Panache> panache = mockStatic(Panache.class)) {
+            EntityManager entityManager = mock(EntityManager.class);
+            panache.when(Panache::getEntityManager).thenReturn(entityManager);
+            resource.processLineLogic(row(columns, "75008", "Paris", "FR"),
+                    new HashMap<>(), counters);
+            assertEquals(1, counters[0]);
+            assertEquals(0, counters[1]);
+            verify(entityManager).persist(any(PostalCode.class));
+        }
+    }
+
+    /**
+     * A pair already in the chunk is an UPDATE: the non-null arm of the
+     * {@code postalCode == null} guard re-reads the row by its id and, the
+     * country having changed, overwrites it and counts one update — the true
+     * arm of the country-inequality guard.
+     */
+    @Test
+    void aKnownPairWithAChangedCountryIsUpdated() {
+        List<String> columns = List.of(PostalCodeCsvResource.COL_CODE,
+                PostalCodeCsvResource.COL_PLACE, PostalCodeCsvResource.COL_COUNTRY);
+        PostalCode indexed = entity("75008", "Paris");
+        indexed.id = 5L;
+        Map<String, Object> entityMap = new HashMap<>();
+        entityMap.put(PostalCodeCsvResource.pair("75008", "Paris"), indexed);
+        PostalCode managed = entity("75008", "Paris");
+        managed.id = 5L;
+        managed.country = "FR";
+        int[] counters = {0, 0};
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> PostalCode.findById(5L)).thenReturn(managed);
+            resource.processLineLogic(row(columns, "75008", "Paris", "PT"), entityMap, counters);
+            assertEquals(0, counters[0]);
+            assertEquals(1, counters[1]);
+            assertEquals("PT", managed.country);
+        }
+    }
+
+    /**
+     * A pair already in the chunk whose country is unchanged is left untouched:
+     * the false arm of the country-inequality guard counts no update and keeps
+     * the stored country.
+     */
+    @Test
+    void aKnownPairWithTheSameCountryIsLeftUntouched() {
+        List<String> columns = List.of(PostalCodeCsvResource.COL_CODE,
+                PostalCodeCsvResource.COL_PLACE, PostalCodeCsvResource.COL_COUNTRY);
+        PostalCode indexed = entity("75008", "Paris");
+        indexed.id = 7L;
+        Map<String, Object> entityMap = new HashMap<>();
+        entityMap.put(PostalCodeCsvResource.pair("75008", "Paris"), indexed);
+        PostalCode managed = entity("75008", "Paris");
+        managed.id = 7L;
+        managed.country = "FR";
+        int[] counters = {0, 0};
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> PostalCode.findById(7L)).thenReturn(managed);
+            resource.processLineLogic(row(columns, "75008", "Paris", "FR"), entityMap, counters);
+            assertEquals(0, counters[0]);
+            assertEquals(0, counters[1]);
+            assertEquals("FR", managed.country);
+        }
+    }
+
+    /**
      * The public entry point delegates to the base import with the CODE key and
-     * the PLACE required column: an empty stream carries no header and no row,
-     * so it imports nothing and answers a 200 with zero counts.
+     * the PLACE required column: an empty stream carries no header and no row, so
+     * it imports nothing and answers a 200 with zero counts.
+     *
+     * <p>Thin as it is, the method is the ONLY door the feed goes through, and
+     * what it hands the base import — which column is the key, which ones are
+     * required — is a contract: swapping the two arguments compiles and breaks
+     * every import of this referential.
      */
     @Test
     void importPostalCodesDelegatesToTheBaseImport() {
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
-            InputStream stream = new ByteArrayInputStream(new byte[0]);
-            Response response = resource.importPostalCodes(stream);
+            java.io.InputStream stream = new java.io.ByteArrayInputStream(new byte[0]);
+            jakarta.ws.rs.core.Response response = resource.importPostalCodes(stream);
             assertEquals(200, response.getStatus());
-            assertEquals("{\"createdCount\":0, \"updatedCount\":0}", response.getEntity());
+            assertEquals("{\"createdCount\":0,\"updatedCount\":0}", response.getEntity());
         }
     }
 

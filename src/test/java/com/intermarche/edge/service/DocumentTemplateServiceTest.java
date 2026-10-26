@@ -10,10 +10,11 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.when;
@@ -54,13 +55,16 @@ class DocumentTemplateServiceTest {
     }
 
     /**
-     * Builds a service whose engine ALSO resolves the methods of the objects the
-     * data carries, which is what the running application does: the layout
-     * primitives are reached as {@code fmt.centre(...)} through the resolver
-     * Quarkus generates from {@code @TemplateData}, and a plain
-     * {@code addDefaults()} engine has neither that resolver nor reflection — so
-     * every starter using {@code fmt} would render nothing here while rendering
-     * perfectly in production.
+     * Builds the service over an engine that also resolves plain objects by
+     * reflection.
+     *
+     * <p>The register's own engine reaches {@link DocumentLayout} through the
+     * resolver its {@code @TemplateData} generates at build time, which a
+     * hand-assembled engine has no way to carry; reflection resolves the very
+     * same methods and is the stand-in a unit test can run. What this proves
+     * is the RENDERER's wiring — that the primitives are handed to the
+     * template, bound to its width — not the build-time generation, which only
+     * a running application can show.
      *
      * @return the wired service
      */
@@ -672,8 +676,12 @@ class DocumentTemplateServiceTest {
     void withoutATypeOnlyTheCommonValuesAreOffered() {
         DocumentTemplateService service = newService();
         List<DocumentTemplateService.Reference> references = service.references(null);
-        assertEquals(9, references.size());
+        assertEquals(15, references.size());
         assertNotNull(find(references, "{store.siret}"));
+        // BO-03-10-19/20: the whole store record is offered to a header.
+        assertNotNull(find(references, "{store.phone}"));
+        assertNotNull(find(references, "{store.vatNumber}"));
+        assertNotNull(find(references, "{store.bankAccount}"));
         assertNotNull(find(references, "{date}"));
         for (DocumentTemplateService.Reference reference : references) {
             assertFalse(reference.isRepeating());
@@ -805,6 +813,295 @@ class DocumentTemplateServiceTest {
     }
 
     /**
+     * A template reaches the register's OWN typesetting primitives through
+     * {@code fmt}, and lays a value flush right exactly as the built-in
+     * receipt does — the wiring that makes a factory template able to
+     * reproduce a printed document instead of approximating it.
+     */
+    @Test
+    void atemplateLaysOutWithTheRegistersOwnPrimitives() {
+        DocumentTemplateService service = newReflectiveService();
+        String rendered = service.renderTemplate(
+                template("{fmt.line('TOTAL TTC', '4,62 E')}"), java.util.Map.of());
+        assertEquals("TOTAL TTC" + " ".repeat(27) + "4,62 E", rendered);
+        assertEquals(42, rendered.length());
+    }
+
+    /**
+     * The primitives are bound to the template's ADMINISTERED width, so the
+     * same source laid out on a narrower paper aligns on that paper. Until
+     * this lot the width was validated, stored and distributed, and no
+     * renderer ever read it.
+     */
+    @Test
+    void thePrimitivesFollowTheAdministeredWidth() {
+        DocumentTemplateService service = newReflectiveService();
+        DocumentTemplate narrow = template("{fmt.line('A', 'B')}");
+        narrow.width = 20;
+        assertEquals("A" + " ".repeat(18) + "B",
+                service.renderTemplate(narrow, java.util.Map.of()));
+    }
+
+    /**
+     * The width itself is exposed beside the primitives, for a template that
+     * needs the number rather than the alignment.
+     */
+    @Test
+    void thewidthIsExposedToTheTemplate() {
+        DocumentTemplateService service = newService();
+        assertEquals("42", service.renderTemplate(template("{width}"), java.util.Map.of()));
+    }
+
+    /**
+     * Centring and the rule are reachable too, and a template mixing them with
+     * its own values still reads those values — the enrichment ADDS, it does
+     * not replace what the printer assembled.
+     */
+    @Test
+    void atemplateCentresRulesAndStillReadsItsOwnValues() {
+        DocumentTemplateService service = newReflectiveService();
+        String rendered = service.renderTemplate(
+                template("{fmt.centre('MERCI')}|{fmt.rule()}|{store}"),
+                java.util.Map.of("store", "LYON"));
+        assertEquals(" ".repeat(18) + "MERCI|" + "-".repeat(42) + "|LYON", rendered);
+    }
+
+    /**
+     * A NULL data map still renders: the primitives are handed over all the
+     * same, which is the null arm of the enrichment.
+     */
+    @Test
+    void anullDataMapStillGetsThePrimitives() {
+        DocumentTemplateService service = newReflectiveService();
+        assertEquals("-".repeat(42), service.renderTemplate(template("{fmt.rule()}"), null));
+    }
+
+    /**
+     * The caller's map is COPIED and never enriched in place: the values a
+     * printer assembled for one document must not grow a key because they were
+     * passed through the renderer.
+     */
+    @Test
+    void thecallersMapIsNotEnrichedInPlace() {
+        DocumentTemplateService service = newReflectiveService();
+        java.util.Map<String, Object> data = new java.util.HashMap<>();
+        data.put("store", "LYON");
+        service.renderTemplate(template("{fmt.rule()}"), data);
+        assertEquals(java.util.Set.of("store"), data.keySet());
+    }
+
+    /**
+     * {@code parseError} falls back to the exception's {@code toString} when the
+     * parse failure carries no message — the null-message arm of its ternary,
+     * exercised with an engine whose parse throws a message-less exception.
+     */
+    @Test
+    void parseErrorFallsBackToToStringWhenTheFailureHasNoMessage() {
+        DocumentTemplateService service = new DocumentTemplateService();
+        service.engine = mock(Engine.class);
+        when(service.engine.parse(anyString())).thenThrow(new RuntimeException());
+        String error = service.parseError("{broken");
+        assertEquals(new RuntimeException().toString(), error);
+    }
+
+    /**
+     * {@code singular} appends "Item" when the list name is not a plural: a key
+     * that does not end in "s" and a single-letter "s" key both take the else
+     * arm of the {@code endsWith("s") && length() > 1} guard.
+     */
+    @Test
+    void singularAppendsItemForANonPluralKey() throws Exception {
+        DocumentTemplateService service = new DocumentTemplateService();
+        java.lang.reflect.Method method =
+                DocumentTemplateService.class.getDeclaredMethod("singular", String.class);
+        method.setAccessible(true);
+        assertEquals("xItem", method.invoke(service, "x"));
+        assertEquals("sItem", method.invoke(service, "s"));
+    }
+
+    /**
+     * {@code text} maps a null demonstration value to the empty string — the
+     * null arm of its guard.
+     */
+    @Test
+    void textMapsNullToTheEmptyString() throws Exception {
+        DocumentTemplateService service = new DocumentTemplateService();
+        java.lang.reflect.Method method =
+                DocumentTemplateService.class.getDeclaredMethod("text", Object.class);
+        method.setAccessible(true);
+        assertEquals("", method.invoke(service, new Object[] {null}));
+    }
+
+    /**
+     * {@code listReferences} describes a list of plain values through a single
+     * {@code {item}} reference — the not-a-map arm taken when the first element
+     * is not a map.
+     */
+    @Test
+    void listReferencesDescribesAListOfPlainValues() throws Exception {
+        DocumentTemplateService service = new DocumentTemplateService();
+        java.lang.reflect.Method method = DocumentTemplateService.class.getDeclaredMethod(
+                "listReferences", String.class, java.util.List.class);
+        method.setAccessible(true);
+        java.util.List<?> references =
+                (java.util.List<?>) method.invoke(service, "items", java.util.List.of("PAIN"));
+        assertEquals(2, references.size());
+    }
+
+    /**
+     * Reads a block of the demonstration document.
+     *
+     * @param service the service under test
+     * @param type the document type
+     * @param key the block's name
+     * @return the block
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> block(DocumentTemplateService service,
+            DocumentTemplate.DocumentType type, String key) {
+        return (Map<String, Object>) service.sampleData(type).get(key);
+    }
+
+    /**
+     * Reads the first row of a repeating block of the demonstration document.
+     *
+     * @param service the service under test
+     * @param type the document type
+     * @param key the list's name
+     * @return the first row
+     */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> firstRow(DocumentTemplateService service,
+            DocumentTemplate.DocumentType type, String key) {
+        return ((List<Map<String, Object>>) service.sampleData(type).get(key)).get(0);
+    }
+
+    /**
+     * BO-03-03-02 / BO-03-03-03 / BO-03-03-04: the INVOICE advertises the keys
+     * the invoice itself hands — the due date, the addressee's tax id, both
+     * unit prices, the attributes line and the tax-included column of the VAT
+     * table. They were all served by the renderer and advertised by nobody, so
+     * a paramétreur could not discover them.
+     */
+    @Test
+    void theInvoiceSampleAdvertisesTheInvoicesOwnKeys() {
+        DocumentTemplateService service = newService();
+        assertEquals("15/10/2026",
+                block(service, DocumentTemplate.DocumentType.INVOICE, "document").get("dueDate"));
+        assertNotNull(
+                block(service, DocumentTemplate.DocumentType.INVOICE, "customer").get("taxId"));
+        Map<String, Object> line = firstRow(service, DocumentTemplate.DocumentType.INVOICE, "lines");
+        assertNotNull(line.get("unitExcludingTax"));
+        assertNotNull(line.get("unitIncludingTax"));
+        assertNotNull(line.get("attributes"));
+        assertNotNull(firstRow(service, DocumentTemplate.DocumentType.INVOICE, "vatRows")
+                .get("includingTax"));
+    }
+
+    /**
+     * The same keys on the A4 format, which is the SAME document in another
+     * shape: a paramétreur who learns one knows the other.
+     */
+    @Test
+    void theA4InvoiceSampleAdvertisesTheSameKeys() {
+        DocumentTemplateService service = newService();
+        assertEquals("15/10/2026",
+                block(service, DocumentTemplate.DocumentType.INVOICE_A4, "document").get("dueDate"));
+        assertNotNull(firstRow(service, DocumentTemplate.DocumentType.INVOICE_A4, "lines")
+                .get("unitIncludingTax"));
+    }
+
+    /**
+     * The invoice does NOT advertise the receipt's own line keys: its rows name
+     * neither a family nor a unit nor a {@code unitPrice}, because the invoice
+     * renderer hands none of the three. Advertising them would promise values
+     * that render empty on a real invoice.
+     */
+    @Test
+    void theInvoiceSampleDoesNotAdvertiseTheReceiptsLineKeys() {
+        DocumentTemplateService service = newService();
+        Map<String, Object> line = firstRow(service, DocumentTemplate.DocumentType.INVOICE, "lines");
+        assertNull(line.get("family"));
+        assertNull(line.get("unit"));
+        assertNull(line.get("unitPrice"));
+    }
+
+    /**
+     * The REFUND carries neither a settlement list nor a loyalty zone — the
+     * refund renderer hands neither — and it carries the two blocks that are
+     * its own: the return reason and the recalculation of the kept basket.
+     */
+    @Test
+    void theRefundSampleCarriesOnlyWhatARefundHands() {
+        DocumentTemplateService service = newService();
+        Map<String, Object> data = service.sampleData(DocumentTemplate.DocumentType.REFUND_RECEIPT);
+        assertNull(data.get("payments"));
+        assertNull(data.get("fidelity"));
+        assertNotNull(data.get("recalculation"));
+        assertNotNull(block(service, DocumentTemplate.DocumentType.REFUND_RECEIPT, "document")
+                .get("returnReason"));
+    }
+
+    /**
+     * BO-03-03-03 / BO-03-03-22 / BO-03-03-24: the RECEIPT advertises the
+     * tax-excluded unit price, the line's own modification and the cumulated
+     * immediate discounts.
+     */
+    @Test
+    void theReceiptSampleAdvertisesThePricesAndTheDiscounts() {
+        DocumentTemplateService service = newService();
+        Map<String, Object> line = firstRow(service,
+                DocumentTemplate.DocumentType.SALE_RECEIPT, "lines");
+        assertNotNull(line.get("unitExcludingTax"));
+        assertNotNull(line.get("discountLabel"));
+        assertNotNull(line.get("discount"));
+        assertNotNull(block(service, DocumentTemplate.DocumentType.SALE_RECEIPT, "totals")
+                .get("immediateDiscount"));
+    }
+
+    /**
+     * BO-03-03-25 / BO-03-03-33 / BO-03-03-34: the loyalty zone advertises the
+     * grouping that travels with each advantage line and the balances of imfid
+     * responses B and C — the register hands all of them.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void theLoyaltySampleAdvertisesTheGroupingAndTheBalances() {
+        DocumentTemplateService service = newService();
+        Map<String, Object> fidelity = block(service,
+                DocumentTemplate.DocumentType.SALE_RECEIPT, "fidelity");
+        assertNotNull(fidelity.get("projectedAfterEarn"));
+        assertNotNull(fidelity.get("projectedLabel"));
+        assertNotNull(fidelity.get("balanceAfter"));
+        assertNotNull(fidelity.get("anonymousProjection"));
+        Map<String, Object> line =
+                ((List<Map<String, Object>>) fidelity.get("lines")).get(0);
+        assertNotNull(line.get("advantageType"));
+        assertNotNull(line.get("advantageTypeLabel"));
+        assertNotNull(line.get("advantageTypeOrder"));
+        assertNotNull(line.get("advantageCategory"));
+        assertNotNull(line.get("advantageCategoryLabel"));
+    }
+
+    /**
+     * BO-03-03-08: the credit note advertises its end of validity and its
+     * barcode directive; the gift card advertises the same keys and states no
+     * expiry, because the registry holds one only for a note.
+     */
+    @Test
+    void theInstrumentSampleAdvertisesTheExpiryAndTheBarcode() {
+        DocumentTemplateService service = newService();
+        Map<String, Object> note = block(service,
+                DocumentTemplate.DocumentType.CREDIT_NOTE_VOUCHER, "instrument");
+        assertEquals("15/03/2027", note.get("validUntil"));
+        assertEquals("[[BARCODE 297000000000042]]", note.get("barcode"));
+        Map<String, Object> card = block(service,
+                DocumentTemplate.DocumentType.GIFT_CARD_VOUCHER, "instrument");
+        assertEquals("", card.get("validUntil"));
+        assertEquals("[[BARCODE 296000000000042]]", card.get("barcode"));
+    }
+
+    /**
      * BO-03-04-03: a document NAMES its zones and the renderer puts them in
      * place before parsing — the zones of a document are the placeholders its
      * source carries, in the order it carries them.
@@ -905,4 +1202,19 @@ class DocumentTemplateServiceTest {
         return mock(io.quarkus.hibernate.orm.panache.PanacheQuery.class, invocation ->
                 "firstResult".equals(invocation.getMethod().getName()) ? result : null);
     }
+    /** BO-03-03: incomplete zone markup is preserved and a declared zone without a source expands to nothing. */
+    @Test
+    void malformedAndEmptyZoneSourcesKeepTheirFallbacks() {
+        DocumentTemplateService service = newService();
+        assertEquals("[[ZONE ???]]", service.expandZones("[[ZONE ???]]"));
+        DocumentTemplate empty = new DocumentTemplate();
+        try (var templates = mockStatic(DocumentTemplate.class)) {
+            templates.when(() -> DocumentTemplate.findByCode("EMPTY")).thenReturn(empty);
+            assertEquals("AB", service.expandZones("A[[ZONE EMPTY]]B"));
+        }
+        for (var type : DocumentTemplate.DocumentType.values()) {
+            assertNotNull(service.sampleData(type).get("store"), type.name());
+        }
+    }
+
 }

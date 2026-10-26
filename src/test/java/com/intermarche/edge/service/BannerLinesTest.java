@@ -145,4 +145,10 @@ class BannerLinesTest {
                 + "{! OFF !}{fmt.right(\"HORS SAISON\")}\n";
         assertEquals(source, BannerLines.format(BannerLines.parse(source)));
     }
+    /** BO-03-05: a banner made only of trailing blank rows carries no editable or printed line. */
+    @Test
+    void allBlankRowsAreTrimmedCompletely() {
+        assertTrue(BannerLines.parse("\n\n").isEmpty());
+    }
+
 }

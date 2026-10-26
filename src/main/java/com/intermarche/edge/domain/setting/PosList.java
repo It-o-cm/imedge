@@ -69,7 +69,17 @@ public class PosList extends BaseEntity {
         TARE_CONTAINER("Contenants de tare"),
 
         /** Reasons offered for a return (LC-05-05-01, BO-06-06-05). */
-        RETURN_REASON("Motifs de retour");
+        RETURN_REASON("Motifs de retour"),
+
+        /**
+         * The ready-made DISCOUNT and REBATE keys of the register
+         * (BO-03-07-03/-04/-06/-09): an entry is one key, its value the
+         * percentage or the amount, its options {@code PERCENT} or
+         * {@code AMOUNT}, {@code TICKET} for a key on the ticket total,
+         * {@code CUMUL} and {@code MAX:n} — the ceiling of a key whose figure
+         * the cashier types.
+         */
+        DISCOUNT("Remises et rabais");
 
         /** What the administration screen calls this kind. */
         private final String label;
@@ -115,11 +125,11 @@ public class PosList extends BaseEntity {
      * <p>Only a JUSTIFICATION list reads it: the same motives serve one
      * gesture or several, which is exactly what the requirement asks for —
      * "associée à une ou plusieurs fonctions". The function codes the
-     * register knows are {@code EXPENSE} (a drawer expense), {@code
-     * WITHDRAWAL}, {@code DEPOSIT}, {@code LINE_CANCEL}, {@code
-     * TICKET_CANCEL}, {@code PRICE_OVERRIDE}, {@code DISCOUNT} and {@code
-     * RETURN}; an unknown code names a gesture nothing asks about yet and is
-     * simply never matched.
+     * register asks about are {@code EXPENSE} (a drawer expense), {@code
+     * CANCEL_LINE}, {@code DRAWER_OPEN} and the codes the setting {@code
+     * justification.function-routes} gives a register function (by default
+     * {@code CANCEL_TICKET} and {@code PRICE_MOD}); an unknown code names a
+     * gesture nothing asks about yet and is simply never matched.
      */
     @Column(name = "functions", length = 200)
     public String functions;

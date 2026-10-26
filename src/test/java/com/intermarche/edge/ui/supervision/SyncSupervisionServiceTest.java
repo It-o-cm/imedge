@@ -390,4 +390,43 @@ class SyncSupervisionServiceTest {
             assertEquals("HTTP 500", customers.lastError);
         }
     }
+    /** BO-10-08-23: integration audits retain failed/applied outcomes and tolerate absent fingerprints. */
+    @Test
+    void buildProjectsEveryAuditOutcomeAndMissingFingerprint() {
+        EngineFeedService engine = mock(EngineFeedService.class);
+        RefPullService pull = mock(RefPullService.class);
+        EngineFeedDeliveryService delivery = mock(EngineFeedDeliveryService.class);
+        SyncOutboxService outbox = mock(SyncOutboxService.class);
+        SyncSupervisionService service = service(engine, pull, delivery, outbox);
+        when(service.posSettingsService.referentialUpdateAuditEnabled()).thenReturn(true);
+        var failed = new com.intermarche.edge.domain.sync.RefApplyAudit();
+        failed.domain = "PRODUCTS";
+        failed.outcome = com.intermarche.edge.domain.sync.RefApplyAudit.Outcome.FAILED;
+        failed.detail = "invalid snapshot";
+        var applied = new com.intermarche.edge.domain.sync.RefApplyAudit();
+        applied.domain = "FAMILIES";
+        applied.outcome = com.intermarche.edge.domain.sync.RefApplyAudit.Outcome.APPLIED;
+        applied.fingerprint = "1234567890123456";
+        applied.appliedAt = LocalDateTime.of(2026, 10, 20, 12, 30);
+        var pending = new com.intermarche.edge.domain.sync.RefApplyAudit();
+        pending.domain = "CUSTOMERS";
+        pending.fingerprint = "short";
+        try (var base = mockStatic(PanacheEntityBase.class);
+             var audits = mockStatic(com.intermarche.edge.domain.sync.RefApplyAudit.class)) {
+            audits.when(() -> com.intermarche.edge.domain.sync.RefApplyAudit.latest(50)).thenReturn(List.of(failed, applied, pending));
+            SyncSupervisionService.SyncView view = service.build();
+            assertTrue(view.auditEnabled);
+            assertEquals(3, view.audits.size());
+            assertEquals("—", view.audits.get(0).fingerprint);
+            assertEquals("FAILED", view.audits.get(0).outcome);
+            assertEquals("invalid snapshot", view.audits.get(0).detail);
+            assertTrue(view.audits.get(0).failed);
+            assertEquals("123456789012", view.audits.get(1).fingerprint);
+            assertEquals("APPLIED", view.audits.get(1).outcome);
+            assertFalse(view.audits.get(1).failed);
+            assertEquals("short", view.audits.get(2).fingerprint);
+            assertEquals("", view.audits.get(2).outcome);
+        }
+    }
+
 }

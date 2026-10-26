@@ -109,4 +109,22 @@ class ReportPeriodTest {
             assertTrue(period.getLabel() != null && !period.getLabel().isBlank());
         }
     }
+
+    /**
+     * The previous periods are the day, week, month and year before the one
+     * holding the reference.
+     */
+    @Test
+    void thePreviousPeriodsPrecedeTheReference() {
+        java.time.LocalDate day = java.time.LocalDate.of(2026, 3, 18);
+        assertEquals(java.time.LocalDateTime.of(2026, 3, 17, 0, 0), ReportPeriod.PREVIOUS_DAY.from(day, null));
+        assertEquals(java.time.LocalDateTime.of(2026, 3, 18, 0, 0), ReportPeriod.PREVIOUS_DAY.to(day, null));
+        assertEquals(java.time.LocalDateTime.of(2026, 3, 9, 0, 0), ReportPeriod.PREVIOUS_WEEK.from(day, null));
+        assertEquals(java.time.LocalDateTime.of(2026, 3, 16, 0, 0), ReportPeriod.PREVIOUS_WEEK.to(day, null));
+        assertEquals(java.time.LocalDateTime.of(2026, 2, 1, 0, 0), ReportPeriod.PREVIOUS_MONTH.from(day, null));
+        assertEquals(java.time.LocalDateTime.of(2026, 3, 1, 0, 0), ReportPeriod.PREVIOUS_MONTH.to(day, null));
+        assertEquals(java.time.LocalDateTime.of(2025, 1, 1, 0, 0), ReportPeriod.PREVIOUS_YEAR.from(day, null));
+        assertEquals(java.time.LocalDateTime.of(2026, 1, 1, 0, 0), ReportPeriod.PREVIOUS_YEAR.to(day, null));
+        assertEquals("Jour précédent (J-1)", ReportPeriod.PREVIOUS_DAY.getLabel());
+    }
 }

@@ -300,7 +300,7 @@ class ReportWritersTest {
         assertTrue(pdf.startsWith("%PDF-1.4\n"));
         assertTrue(pdf.endsWith("%%EOF\n"));
         assertEquals(1, count(pdf, "/Type /Page "));
-        assertTrue(pdf.contains("Page 1 / 1"));
+        assertTrue(pdf.contains("Page 1 / 1"), pdf);
     }
 
     /**
@@ -316,8 +316,8 @@ class ReportWritersTest {
         String pdf = new String(new PdfReportWriter().write(
                 new ReportData(fixture, rows), criteria()), WIN_ANSI);
         assertEquals(4, count(pdf, "/Type /Page "));
-        assertTrue(pdf.contains("Page 4 / 4"));
-        assertTrue(pdf.contains("TOTAL"));
+        assertTrue(pdf.contains("Page 4 / 4"), pdf);
+        assertTrue(pdf.contains("TOTAL"), pdf);
     }
 
     /**
@@ -330,9 +330,9 @@ class ReportWritersTest {
                 Arrays.asList("(a)\\b", "L", 1284L, new BigDecimal("1234.00"), null, null)));
         String pdf = new String(new PdfReportWriter().write(
                 new ReportData(fixture, fixture.rows(null)), criteria()), WIN_ANSI);
-        assertTrue(pdf.contains("\\(a\\)\\\\b"));
+        assertTrue(pdf.contains("\\(a\\)\\\\b"), pdf);
         assertFalse(pdf.contains(" "));
-        assertTrue(pdf.contains("1 284"));
+        assertTrue(pdf.contains("1 284"), pdf);
     }
 
     /**
@@ -373,5 +373,222 @@ class ReportWritersTest {
             at = haystack.indexOf(needle, at + needle.length());
         }
         return found;
+    }
+
+    /**
+     * A report stating a preamble, broken on its first column and signed.
+     *
+     * @param rows the rows
+     * @return the executed report
+     */
+    private ReportData signed(java.util.List<java.util.List<Object>> rows) {
+        ReportFixture fixture = new ReportFixture(-1, rows) {
+            /**
+             * {@inheritDoc}
+             *
+             * @param criteria the edition parameters
+             * @return one line
+             */
+            @Override
+            public java.util.List<String> preamble(ReportCriteria criteria) {
+                return java.util.List.of("Sondage n° 1");
+            }
+
+            /**
+             * {@inheritDoc}
+             *
+             * @return the type column
+             */
+            @Override
+            public String breakKey() {
+                return "k";
+            }
+
+            /**
+             * {@inheritDoc}
+             *
+             * @return the cashier's signature
+             */
+            @Override
+            public String signature() {
+                return "Signature de la caissière";
+            }
+        };
+        return new ReportData(fixture, rows);
+    }
+
+    /**
+     * Two rows of two groups.
+     *
+     * @return the rows
+     */
+    private java.util.List<java.util.List<Object>> grouped() {
+        return java.util.List.of(
+                Arrays.asList("A", "L1", 1L, BigDecimal.ONE, null, null),
+                Arrays.asList("B", "L2", 2L, BigDecimal.TEN, null, null));
+    }
+
+    /**
+     * The CSV states the preamble under the heading, the subtotals and the
+     * signature line.
+     */
+    @Test
+    void csvStatesThePreambleTheSubtotalsAndTheSignature() {
+        String csv = new String(new CsvReportWriter().write(signed(grouped()), criteria()), StandardCharsets.UTF_8);
+        String[] lines = csv.split("\n");
+        assertEquals("Sondage n° 1", lines[1]);
+        assertTrue(csv.contains("Sous-total A"));
+        assertTrue(csv.endsWith("Signature de la caissière :\n"));
+    }
+
+    /**
+     * The workbook writes the preamble rows, the subtotals in bold and the
+     * signature two rows under the total.
+     *
+     * @throws Exception when the package cannot be read
+     */
+    @Test
+    void workbookStatesThePreambleTheSubtotalsAndTheSignature() throws Exception {
+        String sheet = parts(new XlsxReportWriter().write(signed(grouped()), criteria())).get("xl/worksheets/sheet1.xml");
+        assertTrue(sheet.contains("<row r=\"2\"><c r=\"A2\" s=\"0\" t=\"inlineStr\"><is><t xml:space=\"preserve\">Sondage n° 1"));
+        assertTrue(sheet.contains("s=\"1\" t=\"inlineStr\"><is><t xml:space=\"preserve\">Sous-total A"));
+        assertTrue(sheet.contains("<row r=\"10\"><c r=\"A10\" s=\"1\" t=\"inlineStr\"><is><t xml:space=\"preserve\">Signature de la caissière :"));
+    }
+
+    /**
+     * The PDF prints the preamble, draws the subtotals in bold and signs the
+     * last page only.
+     */
+    @Test
+    void pdfStatesThePreambleTheSubtotalsAndTheSignature() {
+        java.util.List<java.util.List<Object>> rows = new java.util.ArrayList<>();
+        for (int i = 0; i < 40; i++) {
+            rows.add(Arrays.asList("K" + i, "L" + i, 1L, BigDecimal.ONE, null, null));
+        }
+        String pdf = new String(new PdfReportWriter().write(signed(rows), criteria()), WIN_ANSI);
+        assertTrue(pdf.contains("(Sondage n\u00b0 1) Tj"), pdf);
+        assertTrue(pdf.contains("/F2 8 Tf"), pdf);
+        assertTrue(pdf.contains("(Sous-total K0) Tj"), pdf);
+        assertEquals(1, count(pdf, "Signature de la caissi"));
+        assertTrue(count(pdf, "/Type /Page ") > 1);
+    }
+
+    /**
+     * A report whose texts the bundles know, edited in Dutch (BO-06-01-02).
+     *
+     * @return the executed report
+     */
+    private ReportData translatable() {
+        List<List<Object>> rows = List.of(Arrays.asList("Espèces", new BigDecimal("12.50")));
+        ReportFixture fixture = new ReportFixture(-1, rows) {
+            /**
+             * {@inheritDoc}
+             *
+             * @return a title the bundles translate
+             */
+            @Override
+            public String label() {
+                return "Montant de la TVA";
+            }
+
+            /**
+             * {@inheritDoc}
+             *
+             * @return a text column and an amount column
+             */
+            @Override
+            public List<ReportColumn> columns() {
+                return List.of(ReportColumn.text("label", "Désignation"), ReportColumn.amount("total", "Montant TTC"));
+            }
+
+            /**
+             * {@inheritDoc}
+             *
+             * @param criteria the edition parameters
+             * @return one sentence built around a value
+             */
+            @Override
+            public List<String> preamble(ReportCriteria criteria) {
+                return List.of("Client : SARL Durand");
+            }
+
+            /**
+             * {@inheritDoc}
+             *
+             * @return the customer's signature
+             */
+            @Override
+            public String signature() {
+                return "Signature du client";
+            }
+        };
+        return new ReportData(fixture, rows);
+    }
+
+    /**
+     * The edition parameters of a Dutch export.
+     *
+     * @return the criteria naming 16/09/2026, in Dutch
+     */
+    private ReportCriteria dutchCriteria() {
+        ReportCriteria criteria = criteria();
+        criteria.language = "nl";
+        return criteria;
+    }
+
+    /**
+     * The CSV of a Dutch page writes its title, period, preamble, headings,
+     * textual cells and signature in Dutch, its amounts as in French.
+     */
+    @Test
+    void csvFollowsTheEditionLanguage() {
+        com.intermarche.edge.ui.admin.BackOfficeMessages dutch = com.intermarche.edge.ui.admin.BackOfficeMessages.in("nl");
+        String csv = new String(new CsvReportWriter().write(translatable(), dutchCriteria()), StandardCharsets.UTF_8);
+        String[] lines = csv.split("\n");
+        assertEquals("\ufeffBtw-bedrag — " + dutch.text("Jour") + " : 16/09/2026", lines[0]);
+        assertEquals("Klant: SARL Durand", lines[1]);
+        assertEquals("Omschrijving;" + dutch.text("Montant TTC"), lines[2]);
+        assertEquals(dutch.text("Espèces") + ";12,50 €", lines[3]);
+        assertTrue(csv.endsWith("Handtekening van de klant :\n"));
+        assertFalse(csv.contains("Désignation"));
+    }
+
+    /**
+     * The workbook of a Dutch page names its sheet, writes its texts in Dutch
+     * and keeps its amounts as numbers.
+     *
+     * @throws Exception when the package cannot be read
+     */
+    @Test
+    void workbookFollowsTheEditionLanguage() throws Exception {
+        Map<String, String> parts = parts(new XlsxReportWriter().write(translatable(), dutchCriteria()));
+        String sheet = parts.get("xl/worksheets/sheet1.xml");
+        assertTrue(parts.get("xl/workbook.xml").contains("name=\"Btw-bedrag\""));
+        assertTrue(sheet.contains(">Btw-bedrag — "));
+        assertTrue(sheet.contains(">Klant: SARL Durand<"));
+        assertTrue(sheet.contains(">Omschrijving<"));
+        assertTrue(sheet.contains("<v>12.50</v>"));
+        assertTrue(sheet.contains(">Handtekening van de klant :<"));
+        assertFalse(sheet.contains("Désignation"));
+    }
+
+    /**
+     * The PDF of a Dutch page prints its texts, its total, its line count and
+     * its page number in Dutch.
+     */
+    @Test
+    void pdfFollowsTheEditionLanguage() {
+        com.intermarche.edge.ui.admin.BackOfficeMessages dutch = com.intermarche.edge.ui.admin.BackOfficeMessages.in("nl");
+        String pdf = new String(new PdfReportWriter().write(translatable(), dutchCriteria()), WIN_ANSI);
+        assertTrue(pdf.contains("(Btw-bedrag)"), pdf);
+        assertTrue(pdf.contains("(Klant: SARL Durand)"), pdf);
+        assertTrue(pdf.contains("(Omschrijving)"), pdf);
+        assertTrue(pdf.contains("(" + dutch.text("Espèces") + ")"), pdf);
+        assertTrue(pdf.contains("(12,50"), pdf);
+        assertTrue(pdf.contains("(" + dutch.get("t.total-2") + ")"), pdf);
+        assertTrue(pdf.contains("1 " + dutch.get("t.ligne-s").replace("(", "\\(").replace(")", "\\)")), pdf);
+        assertTrue(pdf.contains(dutch.get("t.page") + " 1 / 1"), pdf);
+        assertTrue(pdf.contains("Handtekening van de klant : "), pdf);
+        assertFalse(pdf.contains("Désignation"));
     }
 }

@@ -718,4 +718,46 @@ class CouponTypeTest {
             Assertions.assertNull(CouponType.findActiveByCode("XYZ"));
         }
     }
+    /**
+     * findIssuingRange answers nothing for a null kind, and asks the finder for
+     * the first active registry range administered for a kind (BO-03-06-30 to -38).
+     */
+    @Test
+    void findIssuingRangeAsksTheFinder() {
+        Assertions.assertNull(CouponType.findIssuingRange(null));
+        CouponType expected = new CouponType();
+        @SuppressWarnings("unchecked")
+        PanacheQuery<CouponType> query = org.mockito.Mockito.mock(PanacheQuery.class);
+        org.mockito.Mockito.when(query.firstResult()).thenReturn(expected);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> CouponType.find(
+                    "issuedKind = ?1 and active = true and amountSource = ?2 order by priority, code",
+                    "CREDIT_NOTE", CouponType.AmountSource.REGISTRY)).thenReturn(query);
+            Assertions.assertSame(expected, CouponType.findIssuingRange("CREDIT_NOTE"));
+        }
+    }
+
+    /**
+     * BO-03-02-37: the protocol of a card is the one of the first active
+     * prepaid range, by priority, that recognises it; no number, or no range,
+     * names none.
+     */
+    @Test
+    void theProtocolOfACardIsTheOneOfItsPrepaidRange() {
+        CouponType local = new CouponType();
+        local.matchPattern = "^297\\d{3}$";
+        local.cardProtocol = "local";
+        CouponType nexo = new CouponType();
+        nexo.matchPattern = "^296\\d{3}$";
+        nexo.cardProtocol = " NEXO ";
+        Assertions.assertNull(CouponType.protocolOf(null));
+        Assertions.assertNull(CouponType.protocolOf("  "));
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(() -> CouponType.list("active = true and cardProtocol is not null order by priority"))
+                    .thenReturn(List.of(local, nexo));
+            Assertions.assertEquals("NEXO", CouponType.protocolOf(" 296123 "));
+            Assertions.assertEquals("LOCAL", CouponType.protocolOf("297123"));
+            Assertions.assertNull(CouponType.protocolOf("123456"));
+        }
+    }
 }

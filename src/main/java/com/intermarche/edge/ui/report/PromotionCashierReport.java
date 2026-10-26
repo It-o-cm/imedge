@@ -1,5 +1,6 @@
 package com.intermarche.edge.ui.report;
 
+import com.intermarche.edge.domain.catalog.Promotion;
 import com.intermarche.edge.domain.people.Employee;
 import com.intermarche.edge.domain.sale.Ticket;
 import com.intermarche.edge.domain.sale.TicketFidelityLine;
@@ -12,32 +13,30 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.LinkedHashMap;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
 
 /**
- * ÉTAT DES VENTES PROMOTIONNELLES PAR CAISSIÈRE ({@code BO-06-08-01}):
- * broken by promotion, how many times each one fired under each cashier,
- * what those tickets sold, and what share of it the promotion gave back.
+ * ÉTAT DES VENTES PROMOTIONNELLES ({@code BO-06-08-01}): broken by promotion —
+ * its number and label — how many times each one fired under each cashier
+ * (number and name), what those tickets sold, and what share of it the
+ * promotion gave back.
  *
- * <p>A PROMOTION IS AN ADVANTAGE LINE of the valuation: the engine freezes
- * one per advantage it granted, naming its rule and its amount, and that is
- * the only place a promotion exists as a countable thing. Its rule code is
- * the number the break is made on, and its label is the one the engine
- * stated — not a second referential the back office would have to keep in
- * step.
+ * <p>A promotion FIRES where the register recorded it: on a line the valuation
+ * engine valued with an offer (the offer's identifier is the promotion's
+ * number, the advantage on the line its discount), or as a loyalty advantage
+ * of the ticket (its rule code). The label and the TYPE — by value or in
+ * percent — are the ones the back office administers on the Promotions screen,
+ * so the type filter of the requirement selects on an administered fact; a
+ * promotion nobody described keeps the label the line carried.
  *
- * <p>The NET SALES of a line are the ticket's, not the promotion's: a
- * promotion fires on a basket and a basket has one total. Two promotions on
- * one ticket therefore each show that ticket's total, and the share column
- * is read per promotion rather than summed down the page — which is what
- * "% de la remise par rapport au montant total net des ventes" asks for.
- *
- * <p>What is NOT here: the promotion-TYPE filter (by value, in percent).
- * The engine freezes an amount and a label on the advantage line and never
- * says which of the two shapes computed it, so the filter would have to
- * guess. It is named rather than approximated.
+ * <p>The NET SALES are the tickets' the promotion fired on, each ticket counted
+ * once per promotion, and the share is the discount over them. The edition can
+ * be restricted to cashiers, to promotions and to a type.
  */
 @ApplicationScoped
 public class PromotionCashierReport implements ReportDefinition {
@@ -53,10 +52,10 @@ public class PromotionCashierReport implements ReportDefinition {
      */
     private static final class Row {
 
-        /** The promotion's rule code. */
+        /** The promotion's number. */
         private String promotion = "";
 
-        /** What the engine called it. */
+        /** Its label. */
         private String label = "";
 
         /** The cashier's badge, or an empty string. */
@@ -67,6 +66,9 @@ public class PromotionCashierReport implements ReportDefinition {
 
         /** How many times the promotion fired. */
         private long fired;
+
+        /** The tickets counted in the net sales. */
+        private final Set<Object> tickets = new HashSet<>();
 
         /** The net sales of the tickets it fired on. */
         private BigDecimal netSales = BigDecimal.ZERO;
@@ -98,7 +100,7 @@ public class PromotionCashierReport implements ReportDefinition {
      */
     @Override
     public String label() {
-        return "Ventes promotionnelles par caissière";
+        return "État des ventes promotionnelles";
     }
 
     /**
@@ -124,7 +126,7 @@ public class PromotionCashierReport implements ReportDefinition {
     /**
      * {@inheritDoc}
      *
-     * @return the columns the requirement enumerates, the break first
+     * @return the columns the requirement enumerates
      */
     @Override
     public List<ReportColumn> columns() {
@@ -142,46 +144,122 @@ public class PromotionCashierReport implements ReportDefinition {
     /**
      * {@inheritDoc}
      *
+     * @return the promotion's number: a subtotal closes each promotion
+     */
+    @Override
+    public String breakKey() {
+        return "promotion";
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * @return the number of triggers
+     */
+    @Override
+    public int chartColumn() {
+        return 4;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * @return the cashier's name
+     */
+    @Override
+    public int chartLabelColumn() {
+        return 3;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * @return what the type option is called on the screen
+     */
+    @Override
+    public String optionLabel() {
+        return "Type de promotion";
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * @return all, by value, in percent
+     */
+    @Override
+    public List<String> optionChoices() {
+        return List.of("ALL:Tous les types", Promotion.BY_VALUE + ":Par valeur", Promotion.BY_PERCENT + ":En %");
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * @return what the promotion choice is called on the screen
+     */
+    @Override
+    public String pickLabel() {
+        return "Promotions";
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * @return the administered promotions
+     */
+    @Override
+    public List<String> pickChoices() {
+        List<String> choices = new ArrayList<>();
+        for (Promotion promotion : Promotion.listOrdered()) {
+            choices.add(promotion.code + ":" + promotion.code + " — " + promotion.label);
+        }
+        return choices;
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * @return the registers, the island and the cashiers
+     */
+    @Override
+    public Set<ReportFilter> filters() {
+        return java.util.EnumSet.of(ReportFilter.TERMINALS, ReportFilter.ISLAND, ReportFilter.CASHIERS);
+    }
+
+    /**
+     * {@inheritDoc}
+     *
      * @param criteria the edition parameters
      * @return one row per promotion and cashier, promotion by promotion
      */
     @Override
     public List<List<Object>> rows(ReportCriteria criteria) {
         LOGGER.info("Entering method rows");
-        StringBuilder jpql = new StringBuilder(
-                "select t from Ticket t where t.status = :closed"
-                        + " and t.closingDate >= :from and t.closingDate < :to");
-        if (!criteria.terminals.isEmpty()) {
-            jpql.append(" and t.terminalId in :terminals");
-        }
-        jpql.append(" order by t.closingDate");
-        var query = entityManager.createQuery(jpql.toString(), Ticket.class)
+        String kind = criteria.optionOr("ALL");
+        PromotionLookup promotions = new PromotionLookup();
+        Map<Object, List<Object[]>> valuations = valuations(criteria);
+        var query = entityManager.createQuery(
+                        "select t from Ticket t where t.status = :closed and t.closingDate >= :from"
+                                + " and t.closingDate < :to" + criteria.terminalFilter("t.terminalId")
+                                + criteria.cashierFilter("t.cashier.badgeId") + " order by t.closingDate", Ticket.class)
                 .setParameter("closed", Ticket.TicketStatus.CLOSED)
                 .setParameter("from", criteria.from())
                 .setParameter("to", criteria.to());
-        if (!criteria.terminals.isEmpty()) {
-            query.setParameter("terminals", criteria.terminals);
-        }
-        Map<String, Row> rows = new LinkedHashMap<>();
+        criteria.bindTerminals(query);
+        criteria.bindCashiers(query);
+        Map<String, Row> rows = new TreeMap<>();
         for (Ticket ticket : query.getResultList()) {
-            Employee cashier = ticket.cashier;
-            if (!selected(criteria, cashier)) {
-                continue;
+            List<Object[]> fired = new ArrayList<>();
+            for (TicketFidelityLine advantage : ticket.fidelityLines) {
+                fired.add(new Object[]{advantage.ruleCode, advantage.label, advantage.amount});
             }
-            for (TicketFidelityLine advantage : advantages(ticket)) {
-                String promotion = advantage.ruleCode == null ? "" : advantage.ruleCode;
-                String key = promotion + "|" + (cashier == null ? "" : cashier.id);
-                Row row = rows.computeIfAbsent(key, k -> new Row());
-                row.promotion = promotion;
-                row.label = advantage.label == null ? "" : advantage.label;
-                row.badge = cashier == null ? "" : orEmpty(cashier.badgeId);
-                row.name = cashier == null ? "" : cashier.getFullName();
-                row.fired++;
-                row.netSales = row.netSales.add(
-                        ticket.totalIncludingTax == null ? BigDecimal.ZERO
-                                : ticket.totalIncludingTax);
-                row.discount = row.discount.add(
-                        advantage.amount == null ? BigDecimal.ZERO : advantage.amount);
+            fired.addAll(valuations.getOrDefault(ticket.id, List.of()));
+            for (Object[] trigger : fired) {
+                String code = trigger[0] == null ? "" : String.valueOf(trigger[0]);
+                String label = promotions.label(code, (String) trigger[1]);
+                if (!criteria.picked(code) || !"ALL".equals(kind) && !kind.equals(promotions.kind(code, label))) {
+                    continue;
+                }
+                add(rows, ticket, code, label, (BigDecimal) trigger[2]);
             }
         }
         List<List<Object>> result = new ArrayList<>();
@@ -189,37 +267,55 @@ public class PromotionCashierReport implements ReportDefinition {
             result.add(Arrays.asList(row.promotion, row.label, row.badge, row.name,
                     row.fired, row.netSales, row.discount, share(row)));
         }
-        result.sort((left, right) -> String.valueOf(left.get(0))
-                .compareTo(String.valueOf(right.get(0))));
         LOGGER.info("Exiting method rows with " + result.size() + " row(s)");
         return result;
     }
 
     /**
-     * The frozen advantage lines of a ticket, empty when the engine granted
-     * none or the ticket was never valued.
+     * Adds one trigger to its promotion-and-cashier row.
      *
-     * @param ticket the closed ticket
-     * @return the advantage lines
+     * @param rows the rows, by promotion then cashier
+     * @param ticket the ticket it fired on
+     * @param code the promotion's number
+     * @param label the promotion's label
+     * @param amount the discount, possibly null
      */
-    private List<TicketFidelityLine> advantages(Ticket ticket) {
-        return ticket.fidelityLines == null ? List.of() : ticket.fidelityLines;
+    private void add(Map<String, Row> rows, Ticket ticket, String code, String label, BigDecimal amount) {
+        Employee cashier = ticket.cashier;
+        String badge = cashier == null || cashier.badgeId == null ? "" : cashier.badgeId;
+        Row row = rows.computeIfAbsent(code + "\u0000" + badge, k -> new Row());
+        row.promotion = code;
+        row.label = label;
+        row.badge = badge;
+        row.name = cashier == null ? "" : cashier.getFullName();
+        row.fired++;
+        if (row.tickets.add(ticket.id)) {
+            row.netSales = row.netSales.add(ticket.totalIncludingTax == null ? BigDecimal.ZERO
+                    : ticket.totalIncludingTax);
+        }
+        row.discount = row.discount.add(amount == null ? BigDecimal.ZERO : amount.abs());
     }
 
     /**
-     * Whether the edition asked for this cashier; an empty selection asks for
-     * all of them.
+     * Reads the offers the valuation engine granted on the lines of the period.
      *
      * @param criteria the edition parameters
-     * @param cashier the ticket's cashier, possibly null
-     * @return true when the row belongs in the edition
+     * @return per ticket id: the offer, its advantage's label and amount, per line
      */
-    private boolean selected(ReportCriteria criteria, Employee cashier) {
-        if (criteria.cashiers.isEmpty()) {
-            return true;
+    private Map<Object, List<Object[]>> valuations(ReportCriteria criteria) {
+        var query = entityManager.createQuery(
+                        "select v.ticket.id, v.offerLabel, v.advantageLabel, v.advantageAmount"
+                                + " from TicketLineValuation v where v.advantageAmount is not null"
+                                + " and v.ticket.status = :closed and v.ticket.closingDate >= :from"
+                                + " and v.ticket.closingDate < :to", Object[].class)
+                .setParameter("closed", Ticket.TicketStatus.CLOSED)
+                .setParameter("from", criteria.from())
+                .setParameter("to", criteria.to());
+        Map<Object, List<Object[]>> byTicket = new HashMap<>();
+        for (Object[] row : query.getResultList()) {
+            byTicket.computeIfAbsent(row[0], key -> new ArrayList<>()).add(new Object[]{row[1], row[2], row[3]});
         }
-        return cashier != null && cashier.badgeId != null
-                && criteria.cashiers.contains(cashier.badgeId);
+        return byTicket;
     }
 
     /**
@@ -235,15 +331,5 @@ public class PromotionCashierReport implements ReportDefinition {
         }
         return row.discount.multiply(BigDecimal.valueOf(100))
                 .divide(row.netSales, 2, RoundingMode.HALF_UP);
-    }
-
-    /**
-     * Turns a null into the empty string, for a column that prints it.
-     *
-     * @param value the value, possibly null
-     * @return the value, or an empty string
-     */
-    private String orEmpty(String value) {
-        return value == null ? "" : value;
     }
 }

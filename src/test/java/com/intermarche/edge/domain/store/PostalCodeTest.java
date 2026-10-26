@@ -102,4 +102,32 @@ class PostalCodeTest {
         assertNotEquals(base.getChecksum(), postalCode("42000", "ANDREZIEUX", "FR").getChecksum());
         assertNotEquals(base.getChecksum(), postalCode("42000", "SAINT-ETIENNE", null).getChecksum());
     }
+
+    /** BO-03/08: the finder selects the required business scope and ordering, preserving the returned rows. */
+    @org.junit.jupiter.api.Test
+    void findByCodeUsesItsBusinessScopeAndOrder() {
+        var row = new PostalCode();
+        java.util.List<PostalCode> rows = java.util.List.of(row);
+        try (var panache = org.mockito.Mockito.mockStatic(io.quarkus.hibernate.orm.panache.PanacheEntityBase.class)) {
+            panache.when(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase.list("code = ?1 order by place", "75001")).thenReturn(rows);
+            org.junit.jupiter.api.Assertions.assertSame(rows, PostalCode.findByCode("75001"));
+            panache.verify(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase.list("code = ?1 order by place", "75001"));
+        }
+    }
+
+    /** BO-08-01-04: each synchronized business-field change invalidates the row checksum. */
+    @org.junit.jupiter.api.Test
+    void everyBusinessFieldChangeInvalidatesTheChecksum() {
+        var row = new PostalCode();
+        int previous = row.getChecksum();
+        row.code = "75001";
+        org.junit.jupiter.api.Assertions.assertNotEquals(previous, row.getChecksum(), "code must participate in synchronization");
+        previous = row.getChecksum();
+        row.place = "Paris";
+        org.junit.jupiter.api.Assertions.assertNotEquals(previous, row.getChecksum(), "place must participate in synchronization");
+        previous = row.getChecksum();
+        row.country = "FR";
+        org.junit.jupiter.api.Assertions.assertNotEquals(previous, row.getChecksum(), "country must participate in synchronization");
+        previous = row.getChecksum();
+    }
 }

@@ -193,6 +193,19 @@ class ProductAttributesTest {
     }
 
     /**
+     * The joined lots are what a cashier checks by hand on the pack, and an
+     * article that recalls nothing produces nothing at all rather than an
+     * empty join the screen would still show.
+     */
+    @Test
+    void recalledLotsJoinedListsTheLotsOrSaysNothing() {
+        Assertions.assertEquals("L123, L456",
+                ProductAttributes.recalledLotsJoined(
+                        productWith(ProductAttributeCatalog.RECALL_LOTS, "L123;L456")));
+        Assertions.assertNull(ProductAttributes.recalledLotsJoined(new Product()));
+    }
+
+    /**
      * The message lists the recalled lots so a cashier can check the pack by hand, and
      * an article that recalls nothing produces no message at all rather than an empty
      * one the screen would still show.
@@ -273,6 +286,18 @@ class ProductAttributesTest {
     }
 
     /**
+     * decimalAttribute reads a DECLARED eco-tax attribute (BO-10-06-05), and an
+     * attribute neither carried nor known to the catalog is zero.
+     */
+    @Test
+    void decimalAttributeReadsADeclaredEcoTax() {
+        Assertions.assertEquals(new java.math.BigDecimal("0.50"),
+                ProductAttributes.decimalAttribute(productWith("DEEE", "0,50"), "DEEE"));
+        Assertions.assertEquals(java.math.BigDecimal.ZERO,
+                ProductAttributes.decimalAttribute(new Product(), "DEEE"));
+    }
+
+    /**
      * ecoTax treats an unreadable amount as none rather than raising: one
      * malformed article must not stop an invoice from being drawn.
      */
@@ -280,6 +305,72 @@ class ProductAttributesTest {
     void ecoTaxTreatsAnUnreadableAmountAsNone() {
         Assertions.assertEquals(java.math.BigDecimal.ZERO,
                 ProductAttributes.ecoTax(productWith(ProductAttributeCatalog.ECO_TAX, "gratuit")));
+    }
+
+    /**
+     * {@code recalledLots} returns an empty list for an article carrying no
+     * recall attribute — the null-value arm of its guard.
+     */
+    @Test
+    void recalledLotsAreEmptyForAnArticleCarryingNone() {
+        Assertions.assertTrue(ProductAttributes.recalledLots(new Product()).isEmpty());
+    }
+
+    /**
+     * {@code ecoTax} treats an attribute explicitly set to null as none — the
+     * null-value arm of its guard, distinct from a blank or absent value.
+     */
+    @Test
+    void ecoTaxIsZeroForAnExplicitlyNullAttribute() {
+        Assertions.assertEquals(java.math.BigDecimal.ZERO,
+                ProductAttributes.ecoTax(productWith(ProductAttributeCatalog.ECO_TAX, null)));
+    }
+
+    /**
+     * {@code tare} reads the article's own tare, tolerating the French decimal
+     * comma and surrounding spaces (LC-14-01-07, present-value arm).
+     */
+    @Test
+    void tareReadsTheArticlesOwnTare() {
+        Assertions.assertEquals(0, new java.math.BigDecimal("0.020").compareTo(
+                ProductAttributes.tare(productWith(ProductAttributeCatalog.TARE, "0.020"))));
+        Assertions.assertEquals(0, new java.math.BigDecimal("0.035").compareTo(
+                ProductAttributes.tare(productWith(ProductAttributeCatalog.TARE, " 0,035 "))));
+    }
+
+    /**
+     * {@code tare} falls back to zero when the article carries none: an absent
+     * attribute resolves through the catalog default "0", and a null product or
+     * a blank value are zero too (catalog-default, null-product and blank arms).
+     */
+    @Test
+    void tareIsZeroWhenTheArticleCarriesNone() {
+        Assertions.assertEquals(0, java.math.BigDecimal.ZERO.compareTo(
+                ProductAttributes.tare(new Product())));
+        Assertions.assertEquals(0, java.math.BigDecimal.ZERO.compareTo(
+                ProductAttributes.tare(null)));
+        Assertions.assertEquals(0, java.math.BigDecimal.ZERO.compareTo(
+                ProductAttributes.tare(productWith(ProductAttributeCatalog.TARE, "   "))));
+    }
+
+    /**
+     * {@code tare} treats an unreadable value as none rather than raising — one
+     * malformed article must not stop a weighing (catch arm).
+     */
+    @Test
+    void tareTreatsAnUnreadableValueAsNone() {
+        Assertions.assertEquals(0, java.math.BigDecimal.ZERO.compareTo(
+                ProductAttributes.tare(productWith(ProductAttributeCatalog.TARE, "lourd"))));
+    }
+
+    /**
+     * {@code tare} clamps a negative value to zero — a mis-integrated negative
+     * tare must never inflate a weighing (negative arm).
+     */
+    @Test
+    void tareClampsANegativeValueToZero() {
+        Assertions.assertEquals(0, java.math.BigDecimal.ZERO.compareTo(
+                ProductAttributes.tare(productWith(ProductAttributeCatalog.TARE, "-0.010"))));
     }
     /**
      * {@code activationRequired} is the catalog flag demanding a second scan
@@ -374,5 +465,175 @@ class ProductAttributesTest {
         Assertions.assertEquals("LAIT DEMI-ECREME", ProductAttributes.saleLabel(product, "fr"));
         Assertions.assertEquals("LAIT DEMI-ECREME", ProductAttributes.saleLabel(product, null));
         Assertions.assertNull(ProductAttributes.saleLabel(null, "nl"));
+    }
+
+    /** BO-03-01: a matching language with empty wording and absent register identities preserve their fallback. */
+    @org.junit.jupiter.api.Test
+    void coverageEmptyTranslationAndExcludedIdentityLegs() throws Exception {
+        Product product = new Product();
+        product.attributes.put(ProductAttributeCatalog.TRANSLATED_LABELS, "nl=   ;pt=Leite");
+        org.junit.jupiter.api.Assertions.assertNull(ProductAttributes.translatedLabel(product, "nl"));
+        var method = ProductAttributes.class.getDeclaredMethod("excluded", String.class, String.class);
+        method.setAccessible(true);
+        org.junit.jupiter.api.Assertions.assertEquals(false, method.invoke(null, "C04", null));
+        org.junit.jupiter.api.Assertions.assertEquals(false, method.invoke(null, "C04", " "));
+    }
+
+    /** BO-03: known optional attribute codes always resolve through their non-null catalog defaults. */
+    @org.junit.jupiter.api.Test
+    void coverageKnownCatalogDefaultsAreNonNull() {
+        org.junit.jupiter.api.Assertions.assertEquals("", ProductAttributeCatalog.defaultValue(ProductAttributeCatalog.RECALL_LOTS));
+        org.junit.jupiter.api.Assertions.assertEquals("", ProductAttributeCatalog.defaultValue(ProductAttributeCatalog.TRANSLATED_LABELS));
+        org.junit.jupiter.api.Assertions.assertEquals("", ProductAttributeCatalog.defaultValue(ProductAttributeCatalog.ACTIVATION_PROVIDER));
+        org.junit.jupiter.api.Assertions.assertEquals("0", ProductAttributeCatalog.defaultValue(ProductAttributeCatalog.ECO_TAX));
+        org.junit.jupiter.api.Assertions.assertTrue(ProductAttributes.recalledLots(null).isEmpty());
+        org.junit.jupiter.api.Assertions.assertNull(ProductAttributes.translatedLabel(null, "nl"));
+        org.junit.jupiter.api.Assertions.assertNull(ProductAttributes.activationProvider(null));
+        org.junit.jupiter.api.Assertions.assertEquals(java.math.BigDecimal.ZERO, ProductAttributes.ecoTax(null));
+        org.junit.jupiter.api.Assertions.assertEquals("0", ProductAttributeCatalog.defaultValue(ProductAttributeCatalog.TARE));
+        org.junit.jupiter.api.Assertions.assertEquals(java.math.BigDecimal.ZERO, ProductAttributes.tare(null));
+    }
+
+    /**
+     * BO-10-07-20: the article's own message wins, trimmed; without one the
+     * shop's default applies, trimmed; without either, null.
+     */
+    @Test
+    void forbiddenSaleMessagePrefersTheArticleThenTheShop() {
+        Product own = productWith(ProductAttributeCatalog.FORBIDDEN_SALE_MESSAGE, " RAPPEL LOT 12 ");
+        Assertions.assertEquals("RAPPEL LOT 12", ProductAttributes.forbiddenSaleMessage(own, "DEFAUT"));
+        Product blank = productWith(ProductAttributeCatalog.FORBIDDEN_SALE_MESSAGE, " ");
+        Assertions.assertEquals("DEFAUT", ProductAttributes.forbiddenSaleMessage(blank, " DEFAUT "));
+        Assertions.assertNull(ProductAttributes.forbiddenSaleMessage(null, null));
+        Assertions.assertNull(ProductAttributes.forbiddenSaleMessage(null, "  "));
+    }
+
+    /**
+     * BO-10-02-34/35: the article's flag decides; an article without one —
+     * no product, no map, no value, a blank one — takes the shop's parameter.
+     */
+    @Test
+    void codeShownFollowsTheFlagThenTheShop() {
+        Assertions.assertTrue(ProductAttributes.codeShown(
+                productWith(ProductAttributeCatalog.CODE_ON_SCREEN, " TRUE "), false));
+        Assertions.assertFalse(ProductAttributes.codeShown(
+                productWith(ProductAttributeCatalog.CODE_ON_SCREEN, "false"), true));
+        Assertions.assertTrue(ProductAttributes.codeShown(
+                productWith(ProductAttributeCatalog.CODE_ON_SCREEN, " "), true));
+        Assertions.assertTrue(ProductAttributes.codeShown(productWith("OTHER", "x"), true));
+        Assertions.assertFalse(ProductAttributes.codeShown(null, false));
+        Product noMap = new Product();
+        noMap.attributes = null;
+        Assertions.assertTrue(ProductAttributes.codeShown(noMap, true));
+    }
+
+    /**
+     * checkoutMode answers a declared mode whatever its case and blanks, and
+     * null for no mode or an unknown one (BO-02-03-05, -21 to -24).
+     */
+    @Test
+    void checkoutModeReadsADeclaredMode() {
+        Assertions.assertEquals(ProductAttributeCatalog.MODE_WEIGHED,
+                ProductAttributes.checkoutMode(productWith(ProductAttributeCatalog.CHECKOUT_MODE, " weighed ")));
+        Assertions.assertNull(ProductAttributes.checkoutMode(productWith(ProductAttributeCatalog.CHECKOUT_MODE, "TELEPORT")));
+        Assertions.assertNull(ProductAttributes.checkoutMode(new Product()));
+    }
+
+    /**
+     * Each entry mode reads its flag or its checkout mode, one test per leg, and
+     * the price call is the mode alone.
+     */
+    @Test
+    void theEntryModesReadTheirFlagOrTheirMode() {
+        Product none = new Product();
+        Assertions.assertFalse(ProductAttributes.priceToEnter(none));
+        Assertions.assertFalse(ProductAttributes.quantityToEnter(none));
+        Assertions.assertFalse(ProductAttributes.decimalQuantityToEnter(none));
+        Assertions.assertFalse(ProductAttributes.weighed(none));
+        Assertions.assertFalse(ProductAttributes.priceCallOnly(none));
+        Assertions.assertTrue(ProductAttributes.priceToEnter(productWith(ProductAttributeCatalog.PRICE_TO_ENTER, "true")));
+        Assertions.assertTrue(ProductAttributes.priceToEnter(productWith(ProductAttributeCatalog.CHECKOUT_MODE, "PRICE_TO_ENTER")));
+        Assertions.assertTrue(ProductAttributes.quantityToEnter(productWith(ProductAttributeCatalog.QUANTITY_TO_ENTER, "true")));
+        Assertions.assertTrue(ProductAttributes.quantityToEnter(productWith(ProductAttributeCatalog.CHECKOUT_MODE, "QUANTITY_TO_ENTER")));
+        Assertions.assertTrue(ProductAttributes.decimalQuantityToEnter(
+                productWith(ProductAttributeCatalog.DECIMAL_QUANTITY_TO_ENTER, "true")));
+        Assertions.assertTrue(ProductAttributes.decimalQuantityToEnter(
+                productWith(ProductAttributeCatalog.CHECKOUT_MODE, "DECIMAL_QUANTITY_TO_ENTER")));
+        Assertions.assertTrue(ProductAttributes.weighed(productWith(ProductAttributeCatalog.WEIGHED, "true")));
+        Assertions.assertTrue(ProductAttributes.weighed(productWith(ProductAttributeCatalog.CHECKOUT_MODE, "WEIGHED")));
+        Assertions.assertTrue(ProductAttributes.priceCallOnly(productWith(ProductAttributeCatalog.CHECKOUT_MODE, "PRICE_CALL")));
+    }
+
+    /**
+     * bulky and thirdPartySale read their flags (BO-02-03-25, -41 to -43).
+     */
+    @Test
+    void bulkyAndThirdPartyReadTheirFlags() {
+        Assertions.assertTrue(ProductAttributes.bulky(productWith(ProductAttributeCatalog.BULKY, "true")));
+        Assertions.assertFalse(ProductAttributes.bulky(new Product()));
+        Assertions.assertTrue(ProductAttributes.thirdPartySale(productWith(ProductAttributeCatalog.THIRD_PARTY_SALE, "true")));
+        Assertions.assertFalse(ProductAttributes.thirdPartySale(null));
+    }
+
+    /**
+     * service reads its flag (BO-05-01-03): set, the article is a service; a
+     * bare article and no article at all are goods.
+     */
+    @Test
+    void serviceReadsItsFlag() {
+        Assertions.assertTrue(ProductAttributes.service(productWith(ProductAttributeCatalog.SERVICE, "true")));
+        Assertions.assertFalse(ProductAttributes.service(productWith(ProductAttributeCatalog.SERVICE, "false")));
+        Assertions.assertFalse(ProductAttributes.service(new Product()));
+        Assertions.assertFalse(ProductAttributes.service(null));
+    }
+
+    /**
+     * linkedArticleQuantity reads a positive multiplier and reads one for an
+     * absent, zero, negative or unreadable value (BO-02-03-15).
+     */
+    @Test
+    void linkedArticleQuantityIsStrictlyPositive() {
+        Assertions.assertEquals(new java.math.BigDecimal("6"),
+                ProductAttributes.linkedArticleQuantity(productWith(ProductAttributeCatalog.LINKED_ARTICLE_QUANTITY, "6.0")));
+        Assertions.assertEquals(java.math.BigDecimal.ONE, ProductAttributes.linkedArticleQuantity(new Product()));
+        Assertions.assertEquals(java.math.BigDecimal.ONE,
+                ProductAttributes.linkedArticleQuantity(productWith(ProductAttributeCatalog.LINKED_ARTICLE_QUANTITY, "0")));
+        Assertions.assertEquals(java.math.BigDecimal.ONE,
+                ProductAttributes.linkedArticleQuantity(productWith(ProductAttributeCatalog.LINKED_ARTICLE_QUANTITY, "x")));
+    }
+
+    /**
+     * complementaryEans splits on semicolons and commas, trims, and drops
+     * blanks and repeats (BO-02-03-16).
+     */
+    @Test
+    void complementaryEansSplitsTheList() {
+        Assertions.assertEquals(java.util.List.of("A", "B"), ProductAttributes.complementaryEans(
+                productWith(ProductAttributeCatalog.COMPLEMENTARY_EANS, " A ;B, ;A")));
+        Assertions.assertTrue(ProductAttributes.complementaryEans(new Product()).isEmpty());
+    }
+
+    /**
+     * vatNumber reads an integer and answers null for a blank or unreadable
+     * value (BO-02-03-27).
+     */
+    @Test
+    void vatNumberReadsAnInteger() {
+        Assertions.assertEquals(3, ProductAttributes.vatNumber(productWith(ProductAttributeCatalog.VAT_NUMBER, " 3 ")));
+        Assertions.assertNull(ProductAttributes.vatNumber(new Product()));
+        Assertions.assertNull(ProductAttributes.vatNumber(productWith(ProductAttributeCatalog.VAT_NUMBER, "A")));
+    }
+
+    /**
+     * mergePairs poses and removes codes, skips the malformed pairs and merges
+     * nothing from a null or blank text (BO-02-03-18).
+     */
+    @Test
+    void mergePairsPosesAndRemoves() {
+        java.util.Map<String, String> map = new java.util.HashMap<>(java.util.Map.of("GONE", "x"));
+        Assertions.assertEquals(2, ProductAttributes.mergePairs(map, "A=1 ; GONE= ;=skip;noequals"));
+        Assertions.assertEquals(java.util.Map.of("A", "1"), map);
+        Assertions.assertEquals(0, ProductAttributes.mergePairs(map, null));
+        Assertions.assertEquals(0, ProductAttributes.mergePairs(map, " "));
     }
 }

@@ -378,8 +378,9 @@ class EmployeeTest {
     }
 
     /**
-     * getChecksum returns the Objects.hash of the ten business fields, the three
-     * payroll columns of {@code BO-05-02-15} included.
+     * getChecksum returns the Objects.hash of the eleven business fields, the
+     * three payroll columns of {@code BO-05-02-15} and the Dallas key of
+     * {@code BO-01-02-07} included.
      */
     @Test
     void getChecksumMatchesObjectsHash() {
@@ -394,8 +395,9 @@ class EmployeeTest {
         employee.legalEntity = true;
         employee.forcingLevel = 3;
         employee.advanceLimit = new java.math.BigDecimal("150.00");
+        employee.dallasKey = "01A2B3C4D5E6F708";
         int expected = Objects.hash("Jane", "Doe", "hash", Employee.EmployeeRole.MANAGER, "B01", true,
-                "jane@example.com", true, 3, new java.math.BigDecimal("150.00"));
+                "jane@example.com", true, 3, new java.math.BigDecimal("150.00"), "01A2B3C4D5E6F708");
         Assertions.assertEquals(expected, employee.getChecksum());
     }
 
@@ -417,10 +419,77 @@ class EmployeeTest {
      */
     @Test
     void employeeRoleEnumHasFourConstants() {
-        Assertions.assertEquals(4, Employee.EmployeeRole.values().length);
+        Assertions.assertEquals(5, Employee.EmployeeRole.values().length);
+        Assertions.assertEquals(Employee.EmployeeRole.TECHNICAL_HOSTESS,
+                Employee.EmployeeRole.valueOf("TECHNICAL_HOSTESS"));
         Assertions.assertEquals(Employee.EmployeeRole.ADMIN, Employee.EmployeeRole.valueOf("ADMIN"));
         Assertions.assertEquals(Employee.EmployeeRole.MANAGER, Employee.EmployeeRole.valueOf("MANAGER"));
         Assertions.assertEquals(Employee.EmployeeRole.PICKER, Employee.EmployeeRole.valueOf("PICKER"));
         Assertions.assertEquals(Employee.EmployeeRole.CASHIER, Employee.EmployeeRole.valueOf("CASHIER"));
+    }
+
+    /**
+     * BO-01-02-01, BO-01-02-09: the sign-in modes read from a form or a
+     * payload, any case, ANY by default; each mode opens its doors.
+     */
+    @Test
+    void signInModesOpenTheirDoors() {
+        org.junit.jupiter.api.Assertions.assertEquals(Employee.AuthMode.ANY, Employee.AuthMode.from(null));
+        org.junit.jupiter.api.Assertions.assertEquals(Employee.AuthMode.ANY, Employee.AuthMode.from("bogus"));
+        org.junit.jupiter.api.Assertions.assertEquals(Employee.AuthMode.SSO, Employee.AuthMode.from(" sso "));
+        Employee account = new Employee();
+        org.junit.jupiter.api.Assertions.assertTrue(account.allowsPasswordLogin());
+        org.junit.jupiter.api.Assertions.assertTrue(account.allowsSsoLogin());
+        account.authMode = Employee.AuthMode.SSO;
+        org.junit.jupiter.api.Assertions.assertFalse(account.allowsPasswordLogin());
+        account.authMode = Employee.AuthMode.PASSWORD;
+        org.junit.jupiter.api.Assertions.assertFalse(account.allowsSsoLogin());
+    }
+
+    /**
+     * BO-01-01-03: a distributed hash is written by an update query, never
+     * through the hashing setter.
+     */
+    @Test
+    void aDistributedHashIsWrittenAsIs() {
+        try (org.mockito.MockedStatic<io.quarkus.hibernate.orm.panache.PanacheEntityBase> panache =
+                     org.mockito.Mockito.mockStatic(io.quarkus.hibernate.orm.panache.PanacheEntityBase.class)) {
+            panache.when(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase.update(
+                    "backOfficePassword = ?1 where id = ?2", "$2a$hash", 4L)).thenReturn(1);
+            org.junit.jupiter.api.Assertions.assertEquals(1, Employee.adoptBackOfficePasswordHash(4L, "$2a$hash"));
+        }
+    }
+
+    /**
+     * BO-01-02-07: a Dallas key identifier is stored compact and upper case,
+     * and only sixteen hexadecimal digits make a key.
+     */
+    @Test
+    void dallasKeysAreNormalizedAndChecked() {
+        org.junit.jupiter.api.Assertions.assertNull(Employee.normalizeDallasKey(null));
+        org.junit.jupiter.api.Assertions.assertNull(Employee.normalizeDallasKey(" - "));
+        org.junit.jupiter.api.Assertions.assertEquals("01A2B3C4D5E6F708", Employee.normalizeDallasKey("01:a2-b3 c4d5e6f708"));
+        org.junit.jupiter.api.Assertions.assertTrue(Employee.isDallasKey("01A2B3C4D5E6F708"));
+        org.junit.jupiter.api.Assertions.assertFalse(Employee.isDallasKey("01A2B3C4D5E6F7"));
+        org.junit.jupiter.api.Assertions.assertFalse(Employee.isDallasKey(null));
+    }
+
+    /**
+     * BO-01-02-07: the holder of a key is looked up by its normalized form,
+     * active accounts only; no key, no lookup.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void theHolderOfADallasKeyIsFound() {
+        Employee holder = new Employee();
+        io.quarkus.hibernate.orm.panache.PanacheQuery<Employee> query = org.mockito.Mockito.mock(io.quarkus.hibernate.orm.panache.PanacheQuery.class);
+        org.mockito.Mockito.when(query.firstResult()).thenReturn(holder);
+        try (org.mockito.MockedStatic<io.quarkus.hibernate.orm.panache.PanacheEntityBase> panache =
+                     org.mockito.Mockito.mockStatic(io.quarkus.hibernate.orm.panache.PanacheEntityBase.class)) {
+            panache.when(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase.find(
+                    "dallasKey = ?1 and active = true", "01A2B3C4D5E6F708")).thenReturn(query);
+            org.junit.jupiter.api.Assertions.assertSame(holder, Employee.findActiveDallasKey("01a2b3c4d5e6f708"));
+            org.junit.jupiter.api.Assertions.assertNull(Employee.findActiveDallasKey("  "));
+        }
     }
 }

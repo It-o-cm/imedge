@@ -1,11 +1,14 @@
 package com.intermarche.edge.ui.admin;
 
+import io.quarkus.security.Authenticated;
+import com.intermarche.edge.security.FeatureAccess;
+import com.intermarche.edge.domain.setting.Feature;
+import com.intermarche.edge.domain.people.CrudOption;
 import com.intermarche.edge.domain.payment.AccountCustomer;
 import com.intermarche.edge.domain.store.Address;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
@@ -47,8 +50,9 @@ import java.util.List;
  * management is the owner of these rows and overwrites them every evening. That
  * is not a defect of this screen, it is what the requirement describes — a
  * correction made here holds the counter until the shop has corrected it
- * upstream too. Sending the correction back up ({@code BO-02-04-13}) needs a
- * road towards the commercial management that this node does not have yet.
+ * upstream too — and every correction saved here, like every one made at a
+ * register, is SENT BACK UP to the commercial management and replayed until it
+ * acknowledges it ({@code BO-02-04-13}); the file shows where that stands.
  *
  * <p>Access reserved to ADMIN, like every referential screen.
  * POST&nbsp;→&nbsp;303&nbsp;→&nbsp;notice.
@@ -76,6 +80,10 @@ public class AdminCustomerResource {
     /** The back-office parameters governing whether an account may be opened. */
     @Inject
     com.intermarche.edge.service.PosSettingsService posSettingsService;
+
+    /** Sends the corrected files up to the commercial management (BO-02-04-13). */
+    @Inject
+    com.intermarche.edge.service.sync.CustomerUplinkService customerUplinkService;
 
     /**
      * The last credit payment an account made, as the file shows it
@@ -131,7 +139,8 @@ public class AdminCustomerResource {
      * @return the list page
      */
     @GET
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.CUSTOMER)
     public TemplateInstance list(@QueryParam("text") String text,
                                  @QueryParam("taxId") String taxId,
                                  @QueryParam("origin") String origin,
@@ -170,7 +179,8 @@ public class AdminCustomerResource {
      */
     @GET
     @jakarta.ws.rs.Path("/export")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.CUSTOMER)
     @Produces("text/csv; charset=UTF-8")
     public Response export(@QueryParam("text") String text,
                            @QueryParam("taxId") String taxId,
@@ -219,7 +229,8 @@ public class AdminCustomerResource {
      */
     @GET
     @jakarta.ws.rs.Path("/edit")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.CUSTOMER)
     public TemplateInstance edit(@QueryParam("id") Long id,
                                  @QueryParam("notice") String notice,
                                  @QueryParam("noticeOk") @DefaultValue("true") boolean noticeOk) {
@@ -232,6 +243,7 @@ public class AdminCustomerResource {
         return adminCustomer.data("customer", customer)
                 .data("creating", false)
                 .data("lastMovement", customer == null ? null : lastMovement(customer.accountNumber))
+                .data("uplink", customer == null ? null : customerUplinkService.stateOf(customer.accountNumber))
                 .data("notice", notice)
                 .data("noticeOk", noticeOk);
     }
@@ -250,7 +262,8 @@ public class AdminCustomerResource {
      */
     @GET
     @jakarta.ws.rs.Path("/new")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.CUSTOMER)
     public Response create(@QueryParam("notice") String notice,
                            @QueryParam("noticeOk") @DefaultValue("true") boolean noticeOk) {
         LOGGER.info("Entering method create");
@@ -265,6 +278,7 @@ public class AdminCustomerResource {
         return Response.ok(adminCustomer.data("customer", blank)
                 .data("creating", true)
                 .data("lastMovement", null)
+                .data("uplink", null)
                 .data("notice", notice)
                 .data("noticeOk", noticeOk).render(), MediaType.TEXT_HTML).build();
     }
@@ -282,7 +296,8 @@ public class AdminCustomerResource {
      */
     @POST
     @jakarta.ws.rs.Path("/new")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.CUSTOMER, option = CrudOption.CREATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response add(MultivaluedMap<String, String> form) {
@@ -334,6 +349,8 @@ public class AdminCustomerResource {
         customer.discountPercent = decimalValue(form.getFirst("discountPercent"));
         customer.creditLimit = decimalValue(form.getFirst("creditLimit"));
         customer.persist();
+        // BO-02-04-13: an account opened here is news to the commercial management.
+        customerUplinkService.enqueue(customer, com.intermarche.edge.domain.sync.CustomerUplink.Source.BACK_OFFICE);
         LOGGER.infof("Compte client %s ouvert depuis le back-office", customer.accountNumber);
         LOGGER.info("Exiting method add");
         return redirect("/admin/customers/edit?id=" + customer.id, "Compte créé.", true);
@@ -351,7 +368,8 @@ public class AdminCustomerResource {
      */
     @POST
     @jakarta.ws.rs.Path("/edit")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.CUSTOMER, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response save(MultivaluedMap<String, String> form) {
@@ -386,10 +404,51 @@ public class AdminCustomerResource {
         customer.dueDate = dateValue(form.getFirst("dueDate"));
         customer.discountPercent = decimalValue(form.getFirst("discountPercent"));
         customer.creditLimit = decimalValue(form.getFirst("creditLimit"));
+        // BO-06-03-04: what the customer list states beyond the identity.
+        customer.profession = blankToNull(form.getFirst("profession"));
+        customer.billingType = blankToNull(form.getFirst("billingType"));
+        customer.supplementCode = blankToNull(form.getFirst("supplementCode"));
+        String billingStreet = blankToNull(form.getFirst("billingStreet"));
+        if (billingStreet != null || customer.billingAddress != null) {
+            if (customer.billingAddress == null) {
+                customer.billingAddress = new Address();
+            }
+            customer.billingAddress.streetLine1 = billingStreet;
+            customer.billingAddress.postalCode = blankToNull(form.getFirst("billingPostalCode"));
+            customer.billingAddress.city = blankToNull(form.getFirst("billingCity"));
+        }
         customer.persist();
+        // BO-02-04-13: the correction goes up, or the next integration undoes it.
+        customerUplinkService.enqueue(customer, com.intermarche.edge.domain.sync.CustomerUplink.Source.BACK_OFFICE);
         LOGGER.infof("Fiche client %s corrigée depuis le back-office", customer.accountNumber);
         LOGGER.info("Exiting method save");
         return redirect("/admin/customers/edit?id=" + id, "Fiche enregistrée.", true);
+    }
+
+    /**
+     * Replays at once the uplink of the files the commercial management has not
+     * acknowledged yet ({@code BO-02-04-13}), without waiting for the loop's
+     * next pass.
+     *
+     * @param form the posted form (id, the file to come back to)
+     * @return a 303 back to the file with the outcome
+     */
+    @POST
+    @jakarta.ws.rs.Path("/uplink/replay")
+    @Authenticated
+    @FeatureAccess(value = Feature.CUSTOMER, option = CrudOption.UPDATE)
+    @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
+    public Response replayUplink(MultivaluedMap<String, String> form) {
+        LOGGER.info("Entering method replayUplink");
+        Long id = longValue(form.getFirst("id"));
+        String back = id == null ? "/admin/customers" : "/admin/customers/edit?id=" + id;
+        if (posSettingsService.customerUplinkUrl().isEmpty()) {
+            LOGGER.info("Exiting method replayUplink: no address");
+            return redirect(back, "Aucune adresse de remontée vers la gestion commerciale n'est paramétrée.", false);
+        }
+        int acknowledged = customerUplinkService.deliverPending();
+        LOGGER.info("Exiting method replayUplink");
+        return redirect(back, "Remontée rejouée : " + acknowledged + " fiche(s) acquittée(s).", true);
     }
 
     /**

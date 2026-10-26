@@ -79,6 +79,9 @@ public class PeriodCloseService {
     /** The end-of-period data-retention sweep (BO-10-08-03 to -26). */
     @Inject RetentionPurgeService retentionPurgeService;
 
+    /** The sales volumes of the direct-entry groups (BO-03-01-13). */
+    @Inject SalesVolumeService salesVolumeService;
+
     /** The end-of-period financial-state emission (X/Z campaign, §4). */
     @Inject FinancialStateEmissionService financialStateEmissionService;
 
@@ -137,13 +140,16 @@ public class PeriodCloseService {
         if (posSettingsService.periodAutoCloseEnabled() && inClosingWindow(now)) {
             List<CashSession> open = CashSession.list("status", CashSession.SessionStatus.OPEN);
             for (CashSession session : open) {
-                order(session.terminalId);
+                order(session);
             }
             LOGGER.info("Closing window: " + open.size() + " register(s) still open");
         }
         maybeSweep(now, DateTimeProvider.now().toLocalDate());
         LOGGER.info("Exiting method tick");
     }
+
+    /** The consolidated close of the point of sale (BO-03-12-02). */
+    @Inject StorePeriodCloseService storePeriodCloseService;
 
     /** The programmed end-of-period editions (BO-09-01-10). */
     @jakarta.inject.Inject
@@ -176,14 +182,99 @@ public class PeriodCloseService {
             LOGGER.info("Exiting method maybeSweep: end of period not reached");
             return;
         }
+        // BO-09-03-03: the treatment starts on its own only where the store
+        // activated the automatic launch; otherwise it waits for the button
+        // of the end-of-day screen, and the journal says it did not start.
+        if (!posSettingsService.periodAutoLaunch()) {
+            if (!today.equals(lastSkippedDay)) {
+                technicalEventService.log(TechnicalEvent.EventType.SESSION_CLOSED,
+                        "Fin de p\u00e9riode automatique d\u00e9sactiv\u00e9e : traitement du " + today + " non lanc\u00e9");
+                lastSkippedDay = today;
+            }
+            LOGGER.info("Exiting method maybeSweep: automatic launch off");
+            return;
+        }
+        treat(today, AUTOMATIC);
+        LOGGER.info("Exiting method maybeSweep: sweep run");
+    }
+
+    /**
+     * The day the disarmed automatic launch was last journalled, so a day
+     * that does not start says so once (BO-09-03-03). The manual launch stays
+     * possible that day: the day is not treated, only announced untreated.
+     */
+    LocalDate lastSkippedDay;
+
+    /** Who the automatic end of period is, in the journal and on the rows. */
+    static final String AUTOMATIC = "Fin de p\u00e9riode automatique";
+
+    /** The technical entry points around the treatment (BO-09-02-04). */
+    @Inject PeriodHookService periodHookService;
+
+    /** The tickets left on hold at the close (BO-09-01-05, -08, BO-09-02-01). */
+    @Inject ParkedTicketCloseService parkedTicketCloseService;
+
+    /** The registers the check of their data is ordered to (BO-09-03-05). */
+    @Inject com.intermarche.edge.service.sync.RegisterPresenceService registerPresenceService;
+
+    /**
+     * Runs the end-of-period treatment of a day by hand (BO-09-02-01 to -04,
+     * BO-09-03-03): the same treatment the automatic end of period runs, once
+     * a day — a day already treated, by hand or automatically, is not treated
+     * again.
+     *
+     * @param day the day whose period ends
+     * @param launchedBy who pressed the button
+     * @return true when the treatment ran, false when the day was already treated
+     */
+    @Transactional
+    public boolean runEndOfPeriod(LocalDate day, String launchedBy) {
+        LOGGER.info("Entering method runEndOfPeriod with day: " + day);
+        if (day.equals(lastPurgeDay)) {
+            LOGGER.info("Exiting method runEndOfPeriod: already treated");
+            return false;
+        }
+        treat(day, launchedBy);
+        LOGGER.info("Exiting method runEndOfPeriod");
+        return true;
+    }
+
+    /**
+     * The end-of-period treatment of a day, in its order: the entry point
+     * before, the tickets on hold, the registers' check, the financial states,
+     * the consolidated close, the editions, the volumes, the retention sweep,
+     * the periods closed, the entry point after.
+     *
+     * @param today the day whose period ends
+     * @param launchedBy who launched it
+     */
+    void treat(LocalDate today, String launchedBy) {
+        // BO-09-02-04: the store's own needs before the treatment.
+        periodHookService.run(com.intermarche.edge.domain.session.PeriodHookRun.Phase.BEFORE, today, launchedBy);
+        // BO-09-01-05, BO-09-02-01: the close goes through WITH the tickets
+        // on hold, each written down; BO-09-01-08: reset where administered.
+        parkedTicketCloseService.record(today, launchedBy);
+        if (AUTOMATIC.equals(launchedBy) && posSettingsService.periodParkedRaz()) {
+            parkedTicketCloseService.raz(null, launchedBy, today);
+        }
+        // BO-09-03-05: each register checks its data against the server's.
+        if (posSettingsService.periodRegisterCheck()) {
+            verifyRegisters(today);
+        }
         // Financial states are emitted BEFORE the retention sweep (§4): the purge
         // may carry away tickets a Z still needs, so the Z must be frozen first.
         financialStateEmissionService.emitEndOfPeriod(today);
+        // BO-03-12-02: the consolidated close of the point of sale, above the
+        // sessions, chaining the administered actions under the calendar.
+        storePeriodCloseService.consolidate(today);
         // BO-09-01-10: the programmed states are edited BEFORE the retention
         // sweep, for the reason the financial states are: the purge carries
         // away the tickets the states are made of, and a state edited after it
         // would state a day that has already been emptied.
         scheduledReportService.runEndOfPeriod(today);
+        // BO-03-01-13: the sales volumes are counted before the sweep, which
+        // carries away the tickets they are counted on.
+        salesVolumeService.refresh(today);
         retentionPurgeService.sweep();
         // BO-09-01-07: which periods this day closes — the day always, the
         // week, the month and the year on the administered days. Journalised
@@ -192,26 +283,157 @@ public class PeriodCloseService {
         technicalEventService.log(TechnicalEvent.EventType.SESSION_CLOSED,
                 "Fin de p\u00e9riode du " + today + " : " + periodScheduleService.endingOn(today));
         lastPurgeDay = today;
-        LOGGER.info("Exiting method maybeSweep: sweep run");
+        // BO-09-02-04: the store's own needs after the treatment.
+        periodHookService.run(com.intermarche.edge.domain.session.PeriodHookRun.Phase.AFTER, today, launchedBy);
     }
 
     /**
-     * Leaves the close-if-idle order for one register and journals it, unless
-     * that register already carries one.
+     * Orders every register the node knows to check its data of the day
+     * against the server's (BO-09-03-05): the order carries what the server
+     * holds of that register's day — its closed tickets and their total — and
+     * a register that differs pushes its sales again and re-pulls its
+     * referential. A deactivated register is left out.
      *
-     * @param terminalId the register still open
+     * @param day the day checked
      */
-    void order(String terminalId) {
+    void verifyRegisters(LocalDate day) {
+        for (com.intermarche.edge.service.sync.RegisterPresenceService.Presence presence
+                : registerPresenceService.all()) {
+            String terminal = presence.terminalId();
+            if (deactivated(terminal)) {
+                continue;
+            }
+            java.util.List<com.intermarche.edge.domain.sale.Ticket> tickets = closedTickets(terminal, day);
+            java.math.BigDecimal total = java.math.BigDecimal.ZERO;
+            for (com.intermarche.edge.domain.sale.Ticket ticket : tickets) {
+                total = total.add(ticket.totalIncludingTax == null ? java.math.BigDecimal.ZERO : ticket.totalIncludingTax);
+            }
+            registerCommandService.issue(terminal, RegisterCommand.CommandType.VERIFY_SYNC,
+                    "Fin de p\u00e9riode", day + ";" + tickets.size() + ";" + total.setScale(2, java.math.RoundingMode.HALF_UP).toPlainString());
+            technicalEventService.log(TechnicalEvent.EventType.SESSION_CLOSED,
+                    "Contr\u00f4le caisse / serveur demand\u00e9 \u00e0 la caisse " + terminal + " : "
+                            + tickets.size() + " ticket(s) re\u00e7u(s) par le serveur");
+        }
+    }
+
+    /**
+     * Leaves the end-of-period close order for one open session's register
+     * and journals it, unless that register already carries a close order.
+     *
+     * @param session the session still open
+     */
+    void order(CashSession session) {
+        String terminalId = session.terminalId;
         LOGGER.info("Entering method order with terminalId: " + terminalId);
-        if (registerCommandService.pendingCount(terminalId) > 0) {
+        if (closePending(terminalId)) {
             LOGGER.info("Exiting method order: an order is already waiting");
             return;
         }
-        registerCommandService.issue(terminalId, RegisterCommand.CommandType.CLOSE_SESSION_IF_IDLE,
+        RegisterCommand.CommandType type = closeOrderType(session);
+        registerCommandService.issue(terminalId, type,
                 "Fin de période", "Fermeture automatique de fin de période");
         technicalEventService.log(TechnicalEvent.EventType.SESSION_CLOSED,
-                "Fermeture de fin de période demandée à la caisse " + terminalId);
+                "Fermeture de fin de période demandée à la caisse " + terminalId
+                        + (type == RegisterCommand.CommandType.CLOSE_SESSION_AUTO_DECLARE
+                        ? " (déclaration automatique de l'hôte)" : ""));
         LOGGER.info("Exiting method order");
+    }
+
+    /**
+     * Whether a register already carries an end-of-period close order.
+     *
+     * @param terminalId the register
+     * @return true when a close order is pending
+     */
+    public boolean closePending(String terminalId) {
+        return registerCommandService.isPending(terminalId, RegisterCommand.CommandType.CLOSE_SESSION_IF_IDLE)
+                || registerCommandService.isPending(terminalId, RegisterCommand.CommandType.CLOSE_SESSION_AUTO_DECLARE);
+    }
+
+    /**
+     * The close order an open session takes at the end of period
+     * (BO-09-03-01): the automatic declaration of its host where the store
+     * declares automatically the hosts of its self-service islands, the
+     * session's register stands on such an island — one that declares the end
+     * of period on its own and holds self-service registers — and the island
+     * attaches the host who opened it; the close-if-idle order otherwise.
+     *
+     * @param session the session still open
+     * @return the kind of close order
+     */
+    public RegisterCommand.CommandType closeOrderType(CashSession session) {
+        if (!posSettingsService.periodScoAutoDeclaration()) {
+            return RegisterCommand.CommandType.CLOSE_SESSION_IF_IDLE;
+        }
+        com.intermarche.edge.domain.store.CheckoutIsland island = islandOf(session.terminalId);
+        if (island == null || !island.autoPeriodCloseDeclaration || !selfService(island)) {
+            return RegisterCommand.CommandType.CLOSE_SESSION_IF_IDLE;
+        }
+        String badge = session.openingCashier == null ? null : session.openingCashier.badgeId;
+        return island.attaches(badge)
+                ? RegisterCommand.CommandType.CLOSE_SESSION_AUTO_DECLARE
+                : RegisterCommand.CommandType.CLOSE_SESSION_IF_IDLE;
+    }
+
+    /**
+     * The island a register stands on.
+     *
+     * @param terminalId the register
+     * @return the island, or null
+     */
+    com.intermarche.edge.domain.store.CheckoutIsland islandOf(String terminalId) {
+        return com.intermarche.edge.domain.store.CheckoutIsland.findByTerminal(terminalId);
+    }
+
+    /**
+     * Whether the back office deactivated a register (BO-03-09-01).
+     *
+     * @param terminalId the register
+     * @return true when deactivated
+     */
+    boolean deactivated(String terminalId) {
+        return com.intermarche.edge.domain.store.CheckoutPoint.isDeactivated(terminalId);
+    }
+
+    /**
+     * The tickets of a register the server holds closed on a day.
+     *
+     * @param terminalId the register
+     * @param day the day
+     * @return the tickets
+     */
+    java.util.List<com.intermarche.edge.domain.sale.Ticket> closedTickets(String terminalId, LocalDate day) {
+        return com.intermarche.edge.domain.sale.Ticket.list(
+                "terminalId = ?1 and status = ?2 and closingDate >= ?3 and closingDate < ?4", terminalId,
+                com.intermarche.edge.domain.sale.Ticket.TicketStatus.CLOSED,
+                day.atStartOfDay(), day.plusDays(1).atStartOfDay());
+    }
+
+    /**
+     * The checkout point of a register.
+     *
+     * @param terminalId the register
+     * @return the point, or null when undeclared
+     */
+    com.intermarche.edge.domain.store.CheckoutPoint pointOf(String terminalId) {
+        return com.intermarche.edge.domain.store.CheckoutPoint.findByTerminal(terminalId);
+    }
+
+    /**
+     * Whether an island is a self-service island: one of its registers is a
+     * self-service checkout point.
+     *
+     * @param island the island
+     * @return true when it holds a self-service register
+     */
+    boolean selfService(com.intermarche.edge.domain.store.CheckoutIsland island) {
+        for (String terminal : island.terminals()) {
+            com.intermarche.edge.domain.store.CheckoutPoint point = pointOf(terminal);
+            if (point != null && point.isSelfService()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

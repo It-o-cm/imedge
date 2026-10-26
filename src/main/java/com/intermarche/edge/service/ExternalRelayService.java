@@ -84,6 +84,25 @@ public class ExternalRelayService {
      */
     public RelayResult relay(Optional<String> upstreamUrl, String method, String pathSuffix,
                              String body, long timeoutMillis, String credential) {
+        return relay(upstreamUrl, method, pathSuffix, body, timeoutMillis, credential, "application/json");
+    }
+
+    /**
+     * Forwards a request presenting a credential, declaring the media type of
+     * the body: a third party that reads a flat record or a SOAP envelope
+     * (BO-11-02-01, BO-11-04-02) must be told it is not receiving JSON.
+     *
+     * @param upstreamUrl the configured upstream URL, or empty
+     * @param method the HTTP method ({@code GET} or {@code POST})
+     * @param pathSuffix an extra path appended to the URL, or null
+     * @param body the request body for a POST, or null
+     * @param timeoutMillis the read timeout in milliseconds
+     * @param credential the credential to present, or null for none
+     * @param contentType the media type of the body
+     * @return the relay outcome, never null
+     */
+    public RelayResult relay(Optional<String> upstreamUrl, String method, String pathSuffix,
+                             String body, long timeoutMillis, String credential, String contentType) {
         LOGGER.info("Entering method relay with method: " + method);
         if (upstreamUrl == null || upstreamUrl.isEmpty() || upstreamUrl.get().isBlank()) {
             LOGGER.info("Exiting method relay: upstream not configured");
@@ -94,7 +113,7 @@ public class ExternalRelayService {
             HttpRequest.Builder request = HttpRequest.newBuilder()
                     .uri(URI.create(target))
                     .timeout(Duration.ofMillis(timeoutMillis))
-                    .header("Content-Type", "application/json");
+                    .header("Content-Type", contentType);
             if (credential != null && !credential.isBlank()) {
                 request.header("Authorization", "Bearer " + credential);
             }

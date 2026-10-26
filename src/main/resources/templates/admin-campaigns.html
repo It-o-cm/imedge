@@ -9,30 +9,30 @@
 !}
 {#include admin-layout}
 
-{#title}Campagnes{/title}
+{#title}{inject:i18n.get('t.campagnes')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Campagnes</h1>
-        <p class="page-sub">Une campagne s'administre au nœud magasin : libellé, période, budget, offres rattachées et duplication. Seule sa projection budgétaire (BUDGET_GROUPS) descend au moteur ; la consommation se lit en direct du moteur (budget global approximatif par construction).</p>
+        <h1>{inject:i18n.get('t.campagnes')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.une-campagne-s-administre-au-nud-magasin')}</p>
     </div>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 <div class="card">
-    <h2 class="card-title">Campagnes</h2>
+    <h2 class="card-title">{inject:i18n.get('t.campagnes')}</h2>
     {#if campaigns.isEmpty()}
-    <p class="page-sub">Aucune campagne n'est enregistrée.</p>
+    <p class="page-sub">{inject:i18n.get('t.aucune-campagne-n-est-enregistree')}</p>
     {#else}
     <table class="data-table">
         <thead>
             <tr>
-                <th>Code</th><th>Libellé</th><th>Période</th><th>Budget</th>
-                <th>Offres</th><th>État</th><th>Consommation</th>
+                <th>{inject:i18n.get('t.code')}</th><th>{inject:i18n.get('t.libelle')}</th><th>{inject:i18n.get('t.periode')}</th><th>{inject:i18n.get('t.budget')}</th>
+                <th>{inject:i18n.get('t.offres')}</th><th>{inject:i18n.get('t.etat')}</th><th>{inject:i18n.get('t.consommation')}</th>
             </tr>
         </thead>
         <tbody>
@@ -40,11 +40,11 @@
             <tr>
                 <td><a href="/admin/campaigns/fiche?code={c.code}">{c.code}</a></td>
                 <td>{c.label ?: '—'}</td>
-                <td>{c.validFrom ?: '∞'} → {c.validTo ?: '∞'}</td>
-                <td>{#if c.maxAmount}{c.maxAmount} €{/if}{#if c.maxApplications} / {c.maxApplications}{/if}{#if !c.hasBudget}—{/if}</td>
+                <td>{#if c.validFrom}{c.validFrom.format('dd/MM/yyyy')}{#else}∞{/if} → {#if c.validTo}{c.validTo.format('dd/MM/yyyy')}{#else}∞{/if}</td>
+                <td>{#if c.maxAmount != null}{inject:i18n.money(c.maxAmount)} €{/if}{#if c.maxApplications} / {c.maxApplications}{/if}{#if !c.hasBudget}—{/if}</td>
                 <td>{c.offerCodes.size()}</td>
-                <td>{c.status}</td>
-                <td>{#let s=statuses.get(c.code)}{#if s && s.available}{s.consumedAmount} / {s.maxAmount ?: '∞'} €{#else}moteur non joignable{/if}{/let}</td>
+                <td>{inject:i18n.code('t.x21-campaign-', c.status)}</td>
+                <td>{#let s=statuses.get(c.code)}{#if s && s.available}{inject:i18n.money(s.consumedAmount)} / {#if s.maxAmount != null}{inject:i18n.money(s.maxAmount)}{#else}∞{/if} €{#else}{inject:i18n.get('t.moteur-non-joignable')}{/if}{/let}</td>
             </tr>
             {/for}
         </tbody>
@@ -53,17 +53,17 @@
 </div>
 
 <div class="card">
-    <h2 class="card-title">Nouvelle campagne</h2>
+    <h2 class="card-title">{inject:i18n.get('t.nouvelle-campagne')}</h2>
     <form method="post" action="/admin/campaigns/create">
-        <div class="form-row"><label>Code</label><input class="input-control" name="code" required></div>
-        <div class="form-row"><label>Libellé</label><input class="input-control" name="label"></div>
-        <div class="form-row"><label>Début (AAAA-MM-JJ)</label><input class="input-control" name="validFrom" type="date"></div>
-        <div class="form-row"><label>Fin exclue (AAAA-MM-JJ)</label><input class="input-control" name="validTo" type="date"></div>
-        <div class="form-row"><label>Plafond montant (€)</label><input class="input-control" name="maxAmount"></div>
-        <div class="form-row"><label>Plafond applications</label><input class="input-control" name="maxApplications"></div>
-        <div class="form-row"><label>Par PDV</label><input type="checkbox" name="perStore"></div>
-        <div class="form-row"><label>Notes</label><input class="input-control" name="notes"></div>
-        <button class="btn btn-primary" type="submit">Créer</button>
+        <div class="form-row"><label>{inject:i18n.get('t.code')}</label><input class="input-control" name="code" required></div>
+        <div class="form-row"><label>{inject:i18n.get('t.libelle')}</label><input class="input-control" name="label"></div>
+        <div class="form-row"><label>{inject:i18n.get('t.debut-aaaa-mm-jj')}</label><input class="input-control" name="validFrom" type="date"></div>
+        <div class="form-row"><label>{inject:i18n.get('t.fin-exclue-aaaa-mm-jj')}</label><input class="input-control" name="validTo" type="date"></div>
+        <div class="form-row"><label>{inject:i18n.get('t.plafond-montant')}</label><input class="input-control" name="maxAmount"></div>
+        <div class="form-row"><label>{inject:i18n.get('t.plafond-applications')}</label><input class="input-control" name="maxApplications"></div>
+        <div class="form-row"><label>{inject:i18n.get('t.par-pdv')}</label><input type="checkbox" name="perStore"></div>
+        <div class="form-row"><label>{inject:i18n.get('t.notes')}</label><input class="input-control" name="notes"></div>
+        <button class="btn btn-primary" type="submit">{inject:i18n.get('t.creer-2')}</button>
     </form>
 </div>
 {/body}

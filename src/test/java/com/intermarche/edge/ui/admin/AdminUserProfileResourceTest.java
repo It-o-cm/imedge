@@ -47,9 +47,10 @@ import static org.mockito.Mockito.when;
  * Branch enumeration (every arm exercised): each method covers its guard's
  * allowed/denied arms; {@code listPage} the null/known role and the
  * resolved/orphan binding arms; {@code assign} the missing-id, unknown-entity,
- * blank/explicit scope, duplicate and success arms; {@code unassign} the
- * blank-id, unknown and success arms; {@code parseId} its null, blank, valid
- * and malformed arms.
+ * holder above the actor, profile above the actor, blank/explicit/invalid/
+ * register scope, duplicate and success arms; {@code unassign} the blank-id,
+ * unknown, holder above, profile above, deleted profile and success arms;
+ * {@code parseId} its null, blank, valid and malformed arms.
  */
 class AdminUserProfileResourceTest {
 
@@ -64,7 +65,19 @@ class AdminUserProfileResourceTest {
      */
     @BeforeEach
     void setUp() {
-        resource = new AdminUserProfileResource();
+        Employee actor = new Employee();
+        actor.loginName = "mcurie";
+        resource = new AdminUserProfileResource() {
+            /**
+             * Answers the account the test signs in as.
+             *
+             * @return the stubbed signed-in account
+             */
+            @Override
+            Employee actor() {
+                return actor;
+            }
+        };
         resource.adminUsers = mock(Template.class);
         permissionService = mock(PermissionService.class);
         resource.permissionService = permissionService;
@@ -83,6 +96,18 @@ class AdminUserProfileResourceTest {
     private void permit(boolean allowed) {
         when(permissionService.isAllowed(anyString(), any(Feature.class), any(CrudOption.class)))
                 .thenReturn(allowed);
+        hierarchy(true, true);
+    }
+
+    /**
+     * Answers the two hierarchy questions (BO-01-03-03).
+     *
+     * @param outranks whether the actor administers the holder
+     * @param mayAssign whether the actor may hand the profile out
+     */
+    private void hierarchy(boolean outranks, boolean mayAssign) {
+        when(permissionService.outranks(any(), any())).thenReturn(outranks);
+        when(permissionService.mayAssign(any(), any())).thenReturn(mayAssign);
     }
 
     /**
@@ -315,16 +340,16 @@ class AdminUserProfileResourceTest {
         MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
         form.putSingle("employeeId", "7");
         form.putSingle("profileId", "3");
-        form.putSingle("echelonScope", " 0101 ");
+        form.putSingle("echelonScope", " enseigne:ITM ");
         try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
              MockedConstruction<EmployeeProfile> construction = mockConstruction(EmployeeProfile.class)) {
             panache.when(() -> Employee.findById(7L)).thenReturn(employee(7L, Employee.EmployeeRole.MANAGER));
             panache.when(() -> Profile.findById(3L)).thenReturn(profile(3L, "P"));
             panache.when(() -> EmployeeProfile.count(
-                    "employeeId = ?1 and profileId = ?2 and echelonScope = ?3", 7L, 3L, "0101")).thenReturn(0L);
+                    "employeeId = ?1 and profileId = ?2 and echelonScope = ?3", 7L, 3L, "ENSEIGNE:ITM")).thenReturn(0L);
             assertRedirect(resource.assign(form), "affect");
             EmployeeProfile built = construction.constructed().get(0);
-            assertEquals("0101", built.echelonScope);
+            assertEquals("ENSEIGNE:ITM", built.echelonScope);
             verify(built).persist();
         }
     }
@@ -376,6 +401,78 @@ class AdminUserProfileResourceTest {
             panache.when(() -> EmployeeProfile.findById(2L)).thenReturn(bound);
             assertRedirect(resource.unassign(form), "retir");
             verify(bound).delete();
+        }
+    }
+
+    /**
+     * BO-01-03-03: a holder not below the actor, or a profile above the actor,
+     * is refused; a register scope or an unknown echelon is refused too
+     * (BO-01-03-04).
+     */
+    @Test
+    void assignKeepsWithinTheActorsLevelAndANodeEchelon() {
+        when(permissionService.isAllowed(anyString(), any(Feature.class), any(CrudOption.class))).thenReturn(true);
+        MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
+        form.putSingle("employeeId", "7");
+        form.putSingle("profileId", "3");
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> Employee.findById(7L)).thenReturn(employee(7L, Employee.EmployeeRole.MANAGER));
+            panache.when(() -> Profile.findById(3L)).thenReturn(profile(3L, "P"));
+            hierarchy(false, true);
+            assertRedirect(resource.assign(form), "inf%C3%A9rieur");
+            hierarchy(true, false);
+            assertRedirect(resource.assign(form), "sup%C3%A9rieur");
+            hierarchy(true, true);
+            form.putSingle("echelonScope", "TPV:POS01");
+            assertRedirect(resource.assign(form), "invalide");
+            form.putSingle("echelonScope", "REGION:IDF");
+            assertRedirect(resource.assign(form), "invalide");
+        }
+    }
+
+    /**
+     * An assignment above the actor's level is not withdrawn: a holder not
+     * below, or a profile above; a deleted profile only asks about the holder.
+     */
+    @Test
+    void unassignKeepsWithinTheActorsLevel() {
+        when(permissionService.isAllowed(anyString(), any(Feature.class), any(CrudOption.class))).thenReturn(true);
+        MultivaluedMap<String, String> form = new MultivaluedHashMap<>();
+        form.putSingle("bindingId", "2");
+        EmployeeProfile bound = mock(EmployeeProfile.class);
+        bound.employeeId = 7L;
+        bound.profileId = 3L;
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> EmployeeProfile.findById(2L)).thenReturn(bound);
+            panache.when(() -> Employee.findById(7L)).thenReturn(employee(7L, Employee.EmployeeRole.CASHIER));
+            panache.when(() -> Profile.findById(3L)).thenReturn(profile(3L, "P"));
+            hierarchy(false, true);
+            assertRedirect(resource.unassign(form), "niveau");
+            hierarchy(true, false);
+            assertRedirect(resource.unassign(form), "niveau");
+            hierarchy(true, true);
+            assertRedirect(resource.unassign(form), "retir");
+            panache.when(() -> Profile.findById(3L)).thenReturn(null);
+            assertRedirect(resource.unassign(form), "retir");
+            verify(bound, org.mockito.Mockito.times(2)).delete();
+        }
+    }
+
+    /**
+     * The actor is the active account of the signed-in login.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void theActorIsTheSignedInAccount() {
+        AdminUserProfileResource plain = new AdminUserProfileResource();
+        plain.identity = resource.identity;
+        Employee marie = employee(7L, Employee.EmployeeRole.MANAGER);
+        io.quarkus.hibernate.orm.panache.PanacheQuery<Employee> query = mock(io.quarkus.hibernate.orm.panache.PanacheQuery.class);
+        when(query.firstResult()).thenReturn(marie);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> Employee.find("(badgeId = ?1 or loginName = ?1) and active = true", "mcurie"))
+                    .thenReturn(query);
+            assertEquals(marie, plain.actor());
         }
     }
 }

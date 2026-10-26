@@ -3451,3 +3451,1933 @@ configuré (`<skipITs>true</skipITs>` ; lancer par `mvn verify -DskipUTs=true -D
 
 Les scénarios [C] demandent la pile complète ; les [V] le moteur ; les [R] une caisse.
 Les [E] ne demandent qu'un nœud et sa base, et ils sont la majorité.
+
+
+## HD_43 campaign — phase 0 and first P1 checks
+
+- LC-01-06-01: request an operator badge, approve with a supervisor and inspect the receipt body for `[[BARCODE badge-id]]`. Scan the printed CODE128 to authenticate. A missing badge prints a dash and no barcode directive. The new badge path still requires a physical print-and-scan check; the bridge CODE128 primitive was previously proven on the TM-H6000V.
+- LC-11-01-07/-08: verify the owned bridge path `ReceiptBody` → `HardwareEndpoints` → `EscPosPrinter.printBarcode`. It emits GS k 73, CODE128 set B and a human-readable caption; 253 data characters fit the 255-byte payload, exceeding the 38-character requirement. This is a code reread, not a new physical measurement.
+- LC-07-04-01: keep the distinction between the real P400 login/card-reading/refusal exchange documented on 2026-09-07 and an accepted debit, which the HANDOFF does not demonstrate. No new hardware proof has been obtained in this campaign.
+- LC-07-02-02/-03/-04/-05/-06/-07: with 21.42 euros unpaid, open CASH. Check the dedicated exact key and upper keys 22, 25, 30 and 40. With 9.42 unpaid, repeated 10-euro suggestions appear once. Touch each key and validate its amount through the existing cash form.
+- LC-07-02-09, LC-07-03-04: expand coins and notes; distinguish each labelled denomination. Administer a five-cent cash step: 23.42 suggests 23.40, 23.43 suggests 23.45, and one- and two-cent keys disappear. Repeat after a partial payment to check the unpaid remainder.
+- LC-07-01-02/-03/-04/-05: register a cash partial payment, request return to items and check that the payment stays present and the explicit cancellation proposal appears. Confirm cancellation and check that the existing cancellation controls apply before returning to items. Repeat with an accepted card partial payment. With no partial payment, return directly.
+- LC-07-17-02: administer donation.rounding-step-cents and donation.rounding-nearest at the applicable country/banner/store/island/register level. With an upper 10-cent step, 4.35 suggests 0.05; with nearest five-cent rounding, 4.33 suggests 0.02 and 4.32 adds no negative donation. Toggle an existing donation to remove it. Check that the default remains upper-euro rounding.
+
+- LC-07-05-05: administer CHEQUE_DEFERRED independently of CHEQUE, refresh the register referential, take a deferred manual cheque and verify its distinct payment discriminator in the draft, closed ticket, synchronization and accounting filter. Verify independent ceiling/change/drawer settings. No terminal or MICR read is requested by this manual tender.
+- LC-07-10-05: reserve a loyalty debit and verify that a signature slip states the card identity and granted amount, while no payment is yet booked. Obtain the customer's handwritten signature and explicitly confirm it: the settlement is then booked. Refuse the signature: no payment is booked and the lease is released. Repeat the initial request while waiting: no second slip or reservation replaces the original. Confirm twice: only one settlement is booked.
+
+These new UI paths have not been exercised on the physical register. Questionnaire HD_42 remains unchanged pending completion and validation of the campaign.
+
+
+### HD_43 — P1 completion and non-Verifone peripheral maintenance
+
+- LC-07-16-01: administer each tender's existing drawerOpening rule in imedge. With CARD=AFTER_PAYMENT, a complete card sale opens the drawer; CARD=NEVER keeps it closed. With CASH=AFTER_RECEIPT, a completed cash sale waits for receipt printing. A partial payment does not open the drawer. Mixed tenders are all consulted and one sale sends at most one opening order. Repeat in training: no physical opening. Existing defaults remain applicable only to unadministered physical tenders.
+- LC-07-05-03: administer cheque.endorsement-lines with {montant-lettres}, {montant}, {pdv}, {caisse}, {ticket}, {date} and {heure}. Verify the actual draft ticket number and the amount spelled in the selected French, Dutch or Portuguese language. The text still uses the existing endorsement path; recto cheque printing belongs to P3 and is not claimed here.
+- LC-13-02-01/-02/-03: open MAINTENANCE, reset the printer and run the localised test print. With no binding or a failing device, check the explicit failure. Simulated file transport proves emission of ESC @ and test text; no new physical printer test has been run.
+- LC-13-02-04/-05/-06/-07: use the scanner and handheld reset/test actions on the distinctive striped screen. Scan a label and verify that it is displayed without adding any article to the sale. Both roles share the same HID transport on the documented register; reset closes and reopens that transport. The auxiliary trailer identifies handheld samples, including padded reports. The bridge test window expires after sixty seconds, while the register continues to isolate scans for as long as its maintenance screen remains open. Explicit exit restores the selling route.
+
+Automated evidence so far: complete impos suite passes after P1; maintenance driver/endpoint tests pass on file transports and fake scanners. These tests do not constitute new physical proof.
+
+### HD_43 — workstation controls, peripheral availability and key counters
+
+- LC-13-03-01/-02/-04/-05/-06: keep the cash session closed. Select APPLICATION, REBOOT or SHUTDOWN and an administered reason, enter supervisor credentials through the touch keyboard, then prepare the independent bridge confirmation. No command runs before confirmation. Opening a session revokes the permit before persisting the session. Reject a missing supervisor, an open session, an unknown reason, a stale token and a second confirmation. An empty command explicitly simulates; a configured command is passed as executable/arguments without a shell. Unit tests use a fake runner and never restart the host. WORKSTATION_REQUEST records the prepared request in the store journal; actual confirmed execution remains in the bridge's local workstation-control.log and is not yet consolidated as an execution result.
+- LC-13-03-03: open the independently served confirmation before making the POS unavailable. It remains usable without the POS JVM for five minutes after preparation. An unexpected frozen POS without an already armed permit cannot obtain fresh supervisor approval; retain partial coverage for that case.
+- LC-13-02-09/-10/-12/-14: disable printer, scanner or scale at the applicable hierarchy level. Confirm the disabled indicator differs from the failed indicator. A failed printer must not prevent sale completion or ticket synchronization. A failed scale suppresses subsequent weighing waits until an explicit maintenance probe succeeds. Disconnect the scanner after login: its read-only status is polled every fifteen seconds and the error appears without preventing manual entry. Reconnect it and observe recovery. The campaign uses simulated failures; unplugging actual hardware remains a physical check.
+- LC-13-05-01: use configured product/family keys, tender buttons and maintenance buttons. Their stable DOM identity, configured handler or action is journaled as TOUCH_USED with register/operator/timestamp, then pushed through the existing event outbox. Keyboard/PIN keys are excluded. Request `/admin/journal/key-usage.csv` as ADMIN/MANAGER and verify counts grouped by key, register and operator, including CSV quoting. The JavaScript suite covers every branch of key-usage.js.
+
+### HD_43 — documented Verifone simulator and monetary accounting
+
+The simulator evidence is explicitly a documented WCL-frame simulator, implemented by `WimPaymentTerminalTest`, `PaymentOperationTest`, `HardwareBridgeTerminalClientTest`, `VerifoneOutcomeTest` and the payment/refund orchestration tests. It does not load the Linux WCL native library on the Mac and is not a new physical P400 acceptance proof.
+
+| Requirement | Scenario | Expected evidence |
+| --- | --- | --- |
+| LC-07-04-01 | Debit `{SV}s0{CD}c1{D10}500{D0}978{D13}0{D7V}A99054{TT}1`, interleaved c20 display messages and final RS01 or RS10 | Display lines continue until the final decision; RS00–09 accept, RS10–18 refuse; refusal never books money. |
+| Credit and LC-07-04-11 | Credit `{SV}s0{CD}c2{D10}500{D0}978{D7V}A99054{TT}1` from a net-negative basket and from the endorsed Return screen | No outgoing settlement or closed return exists before actual acceptance. Refusal/failure leaves the return unpaid. A duplicate callback does not refund twice. |
+| LC-01-02-09 | Close a session after monetary use | The bridge receives logoff c2h; the next session can log in again. Native logoff has not been executed in this campaign. |
+| LC-07-04-10/-11/-12 | Return D3L with leading spaces, newlines, equals signs, customer/merchant separator and a refusal frame | Base64 preserves the bridge response. Supplied frames print exactly, without an added header/newline. Both the conditional print path and legacy print button apply the administered attachment rule. Merchant frames are transient and receipt bodies are not logged. |
+| LC-07-07-03/-04 | Return VWAY2, known D16, then unknown D16 with known D46 | Persist the actual selected tender and server; round-trip them through the outbox and imedge ingestion. The store node has the register's corresponding tender identities. No Restoflash or other excluded contract is introduced by those data identities. |
+| LC-07-06-02 | Select CB/TRD with a 20-euro basket and an 8-euro eligible allowance | One request carries DAJ01, D10=2000 and D20=800. Returned D10 determines the amount actually booked; a partial TRD acceptance leaves the balance due. Local tender controls run before the monetary request; a later configuration change cannot discard an accepted bank result. Supervisor approval replays the terminal request rather than booking a local card payment. |
+| LC-07-08-02 | Force degraded mode for debit, credit and CB/TRD | WCL receives VWAY4, including the combined eligible amount when applicable. The bridge still waits for the terminal's decision; it never routes these bridge operations to local auto-acceptance. |
+| LC-07-08-01 | WCL displays information about automatic offline operation | c20 messages reach the waiting overlay and D32 is retained. Interactive validation replies remain unimplemented because their request/response command is absent from the local catalogue. Keep partial coverage. |
+| LC-07-17-05 | Return a customer frame, a merchant frame and supplementary D3L donation receipts | Every frame prints in order without rewording. The POS does not add another donation line. |
+
+LC-07-07-02 remains partial: the DLL guide documents an abort acknowledgement and SWIMAPI_ERROR_CHRONO=6, but the actual in-flight-abort frame is absent from the local documents. Transaction cancellation c3 must not be guessed as an in-flight abort. LC-07-07-05 remains uncovered: the questionnaire itself requires a protocol evolution carrying multiple applications and amounts in one monetary response. LC-07-01-05 also remains partial because local cancellation of a recorded payment does not issue an external reversal.
+
+### HD_43 — scheduled Verifone maintenance
+
+- LC-13-04-03: enable maintenance.verifone.enabled and configure a night window. c2g is sent to VWAY1 and then VWAY2, never concurrently. An open cash session or running monetary operation defers dispatch; the end of the night window prevents a daytime start. A refused maintenance does not disable payments or prevent the next server from being considered.
+- LC-13-04-04: disable random timing and set maintenance.verifone.stagger-seconds. Verify register digits select a bounded sequential offset inside the configured window.
+- LC-13-04-05: enable random timing. Verify the planned instant is within the configured window, changes after period-close reset and is regenerated after an application restart or date change.
+- LC-13-04-06: accept a primary and a secondary maintenance in the simulator. Inspect verifone-maintenance.txt: each server retains its own last-success timestamp. A refusal, another operation's response or an unwritable trace cannot manufacture a saved success. The bridge operation identity prevents a later card debit from being misread as maintenance success.
+
+The questionnaire says c2g. The local WCL catalogue also prescribes c2g instead of its obsolete maintenance command; it does not establish a c18 maintenance frame. All new scheduling evidence is simulated, not a physical overnight run.
+
+### HD_43 — cheque front and optional PDV data
+
+- LC-07-05-03/-06/-07: configure cheque.front-lines and the beneficiary/place/bank-reference/account-number settings through imedge. Include amount words, numeric amount, actual draft number, store/register identifiers and date/time. Use the cheque form's PRINT FRONT button before validating the tender. It requests paper and prints through POSPrinter/PTR_S_SLIP without requiring a magnetic reading and without booking a cheque payment. Verify the completion notice, paper/transport error, duplicate-request guard and training simulation.
+- The slip-control simulator verifies open, claim, enable, beginInsertion/endInsertion, exact printNormal text, beginRemoval/endRemoval and every release step. A printing failure must still release the device. The existing MICR/endorsement operation and front printing share one busy guard.
+- Reverse the cheque for the existing reading/endorsement path. Optional beneficiary, bank and account tokens can also appear in cheque.endorsement-lines. No Transax/Verifiance call or authorization number is invented for manual cheques.
+- Source for the standard slip sequence: [JavaPOS POSPrinterControl12](https://github.com/JavaPOSWorkingGroup/javapos-contracts/blob/master/src/main/java/jpos/POSPrinterControl12.java) and the [UPOS slip handling diagram](https://public.dhe.ibm.com/software/retail/poseng/opos/upos17.pdf). Actual front alignment and the new text on the TM-H6000V still require a physical paper check.
+
+### HD_43 — physical qualification commands for Henri
+
+These commands were prepared but were not executed by the agent. Run them on the physical till after installing the newly built bridge. The configured working directory and jar name come from sh/caisse.sh. CLI WCL commands require the existing hardware daemon to be stopped so only one client owns station 1. Use an approved test card; tpe-pay below requests a real one-euro debit.
+
+```bash
+cd /root/Henri
+/opt/java/jdk-25.0.4.1+1/bin/java --enable-native-access=ALL-UNNAMED -jar /root/Henri/impos-hw.jar tpe-test --wcl-dir /root/Henri/Client_Verifone_13.1.7_Linux_DEV/ClientKStrad --station 1 --message '{SV}s0{CD}c2g{D7V}A99054'
+/opt/java/jdk-25.0.4.1+1/bin/java --enable-native-access=ALL-UNNAMED -jar /root/Henri/impos-hw.jar tpe-pay --wcl-dir /root/Henri/Client_Verifone_13.1.7_Linux_DEV/ClientKStrad --station 1 --ilot A99054 --amount 100
+```
+
+For credit and slip qualification, restart the configured bridge and keep the cash session closed. These HTTP calls use the configured hardware port 8081. The credit requests a real one-euro refund. After the cardholder interaction, repeat the status GET until state=DONE. Do not send another operation while it is RUNNING. The status command omits the encoded private receipt body.
+
+```bash
+curl -fsS -X POST -H 'Content-Type: text/plain' --data-binary 100 http://127.0.0.1:8081/api/hardware/payment/credit
+curl -fsS http://127.0.0.1:8081/api/hardware/payment | sed '/^answer64=/d'
+```
+
+Present a test slip at the cheque station for the following print-only check. It creates no payment and does not require magnetic ink. Poll its status after taking the paper back.
+
+```bash
+printf '%s\n' 'TEST HD_43' 'un euro' '1,00 EUR' | curl -fsS -X POST -H 'Content-Type: text/plain' --data-binary @- http://127.0.0.1:8081/api/hardware/cheque/front
+curl -fsS http://127.0.0.1:8081/api/hardware/cheque
+```
+
+Return the decision/result codes and the observed paper result. Existing physical evidence remains the 2026-09-07 P400 login/card-read/refusal and 2026-09-08 MICR reading recorded in HANDOFF.md. No accepted debit, credit, new front print, workstation restart/reboot/shutdown or overnight maintenance was executed on hardware during this campaign.
+
+### HD_43 — scope and delivery verification
+
+HD_43 changes only ratings/comments for the sixty reviewed rows of Ligne de caisses, plus their local row heights so the new comments can be read. The other worksheet parts, styles, validations and embedded objects are preserved from HD_42. Fifty-seven ratings rise: fifty-four from code, three from rereading existing code, zero from new physical evidence. Five full-coverage proposals are explicitly marked disputable in the report: LC-07-04-01, LC-07-05-06 and LC-13-03-01/-05/-06.
+
+The excluded monnayeur, foreign/proprietary payment contracts, cashback, fidelity PIN, residual language lines, automatic cheque contracts and training-transaction synchronization remain unchanged. No production build or physical hardware command was run. The only commissioning repairs beyond the listed feature paths are the invalid dynamic map expression in admin-safe-days.html and the misplaced Refund association annotations that prevented imedge from starting; both were exposed by DEV packaging/startup checks.
+
+
+### HD_43 — tests, cleanup and cashier P1 completion (2026-10-20)
+
+These scenarios use the embedded simulator and disposable demo data. The unit tests exercise the rendered Qute fragments and actual touch-keyboard JavaScript; they are not a claim that the following screen journeys were run on a physical checkout.
+
+- **HD43-P1-01 [S] — LC-02-07-14/15, article-group thumbnails.** In the back office, associate a resized image with an EAN article and leave another article without an image. Pull PRODUCTS to the register, open SAISIE DIRECTE and its group, then move to another page and return. The illustrated article shows the inline distributed thumbnail and its wording; the other keeps its wording without a broken image. No image URL or additional image download is requested when opening the group. Tapping either article still selects its original EAN. Check on the 800×600 layout as well as the wider layout.
+- **HD43-P1-02 [S] — LC-04-05-02, ticket-search identities.** Prepare two closed tickets with different checkout identifiers, dates, numbers and totals. Search from the duplicata screen and from the return screen. Every result shows the date/time, ticket number, checkout and total; select a row and verify it opens the same ticket. A legacy ticket without checkout identity shows a dash. Keep all six duplicata rows and the return selection reachable at 800×600.
+- **HD43-P1-03 [S] — LC-09-01-10, complete e-mail symbol keys.** Open the ticket-email screen and enter `o'connor+tag@example.fr` exclusively with the touch keys. The display and posted address keep the apostrophe and plus. Independently enter each of `! # $ % & ' * + / = ? ^ _` plus the backtick, braces, vertical bar, tilde, hyphen, dot and at-sign; each key inserts its own literal character. Quotation marks, backslash, space, parentheses, square brackets, colon, semicolon, comma and angle brackets are also available. Erase and clear still work, and the keyboard remains scrollable when the available height is small.
+- **HD43-REG-01 [S] — BO-03-02-06/07, central-tender boundary.** With local range 500–599, edit a central tender 030 and submit identifier 500 with a changed label and maximum. Only activation may change: identifier, label and maximum stay central. Repeat with a local tender 500 submitted as 030: the range boundary cannot be crossed. A genuine local creation in the local range retains its receipt-copy and forced-print settings.
+- **HD43-REG-02 [S] — LC-03-04-17, default fidelity-name lookup.** Submit a lookup with last name DURAND and first name JEAN while omitting the mode field. The normal name mode is selected, both criteria reach the lookup service, and both remain displayed after the response. Blank last-name and first-name refusals remain unchanged.
+
+The cleanup keeps stream closure and I/O-failure handling, perpetual fiscal numbering, GS1 settlement admission and drawer endorsement revalidation under isolated unit tests. No production build, real payment or physical maintenance command belongs to this lot.
+
+
+### HD_43 — remaining line coverage and unreachable-code cleanup (2026-10-20)
+
+- **HD43-REG-03 [S] — BO-08-01-04, buffered CSV line endings.** Import a disposable file mixing CRLF, CR and LF: header on physical line 1, a valid row on line 2, an empty line 3, a valid row on line 4 and a truncated row on line 5. The two valid rows are imported and the rejection identifies physical line 5. An unreadable incoming stream still reports a failed import. Parsing the already buffered text has no additional I/O failure path.
+- **HD43-REG-04 [S] — LC-01-07-05 and LC-01-08-05, interrupted supervisor exchanges.** With a pending request or unread back-office message, interrupt the simulated store exchange. The pending content remains visible and the operation reports interruption; retry after restoring the connection. An ordinary connection failure also retains the unread message.
+- **HD43-REG-05 [S] — BO-11-01-05, export boundaries.** Set accounting cutover to 03:00. For daily ticket, invoice and order exports, include the opening instant and exclude the next opening instant. For December, use 1 December at 03:00 through 1 January at 03:00, excluding the latter. Existing archive ordering and page limits remain intact.
+
+These regression contracts are exercised by isolated unit tests with mocked persistence, schedulers, transactions, codecs and transport. The unit campaign also checks cryptographic failure propagation, retention and counter reset after session persistence, optional terminal display callbacks, SMTP credential lookup and JSON payload reconstruction. No physical checkout journey or real SMTP delivery is claimed by these tests.
+
+
+### HD_43 — price consultation, article prices, EAN-8 and combined ticket search (2026-10-20)
+
+- **HD43-P1-04 [S] — LC-02-14-12, scanner price consultation.** Open INFO ARTICLE with a sale draft containing lines, a selected line and an existing message. Scan a priced EAN, then an unknown code. The consultation shows the price or the unknown-article response; the sale lines, selection, total and message remain unchanged. Repeat while locked and while unlocked with no cash session. RETOUR restores ordinary sale scanning immediately. JE PRENDS, offered only when selling is allowed, ends consultation routing before adding one unit through normal admission.
+- **HD43-REG-06 [S] — LC-02-14-12, consultation lifecycle.** Open two successive consultation pages. An old page's delayed poll or exit callback cannot renew, consume or cancel the newer lease. A scan is consumed once. Leaving via normal HTML navigation releases the scanner; closing the page sends its lease release; a disappeared browser expires after thirty seconds without a successful poll. Simulated failed and slow polls preserve the displayed result and cannot overlap.
+- **HD43-P1-05 [S] — LC-02-07-11, article-touch price and currency.** Administer an article's current price and a higher-priority price in an active date window. Its SAISIE DIRECTE touch shows the same TTC as its sale scan, rounded to cents. An unpriced article shows a dash. Under country/brand/PDV/island/checkout parameter inheritance, toggle `touch.price-currency`: the amount stays the same and EUR appears only when enabled. Verify a category containing both illustrated and plain products, a second page and the 800×600 layout.
+- **HD43-P1-06 [S] — LC-11-01-01, EAN-8 key.** Provide active products for valid EAN-8 codes 12345670 and 96385074. Scanning either follows ordinary pricing and article controls. Change only the final key to create an invalid code: CODE EAN INVALIDE is shown before any product lookup or line addition. Repeat with EAN-13 checking disabled and enabled; EAN-8 validation remains mandatory and the existing EAN-13 setting retains its own effect.
+- **HD43-P1-07 [S] — LC-04-05-01, independent and cumulative ticket criteria.** Prepare closed tickets differing in number, loyalty card, sold EAN, date, TTC, checkout and payment method. From both RETOUR and DUPLICATA, search each criterion separately, then combine them. Every entered field applies with AND, with no duplicate rows from multiple matching lines or payments. Closed status and the administered search depth remain mandatory. The reassignment mode additionally keeps only tickets without an attached loyalty customer. Search uses the store tickets present on this node.
+- **HD43-REG-07 [S] — LC-04-05-01, touch input and invalid filters.** Enter a ticket fragment containing a checkout prefix and hyphen, a date with slashes and an amount through the cents keypad; switch fields and retain the other values. Select a payment method, clear every field, close the panel and resume the ordinary search keypad. Impossible dates, malformed amounts and unknown payment methods show an explicit error and query no broader ticket set. Return results remain scrollable when several tickets match. Check at 800×600.
+
+The Java campaign exercises scanner routing before any draft mutation, lease expiry and stale-page callbacks, current-price resolution, parameter defaults/overrides, EAN-8 admission and rejection, combined JPQL criteria and the two resource/service paths. Real Qute fragments and the consultation template are rendered in unit tests; JavaScript tests tap the generated criteria keys and execute the consultation polling script. The former native FIFO shutdown fixture is replaced by an isolated mocked binding that deterministically returns after shutdown, retaining the no-decode assertion. Complete offline unit suites are run directly; no physical scanner, payment or full screen journey is claimed as newly qualified here.
+
+### HD_43 — 800×600 browser recipe and article promotion labels (2026-10-21)
+
+Executed on an isolated dev register at localhost:18080 with an H2 in-memory database, simulated hardware, no store synchronization, no external valuation or loyalty connection. The effective browser viewport was checked as 800×600. All cash operations used disposable demonstration data; no physical device or real payment was used. The register was stopped after the recipe.
+
+- **HD43-UI-01 [S] — LC-02-14-12, consultation and layout.** From a connected operator with an open cash session, open INFO ARTICLE and push EAN 3300000000001 through the scanner intake. The page refreshes automatically to Pommes Golden, TTC 1.08 EUR; RETOUR shows an empty ticket and total 0.00 EUR. At 800×600, the original panel pushed the footer below the viewport. The corrected bounded grid and compact panel keep the price, VAT and RETOUR visible. The page is also readable while locked after a dev restart. Physical scanner input and the full lease/browser-loss matrix remain covered by unit contracts rather than this browser recipe.
+- **HD43-UI-02 [S] — LC-02-07-11, touch price and usable keypad.** Navigate SAISIE DIRECTE > LAIT DEMI-ECREME. LAIT UHT 1L shows 2.76 EUR; selecting and validating it records a 2.76 EUR ticket line. The original narrow sidebar clipped the last keypad column. Bounded keypad columns and wrapping family fields keep every numeric key and both footer actions visible at 800×600. The back-office currency toggle/inheritance was not exercised in this isolated register recipe.
+- **HD43-UI-03 [S] — LC-11-01-01, EAN-8 admission.** With the 2.76 EUR milk line present, scan 12345678: CODE EAN INVALIDE appears and no line is added. Scan valid 96385074, absent from the demo catalog: CODE INCONNU appears, proving the valid key reaches ordinary lookup. The unit campaign separately covers a priced active EAN-8 product and both EAN-13 parameter states.
+- **HD43-UI-04 [S] — LC-04-05-01, cumulative search.** Settle the disposable milk ticket in simulated cash, close the simulated drawer, open TICKET > RECHERCHE TICKET and expand RECHERCHE MULTICRITERE. Enter 2.76 using the touch amount keypad and choose ESPÈCES: POS01-00000001 is returned. Add an EAN absent from this ticket: no ticket is returned, proving AND semantics. Clear criteria, enter 31/02/2026 using the date keypad and search: DATE INVALIDE is shown. All criteria and action buttons fit at 800×600. The return-screen journey, all seven matching criteria together, loyalty, retention and foreign-register retrieval were not newly exercised in this browser recipe.
+- **HD43-UI-05 [S] — LC-02-11-04, unique-line protection.** On the single milk line, ANNULER LIGNE refuses the gesture with DERNIER ARTICLE — UTILISEZ L'ABANDON DE TICKET; the total stays 2.76 EUR. This confirms EXP-35 but conflicts with the questionnaire wording requiring supervisor endorsement and reason. No policy change or coverage promotion is made pending Henri's decision.
+- **HD43-P1-08 [S] — LC-03-01-04, promotion text under its article.** On an engine-valued basket, display each applied discount label directly under its article in the polled receipt. Aggregate multiple labels using the reconciler's existing allocation, independently of paper LINE/FOOTER placement. Revaluation without a discount or coverage clears obsolete text; local/degraded reversion clears it too. Cancelled articles show no promotion label. Preserve the engine's totals and paper placement. New isolated tests verify applied and merged labels, removal on revaluation/reversion, and actual Qute rendering with HTML escaping and cancelled/undiscounted cases. External-engine browser qualification remains to run; this recipe did not inject a fake promotion into the live register.
+
+Audit of LC-02-11-03: HomeService already requests administered cancellation reasons before endorsement, checks the reason against the configured list, and retains normal authorization controls. Existing HomeService unit contracts cover reason request/absence, accepted/unknown reasons and abandonment. The questionnaire comment claiming no reason collection is stale; the complete administered-list/supervisor browser journey still needs qualification before updating that assessment.
+
+Validation: `./mvnw -o test` in impos succeeds: 6,825 Java tests and 90 JavaScript tests, no failure/error/skip. A fresh JaCoCo run covers 25,016/25,016 lines and 12,452/12,452 branches; all instruction/method/class counters also have zero missed. imedge sources were unchanged in this lot; its last complete verified run remains 4,145 Java plus 11 JavaScript tests, with 20,036/20,036 lines and 9,652/9,652 branches. Questionnaire ratings and the PDF were not promoted on the strength of these partial browser journeys.
+
+### HD_43 — unique sold article cancellation: decision implemented (2026-10-21)
+
+Henri explicitly chose “Autoriser avec aval et motif”. This supersedes the EXP-35 refusal observed in HD43-UI-05 above; that historical browser observation no longer describes the current sale-line policy.
+
+- **HD43-P1-09 [S] — LC-02-11-04, mandatory reason then endorsement.** On a single sold article, press ANNULER LIGNE, or target it through cancel-by-scan. A configured cancellation reason must be selected before the endorsement request opens. A cashier cannot execute the cancellation through an unrestricted `cancel-last` setting, a WARN control level, or an existing per-ticket supervisor session: this gesture explicitly opens its own approval request. The existing connected-supervisor approval button and authenticated remote approval remain legitimate approval paths. Until approval succeeds, the line and total stay unchanged. Approved execution preserves the reason until the cancellation witness is persisted, removes the article from the active cart and keeps its cancelled display witness.
+- **HD43-REG-08 [S] — LC-02-11-04, missing or invalid reason.** With no CANCEL_LINE reasons distributed by the back office, refuse the unique sold article gesture and display the new localized mandatory-configuration message. No approval request or cancellation occurs. An unknown reason is refused and leaves the reason selection pending. Abandoning reason selection keeps the article. Abandoning endorsement clears the pending reason, label and target so the next gesture cannot inherit the previous justification. Refused approval retains the pending request for a legitimate retry without cancelling the article.
+- **HD43-REG-09 [S] — LC-02-11-03/04, existing boundaries.** Other lines retain their administered reason/endorsement controls. The existing negative-only/deposit-return exemption remains unchanged because that line did not sell an article. Recheck both direct cancellation and cancel-by-scan, plus ordinary supervisor and connected-supervisor approval. The full browser journey with administered back-office reasons remains to qualify.
+
+The previous refusal test was obsolete after Henri's explicit policy choice; it now asserts refusal only when required reasons have not been configured. New HomeService contracts verify reason-first routing, forced approval and invalid-reason refusal. EndorsementService verifies reason cleanup, EndorsementResource verifies the reason survives until approved dispatch, and the existing TicketService contract verifies persistence of reason code/label on the cancellation witness. No assertion was removed to conceal a failure.
+
+Complete offline impos suite: 6,828 Java tests plus 90 JavaScript tests pass, with no failure/error/skip. Fresh JaCoCo coverage: 25,026/25,026 lines and 12,458/12,458 branches; all instruction/method/class counters also have zero missed. imedge production sources and questionnaire ratings remain unchanged in this policy lot.
+
+### HD_43 — ordered cross-application recipe completed (2026-10-21)
+
+Executed in the requested order on isolated dev nodes: imedge localhost:18070, impos localhost:18080 and the real imvaluation localhost:18090. Every database was H2 in memory with drop-and-create, hardware was simulated and the effective sale viewport was checked as 800×600. No imvaluation source or pricing rule was changed. The three owned dev processes were stopped after the recipe.
+
+1. **HD43-P1-09 / REG-08, cancellation.** In imedge's administered-list screen, created HD43_CANCEL, kind JUSTIFICATION, function CANCEL_LINE, with ERREUR / Erreur de saisie. The register's real referential pull applied it. Scanned a single oil article at 6.00 EUR, requested cancellation and returned from the reason screen: article and total unchanged. Selected the reason and submitted supervisor mcurie with incorrect PIN 9999: AUTORISATION REFUSÉE, article unchanged. Abandoned the endorsement and requested cancellation again: the reason was asked again. Selected ERREUR, submitted mcurie/1111 through the touch keys: cancelled witness remained visible and the total became 0.00 EUR. Runtime journal contains ENDORSEMENT_DENIED, ENDORSEMENT_GRANTED and successful markLineCancelled(ticketId=1, reasonCode=ERREUR). Persistence-field contents are additionally checked by isolated TicketService tests. Back-office help incorrectly named LINE_CANCEL; corrected the text to the actual CANCEL_LINE function.
+2. **HD43-P1-08, real-engine promotion display.** Started the actual imvaluation dev engine. One apple article displayed the combined Immediate Voucher labels PROMO_STORE_101 and BRI_APPLES_DISCOUNT, with engine total 0.89 EUR. A second scan changed the engine selection to Mixed Bundle Promo: PROMO_2FOR1_3300, total 1.19 EUR. This exposed a missing UI leg: an offer's reduced price can carry the promotion without a separate discount advantage. The register reconciler now uses the engine offer label for that price-reduction leg. After reloading the dev register and repeating the scans, the two immediate-discount labels were replaced by the engine's bundle label under the apple line. The unit fixture uses the previous valued total 0.89 and catalog base 2×1.08 to ensure the display decision compares with the catalog base, not a stale prior valuation. Returning to a regular offer removes its label. No calculation, eligibility or application of N+M was moved into impos.
+3. **HD43-P1-05, BackOffice currency distribution.** Through imedge's parameter screen, set touch.price-currency=false and saved. After the real pull, SAISIE DIRECTE > LAIT DEMI-ECREME displayed LAIT UHT 1L 2.76 without EUR. Set the same parameter to true in imedge, saved and reloaded the article screen: 2.76 EUR returned, amount unchanged. This qualifies the store-level setting and its distribution; the complete five-level inheritance matrix remains covered by service contracts, not newly played here.
+4. **HD43-UI-06 [S], sale keypad layout.** At 800×600 the sale actions and total pushed the lower keypad rows beneath the footer. Bound the main grid's middle track and let action rows share the remaining height, with compact panel spacing. All numeric rows, clear, decimal, erase and OK now stay above the footer. Tapped 1 then 0 and observed 10 in the pre-entry display; cleared it normally. No key was removed or moved out of the bottom-right area.
+
+Final validation: impos 6,829 Java +90 JavaScript tests, imedge 4,145 Java +11 JavaScript tests, all passing with no Java failure/error/skip. Fresh JaCoCo: impos 25,028/25,028 lines and 12,460/12,460 branches; imedge 20,036/20,036 lines and 9,652/9,652 branches. Instrumented JavaScript remains 100%. No physical hardware qualification is claimed.
+
+Questionnaire update: LC-02-11-03 promoted by RELECTURE (existing administered-reason path); LC-02-11-04 and LC-03-01-04 promoted by CODE. Only L/O on rows 118, 119 and 174, plus their row heights, changed. Other workbook cells and ZIP components were preserved and compared. P1: 361 full, 41 partial, 75 not covered, total 477; full 75.7%, partial 8.6%, full-or-partial 84.3%. Whole checkout questionnaire: 482 full, 72 partial, 176 not covered, total 730; weighted coverage 71.0%. The existing synthesis PDF is updated to nine pages, retaining the initial proof pages 3–5.
+
+### HD_43 — read-only audit of all 41 partial P1 (2026-10-21)
+
+Scope: compare the current questionnaire's partial P1 requirements with impos, imedge and impos-hw sources. This is a source audit, not a new browser or physical-device qualification. No production source, questionnaire rating or synthesis PDF was changed. The previous complete test results above remain the reference; tests were not rerun for this documentation-only pass. Evidence below names classes/methods in the relevant repository; it does not imply an external provider contract has been qualified.
+
+Three requirements are candidates for promotion by RELECTURE: LC-02-02-02, LC-02-12-06 and LC-04-04-01. Their old comments contradict implemented paths. They remain rated partial in this audit. The other 38 retain a functional gap or require further qualification. Twelve partial rows had no assessment comment; the table supplies an explicit diagnosis for them.
+
+| Row / requirement | Audit conclusion and remaining gap | Source evidence |
+| --- | --- | --- |
+| 18 / LC-01-02-07 | Partial. Remote forced logout does not establish closure of the register cash session. A paused register has no active badge, so its remote close can be acknowledged without dispatching closure. | impos RemoteCommandService.apply, SessionCloseService.close; imedge DashboardResource.forceClose |
+| 23 / LC-01-03-01 | Partial; stale comment. Pause preserves the ticket and productivity reporting exists. Report duration still uses elapsed shift time without deducting pauses. | impos AuthService.pause, AuthState.pause; imedge OutboundFlowService.ShiftCell.minutes, HourlyProductivityReport |
+| 32 / LC-01-05-01 | Partial; the old count of four switches is obsolete. Multiple gesture endorsement flags exist, but no complete configurable policy for every function/key was established. | impos PosSettingsService.gestureEndorsementRequired, EndorsementService.gestureAuthorized |
+| 58 / LC-02-02-02 | RELECTURE candidate. Weight to three decimals, unit price/kg and total are represented on POS, customer display and paper. The old missing-price/two-decimal comment is obsolete. Physical print qualification is separate. | impos TicketState.detailLineOf/getDetailLine; ticket.html; CustomerDisplayResource.customerData and customer.html; TicketPrinterService weighed-line rendering |
+| 86 / LC-02-07-02 | Partial. Configured page size is capped by the fixed twelve-tile grid and reserved navigation/pinned cells; arbitrary BackOffice key counts/layout are not supported. | impos ManualService GRID_TILES/perPage; manual.html |
+| 87 / LC-02-07-03 | Partial. Family/group sorting is configurable, article sorting remains name/EAN. | impos ManualService.orderComparator; ManualRepository product query |
+| 108 / LC-02-09-01 | Partial. Second-code collection and persistence exist; no Nexo provider activation/approval before admission was found. | impos EanScanHandler, ActivationCodeScanHandler, TicketState.storePendingActivation, TicketPersistenceService |
+| 109 / LC-02-09-02 | Partial. Cancellation is local; provider-approved Nexo activation cancellation is absent. | impos TicketService.cancelItemById; ActivationCodeScanHandler |
+| 110 / LC-02-09-03 | Partial. No activation-provider receipt with old/new balances and provider transaction reference was established. Ordinary second-code or local gift-card receipts do not satisfy that exchange. | impos TicketPrinterService; persisted TicketLine activation fields |
+| 115 / LC-02-10-03 | Partial. BackOffice VAT-code toggle exists, but receipt codes use the regime number rather than the required A/B/C letters. | impos PosSettingsService ticket.vat-code; TicketPrinterService.vatCodeOf |
+| 126 / LC-02-12-06 | RELECTURE candidate. Cancel-by-scan removes one unit by default from a multi-unit ordinary article. Explicit keyed quantities and weighed/embedded-price articles have distinct handling. This is not the whole-line cancellation button. | impos HomeService.cancelByScan/decrementByScan; HomeServiceTest.decrementByScanTakesOneUnitWhenNothingWasKeyed |
+| 198 / LC-03-04-05 | Partial. A loyalty card can attach during payment, but ordinary engine revaluation exits while payment is in progress. | impos FidelityService.validateCard; ValuationService.revalue |
+| 235 / LC-04-01-02 | Partial. Parked receipt prints clear-text identity and details under a boolean switch; barcode and detailed/non-detailed/on-request options are missing. CODE128 support itself exists. | impos TicketParkingService; TicketPrinterService.printParkedTicket |
+| 236 / LC-04-01-03 | Partial. Parking/resumption/purge traces exist; no equivalent sealed retention chain for parked/cancelled documents or complete compliance proof was established. This audit makes no legal-conformity determination. | impos TicketPersistenceService.closeTicket and parking lifecycle |
+| 250 / LC-04-04-01 | RELECTURE candidate. Abandonment endorsement is configurable; the old systematic-endorsement comment is obsolete. | impos HomeService.cancelTicket; gesture.endorsement-abandon; HomeServiceTest direct/endorsement paths |
+| 266 / LC-04-05-05 | Partial. Retrieved receipt details exist, without an accessible explanation of the promotion calculation. Current live-ticket promotion labels do not supply that recalled-ticket view. | impos ReprintResource/ReprintService/templates; TicketReassignmentService |
+| 276 / LC-05-02-02 | Partial; stale comment. Return types can request a catalog-price confirmation/edit prompt. After a quantity prompt, however, confirmEntry chains to price only for the product's priceToEnter flag, omitting the return-type priceConfirmed flag. | impos TicketService.suspendForEntry/returnPriceConfirmed/confirmEntry; PosListService.returnTypes |
+| 290 / LC-05-03-01 | Partial. No external Nexo balance/deactivation sequence for a returned dematerialized product was found. Local credit-note handling is separate. | impos RefundService, activation handlers; impos-hw payment adapters |
+| 297 / LC-05-06-03 | Partial. Dedicated refund flow supports asynchronous terminal credit and hardware c2 routing. General negative-ticket card payment is not established: processCard rejects non-positive amounts. Physical terminal qualification remains. | impos RefundService.requestCardCredit; PaymentService.processCard; HardwareBridgeTerminalClient; impos-hw HardwareHttpServer, WimPaymentTerminal.credit |
+| 305 / LC-05-07-02 | Partial. Refund revaluation summary and loyalty return event exist. Full coupon/voucher/loyalty impact details and the separate mixed-sale/return receipt are not established. | impos RefundService; TicketPrinterService.printRefund/appendRecalculationBlock |
+| 398 / LC-07-07-02 | Partial; external protocol dependency. Local abort concepts and CHRONO=6 recognition do not supply a documented WCL abort request, response serialization and hardware HTTP path. c3 must not be invented as abort. | impos PaymentTerminalClient; impos-hw WimClient, payment routes/operation |
+| 406 / LC-07-08-01 | Partial; protocol/qualification dependency. Degraded progress/status relay exists; interactive operator validation and its terminal reply exchange remain absent. | impos-hw WimPaymentTerminal progress handling, PaymentOperation |
+| 427 / LC-07-11-01 | Partial; stale local-only comment. A configurable HTTP issuer query exists, including balance, but is not Nexo. Balance is used to cap payment without the required explicit balance-then-amount presentation. | impos GiftCardIssuerClient.query; PaymentService.processSupplierGiftCard |
+| 429 / LC-07-11-03 | Partial. Slip has masked card, debit and remaining balance. Old balance, provider code and a dedicated BackOffice activation policy are missing from the established path. | impos PaymentService.printGiftCardPaymentSlip; TicketPrinterService.printGiftCardPaymentReceipt |
+| 455 / LC-08-01-03 | Partial. Ticket identity is printed as a one-dimensional barcode without the required activation/type choice. Footer URL QR configuration is a different feature. | impos TicketPrinterService.renderTicket/ticketBarcode/footerUrlBlock |
+| 460 / LC-08-02-02 | Partial. Closed-sale formatted content is synchronized; complete formatted coverage of all customer/shop/technical documents is absent. Base64URL is not required by this row and is not counted as a separate functional gap. | impos Ticket.formattedContent, SyncOutboxService; shared invoice payload |
+| 463 / LC-08-02-05 | Partial. Mail formatting options exist, but no BackOffice switch governing the end-of-transaction email offer was established. | impos TicketEmailResource; ticket.email-format settings and payment templates |
+| 464 / LC-08-02-06 | Partial. Sale email works; all customer-document categories, excluding technical documents, are not covered by this mail pipeline. | impos TicketMailService; DigitalTicketResource |
+| 477 / LC-08-03-07 | Partial; stale list. Forced-print policy now includes AVOIR, FID and ENLEVEMENT as well as TICKET/CARTE/BON. Full required document coverage, including refund/deposit policy, remains incomplete. | impos PrintPolicy; print.forced-documents catalog; RefundService |
+| 478 / LC-08-03-08 | Partial / inventory qualification. Automatic opening/closing switches and an unknown-article slip setting now exist; old claims that these are absent are obsolete. A complete mapping of every technical document's activation and print trigger remains to qualify. | impos PosSettingsService.printOpenReceipt/printCloseReceipt/islandUnknownArticleTicket; SessionCloseService; TicketPrinterService.printUnknownArticleSlip |
+| 525 / LC-08-06-02 | Partial. Default NIF is available in invoice customer entry, not a universal sale-level NIF workflow. | impos InvoiceService.prefilledCustomerData; fiscalIdentifier |
+| 526 / LC-08-06-03 | Partial. Invoice NIF can be edited; ordinary-sale NIF editing remains unestablished. | impos InvoiceService customer-data handling |
+| 534 / LC-08-06-11 | Partial. Country/NIF and final-consumer formatting exist on supported documents; distinct Portuguese FS/FT/Recibo/Nota de Credito coverage is missing. | impos InvoiceService; domain.sale.DocumentType |
+| 558 / LC-10-01-01 | Partial pending visual qualification; stale fixed-font comment. Shared clamp-based sizing and flexible/scrolling layout exist. Absence of media queries is not proof of failure. Customer-screen checks at all required resolutions/ratios remain to run. | impos customer.html and shared theme |
+| 560 / LC-10-01-03 | Partial. Valued line amounts are present, but explicit discounts/rebates/promotion labels are absent from customer payload/rendering. POS promotionLabel does not reach this screen. | impos CustomerDisplayResource.customerData; customer.html |
+| 574 / LC-10-01-17 | Partial. Customer display receives remaining amount and payment state, without a list of each registered tender label and amount. | impos CustomerDisplayResource.customerData; customer.html |
+| 639 / LC-12-04-04 | Partial. Deposit slip includes terminal, operator name and total; operator number and BackOffice-controlled activation remain missing. | impos TicketPrinterService.printDepositTicket; deposit caller |
+| 651 / LC-12-07-01 | Partial. X report uses the cash session, without the required operator-period selection and endorsement. | impos CashSessionResource.showXReport/printXReport; CashSessionService.buildReport |
+| 652 / LC-12-07-02 | Partial. Session totals/tenders/movements exist, but not all requested counts/amounts and configurable report sections. Separate BackOffice reports do not complete the POS report requirement. | impos CashSessionService.SessionReport; imedge specialized cashier/cancellation/price-forcing reports |
+| 701 / LC-13-05-04 | Partial. Training restrictions are hardcoded in individual flows; no complete BackOffice per-key allow/block policy was found. | impos RefundService, ReprintService, CashSessionResource; training settings |
+| 709 / LC-13-06-06 | Partial. Customer static labels use a single-language resolver. A bilingual resolver exists elsewhere, but is not applied to all customer mentions. Article labels should remain unchanged. | impos customer.html; CustomerDisplayResource; i18n get/both callers |
+
+Unchanged authoritative indicator: 361/477 full (75.7%), 41/477 partial (8.6%), 75/477 not covered (15.7%); **402/477 full or partial (84.3%)**. Candidate reclassification is not included in those numbers. Next action, if authorized, should distinguish the three evidence-backed reclassifications, targeted functional work, visual recipes and external terminal/Nexo contracts rather than treating all 41 as new development.
+
+### HD_43 — three RELECTURE promotions and first remaining-P1 fixes (2026-10-21)
+
+Henri approved the three audit candidates. LC-02-02-02 (row 58, weighed detail on POS/customer/paper), LC-02-12-06 (row 126, one-unit cancel-by-scan) and LC-04-04-01 (row 250, configurable abandonment endorsement) now read “1. Couvert intégralement”. Their comments explicitly identify RELECTURE and the existing code/test evidence. No physical qualification is added. Only L/O and row heights on those three workbook rows change; all other cell values and ZIP components are compared with the baseline. The existing synthesis PDF is updated to eleven pages; initial proof pages 3–5 are preserved. Campaign total: 71 promotions, 64 CODE and 7 RELECTURE.
+
+The following two code corrections start the remaining partial-P1 work; they are not additional questionnaire promotions in this lot:
+
+- **HD43-P1-10 [S] — LC-05-02-02, return quantity followed by confirmed price.** Configure a manual-return type with price confirmation and an article that asks for quantity, but not ordinarily for price. Start the return: the catalog price remains visible. Validate quantity 2.5: no line is added, and the price prompt follows. Enter a price below or above the catalog price: exactly one negative-quantity line is recorded at that entered price. Types without confirmation and unknown types keep quantity-only admission at catalog price. TicketService.confirmEntry omitted the return-type policy when chaining prompts; the code was wrong. Two new isolated tests cover lower/higher prices, the negative extended amount, no early insertion, and disabled/missing policy. Existing tests retain the sale and product-driven price paths. The weighed PLU path still bypasses this entry mechanism, so the whole requirement remains partial; no new browser or scale qualification is claimed.
+- **HD43-P1-11 [S] — LC-10-01-03, customer-display advantages.** Project the existing engine promotion label and manual price-modifier label under the corresponding customer article. A cancelled line projects neither label. Show an allocated global ticket discount once as an informational row; do not subtract it again from the already-valued total. Revaluation or removal of the advantage replaces the DOM and clears obsolete labels. New labels use textContent. One new resource test checks article association, cancelled suppression and the global discount payload. Three DOM tests execute the real embedded customer script and verify label escaping, unrelated articles without advantages, refresh/removal, an unchanged valued total and partial-payment visibility. The missing projection/rendering was a code defect. The two exact payload-size assertions increase from 17 to 19 because the snapshot gains discountLabel and discountAmount; all previous assertions remain. Full visual customer-screen qualification is not newly claimed; the questionnaire rating remains partial in this lot.
+
+Complete offline impos validation: `./mvnw -o test` passes 6,832 Java tests and 93 JavaScript tests, no failure/error/Java skip. Fresh JaCoCo counters: 25,032/25,032 lines, 12,466/12,466 branches, zero missed instruction/method/class counters. The instrumented external JavaScript sources remain at 100%; the three new embedded-script DOM tests are not included in that instrumentation percentage. A subsequent targeted DOM rerun passes after removing unrendered Qute/head content from the test fixture only. imedge and impos-hw production sources are unchanged; imedge's prior complete validation remains 4,145 Java plus 11 JavaScript tests, 20,036/20,036 lines and 9,652/9,652 branches.
+
+Current authoritative P1 indicator: **364/477 full (76.3%), 38/477 partial (8.0%), 75/477 not covered (15.7%); 402/477 full or partial (84.3%)**. Whole checkout questionnaire: 485 full, 69 partial, 176 not covered, 730 total; weighted coverage 71.2%. The earlier audit table is historical: the three approved candidates are now promoted and the two defects described above have been corrected within the stated limits.
+
+### HD_43 — customer display and weighed return completed (2026-10-21)
+
+Henri approved completing the proposed block, and asked that every future proposal state its concrete gain. Gain delivered here: customers can read applied advantages and each settlement, with bilingual standard mentions; cashiers can change a weighed return's price without weighing the article again.
+
+- **HD43-P1-10 [S] — LC-05-02-02, weighed return price.** The PLU flow now parks its net quantity, PLU and applied tare before insertion when the administered return type requests price confirmation. The catalog unit price is visible; accepting a lower or higher positive price inserts one negative-quantity line with the original tare and weighing. Confirmation resolves by PLU even without an EAN. Invalid price keeps the prompt open. Cancelling clears the retained metadata and does not consume the duplicate-weighing guard; rescanning the same weight remains possible. The last recorded weight advances only when a line is actually admitted. Two additional isolated tests check the lower/higher paths, negative quantity, metadata, exactly one scale read per article, invalid input and cancel/retry. This is software evidence with a mocked scale, not a new physical qualification.
+- **HD43-P1-12 [S] — LC-10-01-17, each registered settlement.** CustomerDisplayResource projects the ordered registered payments with their administered wording, bilingual fallback or specific voucher label, and amount applied to the ticket. Cash tendered/change does not replace the applied amount. The cart and thank-you screen both display them; cancelled entries disappear on refresh. Tests cover every known fallback, absent/null/blank administered label, unknown method, voucher wording, cash applied amount, order and the completion/cancellation DOM refresh. No card authorization or payment processing is changed.
+- **HD43-P1-13 [S] — LC-13-06-06, bilingual customer mentions.** The existing customer second-language setting drives the standard Qute mentions and dynamic payment/remaining/cash/change/digital-receipt labels through Messages.both. Ticket-level discount wording uses the same resolver, including its percentage. Four keys are added together to FR/NL/PT. Product and administered free-text labels are preserved. CustomerTemplateTest renders the actual template with the real FR/NL bundles; the dynamic projection and DOM contracts check bilingual wording without changing article labels. No new parameter is introduced.
+- **HD43-P1-11 / UI-07 [S] — LC-10-01-03, 800×600 and 1024×768.** Captured the actual HTML rendered by the isolated dev register, then exercised its real browser script with a local fixture payload containing line promotion, manual discount, global discount, two settlements, a long article label and bilingual payment mentions. Two iframe content viewports have the exact required dimensions. This visual harness is explicitly a fixture, not a new live-engine sale or hardware recipe. The first capture exposed an escaped total entity and a wrapped euro suffix. Use the plain total message, keep amount/currency together, bound the scrollable lines and reserve payment space. Final browser inspection shows the advantages, both payment amounts, total and remaining amount in both sizes; a completion fixture shows both settlements and change on the thank-you screen. The static bilingual template is separately covered by the real-bundle test. Proof image: /tmp/hd43-customer-visual/resolutions.png. LC-10-01-01 remains partial: this lot does not qualify all other display ratios/resolutions.
+
+Final complete offline impos run: 6,837 Java tests, no failure/error/skip; 94 JavaScript tests pass. Fresh JaCoCo: 25,084/25,084 lines, 12,488/12,488 branches; instruction, complexity, method and class counters also have zero missed. The embedded customer-script tests are distinct from the external JavaScript instrumentation percentage, which remains 100%. Full runs were repeated only for new functional/test changes. The code was responsible for missing customer information, incomplete price-prompt chaining, premature weighing-guard consumption and the total layout defect; tests were extended without removing assertions. Snapshot-size expectations reflect the two new payments/labels fields. No imedge or impos-hw source changed; their previously recorded verification remains the reference. The owned dev register was stopped; all databases were disposable H2 in memory, hardware simulated, valuation/store URLs blank. No physical device was actuated.
+
+Questionnaire: LC-05-02-02, LC-10-01-03, LC-10-01-17 and LC-13-06-06 promoted by CODE. Only L/O and row heights on rows 276, 560, 574 and 709 change; other values and ZIP components are compared with the baseline. PDF now has twelve pages, preserving initial proof pages 3–5. Campaign: 75 promotions, 68 CODE and 7 RELECTURE.
+
+**Current P1: 368/477 full (77.1%), 34/477 partial (7.1%), 75/477 not covered (15.7%); full or partial 402/477 (84.3%).** Whole checkout questionnaire: 489 full, 65 partial, 176 not covered, total 730; weighted coverage 71.4%. Earlier partial assessments in this log are historical and superseded by this completed lot where named.
+
+### HD_43 — remote closing, net productivity and parked receipt completed (2026-10-21)
+
+Henri approved these three items in order. Delivered gain: the store sees a real session closure, productivity measures time outside recorded pauses, and a waiting cart can be resumed by scanning its receipt. No imvaluation or impos-hw source was changed; no physical device was used.
+
+- **HD43-P1-14 [S] — LC-01-02-07, close active or paused register.** RemoteCommandService always reaches the closing seam, including a paused operator and an operator-free register whose cash session might remain open. It shares the payment/session-opening monitor until the transactional close returns; only then is the remote order acknowledged. SessionCloseService resolves the active or retained paused identity, cancels an unpaid persisted draft, closes CashSession and logs the operator out. An unfinished/in-flight or partly paid settlement leaves the command pending; a completed sale is never cancelled. CashSessionService preserves the existing closing lifecycle (parked cancellation, journal, retention, terminal hook and outbox), but a remote closing keeps counted amount, variance and withdrawal unknown rather than inventing a zero discrepancy. Its journal explicitly says “fermeture forcée sans comptage”. An already closed session is idempotent; database failure never causes an acknowledgement. Tests assert active/paused identity, ordering, unknown count fields, SESSION sync, partial-payment preservation, failure/no ACK and the shared state monitor.
+- **HD43-P1-15 [S] — LC-01-03-01, exclude pauses from cashier productivity.** The register's existing pause preserves the cart and records REGISTER_LOCKED/REGISTER_UNLOCKED under the operator badge. imedge's CASHIER_PRODUCTIVITY export now reads those transitions for the exact badge, terminal and shift bounds, including the last sale as the existing bound of a still-open session. Completed pauses, repeated lock/unlock events, initial resume and unfinished final pause are folded once; milliseconds are subtracted before whole-minute rounding. A two-hour shift with twenty minutes of pause has 100 worked minutes, so 60 items give 36.00 items/hour; turnover and average basket do not change. Tests cover no events, completed/repeated/initial/trailing/full pauses, sub-minute precision, absent/blank badges, null cashier and exact query parameters/order. Different terminals are separate cells. Legacy rows without a usable nominative journal retain their known elapsed duration: missing pauses are not guessed. HourlyProductivityReport measures sales/customer/register counts by time slot and has no shift-duration divisor to change.
+- **HD43-P1-16 [S] — LC-04-01-02, scannable waiting receipt.** The printed CODE128 directive carries the exact existing resume number, also shown in clear text. The historical parking.print-receipt flag stays the master activation. New mirrored, echelon-administrable parameters are parking.print-mode (AUTO default, REQUEST on demand) and parking.receipt-detail (true default). The BackOffice offers the closed AUTO/REQUEST choice; the register retains AUTO fallback for unknown stored values. The parked list exposes IMPRIMER when printing is enabled; this action prints without resuming and refuses missing, foreign or no-longer-parked tickets. Summary mode retains barcode/identity/total and omits articles; detail excludes cancelled lines. Tests cover default/REQUEST/disabled/unknown policy, ownership, resource redirects, no side-effect resume, barcode and detail selection. The parked golden master was reviewed and changed only to add the explicitly required barcode line; its mock now reflects the catalog's default detail=true.
+
+Live cross-application recipe used imedge localhost:18070 and impos localhost:18080, construction profile dev, separate H2 in-memory databases with drop-and-create, virtual payment terminal and embedded hardware simulator. The register's hardware REST client was explicitly pointed at its own dev port. The initial standalone hardware URL could not revoke workstation permits; the recipe was restarted with the correct simulator loopback before any successful cash-session opening. All sessions and articles below are disposable demo data, with no external valuation engine.
+
+1. Signed in as seeded cashier/manager mcurie and opened POS01-S00001 with float 100.00. Used the real pause route; the lock page named Marie Curie as the paused operator. Sent the force-close command through the actual authenticated imedge endpoint. The register journal records SESSION_CLOSED “POS01-S00001 - fermeture forcée sans comptage”, then the forced operator closing. The command list becomes empty and /dashboard-data lists no open POS01 session.
+2. Opened POS01-S00002. Saved REQUEST with article detail=false in the actual BackOffice settings; used the real referential replay. Scanned milk EAN 3300000000002, total 2.76. Parking printed nothing. The actual /parked HTML contained its print action. An explicit print produced a summary without LAIT and with [[BARCODE POS01-00000001]]. Sent that exact scanned number through /api/pos/scan; the ticket was restored with total 2.76 and its article. The journal records TICKET_RESUMED.
+3. Saved AUTO with article detail=true in imedge. An immediate second pull was still inside the existing 60-second fingerprint cache, so the first immediate-auto expectation was premature. After normal cache expiry and replay, the received policy applied: resumed and reparked the same cart, and the simulator printed the barcode plus LAIT automatically. No cache code was modified for this lot.
+4. Requested force-close while the operator was active, with that unpaid parked cart. The second session was shown open before the command and absent afterwards; /api/commands/POS01 again returns []. A browser login to the actual store dashboard confirms “Aucune session ouverte”. Screenshot: /tmp/hd43-session-recipe/dashboard-closed.png. The owned register and store dev processes and their children were stopped after the recipe. Simulated CODE128 and scan-bus round-trip are software proof, not a new thermal-printer/physical-scanner qualification.
+
+Validation: final complete `./mvnw -o test` succeeds in both repositories. impos: 6,847 Java tests, 94 JavaScript tests; JaCoCo 25,120/25,120 lines and 12,524/12,524 branches. imedge: 4,149 Java tests, 11 JavaScript tests; 20,058/20,058 lines and 9,678/9,678 branches. No Java failure/error/skip; all missed instruction/complexity/method/class counters also zero. Two operator keys, parked.printReceipt and parked.printDisabled, are added together in FR/NL/PT. Both new parameter accessors/catalogs are verified, including defaults and persisted choices.
+
+Test adjustments preserve their assertions: remote-command tests target the new persistence seam (including already-closed/orphan-session checks); success is explicitly stubbed for its boolean result. The new monitor assertion initially fired during Mockito restubbing outside an actual close; doReturn/doThrow fixes that fixture, leaving the monitor assertion intact. Printer mocks explicitly use the actual detail=true default; the golden reference adds only the requested barcode. The BackOffice catalog projection's exact expected list gains the two new keys. Those old expectations/fixtures were out of date for the new behavior; no assertion was disabled or removed.
+
+Questionnaire rows 18 (LC-01-02-07), 23 (LC-01-03-01) and 235 (LC-04-01-02) are promoted by CODE. Only their L/O cells and row heights change; other workbook values and ZIP components are compared to the baseline. Existing synthesis PDF now has thirteen pages, with the original proof pages 3–5 preserved. Campaign total: 78 promotions, 71 CODE and 7 RELECTURE.
+
+**Current P1: 371/477 integral (77.8%), 31/477 partial (6.5%), 75/477 not covered (15.7%); integral or partial 402/477 (84.3%).** Whole checkout questionnaire: 492 integral, 62 partial, 176 not covered, total 730; weighted coverage 71.6%. Earlier partial comments in the historical audit are superseded for these three named lines.
+
+
+## HD_43 — article touch layout, historical promotions and endorsed operator revenue (2026-10-21)
+
+Four P1 requirements completed by CODE: LC-02-07-02, LC-02-07-03, LC-04-05-05 and LC-12-07-01. Gains: fewer article pages, useful articles first, historical pricing explanations during returns, and approved operator-specific revenue checks.
+
+### Article layout and order
+
+1. In the existing BackOffice settings, set `touch.groups-per-page=24`, `touch.grid-columns=4`, and `touch.article-order=3300000000002;3300000000019`. Both catalogs declare the two new settings; the existing five-level inheritance and SETTINGS distribution apply.
+2. Pull the register referential, open SAISIE DIRECTE / EPICERIE. The milk and eggs appear first, followed by unlisted articles alphabetically. The actual demo group shows all 22 articles in four columns, without clipping the numeric keyboard. This was verified against the real imedge and impos services and the rendered browser page.
+3. Unit tests additionally verify 24 articles on page one and the 25th on page two, deterministic database ordering before offset/limit, parameter-bound EAN values, empty and duplicated priority entries, two-to-six column bounds, wide pinned tiles, and the reserved navigation cell. No full catalog is loaded to sort a page.
+4. The configured page size includes pinned content; navigation adds one cell. The old fixed twelve-cell screen ceiling has been removed. An existing volume-order test had configured only two content cells while expecting four including pinned groups; its configuration now explicitly requests four, preserving every ordering assertion.
+
+### Historical promotion explanations
+
+1. Recall a persisted ticket and press DÉTAIL DES PROMOTIONS. The existing detail remains paginated and retains quantity, description, line amount and total.
+2. The new view reads that ticket's persisted TicketLineValuation rows: local/valued amounts, offer and advantage labels, allocated advantage, correction label and amount. It also shows recorded manual/global discounts and loyalty lines.
+3. No valuation request or recomputation occurs. Missing historical traces produce an explicit unavailable-trace message rather than invented promotion facts. Missing tickets return to history.
+4. Unit tests render a recorded 12.00 to 9.00 valuation, a 4.00 advantage and 1.00 correction, manual/global discounts and loyalty. Real-service demo: a simulated milk sale at 2.76 EUR was completed and recalled; its unvalued ticket correctly states that no calculation trace is available. This live case does not claim a new engine qualification.
+
+### Endorsed operator revenue
+
+1. Both the read route and the legacy direct-print route expose only a supervisor authorization step. Invalid credentials disclose no figures and do not load a report or print.
+2. Approve using the shared tactile identification panel. The snapshot selects only CLOSED tickets belonging to the connected employee and the current cash session, not the employee who opened that session. It shows ticket count, TTC revenue and settlement totals.
+3. Printing requires a fresh approved request. Both grants and refusals are journaled through the existing endorsement service; printing adds X_REPORT_PRINTED. The query and print run under the same register lock as session transitions. No persistent authorization grant is introduced.
+4. The existing register-wide X remains available through a separate approved action, with its float, movements and theoretical drawer figures. The operator-only print omits those register-wide balances.
+5. Actual demo: wrong named credentials refused; named supervisor approval succeeded; the browser tactile identifier-plus-PIN path succeeded. A completed simulated cash sale produced an approved operator screen and printed receipt for Marie Curie at 2.76 EUR. The existing global X still showed the 100.00 EUR float and the 2.76 EUR sale.
+
+### Validation and resulting coverage
+
+Offline complete suites: impos 6,859 Java tests + 94 JavaScript; imedge 4,150 Java + 11 JavaScript. Zero failures, errors or skipped Java tests. JaCoCo: impos 25,198/25,198 lines and 12,566/12,566 branches; imedge 20,061/20,061 lines and 9,680/9,680 branches. All missed instruction, method, complexity and class counters are also zero. Instrumented external JavaScript remains at 100%; this is not a claim of instrumentation of all embedded template scripts.
+
+Two new catalog entries required extending the exact expected BackOffice catalog in its test. The test fixture, not the catalog code, was out of date. New test fixture errors (private accessor stubbing, missing static assertion import and inherited Panache finder mocking) were corrected; no assertions were removed or disabled.
+
+P1: 375/477 fully covered (78.6%), 27/477 partially covered (5.7%), and 75 not covered. Fully or partially covered: 402/477 (84.3%). Overall Ligne de caisses: 496 full, 58 partial, 176 not covered; weighted coverage 71.9%. Cumulative campaign promotions: 82, comprising 75 CODE and 7 RELECTURE. LC-12-07-02 remains partial: configurable detailed accounting rubrics and their per-rubric transaction counts were not part of this lot.
+
+All live checks use dev builds, H2 in memory recreated on startup and simulated hardware. No physical printer or payment terminal qualification, production build, or change to impos-hw is claimed.
+
+
+## HD_43 — configurable revenue-report operation rubrics (2026-10-21)
+
+LC-12-07-02 completed by CODE. Gain: one approved report exposes operation counts and TTC amounts without collecting them from separate screens.
+
+### Calculation and scope
+
+- The operator report selects the connected employee and current CashSession. The register-wide X explicitly selects the full session. The supervisor approval introduced for LC-12-07-01 remains before reading or printing either scope.
+- Sales count completed sale tickets, not quantities. Mixed tickets contribute their sold part to sales and their returned part to returns; a ticket can therefore contribute once to both document counts. Pure and zero-value returns and free sales are tested. Open and parked tickets do not contribute sales.
+- Finalized Refund documents add to returns. Their outgoing settlements reduce the corresponding tender amount; negative ticket settlements also retain their sign. Refunds with an unknown historical method are counted as returns without inventing a tender identity.
+- Cancelled article rows retain their removed TTC amount and are scoped by cancellation badge, with ticket cashier fallback only for legacy rows without an author. The query uses the actual unidirectional Ticket.lines association. An initial inverse-path query failed in the live recipe; the code and its unit fixture were corrected, and the real scoped and register-wide queries were replayed successfully.
+- Abandoned tickets are counted separately with their recorded TTC amount. Forced-price rows use the final persisted affected line and its TTC magnitude; they do not fabricate a history of overwritten price gestures. Deposits, withdrawals and expenses are distinct movement counts/amounts. Declarations, transfers and customer down-payments are not silently classified as cash supplies or sales.
+- Rubrics overlap and are not an additive revenue reconciliation; the shared screen explains the counting basis and net tender figures. Amounts are accumulated before presentation rounding.
+
+### BackOffice and shared presentation
+
+Nine BOOL catalog entries, default true, exist in impos and imedge: report.show-sales, report.show-returns, report.show-expenses, report.show-cancellations, report.show-abandoned, report.show-price-overrides, report.show-deposits, report.show-withdrawals and report.show-tenders. Existing country/brand/store/island/register inheritance and SETTINGS distribution apply.
+
+The operator screen, register X detail and paper share the same calculated operationRows snapshot. The new table carries rubric, count and amount, including zero operations. The operator paper contains only configured rubrics. An administered X layout is followed by the same configured rows; the Z receipt presentation stays unchanged. All fourteen new operator message keys are aligned in FR/NL/PT.
+
+### Actual service recipe
+
+Run dev builds of imedge on 18070 and impos on 18080, using H2 in-memory databases recreated on startup and loopback simulated hardware. Sign in as seeded supervisor Marie Curie, open a period with 100 EUR float, complete a simulated milk sale at 2.76 EUR, record a 10 EUR supply through the apport screen, a 3 EUR withdrawal to Caisse centrale and a 2 EUR STAMPS expense.
+
+The approved operator report and simulated receipt show sales 1 / 2.76, supply 1 / 10.00, withdrawal 1 / 3.00, expense 1 / 2.00, and cash settlement 1 / 2.76. The shared tactile identifier-and-PIN approval was exercised in the browser and the whole report was visually reviewed.
+
+Set report.show-expenses=false and report.show-price-overrides=false in the actual BackOffice settings. After normal referential fingerprint cache renewal, replay the pull. Both rubrics disappear from screen and paper, while the 10 EUR supply remains. The global X also renders successfully with its original drawer information and the detailed operation table. No physical printer, terminal transaction or production build is claimed. Owned demo processes are stopped after verification.
+
+### Tests and cotation
+
+Complete offline suites: impos 6,864 Java + 94 JavaScript; imedge 4,151 Java + 11 JavaScript. Zero Java failures, errors or skipped tests. Java coverage: impos 25,286/25,286 lines and 12,637/12,637 branches; imedge 20,062/20,062 lines and 9,680/9,680 branches. Every JaCoCo missed instruction, complexity, method and class counter is zero. External instrumented JavaScript remains at 100%; embedded template scripts are not all instrumented.
+
+Tests cover mixed/pure/free returns, free sales, legacy negative tickets, cancelled lines, force-price sales and returns, all movement types, absent legacy movement amount, all refund methods, null legacy refund method, scoped and global reads, visibility true/false, empty rubrics, accumulated rounding, actual Qute row rendering, operator receipt and administered X/Z behavior. The exact BackOffice catalog expectation was extended by nine entries; its fixture was out of date, not the catalog code. A Panache inherited-static mock collision was corrected by explicitly ordered ticket query fixtures, without weakening assertions.
+
+Questionnaire changes are restricted to L652/O652 and its row height. Previous promotions and all other workbook components are preserved. The PDF adds the current lot while preserving previous proof and lot pages.
+
+P1: 376/477 full (78.8%), 26/477 partial (5.5%), 75 not covered. Full or partial: 402/477 (84.3%). Ligne de caisses: 497 full, 57 partial, 176 not covered; weighted coverage 72.0%. Campaign: 83 promotions, comprising 76 CODE and 7 RELECTURE. No new physical proof.
+
+
+## HD_43 — four P1: e-mail, loyalty, cash supply and VAT letters (2026-10-22)
+
+### Scope and operator benefit
+
+LC-08-02-05 proposes the e-mail receipt at the end of a completed sale. LC-03-04-05 applies a card scanned during payment before the first settlement. LC-12-04-04 makes the cash-supply slip optional and identifies the operator. LC-02-10-03 prints alphabetic VAT codes on article rows and the matching breakdown. No promotion calculation is moved out of imvaluation.
+
+### Settings and scenarios
+
+Both catalogs declare ticket.email-offer (BOOL, false) and cash.deposit-print (BOOL, true). Existing country/brand/store/island/register inheritance and SETTINGS distribution apply. The existing ticket.vat-code setting controls the VAT letters; its help now documents the mapping. The single new paper.numeroOperateur key is translated in all three aligned FR/NL/PT bundles.
+
+1. Enable ticket.email-offer in the actual store BackOffice, allow the normal referential cache renewal and pull SETTINGS. Complete a non-training sale. Finalization snapshots the loyalty address before clearing the current ticket, then opens /ticket-email only after successful closure. An open cash drawer does not hide this read-only proposal. The known-address editing policy is preserved. No message is transmitted without a separate operator action. Disable the setting and repeat: no automatic e-mail page. Tests also cover failed/incomplete closure, absent ticket ID, training mode and replay after closure.
+2. Scan an article, enter payment with no settlement, then scan a loyalty card. The shared state monitor covers card attachment, total recalculation and the special valuation hook. Verify customerCode reaches imvaluation and the reconciler and loyalty projection receive its answer. Outside payment, the existing scan flow keeps its original single valuation. Test every refusal: training, completed transaction, existing payments, nonzero paid amount, pending card, cheque, signature, cheque-front print, suspended tender, pending credit and backup request. General valuation remains blocked during payment; only this pre-settlement card hook is admitted.
+3. Enable cash.deposit-print and record an apport. The slip includes register, date, badge number, operator name, denomination detail, total and signature. Disable the setting: the movement is still recorded and neither text nor cut is emitted. Tests cover missing/blank legacy operator identity and actual badge propagation from the resource.
+4. Enable ticket.vat-code and print or reprint a sale. VAT regime numbers map 0=A, 1=B, 25=Z, 26=AA and 27=AB, using a long intermediate to avoid overflow. The same letter appears on the article and rate breakdown. Missing rate/regime, absent number and negative number produce no invented identity. Disable the setting: article codes and breakdown letters disappear. Tests cover every mapping and absent-value branch.
+
+### Actual service recipe and limits
+
+Dev builds of imvaluation (18090), imedge (18070) and impos (18080) run on dedicated H2 in-memory databases recreated at startup, using loopback simulated hardware. After BackOffice distribution, a milk basket at 2.76 EUR enters payment; card 2990000000019 appears as customerCode in the real engine request log. A simulated cash settlement closes the sale and opens the e-mail proposal while the drawer is open. The actual page was visually checked at 1280 x 720. No SMTP relay is configured and no e-mail or SMS is sent. The external imfid service is not qualified here; the projection hook and resulting state are covered by unit tests.
+
+The simulated reprint contains CODE TVA B and TVA B 20.00% for the milk. An apport of 10 EUR prints POS01, badge 11111111, Marie Curie and the amount. All three flags are then disabled in the real BackOffice. After normal cache renewal and a fresh pull, an apport remains recorded (ok=1) with an empty printer buffer. The next sale returns to the normal home route after drawer closure; its reprint contains no article VAT code or breakdown letter. The drawer guard on the normal home route remains active. The first sale did not request a paper copy, so its initial empty printer buffer was checked via the existing last-ticket reprint rather than by changing the printing policy.
+
+All owned dev processes are stopped after verification. No physical hardware, production build or real terminal settlement is claimed. Existing offer-feed demo date warnings and the unavailable external imfid service are not hidden or counted as new integration proof.
+
+### Tests, corrections and cotation
+
+Complete offline suites: impos 6,874 Java + 94 JavaScript; imedge 4,152 Java + 11 JavaScript. No failures, errors or skipped Java tests. Fresh JaCoCo data: impos 25,315/25,315 lines and 12,687/12,687 branches; imedge 20,064/20,064 lines and 9,680/9,680 branches. All missed instruction, complexity, method and class counters are zero. External instrumented JavaScript remains at 100%; embedded scripts are not all instrumented.
+
+The code needed the four missing behaviors and the drawer exception for the proposal. New test fixtures initially expected cardNumber instead of the contractual customerCode (cardNumber is conditional on card promotions), and treated a relay configuration read as a transmission; those expectations were corrected to assert the actual contract and absence of send. Required valuation mocks, printer signatures and exact catalog entries were updated without disabling tests or weakening their behavioral assertions.
+
+Questionnaire edits are restricted to L115/O115, L198/O198, L463/O463 and L639/O639 and their four row heights. All other cell values and archive components remain unchanged. The PDF updates summary/coverage/tests and adds page 16; earlier proof and lot pages are preserved.
+
+P1: 380/477 full (79.7%), 22/477 partial (4.6%), 75 not covered. Full or partial: 402/477 (84.3%). Ligne de caisses: 501 full, 53 partial, 176 not covered; weighted coverage 72.3%. Campaign: 87 promotions, comprising 80 CODE and 7 RELECTURE. No new physical proof.
+
+## HD_43 — configurable training keys, LC-13-05-04 (2026-10-22)
+
+### Benefit and configuration
+
+The store chooses which gestures trainees can use while retaining the normal screen layout. A refused key remains visible and opens a translated, touch-sized acknowledgement; closing it restores focus and keeps the current screen.
+
+Both settings catalogs add training.blocked-keys in MODE ÉCOLE, TEXT, default empty. Existing five-level inheritance and SETTINGS distribution apply. The value has one rule per line, not semicolon-separated values, so an onclick identity containing semicolons remains intact:
+
+- path:/pay selects that exact route; path:/manual selects direct entry.
+- path:/action/discount/* selects the root and its slash-delimited descendants, not a similarly named sibling.
+- key: followed by an identity from the existing touch-usage report selects a particular configured key, DOM id, handler with arguments, submitted choice or link. Example: key:/:/article-info.
+
+The path rules protect the designated HTTP routes and their corresponding visible navigation/submit controls. Key rules select local controls in the browser; they do not purport to authorize or deny an unrelated direct HTTP route. Administrators must name the action routes they want refused, including mutation routes when relevant. Blank lines are discarded; unrelated rule prefixes do not block routes. Empty configuration adds no restrictions. Existing hard-coded safeguards against real sales, customer messages and cash movements in training remain in force; this parameter cannot enable those operations.
+
+### Enforcement and cases
+
+TouchUsageWriter emits the policy JSON and its deferred capture script only in training operator documents containing the terminal, before the usage observer. JSON less-than characters are escaped, including a literal closing script in a key identity. Normal and non-operator pages receive no training policy. The script and configuration are emitted together; no unreachable absent-configuration branch is retained.
+
+Click capture prevents the blocked handler and navigation before they run. Keyboard form submission is also checked, including submitter overrides and a submit without an explicit button. The identity reads no amount, password or other entered field. The dialogue reuses its tactile OK acknowledgement and is centered over the unchanged layout. Its acknowledgement, the home error route and the /action/training exit cannot be blocked by the added policy.
+
+TrainingCheckFilter runs after authentication/session guards and before resource execution. It normalizes paths with and without a leading slash, refuses configured routes with a 303 to the existing translated register error, and does nothing in ordinary mode. This applies before both GET and POST resource bodies. Exact and subtree rules are tested at root, child, sibling and nonmatching paths.
+
+### Actual service recipe
+
+Start dev builds of imedge on 18070 and impos on 18080, with dedicated H2 in-memory databases recreated at startup and hardware loopback. Sign into the BackOffice and set training.blocked-keys to path:/pay, path:/manual and key:/:/article-info on separate lines. Sign into the register as seeded Marie Curie and enter training without opening a cash session. Allow normal referential fingerprint cache renewal and replay the pull.
+
+The actual rendered policy contains those three rules. In the browser at 1280 x 720, INFO ARTICLE remains visible; clicking it stays on the same page and shows FONCTION INDISPONIBLE EN FORMATION with OK. The acknowledgement restores the unchanged main screen. Direct HTTP requests to /pay and /manual are refused before the resource and return the same translated refusal on the main page.
+
+Clear the setting in the real BackOffice. After normal cache renewal and replay, the policy rules are empty. /manual opens again; clicking INFO ARTICLE reaches the actual read-only information screen. Exiting training returns to the normal session guard because no session was opened, and the normal document contains no training policy. No sale, cash movement, physical hardware or external message is performed. Owned demo processes are stopped after verification.
+
+### Validation and cotation
+
+Complete offline suites: impos 6,885 Java + 102 JavaScript; imedge 4,153 Java + 11 JavaScript. No failures, errors or skipped Java tests. Fresh JaCoCo: impos 25,346/25,346 lines and 12,715/12,715 branches; imedge 20,065/20,065 lines and 9,680/9,680 branches. All missed instruction, complexity, method and class counters are zero. External instrumented JavaScript is also at 100% of statements, branches, functions and lines. The final centering-only style adjustment was followed by the JavaScript suite and a fresh browser screenshot; no Java source changed after the complete suites.
+
+Two new fixture mistakes were corrected: the state field is transientError, and jsdom needs a test-only implementation of native dialog.showModal/close. The code was corrected for centered dialog placement after visual inspection. No tests were disabled and no behavioral assertions were weakened. The exact BackOffice catalog fixture includes the new entry; both settings accessors test absent and stored rules. One new acknowledgement key is translated in FR/NL/PT.
+
+Questionnaire edits are restricted to L701/O701 and its row height. All other cell values and archive components are preserved. The PDF updates summary/coverage/tests and adds page 17, preserving prior proof and lot pages.
+
+P1: 381/477 full (79.9%), 21/477 partial (4.4%), 75 not covered. Full or partial: 402/477 (84.3%). Ligne de caisses: 502 full, 52 partial, 176 not covered; weighted coverage 72.3%. Campaign: 88 promotions, comprising 81 CODE and 7 RELECTURE. No new physical proof.
+
+## HD_43 — sale NIF and OK acknowledgement (2026-10-22)
+
+### Scope and benefit
+
+LC-08-06-02 and LC-08-06-03 now apply to the ordinary sale itself. NIF CLIENT in the customer/loyalty menu opens a tactile mask without creating a customer record or issuing an invoice. The training acknowledgement changes from the previous wording to OK in FR/NL/PT; its behavior and centered layout stay the same.
+
+The existing customer.default-tax-id setting proposes 999999990 by default, with the existing five-level inheritance and SETTINGS distribution. The mask reads that value only when no sale choice exists. An explicitly cleared choice remains empty. GET and cancellation write nothing. The actual shared keyboard initializes from the hidden field, displays the offered value and replaces the prefilled value on the first typed character. The operator may accept, replace or clear it.
+
+### Persistence, boundaries and output
+
+The optional customerTaxId belongs to TicketState and to the persisted Ticket in impos and imedge. Ordinary draft synchronization writes it; local parked-ticket/startup recovery restores it. Ticket clearing removes it so the next customer cannot inherit it. Both shared TicketDto contracts and outbox mappings include the field; store ingestion copies it. Unit tests carry a non-default value through serialization, ingestion, persistence and recovery. No remote cross-till cart-transfer extension is claimed by this change.
+
+Saving uses the existing settlement monitor and is refused while payment is in progress or the transaction is complete. Training delegates to the existing draft funnel, which writes nothing. The 30-character identifier accepts letters, digits, spaces, dots, slashes and hyphens, uppercases using Locale.ROOT and rejects control characters/printer directive syntax. This adds no new country-specific tax validation algorithm.
+
+The selected NIF is visible in the polled ticket fragment. The built-in receipt includes it. Administered sale data and sample previews expose document.taxId and document.taxIdLabel, and the default sale template includes the printable value. When the choice equals the administered anonymous NIF, customer.default-tax-id-label is printed; a missing or blank label falls back to the number. With no choice, no NIF is invented or printed. Customer-account records and invoice snapshots remain independent.
+
+### Actual service recipe
+
+Run dev builds of imedge (18070) and impos (18080), dedicated H2 in-memory databases recreated at startup and loopback simulated hardware. Sign in as Marie Curie, open a session and open NIF CLIENT. At 1280 x 720, the actual mask shows 999999990. Click the numeric keys to replace it with 123456789 and validate; the ordinary sale shows the chosen NIF without entering invoicing.
+
+Scan milk, park the ticket and resume it. Reopening the mask still shows 123456789. Complete the simulated cash sale and reprint: the receipt contains the selected NIF. Open the mask for the next sale: it proposes 999999990 again. Accept it, sell milk and complete: the receipt contains CONSUMIDOR FINAL. On a third sale explicitly clear the choice and complete: the receipt has no selected or anonymous NIF. These receipts are verified in the simulator; no physical printer or terminal is used.
+
+Set training.blocked-keys=path:/manual at the actual BackOffice and distribute after normal cache renewal. Enter training and click SAISIE DIRECTE: the refusal dialogue shows OK. Acknowledge it and leave training. The new NIF entry is also visible in the existing GÉNÉROSITÉ menu. No external message or production build is involved. Owned demo processes are stopped after verification.
+
+### Tests and cotation
+
+Complete offline suites: impos 6,893 Java + 105 JavaScript; imedge 4,153 Java + 11 JavaScript. No failures, errors or skipped Java tests. Fresh JaCoCo: impos 25,376/25,376 lines and 12,741/12,741 branches; imedge 20,067/20,067 lines and 9,680/9,680 branches. All missed instruction, complexity, method and class counters are zero. External instrumented JavaScript remains at 100% of statements, branches, functions and lines; embedded scripts are not all instrumented.
+
+Tests cover inherited/default/null/blank prefill, a chosen and explicitly empty value, numeric/foreign identifiers, clearing and next-sale reset, unsafe/overlong input, both payment refusal legs, saving under the state monitor, actual Qute escaping and actual tactile initialization/clicks. Existing persistence/recovery/sync assertions are extended to preserve the field. Printer tests cover absent, empty, explicit and anonymous identifiers and missing/blank wording. One new JS fixture incorrectly searched textContent for a keyboard key rendered with innerText; the fixture now uses the actual rendering contract, retaining the click and resulting value assertions. No test is disabled or weakened.
+
+The questionnaire changes only L525/O525 and L526/O526 and their two row heights. Other cell values and archive components are preserved. The PDF updates summary/coverage/tests, changes the training acknowledgement wording on page 17 and appends page 18; other prior proof and lot pages are preserved.
+
+P1: 383/477 full (80.3%), 19/477 partial (4.0%), 75 not covered. Full or partial: 402/477 (84.3%). Ligne de caisses: 504 full, 50 partial, 176 not covered; weighted coverage 72.5%. Campaign: 90 promotions, comprising 83 CODE and 7 RELECTURE. No new physical proof.
+
+## HD_43 — ticket code and generic function approval (2026-10-22)
+
+### LC-08-01-03: configurable 1D/2D identification
+
+Both catalogs declare ticket.barcode-enabled (BOOL, true) and ticket.barcode-format (TEXT, CODE128). The BackOffice presents CODE128 and QR as closed choices; a legacy unknown format falls back to CODE128. Existing five-level inheritance and SETTINGS distribution apply. The same persisted unique number, including the existing administered prefix, is encoded in either format.
+
+The selected identification directive is last in the receipt, before cutting. Administered layouts follow the same activation and format policy as the built-in receipt: matching old 1D/QR identification directives are removed before appending the selected one, so a custom template cannot accidentally duplicate the identifier or bypass suppression. Administered data exposes document.identificationCode. Other document barcodes and the website/footer URL keep their own policies.
+
+The missing hardware link is implemented in impos-hw: ReceiptBody parses QR directives, HardwareEndpoints dispatches them and ReceiptPrinter/EscPosPrinter emit native model-2 QR commands. Epson's primary reference specifies [QR command functions](https://download4.epson.biz/sec_pubs/pos/reference_en/escpos/gs_lparen_lk.html), including [function 180 data storage](https://download4.epson.biz/sec_pubs/pos/reference_en/escpos/gs_lparen_lk_fn180.html) and [function 181 printing](https://download4.epson.biz/sec_pubs/pos/reference_en/escpos/gs_lparen_lk_fn181.html). Tests assert exact command bytes, model, module size, correction level, UTF-8 payload and low/high byte length. Empty/overlong payloads fail explicitly; malformed directives stay visible text. These are file-transport tests, not physical QR qualification.
+
+### LC-01-05-01: approval policy and continuation
+
+Both catalogs add gesture.function-endorsements, TEXT, default empty. One method/path rule per line selects an operator function, for example POST /sale-tax-id=REQUIRED, GET /manual=REQUIRED or GET /action/training=NONE. REQUIRED adds the existing supervisor ceremony. NONE exempts the selected function's ordinary approval checks, including checks previously fixed in code. No matching rule preserves existing behavior. The last matching rule wins; /* explicitly includes a path and its descendants, with a slash boundary. Unknown modes do not overwrite a valid matching rule.
+
+The generic gate covers operator GET navigation and urlencoded POST forms. It does not turn machine APIs, authentication, approval endpoints, polls or static assets into supervisor gestures. A protected GET cannot be bypassed with HEAD (405), and trailing-slash variants match the same rule. Other methods are outside this gate; an unsupported POST media type returns 415 and an oversized captured form returns 413, rather than executing without approval. Form names, repeated values, query arguments and original values are retained in memory, without logging field values or borrowing the manager PIN for the replay.
+
+The first request is stopped before its resource and opens the existing translated modal. Valid credentials, remote approval and the existing PER_OP/PER_TICKET convention stay in the existing endorsement mechanism. A one-use grant is bound to method, local target/query, original form, operator, ticket, cart content, training mode and settlements. It cannot execute a different form, act on a changed sale or silently authorize a replay. The browser resumes the original GET or submits the escaped frozen POST using the ordinary redirect flow. A reused token creates a new approval request; it does not execute the resource again.
+
+The approved or exempt context is request-scoped and reached through methods so CDI resolves the correct request instance. It does not change the operator role. Existing hard business blocks remain. The unique sold article still requires its configured reason and a real fresh supervisor approval: an ordinary NONE exemption does not waive that requirement; an exact approved function does not ask for a second identical approval once the reason is present.
+
+### Actual service recipe
+
+Start dev builds of imedge on 18070 and impos on 18080, dedicated H2 in-memory databases recreated at startup and loopback simulated hardware. Stage QR plus POST NIF/GET manual REQUIRED and training NONE in the real BackOffice before starting the register. Sign into the register as seeded cashier Jean Dupont, open a session and scan milk.
+
+Post NIF 123456789. The request redirects to the pending modal; reopening the mask still offers the default, proving no mutation occurred. A wrong manager PIN is refused. A correct Marie Curie approval returns the frozen continuation. Opening that URL in the actual browser automatically submits the form and shows the chosen NIF on the ordinary sale. At 1280 x 720, SAISIE DIRECTE then asks for its own approval, proving the previous request did not leave a reusable supervisor bypass. Approve it: the original GET opens. Reusing its URL/token returns to a new modal, without re-executing the function. Cancel that new demand.
+
+Complete the simulated cash sale and reprint: POS01-00000001 ends with its QR directive before the simulator's cut marker. Set CODE128 and replace the function rules with NONE. After normal referential cache renewal, a manager triggers the pull; the cashier cannot invoke that supervisory endpoint (403 is the existing role boundary). Return to the cashier: NIF and manual entry need no modal, and the second sale prints CODE128 for POS01-00000002. The cashier enters and leaves training without endorsement under its explicit NONE rule, while retaining the CASHIER role.
+
+Disable ticket.barcode-enabled in the BackOffice. After cache renewal and a manager-triggered pull, return to the cashier, close the drawer opened by the login/override flow and reprint. The receipt remains nonempty and keeps its plain ticket number, with neither identification directive. QR, 1D and disabled content are checked independently of the simulator's cut decoration. No physical printer, terminal, external message or production build is used. All owned demo processes are stopped.
+
+### Validation and fixture corrections
+
+Complete offline suites: impos 6,908 Java + 105 JavaScript; imedge 4,154 Java + 11 JavaScript; impos-hw 69 Java. No failures, errors or skipped Java tests. Fresh JaCoCo: impos 25,510/25,510 lines and 12,877/12,877 branches; imedge 20,071/20,071 lines and 9,680/9,680 branches. Every missed instruction, complexity, method and class counter is zero. External instrumented JavaScript remains at 100%; embedded scripts are not all instrumented. No blanket coverage claim is made for impos-hw.
+
+Tests cover exact/subtree/overridden/unknown rules, trailing-slash variants, refused HEAD execution, absent and stale pending requests, wrong method/target/body/token, repeated fields, query preservation, one-use consumption, supervisor shortcuts, every infrastructure exclusion leg, explicit NONE, request-only context, legacy endorsement exemption, actual approved unique-article cancellation with reason, continuation rendering and Qute escaping. Hardware tests cover mixed text/1D/QR parsing and actual endpoint-to-driver bytes on a disposable file.
+
+The new catalog fixture initially classified barcode-enabled as text; it now checks BOOL. Historical printer mocks omitted its new true default; the golden-reference fixture now mirrors the live catalog and all four old receipt references remain unchanged. Two exact administered-layout expectations intentionally add the required final code while retaining all original content assertions. The initial recipe incorrectly counted the simulator's cut marker as receipt text, and a cashier pull attempt correctly returned 403; both recipe steps were corrected without changing product code or relaxing assertions. The hardware test uses an explicit exact expected byte sequence. No tests are disabled.
+
+Questionnaire changes are restricted to L455/O455 and L32/O32 and their two row heights. Other cell values and archive components are preserved. The PDF updates summary/coverage/tests and adds pages 19–20; previous proof and lot pages remain unchanged.
+
+P1: 385/477 full (80.7%), 17/477 partial (3.6%), 75 not covered. Full or partial: 402/477 (84.3%). Ligne de caisses: 506 full, 48 partial, 176 not covered; weighted coverage 72.6%. Campaign: 92 promotions, comprising 85 CODE and 7 RELECTURE. No new physical proof.
+
+## HD_43 — Responsive customer display (22 October 2026)
+
+LC-10-01-01 is promoted by CODE. The gain is a readable ticket, total and payment summary on small and widescreen customer displays. Only the customer template's layout changes; no business state, message key, setting or hardware driver changes.
+
+### Recipe
+
+Start impos in the dev build profile with a disposable H2 memory database, drop-and-create and simulated hardware. Render the actual `/customer` Qute page. In a local recipe harness, serve that HTML and its original embedded script in exact-size browser frames, feeding controlled customer-data payloads. Repeat at 800x600, 1024x768 and 1366x768 (16:9):
+
+1. Welcome, with training and display-message banners present together.
+2. Running sale containing 30 articles, long labels, EAN, weighted quantities, promotions and manual advantages.
+3. Partial payment with bilingual labels, two tenders, remaining amount and cash rounding; include a long loyalty-holder name.
+4. Thank-you with both payments, change, a digital path and a square image fixture in the QR slot. This tests image proportions and layout, not QR decoding.
+
+Expected: no horizontal page overflow; the active screen fits between the banners; neither banner covers the header or footer. Header and footer wrap as necessary. The article list has useful space and scrolls; payments remain above the footer; the full total stays visible. Welcome and thank-you content remain accessible by vertical scrolling if necessary. The QR slot stays square without stretching. Inspect the screenshots at each size; reduce only the harness preview scale when needed, preserving the iframe's actual viewport dimensions.
+
+### Validation and cotation
+
+All twelve browser geometry cases pass and screenshots of the three payment layouts are inspected, plus the 800x600 thank-you layout. The full offline impos suite passes: 6,908 Java and 105 JavaScript tests, no failures/errors/skipped Java tests. JaCoCo remains 25,510/25,510 lines and 12,877/12,877 branches, every missed counter zero. External instrumented JavaScript remains at 100%; embedded scripts are not all instrumented. No Java or embedded JavaScript code changes in this lot. No test assertion is removed or weakened. Imedge and impos-hw source code is unchanged; their previous full-suite evidence remains recorded above.
+
+Workbook changes are limited to L558/O558 and that row's height. All other cell values and ZIP components are preserved. PDF summary pages 1–2 are refreshed and page 21 records the responsive proof; pages 3–20 remain identical. No physical customer screen is qualified, no production build or external transmission is used. Owned demo processes are stopped after the recipe.
+
+P1: 386/477 full (80.9%), 16/477 partial (3.4%), 75 not covered. Full or partial: 402/477 (84.3%). Ligne de caisses: 507 full, 47 partial, 176 not covered; weighted coverage 72.7%. Campaign: 93 promotions, comprising 86 CODE and 7 RELECTURE. No new physical proof.
+
+## HD_43 — Other customer documents by e-mail (22 October 2026)
+
+LC-08-02-06 is promoted by CODE. The gain is one tactile selection/preview/delivery screen for issued customer documents, avoiding paper reprints. The existing sale-receipt e-mail flow remains available.
+
+### Issuance and customer-only boundary
+
+CustomerDocument stores the family, issue reference, exact rendered customer copy, issue time and last confirmed destination. CustomerDocumentService persists the copy within a transaction and pages history twenty rows at a time, newest first. Only explicit customer issuance sites call the archive: return, card customer copy, voucher/gift card, credit voucher, deposit, loyalty, exit, resume, collection, exchange, parked receipt, payment cancellation and invoice/delivery note. Administered and built-in receipt paths both freeze their rendered output. Invoice archival precedes roll/slip/A4 routing.
+
+There is no global printer interception. Merchant card frames, unclassified additional frames, X/Z reports and technical/store documents never enter this archive. For monetic sale/refund frames, only the explicitly identified customerReceiptFrame is archived; merchant and additional frames keep their existing paper path. Unit assertions verify the customer frame is archived and the merchant frame is not. The unclassified raw printer entry point does not archive anything.
+
+The /customer-documents screen is linked from the ticket menu and existing e-mail screen. It shows family, reference, date, escaped preview, history navigation, a required document radio selection and one existing tactile e-mail keyboard. The POST accepts an archive identifier and address, never caller-supplied document content or type. Unknown/missing identifiers and malformed addresses are refused. Training blocks both history reads and delivery. Documents issued before this archive existed are not automatically reconstructed; the existing sale path retains its frozen/rendered fallback.
+
+TicketMailService shares transport/MIME assembly with the old sale path, keeping the existing BODY/ATTACHMENT/BOTH setting. A true SMTP acceptance, an unavailable configured relay and an unconfigured relay have distinct translated outcomes. The request is journalled in all delivery paths. The old now-unused forwarding MIME builder is removed. Twenty-three new message keys are aligned across FR/NL/PT. No new setting or change to imedge/impos-hw source code is needed.
+
+### Local runtime recipe
+
+Build with the dev construction profile, then run with dev configuration, a disposable H2 memory database with drop-and-create and the simulated hardware endpoints. Point quarkus.rest-client.hardware-api.url and pos.scanner.sink-url at this owned loopback instance (port 18080). Use a loopback-only SMTP collector on 127.0.0.1:18025; no external address or mail service is contacted.
+
+1. Sign in with the seeded manager, accept simulated hardware, close the simulated drawer and open the session.
+2. Make a cash sale, recall it and return a manually selected 1.00 amount to a voucher. The issued credit and return copies appear separately.
+3. Create an order with a 0.50 deposit. Its deposit receipt appears under its order reference.
+4. Make a sale paid on the virtual card terminal, accept it in the simulator, finish and request the card duplicate. Its customer card copy appears under POS01-00000003; the order had consumed sequence number 2.
+5. In the browser choose the return, expand its preview, type demo@example.test entirely with the tactile keyboard and submit. The page reports SMTP acceptance. Send the credit, deposit and card copy through the same endpoint.
+6. Inspect all four captured MIME messages locally. The recipient is demo@example.test and each body exactly equals the selected archived preview after SMTP line-ending normalization: return, credit voucher, deposit and card duplicate. No merchant content occurs.
+7. Request an absent archive identifier: refusal, no message. Open history page 1 after these four documents: empty history with backward navigation. Enter training and verify no selection and no send, then leave training.
+8. Stop the local SMTP collector and submit again. The configured-relay failure is displayed, with no success message. No network destination outside loopback is used. Stop owned demo processes after verification.
+
+### Tests, fixes and documentary proof
+
+Full offline impos suite: 6,918 Java + 105 JavaScript tests pass, no failures, errors or skipped Java tests. JaCoCo: 25,601/25,601 lines and 12,903/12,903 branches, every missed counter zero. External instrumented JavaScript stays at 100%; embedded scripts are not all instrumented. Tests cover persisted family/reference/content/time, pagination and all family labels, selection/destination guards, training, actual delivery outcomes, MIME body and attachment content, recipient, frozen-copy use, Qute escaping and the invoice/customer-frame archive boundaries. Existing receipt expectations remain intact.
+
+Two setup issues were corrected without weakening assertions: the code initially formed a dynamic family key that the bundle-source guard treated as an absent prefix; explicit family label keys now resolve the real bundles. The new printer test initially omitted its Panache stand-in; the fixture now supplies it. The first card recipe expectation named sale 2, but order creation legitimately consumed it: the recipe now checks sale 3. No test is disabled.
+
+Questionnaire changes are restricted to L464/O464 and that row height. All other cell values and ZIP components are verified unchanged. PDF summary pages 1–2 are refreshed and page 22 records the lot; previous proof pages 3–21 are preserved. No production build, physical hardware action or new physical qualification is claimed.
+
+P1: 387/477 full (81.1%), 15/477 partial (3.1%), 75 not covered. Full or partial: 402/477 (84.3%). Ligne de caisses: 508 full, 46 partial, 176 not covered; weighted coverage 72.7%. Campaign: 94 promotions, comprising 87 CODE and 7 RELECTURE.
+
+## HD_43 — Forced return, credit and deposit paper (22 October 2026)
+
+LC-08-03-07 is promoted by CODE. The gain is BackOffice control over mandatory paper in return/credit/deposit flows, consistent with sale printing. This lot is restricted to those document families, their setting descriptions, tests and cotation.
+
+### Policy and electronic-copy preservation
+
+The existing print.forced-documents list gains RETOUR and ACOMPTE; AVOIR also governs the voucher issued by a refund. Both impos and imedge catalogs describe the same extended list. No new setting is introduced: the existing five-level inheritance and SETTINGS payload carry these values unchanged.
+
+With print.conditional-enabled off, legacy printing remains. With it on, each associated family prints only when its own key is present. The shared printer helper archives the customer copy first, then decides paper and cut. Suppression means no print and no cut, while e-mail selection still finds the issued copy. Deposit methods return 0 when paper is suppressed and 1 when printed. Both deposit render paths, built-in and administered return/deposit layouts, credit vouchers and the return-without-immediate-cut variant retain their contracts. Other card/technical-document rules are unchanged.
+
+### Automated validation
+
+Complete offline suites pass: impos 6,919 Java + 105 JavaScript; imedge 4,154 Java + 11 JavaScript. No failures, errors or skipped Java tests. Fresh JaCoCo: impos 25,596/25,596 lines and 12,905/12,905 branches; imedge 20,071/20,071 lines and 9,680/9,680 branches. All missed instruction, complexity, method and class counters are zero. External instrumented JavaScript remains at 100%; embedded scripts are not all instrumented.
+
+The new printer test exercises ten combinations: conditional printing disabled, enabled with an empty list, and each of RETOUR/AVOIR/ACOMPTE forced individually, each with and without an administered layout. It counts exactly the expected receipt prints and cuts, checks both deposit return values and verifies all four electronic archives independently of paper. Existing no-policy fixtures retain historical behavior. Both catalog-parser tests now assert the extended names alongside TICKET/CARTE. No assertion is removed or weakened; no test is disabled.
+
+### Runtime recipe through the real BackOffice
+
+Use dev construction-profile builds of imedge on loopback port 18070 and impos on 18080, disposable H2 memory databases with drop-and-create and simulated hardware. Set the hardware and scanner client URLs back to the owned register instance and pos.sync.store-url to the owned store node. No physical hardware, production build or external SMTP is used.
+
+1. Sign into imedge with its seeded admin. Set print.conditional-enabled=true and print.forced-documents=RETOUR;AVOIR;ACOMPTE before starting the register. Its initial SETTINGS pull applies both values.
+2. Sign into impos with the seeded manager, override simulated hardware, close the drawer and open the session. Make the initial cash sale. The document-choice POST must be submitted after the drawer is closed: an initial attempt before closure correctly returned drawer-error; a later correctly ordered NONE submission is verified separately.
+3. Clear the simulated printer. Recall sale 1, select a manual 1.00 return and refund to a voucher. The output contains both AVOIR and TICKET DE RETOUR. Clear, leave the return, register an article and create an order with a 0.50 deposit. The ACOMPTE paper appears. Three customer copies are available.
+4. In imedge keep conditional printing enabled and clear the forced list. After the normal fingerprint-cache renewal, trigger /supervisor/health/feeds/replay as the manager. A new SETTINGS apply is recorded.
+5. Clear the printer, make another 1.00 voucher return on sale 1, then another order/deposit. The printer content remains exactly empty after each operation. Customer history now contains six copies, including the suppressed-paper return, credit and deposit. An e-mail request for the newest is journalled with the explicit no-relay outcome, without sending externally.
+6. In imedge disable conditional printing while leaving the forced list empty. After cache renewal and a manager pull, make a further 0.50 voucher return and a new 0.50 order deposit. The return/credit and deposit papers reappear, proving legacy behavior is restored.
+7. Inspect the customer-copy screen and the actual archived return preview. Stop both owned demo processes. No listeners remain on their ports.
+
+Only L477/O477 and the corresponding row height change in the questionnaire; every other cell and archive component is verified preserved. The PDF refreshes summary pages 1–2 and appends page 23; prior proof pages 3–22 remain unchanged. No new physical qualification is claimed.
+
+P1: 388/477 full (81.3%), 14/477 partial (2.9%), 75 not covered. Full or partial: 402/477 (84.3%). Ligne de caisses: 509 full, 45 partial, 176 not covered; weighted coverage 72.8%. Campaign: 95 promotions, comprising 88 CODE and 7 RELECTURE.
+
+Observation recorded during this lot: logo directives were visible as raw text in some customer previews/e-mail copies. This is resolved by the logo-rendering correction documented below.
+
+## HD_43 — Logos in electronic previews and e-mail (22 October 2026)
+
+This resolves the logo observation above without promoting another requirement. The gain is a visible logo instead of the IMAGE instruction and its packed raster in customer previews and e-mail. Scope is the logo rendering of existing frozen customer copies and the existing sale-mail path; paper content and stored raw copies are unchanged.
+
+### Frozen-source rendering and fonts
+
+CustomerReceiptRendering recognizes standalone IMAGE lines, interprets width/height and MSB-first packed rows, and produces PNGs in their original document positions. It never consults the current store image when rendering an older copy. All surrounding text is escaped before HTML emission; the customer document template only receives the renderer's trusted output. Invalid framing, base64, dimensions, packed lengths, excessive allocation or PNG encoding failure omit the logo while retaining readable text.
+
+Existing fonts are retained: the interface uses the theme's UI family, and the receipt uses its existing Courier New / Courier / monospace document family. No font file, external font service or download is introduced. Text and logo are aligned in the preview and the electronic copy.
+
+The existing BODY, ATTACHMENT and BOTH settings remain. A valid logo makes the body multipart/alternative: clean text plus HTML with related CID-linked PNG parts. Repeated identical logos get distinct local Content-IDs. A logo-bearing attachment is autonomous HTML with embedded PNG data; no external image fetch is needed. Without a logo, the old plain body and TXT attachment remain. Both catalogs describe this; there are no new settings or message keys. Other printer directives are outside this logo correction.
+
+### Tests and runtime evidence
+
+Complete offline suites: impos 6,926 Java + 105 JavaScript; imedge 4,154 Java + 11 JavaScript. No failures, errors or skipped Java tests. JaCoCo: impos 25,691/25,691 lines and 12,937/12,937 branches; imedge 20,071/20,071 lines and 9,680/9,680 branches. Every missed counter is zero. External instrumented JavaScript remains at 100%; embedded scripts are not all instrumented.
+
+Tests verify exact black/white PNG pixels and dimensions, non-byte-aligned widths, multiple repeated logos and image positions, plain/empty text, malformed and excessive rasters, encoder errors, HTML escaping, the real Qute preview and the existing font family. All three mail formats are checked with captured MIME messages, including alternative text, CID references, inline PNG bytes, autonomous HTML attachments and clean-text fallback. Existing assertions and paper references are preserved.
+
+Run dev construction-profile imedge/impos builds on owned loopback ports with disposable H2 memory/drop-and-create and simulated hardware. Use a loopback-only SMTP collector. In the BackOffice choose BOTH and distribute it through SETTINGS. Wait for the initial SETTINGS apply before the recipe: the first early MIME check had assumed BOTH while the register was still legitimately using its BODY default; the recipe now gates on the completed apply rather than treating a pull race as a product defect.
+
+Create an order/deposit and open its actual customer preview. The logo is visible, with no IMAGE instruction or raw raster shown as text. Send that copy through /customer-documents. Make a separate cash sale and send it through the existing /ticket-email path. Inspect both messages at the local collector: clean text/HTML, valid CID-linked PNGs and autonomous HTML attachments. The deposit PNG bytes match the actual preview data URI and the image embedded in its attachment. Open the received HTML attachment in the browser and inspect it. No external destination, remote asset, font service, physical hardware or production build is used. Stop all owned demo processes afterwards.
+
+Only O464 changes in the questionnaire; no rating changes. Other cells, row attributes and archive components are verified preserved. PDF summary pages are refreshed and page 24 records the correction; previous proof pages 3–23 remain unchanged.
+
+P1 unchanged: 388/477 full (81.3%), 14/477 partial (2.9%), 75 not covered. Full or partial: 402/477 (84.3%). Ligne de caisses: 509 full, 45 partial, 176 not covered; weighted coverage 72.8%. No additional promotion: 95 campaign promotions, comprising 88 CODE and 7 RELECTURE.
+
+
+## HD_43 — LC-10-01-07 : assiette titres-restaurant sur écran client
+
+Gain : le client connaît le montant des articles éligibles avant de choisir son règlement.
+
+Préconditions : construction dev, H2 mémoire jetable, matériel simulé. Ouvrir une session et l’écran `/customer`. Déclarer un article éligible via `PRODUCTS.ATTRIBUTES` (`MEAL_VOUCHER_ELIGIBLE=true`) et conserver un autre article non éligible. Attendre l’application du référentiel avant les scans.
+
+1. Scanner l’article éligible : « Articles éligibles aux titres-restaurant » apparaît avec son montant. Scanner l’autre article : le total du ticket augmente, l’assiette reste identique.
+2. Scanner à nouveau le premier article après le second : son ancienne ligne peut être fusionnée. L’assiette double sans inclure l’article non éligible. Vérifier également une saisie manuelle, un GS1, une étiquette pesée et une résolution externe d’article.
+3. Appliquer une remise de ligne, puis une remise ticket : l’assiette suit les montants valorisés et la ventilation de la remise. Annuler la ligne éligible : l’assiette revient à zéro. Ajouter à nouveau un article éligible : elle est rétablie.
+4. Passer au paiement puis enregistrer un règlement partiel : l’assiette reste visible et ne diminue pas du règlement. Il s’agit du total des articles éligibles, distinct du plafond de règlement et du reste à payer.
+5. Avec une réponse imvaluation exploitable, son assiette est prioritaire. Sans réponse moteur ou sans assiette dans la réponse, utiliser les lignes locales. Une assiette moteur négative est présentée à zéro. Vérifier les arrondis au centime et les libellés FR/NL/PT, y compris en affichage bilingue.
+6. Vérifier la lisibilité avec les polices existantes, le total et le reste à payer, y compris sur 800 × 600. Les articles peuvent défiler sans faire disparaître l’assiette. Une transaction terminée ou une caisse vide reprend son écran habituel.
+
+Recette exécutée le 22/10/2026 avec imedge et impos réels, imvaluation indisponible (repli local) : lait 2,76 €, autre article 0,96 €, second lait fusionné = assiette 5,52 €, remise ticket de 10 % = 4,97 €, annulation = 0,00 €. Après nouvel ajout, assiette 2,49 €, conservée pendant un paiement espèces partiel de 1,00 € (total 3,35 €, reste 2,35 €). Écran réel inspecté au paiement, également en 800 × 600. Priorité et cas limites moteur, remises et annulation : tests unitaires ; GS1, étiquettes et résolution externe : tests des handlers. Aucun essai moteur réel ni matériel physique pour ce lot.
+
+Validation : impos 6 930 tests Java + 106 JavaScript ; imedge 4 154 Java + 11 JavaScript, sans échec. JaCoCo : impos 25 708 lignes et 12 945 branches, imedge 20 071 lignes et 9 680 branches, tous les compteurs manqués à zéro. JavaScript externe instrumenté à 100 %. Les attentes de taille JSON intègrent le champ ajouté ; les doubles de ticket scanner simulent l’enregistrement attendu.
+
+Cotation : LC-10-01-07 promue par CODE de non couverte à intégralement couverte. P1 : 389/477 intégrales (81,6 %), 14 partielles (2,9 %), soit 403/477 intégrales ou partielles (84,5 %). Campagne : 96 promotions, dont 89 CODE et 7 RELECTURE.
+
+
+## HD_43 — LC-02-03-11 : messages article bloquants
+
+Gain : une consigne obligatoire refuse l’enregistrement de l’article et doit être lue avant de poursuivre la vente.
+
+Préconditions : construction dev, H2 mémoire jetable, matériel simulé. Sur deux fiches dans `/admin/articles/edit`, renseigner le message article ; cocher `INFO_MESSAGE_BLOCKING` seulement pour la première. Attendre la distribution des produits à la caisse. Les attributs texte et décimaux existants doivent être conservés lors de la sauvegarde de cette case.
+
+1. Saisir l’article informatif : il est enregistré et son message apparaît sans empêcher la poursuite de la vente. Un message vide, blanc ou sans mode bloquant ne bloque pas la caisse.
+2. Scanner l’article bloquant : vérifier l’ouverture automatique de la page « MESSAGE ARTICLE BLOQUANT », le texte exact et la mention que l’article n’a pas été enregistré. Aucun changement de quantité, ligne, total ou règlement ne doit en résulter.
+3. Pendant l’attente, scanner un autre article : réponse HTTP 409, aucun ajout. Les accès directs au paiement, à la saisie et aux remises reviennent au message. Les états du matériel, l’affichage client et le verrouillage restent disponibles. La suppression des messages informatifs d’îlot ne neutralise pas un refus bloquant.
+4. Cliquer « J’AI LU LE MESSAGE » : retour à la vente, ticket inchangé. L’article refusé n’est ni ajouté ni rejoué. Un nouvel essai de saisie du même article doit produire un nouvel acquittement ; le formulaire précédent ne peut pas le valider.
+5. Répéter par EAN saisi, code interne, PLU, groupe d’articles, entrée guidée, GS1, étiquette pesée et résolution externe. Vérifier aussi les articles des commandes rappelées et des tickets comptoir : le contrôle des messages précède le chargement de leurs lignes, sans chargement partiel.
+6. Modifier seulement le texte par le flux `PRODUCTS.INFO_MESSAGE`, sans changer l’identité de l’article : le nouveau texte doit être appliqué. Vérifier également son effacement explicite et la conservation du texte si la colonne est absente. Le mode transite dans `ATTRIBUTES` et les snapshots JSON.
+7. Vérifier le texte échappé, les libellés FR/NL/PT, les polices existantes et la lisibilité en 800 × 600. Les validations périmées ou absentes ne doivent pas acquitter un autre message.
+
+Recette exécutée le 22/10/2026 sur imedge et impos réels, bases jetables et simulateur : deux fiches configurées puis distribuées par le snapshot. La baguette avec message informatif est enregistrée (0,96 €). Le lait avec message bloquant est refusé : le ticket reste à 0,96 €. Le navigateur passe automatiquement sur la consigne. Scan suivant refusé, paiement/saisie/remise directs bloqués, validation périmée sans effet, puis acquittement réel au navigateur sans ajout. Un second scan du lait nécessite un nouvel identifiant d’acquittement. Rendu inspecté en résolution normale et 800 × 600. Autres voies d’admission et flux CSV vérifiés par tests unitaires. Aucun essai matériel physique ni échange imvaluation réussi pour ce lot.
+
+Validation : impos 6 948 tests Java + 106 JavaScript ; imedge 4 155 Java + 11 JavaScript, sans échec, erreur ou test Java ignoré. JaCoCo : impos 25 768 lignes et 13 007 branches, imedge 20 074 lignes et 9 686 branches ; tous les compteurs manqués sont à zéro. Le JavaScript externe instrumenté reste à 100 %. Les attentes de taille des catalogues intègrent le nouvel attribut et vérifient sa valeur par défaut ; aucune assertion n’est retirée. La sauvegarde BackOffice est corrigée pour préserver les attributs non booléens, testés avec un numéro de lot et une éco-taxe.
+
+Cotation : LC-02-03-11 promue par CODE de non couverte à intégralement couverte. Le statut source « Supprimée » en K70 est conservé ; seuls L70, O70 et la hauteur de cette ligne changent. P1 : 390/477 intégrales (81,8 %), 14 partielles (2,9 %), soit 404/477 intégrales ou partielles (84,7 %). Campagne : 97 promotions, dont 90 CODE et 7 RELECTURE.
+
+
+## HD_43 — LC-02-03-04 : article lié automatiquement
+
+Gain : les consignes suivent les bouteilles lors des ajouts, corrections et annulations, sans correction manuelle du ticket.
+
+Préconditions : construction dev, H2 mémoire jetable et matériel simulé. Sur la fiche article BackOffice de la bouteille, saisir l’EAN de la consigne dans `LINKED_ARTICLE_EAN`. Attendre la distribution du référentiel à la caisse. Le champ vide désactive l’association.
+
+1. Scanner une bouteille : une bouteille et une consigne sont enregistrées. Répéter deux fois : trois bouteilles et trois consignes. Modifier le nombre de bouteilles : les consignes suivent ; la valorisation porte sur le ticket complet.
+2. Tenter de changer, décrémenter ou annuler seulement la consigne automatique : refus demandant d’agir sur l’article principal. Une consigne saisie séparément reste une ligne indépendante, sans fusion avec celle de la bouteille.
+3. Mettre le ticket en attente puis le reprendre : retrouver les mêmes liens et quantités. Modifier à nouveau le nombre de bouteilles : la consigne existante est ajustée, sans doublon. Vérifier aussi la récupération du brouillon après redémarrage et les champs échangés avec le magasin.
+4. Annuler la bouteille par le parcours autorisé : sa consigne et les éventuels descendants sont retirés avec le même opérateur et motif dans les témoins du journal. L’article de même EAN saisi indépendamment reste présent.
+5. En retour, la consigne porte le même signe et le même nombre que la bouteille. Le mode « à enlever » est conservé. Les associations en chaîne restent séparées pour chaque principal.
+6. Refuser un EAN lié absent/inactif ou une boucle au BackOffice avant toute modification de fiche. Une boucle issue d’un autre import est également refusée en caisse. Si la consigne ne peut pas être admise, aucune nouvelle bouteille seule n’est conservée : retirer l’ajout ou restaurer la dernière quantité acceptée. Les demandes de saisie différée ne doivent pas créer de consigne orpheline.
+7. Vérifier les libellés FR/NL/PT et les polices existantes. Les parcours EAN, GS1, pesée, saisie guidée/manuelle, résolution externe et rappels capturent l’association avant la valorisation.
+
+Recette exécutée le 22/10/2026 sur imedge et impos réels : association temporaire entre lait et baguette du jeu de démonstration. Réglage sauvegardé au BackOffice et distribué par le référentiel ; association inverse en boucle refusée. Scan : 1/1 ; répétition : 2/2 ; correction : 3/3 ; correction indépendante refusée. Ajout séparé de la baguette : ligne indépendante. Mise en attente/reprise, correction à 2/2 puis annulation du lait : les deux lignes liées disparaissent et la baguette indépendante reste seule. Répétition contrôlée également au navigateur jusqu’à 3/3. Autres admissions, retours, refus/rollback, témoins et synchronisation vérifiés par tests unitaires. Imvaluation indisponible : valorisation locale de secours. Aucun essai matériel physique.
+
+Validation : impos 6 961 tests Java + 106 JavaScript ; imedge 4 157 Java + 11 JavaScript, sans échec, erreur ou test Java ignoré. JaCoCo : impos 25 893 lignes et 13 089 branches ; imedge 20 097 lignes et 9 698 branches ; tous les compteurs manqués à zéro. JavaScript instrumenté à 100 %. Les anciennes attentes de type du catalogue omettaient le nouvel attribut texte ; les mocks statiques de balance masquaient les valeurs par défaut réelles. Ces fixtures sont corrigées sans retrait d’assertion. Le nouveau contrôle ne recalcule pas les paniers sans association.
+
+Cotation : LC-02-03-04 promue par CODE de non couverte à intégralement couverte. Seuls L63, O63 et la hauteur de la ligne sont modifiés ; les composants du classeur sont conservés. PDF : pages 1–2 actualisées, page 27 ajoutée, pages 3–26 préservées. P1 : 391/477 intégrales (82,0 %), 14 partielles (2,9 %), soit 405/477 intégrales ou partielles (84,9 %). Campagne : 98 promotions, dont 91 CODE et 7 RELECTURE.
+
+
+## HD_43 — LC-02-07-18 : tri temporaire des articles
+
+Gain : retrouver plus vite un article dans son groupe par libellé ou EAN, sans changer le réglage du magasin.
+
+Préconditions : construction dev, H2 mémoire jetable et matériel simulé. Configurer un ordre BackOffice reconnaissable via `touch.article-order` et un nombre d’articles par page assez petit pour avoir plusieurs pages. Distribuer les paramètres et produits à la caisse. Ouvrir la saisie directe puis un groupe contenant plusieurs articles.
+
+1. Vérifier que l’ordre BackOffice est initialement sélectionné. La racine des groupes ne propose pas de tri d’articles. Les sous-groupes, groupes permanents et retours conservent leur navigation.
+2. Choisir « Libellé A à Z », « Libellé Z à A », « Code EAN croissant » puis « Code EAN décroissant », en validant avec TRIER. Chaque nouveau choix revient à la première page. En tri par code, les EAN sont lisibles sur les touches avec le libellé et le prix.
+3. Parcourir toutes les pages : vérifier l’ordre global, sans doublon ni omission entre pages. Les liens précédent/suivant conservent le tri. L’ordre est appliqué dans la requête avant pagination ; le catalogue entier n’est pas chargé pour trier seulement la page visible.
+4. Choisir « Ordre BackOffice » : les priorités du magasin reviennent immédiatement. Quitter le groupe, puis y revenir par la navigation normale : l’ordre BackOffice est à nouveau utilisé. Vérifier aussi après verrouillage/déverrouillage puis fermeture/reconnexion de l’opérateur.
+5. Un choix de tri inconnu revient au défaut. Aucune option libre ne doit être interprétée comme un fragment SQL. Aucun paramètre ni état durable/session n’est écrit : seule la requête de consultation et ses liens de pagination portent le tri.
+6. Vérifier les libellés FR/NL/PT, les polices existantes et le rendu normal puis 800 × 600 : choix de tri, grille, prix, EAN, pagination et pavé numérique complet accessibles.
+
+Recette exécutée le 22/10/2026 sur imedge et impos réels, profil dev et bases jetables. Réglage temporaire BackOffice : lait puis œufs en tête, quatre articles par page. Groupe Épicerie sur six pages : les quatre tris sont parcourus entièrement, sans doublon ; les listes par nom et EAN sont comparées à leur ordre attendu. Les priorités initiales reviennent après sortie/réentrée, verrouillage et fermeture/reconnexion réelle. Au navigateur : sélection tactile du tri EAN décroissant, validation, page suivante avec tri conservé, retour puis nouvelle entrée avec ordre BackOffice. Rendus normal et 800 × 600 inspectés ; toutes les lignes du pavé restent visibles. Aucun matériel physique. La consultation de référentiel ne dépend pas d’imvaluation.
+
+Validation : impos 6 966 tests Java + 106 JavaScript ; imedge 4 157 Java + 11 JavaScript, sans échec, erreur ou test Java ignoré. JaCoCo : impos 25 912 lignes et 13 102 branches ; imedge 20 097 lignes et 9 698 branches ; tous les compteurs manqués à zéro. JavaScript instrumenté à 100 %. Les tests couvrent les cinq modes et choix absents/inconnus, les requêtes avant pagination, le rendu des sélections et des EAN, et la restauration du défaut. Les fixtures existantes reçoivent le nouveau mode explicite ; aucune assertion n’est retirée.
+
+Cotation : LC-02-07-18 promue par CODE de non couverte à intégralement couverte. K88 (« Ajoutée ») est conservé ; seuls L88, O88 et la hauteur de ligne changent dans le classeur, dont les composants sont préservés. PDF : pages 1–2 actualisées, page 28 ajoutée, pages 3–27 préservées. P1 : 392/477 intégrales (82,2 %), 14 partielles (2,9 %), soit 406/477 intégrales ou partielles (85,1 %). Campagne : 99 promotions, dont 92 CODE et 7 RELECTURE.
+
+
+## HD_43 — LC-02-07-08 : EAN sur les touches articles
+
+Gain : vérifier le code d’un article sur sa touche sans changer l’ordre de consultation.
+
+Préconditions : construction dev, H2 mémoire jetable et matériel simulé. Le paramètre `touch.show-ean` apparaît dans TOUCHES CAISSE et dans les clés administrables par échelon. Il est indépendant de `display.show-ean` (autres écrans et ticket), désactivé par défaut, et hérité aux niveaux pays, enseigne, magasin, îlot et caisse. Ouvrir un groupe de saisie directe contenant plusieurs articles et pages.
+
+1. Sans valeur configurée, vérifier que les EAN ne sont pas affichés. Le masquage vaut dans les cinq modes : ordre BackOffice, libellé croissant/décroissant et EAN croissant/décroissant.
+2. Activer le paramètre au BackOffice. Attendre la publication du référentiel puis son application en caisse : les empreintes sont mises en cache pendant 60 secondes, auxquelles s’ajoute le délai de tirage configuré. Aucun redémarrage n’est nécessaire.
+3. Dans chaque mode et sur plusieurs pages, vérifier le code exact sous le libellé, avec ses zéros initiaux. L’affichage ne change ni le libellé, ni le prix, ni l’ordre des touches, ni la sélection d’un article. Les codes absents ou vides ne produisent pas de zone vide. Les groupes et retours ne reçoivent pas de code article.
+4. Désactiver le réglage puis attendre sa distribution : tous les modes masquent à nouveau les EAN, y compris les tris par code. Réactiver sans redémarrage. Les priorités d’échelon restent celles du mécanisme existant, avec la caisse plus précise que l’îlot, le magasin, l’enseigne et le pays.
+5. Vérifier le rendu normal puis 800 × 600 avec les polices existantes : codes, libellés, prix, pagination et pavé numérique complet accessibles. Les touches restent sélectionnables.
+
+Recette du 22/10/2026 sur imedge et impos réels en dev, bases jetables et matériel simulé : valeur par défaut masquée puis activation, désactivation et réactivation depuis la page BackOffice. Contrôle des cinq modes sur deux pages. Les codes affichés sont comparés aux EAN des touches ; les tuples code/libellé/prix et leur ordre restent identiques avant et après bascule. Le réglage est présent dans les pages de paramètres et d’échelons. Vérification au navigateur de l’ordre BackOffice puis du tri par libellé ; rendus normal et 800 × 600 inspectés. Délai normal des empreintes respecté, tirage accéléré à deux secondes seulement pour la recette. Aucun essai physique ; ce parcours ne dépend pas d’imvaluation.
+
+Validation : impos 6 969 tests Java + 106 JavaScript ; imedge 4 159 Java + 11 JavaScript, sans échec, erreur ou test Java ignoré. JaCoCo : impos 25 915 lignes et 13 102 branches ; imedge 20 098 lignes et 9 698 branches, tous les compteurs manqués à zéro. JavaScript instrumenté à 100 %. Tests du défaut et des deux valeurs, de l’héritage aux cinq niveaux, du rendu dans chaque tri et des codes absents/vides/à zéro initial. Les fixtures des réglages invalident le cache après modification des données, comme l’application réelle ; les attentes de rendu suivent le nouveau choix BackOffice.
+
+Cotation : seule LC-02-07-08 est promue par CODE de non couverte à intégralement couverte. Seuls L93, O93 et la hauteur de ligne changent dans le classeur ; les autres cellules et composants sont conservés. PDF : pages 1–2 actualisées, page 29 ajoutée, pages 3–28 préservées. P1 : 393/477 intégrales (82,4 %), 14 partielles (2,9 %), soit 407/477 intégrales ou partielles (85,3 %). Campagne : 100 promotions, dont 93 CODE et 7 RELECTURE.
+
+
+## HD_43 — LC-02-12-05 : annulation depuis un groupe d’articles
+
+Gain : retirer un article en retrouvant sa touche habituelle, sans nouveau scan ni recherche de ligne dans le ticket.
+
+Préconditions : construction dev, H2 mémoire jetable et matériel simulé. Ouvrir une session caissier, enregistrer plusieurs articles dont une ligne unitaire multiple. Prévoir un compte superviseur distinct. Pour vérifier la règle utilisateur du dernier article vendu, distribuer une justification active pour la fonction `CANCEL_LINE`. Une bouteille et sa consigne peuvent être liées via `LINKED_ARTICLE_EAN`.
+
+1. Appuyer sur ANNULER PAR GROUPE : le titre annonce ANNULER UN ARTICLE. Naviguer dans les groupes, les pages et les tris : le contexte d’annulation est conservé. Aucun article inconnu ni saisie de quantité n’est proposé. Retourner à la vente : aucun mode persistant d’annulation n’est laissé armé.
+2. Sélectionner un article absent du ticket : refus, sans ajout ni aval. Sélectionner un article présent : aucune modification avant autorisation superviseur. La quantité présaisie ne doit pas devenir une quantité de vente ni élargir ce retrait d’une unité.
+3. Présenter le code d’un simple caissier : autorisation refusée, ticket intact. Abandonner la demande : ticket intact. Présenter le code valide d’un superviseur : retrait d’une seule unité de la ligne unitaire multiple. Aucun motif ordinaire n’est demandé, même si une liste de motifs d’annulation de ligne est administrée.
+4. La cible de l’aval est l’UID de la ligne désignée. Une cible disparue ne doit jamais être remplacée par une autre occurrence du même EAN. Les lignes pesées, à prix embarqué, monétaires et négatives gardent leur traitement d’objet entier.
+5. Pour une bouteille liée, la consigne suit la nouvelle quantité et disparaît si la bouteille est retirée. Une consigne automatique seule est protégée. Si le même EAN a aussi été vendu indépendamment, la sélection privilégie cette vente indépendante, qui reste annulable.
+6. Retirer le dernier article vendu : conserver la règle utilisateur précédemment décidée, avec motif obligatoire et aval frais. Sans liste de motifs, refuser cette annulation ; avec une liste, proposer les motifs avant l’aval. Un panier devenu unique pendant l’attente ne peut pas contourner cette protection avec un aval ancien.
+7. Vérifier les libellés FR/NL/PT et les polices existantes. Inspecter le parcours normal et 800 × 600 : commande de tri, touches, consigne d’utilisation, retour et écran de vente avec son pavé complet accessibles.
+
+Recette exécutée le 22/10/2026 sur imedge et impos réels : Jean Dupont (CASHIER) et Marie Curie (MANAGER) distincts. Deux laits, deux articles liés et un café sont au ticket. La sélection attend l’aval ; le code du caissier est refusé, le ticket reste intact. L’aval manager retire un lait et un article lié. Abandon et sélection d’un article absent sans effet ; consigne automatique protégée. Ajout séparé du même EAN puis annulation : seule la ligne indépendante disparaît. Nouvelle sélection de la bouteille : sa famille disparaît après aval. Le café restant demande le motif ERROR puis un nouvel aval avant suppression. Le parcours tactile est également exécuté au navigateur : ANNULER PAR GROUPE, groupe LAIT DEMI-ECREME, sélection, identification manager et PIN, confirmation d’une unité retirée ; le total passe de 11,64 € à 7,92 €. Rendus normal et 800 × 600 inspectés, y compris le pavé de vente complet. Imvaluation indisponible : valorisation locale de secours. Aucun matériel physique.
+
+Validation : impos 6 979 tests Java + 108 JavaScript ; imedge 4 159 Java + 11 JavaScript, sans échec, erreur ou test Java ignoré. JaCoCo : impos 25 960 lignes et 13 144 branches ; imedge 20 098 lignes et 9 698 branches ; tous les compteurs manqués à zéro. JavaScript externe instrumenté à 100 %. Les nouveaux tests couvrent sélection/cible figée, refus et aval, protection du dernier article, types physiques, vente indépendante d’un EAN lié, contexte de navigation, rendu et sélection JavaScript sans admission de vente. Les anciennes fixtures de vue reçoivent explicitement le contexte normal de consultation.
+
+Cotation : seule LC-02-12-05 est promue par CODE de non couverte à intégralement couverte. Le commentaire précise l’exception du dernier article vendu, qui respecte la décision utilisateur antérieure. Seuls L125, O125 et la hauteur de ligne changent dans le classeur ; autres cellules et composants conservés. PDF : pages 1–2 actualisées, page 30 ajoutée, pages 3–29 préservées. P1 : 394/477 intégrales (82,6 %), 14 partielles (2,9 %), soit 408/477 intégrales ou partielles (85,5 %). Campagne : 101 promotions, dont 94 CODE et 7 RELECTURE.
+
+
+## HD_43 — LC-02-14-01 / -17 / -18 : INFO ARTICLE, quantité et poids
+
+Gain : annoncer le prix exact d’une quantité, d’une étiquette prépesée ou d’un article posé sur la balance, sans modifier le ticket.
+
+Préconditions : construction dev, H2 mémoire jetable et matériel simulé. imedge distribue les articles, prix, PLU et plages de codes-barres existants ; aucun nouveau paramètre. Les polices et le thème existants sont conservés.
+
+1. Caisse fermée, ouvrir INFO ARTICLE : consulter le lait et saisir 1,125 avec le pavé tactile. Le code article est conservé, le prix à l’unité vaut 2,76 et le total 3,11. Aucune vente n’est proposée caisse fermée. Les quantités nulles, négatives ou mal formées sont signalées sans total fictif.
+2. Vérifier qu’un seul pavé apparaît. Le champ actif est encadré en bleu et nommé au-dessus du pavé. Passer du code à la quantité puis revenir : les deux valeurs ne se mélangent pas, les zéros initiaux du code restent conservés. Une virgule décimale et au moins trois chiffres après la virgule sont saisissables ; la première frappe remplace la valeur proposée.
+3. Caisse ouverte, créer un ticket avec un café puis consulter le lait à 1,125. Comparer les lignes et le total avant/après : aucune modification. Le scanner de la page ne doit alimenter que le jeton de consultation.
+4. Scanner l’étiquette PPV 2104020001080 : PLU 4020, prix/kg 1,08, montant imprimé 1,08 et poids déduit 1 kg. Scanner l’étiquette à poids embarqué 2304020008755 : poids net 0,875 kg et total 0,95, sans nouvelle tare. Une clé invalide ou une plage non article ne produit aucune consultation erronée. Les plages BackOffice, devises et préfixes existants sont utilisés.
+5. Préparer le simulateur à 0,875 kg puis rechercher le PLU 4020 : la balance est interrogée, le poids net 0,875 kg, le prix/kg 1,08 et le total 0,95 apparaissent. PESER À NOUVEAU relance une lecture. La tare article ou défaut est envoyée à la balance et ne doit pas être déduite deux fois. Les quantités et tares ponctuelles de vente ne sont ni lues ni consommées ; les poids invalides ne deviennent pas des montants.
+6. Quitter la consultation et vendre le PPV précédemment consulté : il doit être accepté, la consultation n’ayant pas consommé sa protection de double scan. Vérifier les messages FR/NL/PT, le rendu normal et 800 × 600, les champs lisibles et toutes les touches du pavé accessibles.
+
+Recette exécutée le 22/10/2026 sur imedge et impos réels en dev, bases jetables et balance simulée : consultation caisse fermée ; quantité 1,125 × 2,76 = 3,11 ; saisies invalides ; étiquettes PPV et poids embarqué ; pesée 0,875 kg × 1,08 = 0,95 ; capture scanner par le jeton INFO ARTICLE. Les lignes et le total du ticket restent identiques. Le PPV consulté est ensuite accepté en vente. Le premier rendu à deux pavés a été écarté après retour utilisateur : le rendu final utilise un seul pavé contextuel avec champ actif explicite, testé au navigateur et à 800 × 600. Aucun matériel physique ; ce calcul de prix de référence ne dépend pas d’imvaluation.
+
+Validation : impos 6 993 tests Java + 112 JavaScript ; imedge 4 159 Java + 11 JavaScript, sans échec, erreur ou test Java ignoré. JaCoCo : impos 26 019 lignes et 13 220 branches ; imedge 20 098 lignes et 9 698 branches ; tous les compteurs manqués à zéro. JavaScript externe instrumenté à 100 %. Tests du calcul décimal, de l’arrondi final, des refus, du prix absent ou nul, du net de balance, des deux types d’étiquette, des plages et devises, du routage de consultation et du pavé contextuel sans mélange des champs. Les fixtures de ressource existantes reçoivent le calculateur de consultation. Une erreur de gabarit Qute introduite pendant le lot a été corrigée dans le code ; aucune assertion n’a été affaiblie.
+
+Cotation : LC-02-14-01, LC-02-14-17 et LC-02-14-18 promues par CODE de non couvertes à intégralement couvertes. Seuls L148/O148, L164/O164 et L165/O165 et les hauteurs de ces lignes changent dans le classeur ; les autres cellules et composants sont préservés. PDF : pages 1–2 actualisées, page 31 ajoutée, pages 3–30 conservées. P1 : 397/477 intégrales (83,2 %), 14 partielles (2,9 %), soit 411/477 intégrales ou partielles (86,2 %). Campagne : 104 promotions, dont 97 CODE et 7 RELECTURE.
+
+
+## HD_43 — LC-10-01-09 / -11 : montants éligibles éco-chèques et carte achat sociale sur écran client
+
+Gain : avant de payer, le client voit combien il peut régler en éco-chèques et avec la carte achat sociale.
+
+Préconditions : construction dev, H2 mémoire jetable, matériel simulé. Dans PARAMÈTRES CAISSE > AFFICHEUR CLIENT, deux réglages désactivés par défaut : `customer.eco-voucher-eligible` (LC-10-01-09) et `customer.social-card-eligible` (LC-10-01-11). Ils figurent aussi dans les clés administrables par échelon : l’un se règle pour la Belgique, l’autre pour le Portugal. Sur les fiches articles, cocher `ECO_VOUCHER_ELIGIBLE` et/ou `SOCIAL_CARD_ELIGIBLE` ; garder un article sans éligibilité. Attendre la distribution des paramètres et produits à la caisse, puis ouvrir `/customer`.
+
+1. Réglages désactivés : aucune mention éco-chèque ni carte sociale, quel que soit le ticket. L’assiette titres-restaurant reste à sa place.
+2. Activer les deux réglages au BackOffice, sans redémarrage. Après distribution, ouvrir une vente : sous l’assiette titres-restaurant, « Articles éligibles aux éco-chèques » puis « Articles éligibles à la carte achat sociale », dans cet ordre, à 0,00 € tant qu’aucun article n’est éligible.
+3. Scanner un article éligible aux deux moyens : les deux montants prennent sa valeur. Scanner l’article non éligible : le total augmente, les montants restent identiques. Scanner à nouveau le premier article : sa ligne antérieure est fusionnée, les montants doublent, l’article non éligible ne devient pas éligible. Scanner un article éligible à la seule carte sociale : seul le second montant augmente.
+4. Vérifier les autres voies d’admission : saisie manuelle, groupe d’articles, GS1, étiquette pesée et code résolu par plage d’articles portent la même éligibilité.
+5. Appliquer une remise de ligne et une remise ticket : les montants suivent les lignes valorisées et la ventilation de la remise. Annuler une ligne éligible avec l’aval d’un superviseur : son montant disparaît. Une ligne négative n’est pas comptée.
+6. Passer au paiement et enregistrer un règlement partiel : les deux montants restent affichés, inchangés, à côté du reste à payer. Ce sont les totaux des articles éligibles, ni des plafonds de règlement ni des soldes. La fin de transaction affiche l’écran de remerciement habituel.
+7. Désactiver un seul réglage au BackOffice : après distribution, sa ligne disparaît, l’autre reste. Les deux désactivés : la zone n’occupe plus aucune place.
+8. Avec une réponse imvaluation exploitable, les montants suivent les lignes valorisées par le moteur ; impos n’applique aucune règle de promotion propre. Imvaluation ne calcule pas d’assiette éco-chèque ni carte sociale.
+9. Vérifier les libellés FR/NL/PT, y compris en affichage bilingue, les polices et le thème existants, et la lisibilité en 1280 × 800 puis 800 × 600 : total, reste à payer, assiette titres-restaurant et les deux montants visibles, sans défilement horizontal.
+
+Recette exécutée le 22/10/2026 sur imedge (18070) et impos (18080) réels, profil dev, bases H2 mémoire jetables et matériel simulé. Au navigateur, BackOffice : les deux réglages activés sur la page des paramètres, lait cochée éco-chèque et carte sociale, café carte sociale ; les deux clés sont présentes sur la page des échelons. Caisse : lait 2,76 / 2,76 ; baguette sans effet (total 3,72) ; second lait fusionné 5,52 / 5,52 ; café 5,52 / 9,72 (total 10,68). Écran client inspecté en 1280 × 800 et 800 × 600 : trois lignes d’assiette lisibles au-dessus du total, sans défilement horizontal. Paiement espèces partiel de 5,00 € : montants conservés, reste 5,68 € ; paiement terminé, rendu 4,32 €. Éco-chèques désactivés puis distribués : seule la carte sociale reste ; nouvelle vente lait + café + baguette = 6,96 €, puis 2,76 € après annulation du café avalisée par Marie Curie (MANAGER). Remises et répartition : tests unitaires ; voies EAN, GS1 et plage d’articles : tests des handlers ; saisie manuelle, groupe et pesée : chemins couverts par la suite existante, non rejoués en recette. Imvaluation indisponible : valorisation locale de secours. Aucun essai physique.
+
+Validation : impos 7 000 tests Java + 114 JavaScript ; imedge 4 160 Java + 11 JavaScript, sans échec, erreur ou test Java ignoré. JaCoCo : impos 26 082 lignes et 13 234 branches ; imedge 20 132 lignes et 9 698 branches ; tous les compteurs manqués sont à zéro. JavaScript externe instrumenté à 100 %. Les attentes de taille JSON intègrent le champ ajouté ; la table des paramètres BackOffice intègre les deux clés.
+
+Cotation : LC-10-01-09 et LC-10-01-11 promues par CODE de non couvertes à intégralement couvertes. Seuls L566, O566, L568, O568 et les hauteurs de ces deux lignes changent dans le classeur ; les autres cellules et composants sont conservés. PDF : pages 1–2 actualisées, page 32 ajoutée, pages 3–31 préservées. P1 : 399/477 intégrales (83,6 %), 14 partielles (2,9 %), soit 413/477 intégrales ou partielles (86,6 %). Ligne de caisses : 520 intégrales, 45 partielles, 165 non couvertes ; couverture pondérée 74,3 %. Campagne : 106 promotions, dont 99 CODE et 7 RELECTURE.
+
+
+## HD_43 — LC-10-01-04 / LC-03-04-13 / LC-14-02-07 : écran client, avantages, cagnotte et tare
+
+Gain : sur l’écran client, le client repère tout de suite les articles remisés, voit la cagnotte disponible de sa carte avant de payer et lit la tare déduite d’une pesée.
+
+Préconditions : construction dev, H2 mémoire jetable, matériel simulé, service fidélité joignable (`pos.fid.url`). Dans PARAMÈTRES CAISSE > FIDÉLITÉ, le réglage `fidelity.show-balance-customer` (LC-03-04-13) est désactivé par défaut et figure dans les clés administrables par échelon ; il est indépendant de `fidelity.show-holder-name-customer` (BO-10-03-03, nom du porteur). Une tare logicielle doit s’appliquer à un article pesé : tare de contenant, tare article ou `balance.default-tare`. Ouvrir une session et l’écran `/customer`.
+
+1. LC-10-01-04 : appliquer une remise ou un discount sur une ligne, ou obtenir une promotion du moteur. Sous l’article, chaque avantage apparaît comme une étiquette verte en gras, sur sa propre ligne, avec une barre verticale ; le montant de la ligne passe en vert. Une ligne sans avantage garde un montant blanc et aucune étiquette. Une remise ticket reste la ligne distincte « REMISE TICKET », sans étiquette sur les articles.
+2. Annuler l’avantage ou la ligne : au rafraîchissement, l’étiquette disparaît et le montant reprend sa couleur. Les libellés sont écrits comme du texte : un libellé contenant du HTML n’est jamais interprété.
+3. LC-14-02-07 : peser un article avec tare (balance simulée) : sous la décomposition « poids × prix/kg », « Tare déduite : 0,050 kg » apparaît. Une pesée sans tare, une tare à zéro et un article à l’unité n’affichent rien. Le poids affiché est le poids net déjà facturé ; aucune seconde déduction.
+4. LC-03-04-13 : réglage désactivé, rattacher une carte : aucun solde à l’écran client. Activer le réglage au BackOffice et attendre la distribution : « Cagnotte disponible : X € » apparaît dans l’en-tête, sans le nom du porteur si son réglage reste désactivé. Activer aussi le nom : les deux coexistent.
+5. Service fidélité muet ou solde non lu : rien n’est affiché, jamais un zéro inventé. Carte retirée ou vente terminée : la mention disparaît.
+6. Passer au paiement et enregistrer un règlement partiel : étiquettes, tare et cagnotte restent visibles avec le reste à payer.
+7. Désactiver la cagnotte au BackOffice : après distribution, la mention disparaît sans redémarrage.
+8. Vérifier les libellés FR/NL/PT, y compris en affichage bilingue, les polices et le thème existants (sombre et clair), et la lisibilité en 1280 × 800 puis 800 × 600, sans défilement horizontal.
+
+Recette exécutée le 23/10/2026 sur imedge (18070) et impos (18080) réels, profil dev, bases H2 mémoire jetables, matériel simulé ; service fidélité simulé par un bouchon local répondant cagnotte 12,35 € (ni imfid ni imvaluation lancés). BackOffice au navigateur : `fidelity.show-balance-customer` activé, `balance.default-tare` = 0,050 ; la clé figure sur la page des échelons. Caisse : carte 2990000000012 rattachée, « Cagnotte disponible : 12,35 € » sans nom ; deux laits (5,52 €) ; pommes pesées 0,800 kg brut → 0,750 kg net à 1,08 €/kg = 0,81 €, « Tare déduite : 0,050 kg » ; discount 10 % sur les laits avalisé par Marie Curie (MANAGER) : étiquette « Discount -10,00% » sous le lait, montant 4,97 € en vert, total 5,78 €. Paiement espèces partiel de 2,00 € : reste 3,78 €, étiquette, tare et cagnotte conservées. Cagnotte désactivée au BackOffice : mention retirée après distribution. Rendus 1280 × 800 et 800 × 600 inspectés, thème clair contrôlé. Promotions moteur : tests JavaScript, aucun échange imvaluation. Aucun essai physique.
+
+Validation : impos 7 003 tests Java + 117 JavaScript ; imedge 4 161 Java + 11 JavaScript, sans échec, erreur ou test Java ignoré. JaCoCo : impos 26 094 lignes et 13 242 branches ; imedge 20 135 lignes et 9 698 branches ; tous les compteurs manqués sont à zéro. JavaScript externe instrumenté à 100 %. Les attentes de taille JSON intègrent le champ ajouté ; la table des paramètres BackOffice intègre la nouvelle clé.
+
+Cotation : LC-10-01-04, LC-03-04-13 et LC-14-02-07 promues par CODE de non couvertes à intégralement couvertes. Le commentaire de LC-03-04-13 annonçant l’absence d’affichage était obsolète pour le nom (BO-10-03-03) ; la cagnotte est ajoutée par ce lot. Seuls L205, O205, L561, O561, L726, O726 et les hauteurs de ces trois lignes changent dans le classeur. PDF : pages 1–2 actualisées, page 33 ajoutée, pages 3–32 préservées. P1 : 402/477 intégrales (84,3 %), 14 partielles (2,9 %), soit 416/477 intégrales ou partielles (87,2 %). Ligne de caisses : 523 intégrales, 45 partielles, 162 non couvertes ; couverture pondérée 74,7 %. Campagne : 109 promotions, dont 102 CODE et 7 RELECTURE.
+
+
+## HD_43 — LC-12-01-01 / -02 et LC-01-05-08 : ouverture forcée du tiroir, aval depuis le BackOffice
+
+Gain : le tiroir ne s’ouvre plus hors vente sans motif ni aval, chaque ouverture se retrouve au journal du BackOffice, et le responsable autorise ou refuse une demande d’aval depuis son poste sans se déplacer en caisse.
+
+Préconditions : construction dev, H2 mémoire jetable, matériel simulé, caisse rattachée au nœud (`pos.sync.store-url`). Au BackOffice, écran des listes : créer une liste de nature Justifications servant la fonction `DRAWER_OPEN` (le code figure désormais dans l’aide de l’écran) avec deux motifs, puis attendre sa distribution. Ouvrir une session caissier ; prévoir un compte superviseur.
+
+1. LC-12-01-01 : menu TIROIR, ticket vide : la touche « OUVERTURE TIROIR » est offerte. Avec un article au ticket, une ligne annulée ou un paiement en cours, la touche disparaît ; un accès direct à `/drawer-open` ou `/action/drawer-open` est refusé avec « OUVERTURE TIROIR : HORS TRANSACTION UNIQUEMENT », tiroir fermé.
+2. LC-12-01-02 : la touche ouvre « OUVERTURE FORCÉE DU TIROIR » avec les motifs administrés. RETOUR revient à la vente sans rien ouvrir. Un code de motif inconnu est refusé (« MOTIF D’OUVERTURE INCONNU »), retour au choix. Sans liste administrée, l’écran n’apparaît pas : la demande d’aval suit directement.
+3. Après le motif, la modale d’autorisation s’ouvre ; le tiroir reste fermé. Le code d’un caissier est refusé. Le code d’un superviseur ouvre le tiroir, la vente reprend après fermeture physique. Un superviseur connecté en caisse ouvre sans modale, sous son propre badge.
+4. Chaque ouverture écrit un événement `DRAWER_FORCED_OPEN` portant le badge du caissier, le code et le libellé du motif (ou « Sans motif ») et l’auteur de l’aval. Dans imedge, Journal > fonctionnel, la case `DRAWER_FORCED_OPEN` filtre ces ouvertures.
+5. LC-01-05-08 : dès qu’une demande d’autorisation s’ouvre en caisse, quel que soit le geste, le tableau de bord du BackOffice affiche « POSxx demande un superviseur — AUTORISATION SUPERVISEUR (opérateur, heure) — geste », sans appel manuel du caissier. Le geste est nommé par son code ; une annulation de ligne apparaît sans l’identifiant technique de la ligne, une modification de prix par son type et sa valeur.
+6. Refuser depuis le BackOffice avec un motif : au relevé suivant des ordres, la modale se ferme en caisse, le motif saisi par le responsable s’affiche dans la zone de message, la fonction n’est pas exécutée. Un refus ne ferme pas une demande d’aval restée locale (caisse sans nœud).
+7. Autoriser depuis le BackOffice : la caisse affiche la notice d’autorisation et la modale présente « VALIDER (AUTORISÉ PAR LE BACK-OFFICE) » ; une touche exécute le geste, sans code. Les autres demandes encore ouvertes de la caisse passent « déjà traitée en caisse ».
+8. Aval donné en caisse par code : la demande passe « déjà traitée en caisse » au BackOffice. ANNULER dans la modale retire la demande du tableau de bord, sauf si la caisse a aussi un appel superviseur en cours.
+9. Vérifier les libellés FR/NL/PT, les polices et le thème existants, et la lisibilité en 800 × 600 : touche du menu TIROIR, écran des motifs, modale avec la touche de validation BackOffice.
+
+Recette exécutée le 23/10/2026 sur imedge (18070) et impos (18080) réels, profil dev, bases H2 mémoire jetables, matériel simulé, relevé des ordres accéléré à 3 s. Au BackOffice, liste « TIROIR » (fonction DRAWER_OPEN) avec ERR « Erreur de rendu monnaie » et CHG « Change pour un client », distribuée à la caisse. Navigateur en 800 × 600 : menu TIROIR, touche OUVERTURE TIROIR, écran des deux motifs, choix ERR, modale d’autorisation. Tableau de bord : « POS01 demande un superviseur — AUTORISATION SUPERVISEUR (Jean Dupont, 11:17) — DRAWER_FORCE_OPEN ». Refus « Pas d ouverture sans responsable » : modale fermée en caisse, motif affiché, tiroir fermé. Nouvelle demande autorisée depuis le BackOffice : touche verte de validation visible dans la modale, un appui ouvre le tiroir ; journal imedge filtré sur DRAWER_FORCED_OPEN : « POS01 12341234 … ERR - Erreur de rendu monnaie (aval Autorisé par Le Manager) ». Abandon d’une demande : retirée du tableau de bord. Motif CHG : code du caissier refusé, code de Marie Curie accepté, tiroir ouvert, demande « déjà traitée en caisse », événement « CHG - Change pour un client (aval mcurie) ». Lait au ticket : touche absente, accès direct refusé, tiroir fermé. Aucun essai physique.
+
+Validation : impos 7 020 tests Java + 117 JavaScript ; imedge 4 161 Java + 11 JavaScript, sans échec, erreur ou test Java ignoré. JaCoCo : impos 26 189 lignes et 13 292 branches ; imedge 20 136 lignes et 9 698 branches ; tous les compteurs manqués sont à zéro. JavaScript externe instrumenté à 100 %. Les tests de vocabulaire du journal intègrent le nouveau type dans les deux projets.
+
+Cotation : LC-12-01-01, LC-12-01-02 et LC-01-05-08 promues par CODE de non couvertes à intégralement couvertes. Seuls L39, O39, L620, O620, L621, O621 et les hauteurs de ces trois lignes changent dans le classeur. PDF : pages 1–2 actualisées, page 34 ajoutée, pages 3–33 préservées. P1 : 405/477 intégrales (84,9 %), 14 partielles (2,9 %), soit 419/477 intégrales ou partielles (87,8 %). Ligne de caisses : 526 intégrales, 45 partielles, 159 non couvertes ; couverture pondérée 75,1 %. Campagne : 112 promotions, dont 105 CODE et 7 RELECTURE.
+
+
+## HD_43 — LC-09-01-01 / LC-09-01-09 : visu caisse adaptable et clavier virtuel par pays
+
+Gain : la même caisse se déploie sur toutes les dalles du parc, tactiles comprises, sans écran réduit ni flou, et le clavier virtuel présente aux caissiers la disposition de leur pays.
+
+Préconditions : construction dev, H2 mémoire jetable, matériel simulé, caisse rattachée au nœud (`pos.sync.store-url`). Dans PARAMÈTRES CAISSE > LANGUE, le réglage `keyboard.layout` (LC-09-01-09) vaut AZERTY par défaut ; il est proposé en liste fermée AZERTY, QWERTY, QWERTZ, ABCD et figure dans les clés administrables par échelon. Ouvrir une session caissier ; prévoir un ticket clôturé pour l’écran ticket par e-mail.
+
+1. LC-09-01-01 : afficher la vente, le paiement, la recherche, fruits et légumes, la saisie directe, le rappel, le thème, le solde de bon, le badge, la facture, la réimpression, le retour, le rapport X et le ticket par e-mail en 800 × 600, 1024 × 768, 1280 × 1024, 1360 × 768 et 1920 × 1080 (ratios 4/3, 5/4, 16/9). Chaque écran occupe toute la dalle, sans défilement horizontal ni touche hors écran ; les textes et les touches grandissent avec la dalle sans être étirés ; les images d’articles gardent leurs proportions.
+2. Rejouer les mêmes écrans dans un navigateur tactile (ou en émulation mobile) : la page est mise en page à la largeur réelle de la dalle, sans réduction d’ensemble ni flou. Le seul défilement admis est celui, prévu, de la zone clavier de l’écran e-mail en 800 × 600.
+3. LC-09-01-09 : réglage par défaut, les claviers de l’identification, de la recherche, du rappel et de l’e-mail présentent AZERTY, à l’identique de l’existant.
+4. Passer le réglage à QWERTY au BackOffice, sans redémarrage. Après distribution : rangées QWERTYUIOP / ASDFGHJKL / ZXCVBNM ; la rangée de neuf lettres ne remonte pas la suivante. Sur la recherche, la dernière rangée garde l’espace (signe ␣) et EFFACER ; sur l’e-mail, « @._ » suivent ZXCVBNM et tous les symboles restent disponibles.
+5. Saisir au clavier virtuel « LAIT » sur la recherche : le lait est trouvé. Saisir « zoe@mail.fr » sur l’écran e-mail : l’adresse affichée est exacte, en minuscules.
+6. Passer à QWERTZ (Y et Z permutés), puis à ABCD (ordre alphabétique, ESPACE et EFFACER complets) : chaque disposition est distribuée et appliquée sur les mêmes écrans. Sur l’écran d’identification en ABCD, saisir « jdupont » au clavier virtuel.
+7. Revenir à AZERTY : rendu identique à l’existant. Une valeur inconnue écrite en base, ou non lue, affiche AZERTY.
+8. Vérifier la lisibilité en 800 × 600 et 1360 × 768, les polices et le thème existants ; libellés des touches inchangés.
+
+Recette exécutée le 23/10/2026 sur imedge (18070) et impos (18080) réels, profil dev, bases H2 mémoire jetables, matériel simulé. Navigateur Chromium : quatorze écrans × cinq définitions, en mode bureau et en émulation tactile, soit 140 mesures : largeur de mise en page égale à celle de la dalle, aucun défilement horizontal, aucune touche hors écran, à l’exception de EFFACER et C du clavier e-mail en 800 × 600, situées dans la zone clavier défilante prévue. En émulation tactile, sans la déclaration de largeur ajoutée, le thème, le solde de bon et la réimpression étaient mis en page sur 980 px puis réduits à 82 % ; avec elle, à 800 px sans réduction. BackOffice : liste fermée de quatre valeurs dans la section LANGUE, clé présente sur la page des échelons. QWERTY distribué : recherche et rappel 1234567890 / QWERTYUIOP / ASDFGHJKL / ZXCVBNM ␣ EFFACER ; e-mail ZXCVBNM@._ puis les symboles ; « lait » trouvé, « zoe@mail.fr » saisi. QWERTZ : YXCVBNM. ABCD : recherche, rappel et identification ABCDEFGHIJ / KLMNOPQRST / UVWXYZ, « jdupont » saisi. Retour à AZERTY : capture de la recherche identique au pixel près à celle d’avant le lot. Aucun essai sur dalle physique.
+
+Validation : impos 7 024 tests Java + 294 JavaScript ; imedge 4 163 Java + 11 JavaScript, sans échec, erreur ou test Java ignoré. JaCoCo : impos 26 197 lignes et 13 296 branches ; imedge 20 141 lignes et 9 700 branches ; tous les compteurs manqués sont à zéro. JavaScript externe instrumenté à 100 %. Les tests de gabarit Qute fournissent la disposition ; la table des paramètres BackOffice intègre la nouvelle clé.
+
+Cotation : LC-09-01-01 et LC-09-01-09 promues par CODE de non couvertes à intégralement couvertes. Seuls L535, O535, L548, O548 et les hauteurs de ces deux lignes changent dans le classeur. PDF : pages 1–2 actualisées, page 35 ajoutée, pages 3–34 préservées. P1 : 407/477 intégrales (85,3 %), 14 partielles (2,9 %), soit 421/477 intégrales ou partielles (88,3 %). Ligne de caisses : 528 intégrales, 45 partielles, 157 non couvertes ; couverture pondérée 75,4 %. Campagne : 114 promotions, dont 107 CODE et 7 RELECTURE.
+
+
+## HD_43 — LC-13-06-08 / LC-13-06-13 : langue choisie par le client, visu client et ticket
+
+Gain : le client choisit d’un geste, sur la visu client, la langue de l’écran et de son ticket, sans interrompre le caissier, qui garde l’interface dans sa propre langue.
+
+Préconditions : construction dev, H2 mémoire jetable, matériel simulé, caisse rattachée au nœud (`pos.sync.store-url`). Dans PARAMÈTRES CAISSE > LANGUE, le réglage `language.customer-choice` (LC-13-06-08/13) est désactivé par défaut et figure dans les clés administrables par échelon ; les langues proposées en caisse (`language.available`) valent fr;nl;pt. Ouvrir une session caissier et l’écran `/customer` (visu client tactile).
+
+1. Réglage désactivé : la visu client n’offre aucune touche de langue, quelle que soit la phase ; un appel direct à `/customer/language` est ignoré.
+2. Activer le réglage au BackOffice, sans redémarrage. Après distribution, caisse ouverte : une rangée « Français », « Nederlands », « Português » apparaît en bas de la visu client, la langue affichée marquée ; avec une seule langue proposée, aucune rangée. Caisse fermée : aucune rangée, et un choix forcé est ignoré.
+3. LC-13-06-08 : magasin bilingue (seconde langue renseignée), scanner deux articles : mentions bilingues. Toucher « Português » : la visu client se redessine aussitôt en portugais seul (titre, total, reste à payer, mentions d’assiette, moyens de paiement, remerciement). Les libellés d’articles ne changent pas. La visu caisse reste dans la langue de l’opérateur.
+4. Payer : l’écran de fin (« OBRIGADO! », « A devolver ») reste dans la langue choisie. NOUVELLE VENTE : la visu client revient d’elle-même à la langue du magasin, bilingue le cas échéant.
+5. LC-13-06-13 : nouvelle vente, choisir « Nederlands », payer et imprimer le ticket (choix de fin de transaction, puis touche IMPRIMER sur une autre vente) : le ticket est en néerlandais seul. Là où le ticket de sortie est administré, il sort dans la même langue ; en mode formation, le ticket de formation aussi.
+6. Réimprimer ce ticket après la vente : le duplicata suit la langue de la caisse (bilingue dans un magasin bilingue).
+7. Désactiver le réglage au BackOffice : après distribution, la rangée disparaît.
+8. Vérifier la lisibilité en 1280 × 800 et 800 × 600, les polices et le thème existants : rangée de touches sans défilement horizontal, aucune mention masquée.
+
+Recette exécutée le 23/10/2026 sur imedge (18070) et impos (18080) réels, profil dev, bases H2 mémoire jetables, matériel simulé. BackOffice au navigateur : `language.customer-choice` activé, seconde langue `nl` ; clé présente sur la page des échelons. Visu client en 1280 × 800 et 800 × 600 : lait + baguette (3,72 €), mentions bilingues FR/NL, touches Français (marquée), Nederlands, Português, sans défilement horizontal. « Português » touché : les deux visus client passent en `pt` (« Ecrã do cliente », « Artigos elegíveis para vales de refeição », « TOTAL »), visu caisse restée en français. Espèces 5,00 € : « OBRIGADO! », « DINHEIRO 3,72 € », « A devolver : 1,28 € ». Vente terminée : visu client revenue en `fr`. Seconde vente, « Nederlands » : ticket imprimé relu sur l’imprimante simulée, « Bon », « TOTAAL INCL. BTW 3,72 E », « BETALING », « CONTANT », « TERUGGEGEVEN 1,28 E », « DANK VOOR UW BEZOEK », sans français ; réimpression : « DUPLICATA N°1 » bilingue NL/FR. Réglage désactivé : aucune touche, appel forcé `tag=nl` → 204 sans effet. Réglage réactivé, caisse verrouillée : aucune touche, appel forcé `tag=pt` sans effet. Ticket de sortie et ticket de formation : tests unitaires. Aucun essai sur dalle physique.
+
+Validation : impos 7 039 tests Java + 300 JavaScript ; imedge 4 164 Java + 11 JavaScript, sans échec, erreur ou test Java ignoré. JaCoCo : impos 26 241 lignes et 13 318 branches ; imedge 20 144 lignes et 9 700 branches ; tous les compteurs manqués sont à zéro. JavaScript externe instrumenté à 100 %. Les attentes de taille du flux de la visu client intègrent les deux champs ajoutés ; la table des paramètres BackOffice intègre la nouvelle clé.
+
+Cotation : LC-13-06-08 et LC-13-06-13 promues par CODE de non couvertes à intégralement couvertes. Limite déclarée : les messages poussés à l’afficheur par un événement restent dans la langue de la caisse. Seuls L711, O711, L716, O716 et les hauteurs de ces deux lignes changent dans le classeur. PDF : pages 1–2 actualisées, page 36 ajoutée, pages 3–35 préservées. P1 : 409/477 intégrales (85,7 %), 14 partielles (2,9 %), soit 423/477 intégrales ou partielles (88,7 %). Ligne de caisses : 530 intégrales, 45 partielles, 155 non couvertes ; couverture pondérée 75,7 %. Campagne : 116 promotions, dont 109 CODE et 7 RELECTURE.
+
+
+## HD_43 — LC-08-06-01 / -04 / -05 : NIF portugais obligatoire, contrôlé et scanné
+
+Gain : aucune vente portugaise ne se règle sans NIF, un NIF mal construit est refusé avant d’atteindre un document fiscal, et le caissier scanne le NIF au lieu de le taper.
+
+Préconditions : construction dev, H2 mémoire jetable, matériel simulé (scanner par `/api/pos/scan`), caisse rattachée au nœud (`pos.sync.store-url`). Dans PARAMÈTRES CAISSE > CLIENT EN CAISSE, trois réglages : `customer.tax-id-required` (LC-08-06-01) et `customer.tax-id-pt-check` (LC-08-06-04), désactivés par défaut, et `customer.tax-id-scan-pattern` (LC-08-06-05), par défaut `^(?:PT|NIF)(\d{9})$`. Les trois figurent dans les clés administrables par échelon. `customer.default-tax-id` vaut 999999990. Ouvrir une session caissier.
+
+1. Réglages par défaut : une vente se règle sans NIF, comme avant ; aucun contrôle portugais.
+2. LC-08-06-01 : activer le NIF obligatoire au BackOffice. Après distribution, scanner un article puis RÈGLEMENT : le masque NIF CLIENT s’ouvre, 999999990 proposé. VALIDER : le paiement s’ouvre. Nouvelle vente : vider le champ puis VALIDER : « NIF client obligatoire pour encaisser… », la vente n’entre pas en paiement. ANNULER revient à la vente.
+3. LC-08-06-04 : activer le contrôle. Saisir 123456780 : « NIF portugais invalide : 9 chiffres, préfixe légal et clé de contrôle exacte. » ; 12345678 (8 chiffres) et 412345675 (préfixe 41) aussi refusés. 123456789, PT123456789, 500000000 (clé 0) et 999999990 acceptés. Un NIF étranger (ESB12345678) est accepté sans contrôle.
+4. LC-08-06-05 : masque NIF CLIENT ouvert, scanner `NIF500000000` : le champ affiche 500000000 dans la seconde ; sur la vente, « NIF CLIENT : 500000000 ». Scanner `PT123456780` : refusé, le NIF précédent est conservé. Pendant le paiement, un scan de NIF est refusé (« TERMINEZ OU ANNULEZ LE TICKET D’ABORD »). Un code-barre article ou un code que l’expression ne lit pas suit son chemin habituel. Expression vidée au BackOffice : plus aucun code-barre NIF reconnu, et le conseil de scan disparaît du masque.
+5. Payer et imprimer : le ticket porte « NIF 123456789 » ; avec 999999990, le libellé anonyme administré.
+6. Magasin bilingue (seconde langue `nl`) : imprimer puis réimprimer un ticket ; sur le duplicata bilingue, la ligne de ventilation de TVA tient dans les 42 colonnes, sur deux lignes (« BTW / TVA 20,00% », puis « EXCL / HT … BTW / TVA … » aligné à droite). Ticket monolingue : ligne unique, inchangée.
+7. Vérifier les libellés FR/NL/PT, les polices et le thème existants, et la lisibilité du masque en 800 × 600, 1280 × 800 et 1366 × 768, sans défilement horizontal.
+
+Recette exécutée le 23/10/2026 sur imedge (18070) et impos (18080) réels, profil dev, bases H2 mémoire jetables, matériel simulé. BackOffice au navigateur : NIF obligatoire et contrôle portugais activés, expression par défaut lue, seconde langue `nl` ; trois clés sur la page des échelons. Caisse en 800 × 600 : lait au ticket, `/pay` renvoyé à `/sale-tax-id?next=pay`, 999999990 proposé, conseil de scan affiché ; champ vidé refusé (« NIF client obligatoire pour encaisser… ») ; 123456780 refusé (« NIF portugais invalide… ») ; 123456789 accepté, retour au paiement ; espèces 5,00 €, ticket imprimé avec « NIF 123456789 ». Duplicata bilingue : « Waarvan BTW / Dont TVA … » (42 colonnes), « BTW / TVA 20,00% » (18) et « EXCL / HT 2,30  BTW / TVA 0,46 » aligné à droite (42). Vente suivante : masque ouvert, `NIF500000000` scanné, champ passé à 500000000, notice « NIF CLIENT : 500000000 » sur la vente ; `PT123456780` scanné : refusé, 500000000 conservé ; ESB12345678 saisi : accepté ; paiement ouvert sans détour ; `NIF123456789` scanné pendant le paiement : refusé, ESB12345678 conservé. Masque en 1280 × 800 et 1366 × 768 sans défilement horizontal. Aucun scanner physique.
+
+Validation : impos 7 057 tests Java + 302 JavaScript ; imedge 4 165 Java + 11 JavaScript, sans échec, erreur ou test Java ignoré. JaCoCo : impos 26 325 lignes et 13 396 branches ; imedge 20 154 lignes et 9 700 branches ; tous les compteurs manqués sont à zéro. JavaScript externe instrumenté à 100 %. La table des paramètres BackOffice intègre les trois nouvelles clés.
+
+Cotation : LC-08-06-01, LC-08-06-04 et LC-08-06-05 promues par CODE de non couvertes à intégralement couvertes ; la correction de la ligne de TVA bilingue ne change aucune cotation (LC-13-06-11 déjà couverte). Seuls L524, O524, L527, O527, L528, O528 et les hauteurs de ces trois lignes changent dans le classeur. PDF : pages 1–2 actualisées, page 37 ajoutée, pages 3–36 préservées. P1 : 412/477 intégrales (86,4 %), 14 partielles (2,9 %), soit 426/477 intégrales ou partielles (89,3 %). Ligne de caisses : 533 intégrales, 45 partielles, 152 non couvertes ; couverture pondérée 76,1 %. Campagne : 119 promotions, dont 112 CODE et 7 RELECTURE.
+
+
+## HD_43 — LC-03-02-09 / LC-14-03-01 : remise du client en compte, métrologie
+
+Gain : le client en compte obtient son tarif négocié sans geste du caissier, et un contrôle métrologique lit en caisse les informations du certificat et du logiciel sans démonter la balance.
+
+Préconditions : construction dev, H2 mémoire jetable, matériel simulé, caisse rattachée au nœud (`pos.sync.store-url`). Au BackOffice : création de compte client autorisée (`customer.account-creation-blocked` désactivé), plage des numéros de compte `customer.account-pattern` renseignée (par exemple `^CC\d{8}$`), un compte CC00000001 avec une remise de 5 % sur sa fiche et un compte CC00000002 sans remise ; dans PARAMÈTRES CAISSE > BALANCE, `balance.metrology-body`, `balance.metrology-certificate` et `balance.metrology-crc` (LC-14-03-01), vides par défaut et présents sur la page des échelons. Attendre la distribution du référentiel client et des paramètres. Ouvrir une session caissier.
+
+1. LC-03-02-09 : scanner deux articles (3,72 €), puis la carte CC00000001 : « CLIENT EN COMPTE DUPONT BTP : REMISE 5 % », ligne « REMISE TICKET (5 %) », total 3,53 € ; les montants de ligne sont ventilés ; la visu client affiche la même remise.
+2. Ajouter, annuler ou changer la quantité d’un article : la remise est recalculée sur le nouveau panier.
+3. Scanner de nouveau la carte : « REMISE TICKET DÉJÀ APPLIQUÉE : REMISE CLIENT NON APPLIQUÉE », la remise en place est conservée. Avec une remise ticket saisie à la main, même message, la remise saisie est conservée.
+4. Scanner la carte CC00000002 : « CLIENT EN COMPTE MARTIN SARL : AUCUNE REMISE ». Un numéro dans la plage mais inconnu suit le traitement habituel d’un code inconnu ; sans plage administrée, aucune carte de compte n’est reconnue en vente.
+5. Segment administré (`customer.discount-segment`) : seul un compte de ce segment obtient sa remise. Magasin qui épargne les articles déjà remisés : la remise se ventile sur les autres ; si tous le sont, « TOUTES LES LIGNES SONT DÉJÀ REMISÉES ».
+6. Carte scannée avant le premier article : la remise couvre ensuite tout le panier. Numéro saisi au pavé de la vente puis OK, pour une plage numérique : même effet que le scan.
+7. Pendant le paiement, un scan de carte de compte est refusé (« TERMINEZ OU ANNULEZ LE TICKET D’ABORD »). Payer et imprimer : le ticket porte la remise ticket ; dans un magasin bilingue, le remerciement trop long passe sur deux lignes et aucune ligne ne dépasse 42 colonnes.
+8. LC-14-03-01 : caisse fermée, MAINTENANCE puis MÉTROLOGIE : organisme de certification, n° de certificat, CRC de la balance, logiciel d’encaissement et version du logiciel. Vider un paramètre au BackOffice : l’élément affiche « non renseigné ». RETOUR revient à la maintenance.
+9. Vérifier les libellés FR/NL/PT, les polices et le thème existants, et la lisibilité en 800 × 600 et 1280 × 800, sans défilement horizontal.
+
+Recette exécutée le 23/10/2026 sur imedge (18070) et impos (18080) réels, profil dev, bases H2 mémoire jetables, matériel simulé. BackOffice au navigateur : création de compte autorisée, comptes CC00000001 (DUPONT BTP, 5 %, plafond 1 000) et CC00000002 (MARTIN SARL, sans remise) créés, plage `^CC\d{8}$`, métrologie « LNE (organisme notifié 0071) », « LNE-37115 », « 8F3A », seconde langue `nl` ; trois clés de métrologie sur la page des échelons. Caisse en 800 × 600 : lait + baguette 3,72 € ; CC00000001 scannée : notice, ligne « REMISE TICKET (5 %) » -0,19 €, lignes 2,62 € et 0,91 €, total 3,53 €, visu client « KORTING BON (5 %) / REMISE TICKET (5 %) » ; second scan : remise conservée et signalée ; CC00000002 : « AUCUNE REMISE ». Espèces 5,00 €, ticket bilingue : « KORTING BON / REMISE TICKET -0,19 E », « DANK VOOR UW BEZOEK / » puis « MERCI DE VOTRE VISITE » sur deux lignes, largeur maximale 42. Nouvelle vente : carte scannée puis lait + baguette : total 3,53 €. Caisse verrouillée, maintenance puis MÉTROLOGIE en 800 × 600 et 1280 × 800 : cinq éléments affichés (logiciel impos, version 1.0-SNAPSHOT), sans défilement horizontal ; RETOUR vers la maintenance. Saisie au pavé et segment : tests unitaires (plage alphanumérique en recette). Aucune balance physique.
+
+Validation : impos 7 073 tests Java + 305 JavaScript ; imedge 4 165 Java + 11 JavaScript, sans échec, erreur ou test Java ignoré. JaCoCo : impos 26 402 lignes et 13 440 branches ; imedge 20 154 lignes et 9 700 branches ; tous les compteurs manqués sont à zéro. JavaScript externe instrumenté à 100 %. La table des paramètres BackOffice intègre les trois clés de métrologie ; la garde des écrans adaptables couvre le nouvel écran.
+
+Cotation : LC-03-02-09 et LC-14-03-01 promues par CODE de non couvertes à intégralement couvertes. Le commentaire de LC-03-02-09 annonçant l’absence du taux sur la fiche était obsolète : le champ existait et descendait en caisse ; seule son application manquait. Limite déclarée de LC-14-03-01 : le CRC affiché est celui du certificat, la balance ne le transmet pas. Seuls L188, O188, L728, O728 et les hauteurs de ces deux lignes changent dans le classeur. PDF : pages 1–2 actualisées, page 38 ajoutée, pages 3–37 préservées. P1 : 414/477 intégrales (86,8 %), 14 partielles (2,9 %), soit 428/477 intégrales ou partielles (89,7 %). Ligne de caisses : 535 intégrales, 45 partielles, 150 non couvertes ; couverture pondérée 76,4 %. Campagne : 121 promotions, dont 114 CODE et 7 RELECTURE.
+
+
+## HD_43 — LC-07-04-07 / LC-07-04-08 : cashback par carte bancaire
+
+Gain : le client retire des espèces en caisse en payant par carte, et le magasin écoule son fond de caisse sans aller à la banque.
+
+Préconditions : construction dev, H2 mémoire jetable, matériel simulé (TPE virtuel accepté par `/api/hardware/tpe/accept`, tiroir et imprimante simulés), caisse rattachée au nœud (`pos.sync.store-url`). Dans PARAMÈTRES CAISSE > MONETIQUE, deux réglages : `payment.cashback-enabled` (LC-07-04-07/08), désactivé par défaut, et `payment.cashback-max`, 60,00 € par défaut (0 : aucun plafond). Les deux figurent dans les clés administrables par échelon. Ouvrir une session caissier.
+
+1. Réglages par défaut : aucune touche CASHBACK ; un montant carte supérieur au reste dû est ramené au reste dû, comme avant.
+2. LC-07-04-07 : activer le cashback au BackOffice avec un plafond de 30,00 €. Après distribution, vente de 3,72 €, RÈGLEMENT puis CARTE BANCAIRE : l’aide « Au-delà du reste dû, la différence est rendue en espèces » s’affiche sous la saisie. Saisir 23,72 € : le TPE demande 23,72 €. Accepter : règlements « CARTE BANCAIRE 23,72 € » et « CASHBACK -20,00 € », reste 0, transaction terminée avec « RENDU CLIENT 20.00 € », tiroir ouvert, visu client « Cashback espèces -20,00 ».
+3. Fermer le tiroir et imprimer : le ticket porte « CARTE BANCAIRE 23,72 E » puis « CASHBACK ESPECES -20,00 E », aucune ligne au-delà de 42 colonnes.
+4. Plafond : vente de 2,76 €, carte 50,00 € : « CASHBACK REFUSÉ : PLAFOND 30,00 € », le TPE n’est pas sollicité. Un plafond à 0 n’en oppose aucun.
+5. LC-07-04-08 : touche CASHBACK, saisir 20,00 au pavé puis VALIDER : le TPE demande 22,76 € ; accepté, 20,00 € rendus comme à l’étape 2. Un montant saisi d’avance sur le pavé puis CASHBACK part directement.
+6. Refus du TPE : aucun règlement, ni carte ni espèces. Le débit combiné titres-restaurant (CB / TRD) ne porte jamais de cashback. Cashback désactivé : la touche disparaît, et un envoi direct de `/action/pay-card-cashback` est refusé (« CASHBACK NON PROPOSÉ DANS CE MAGASIN »).
+7. Écran de vente : la touche affiche « FRUITS & LÉGUMES » (FR), « FRUIT & GROENTEN » (NL), « FRUTAS & LEGUMES » (PT), sans `&amp;`.
+8. Vérifier les libellés FR/NL/PT, les polices et le thème existants, et la lisibilité de l’écran de règlement en 800 × 600, 1280 × 800 et 1366 × 768, sans défilement horizontal.
+
+Recette exécutée le 23/10/2026 sur imedge (18070) et impos (18080) réels, profil dev, bases H2 mémoire jetables, matériel simulé. BackOffice au navigateur : cashback lu désactivé, plafond 60.00 ; activé, plafond 30.00 ; deux clés sur la page des échelons. Caisse en 800 × 600 : touche « FRUITS & LÉGUMES » (HTML `FRUITS &amp; LÉGUMES`, échappé une seule fois) ; vente de 3,72 €, aide affichée sous la saisie carte, 23,72 € demandés et acceptés, « CASHBACK -20,00 € » à l’historique, « RENDU CLIENT 20.00 € », tiroir OPEN, visu client « Cashback espèces » ; ticket « CASHBACK ESPECES -20,00 E », largeur 42. Vente de 2,76 € : 50,00 € refusés au plafond, TPE au repos ; CASHBACK, 20,00 tapés au pavé : 22,76 € demandés, CARTE BANCAIRE 22,76 € et Cashback espèces -20,00 €, tiroir ouvert, ticket conforme. Écran de règlement en 1280 × 800 et 1366 × 768 sans défilement horizontal. Le message « CASHBACK 20,00 E » part bien sur l’afficheur, que la caisse remplace aussitôt par le total, comme pour tout autre message de règlement. Aucun TPE physique.
+
+Validation : impos 7 088 tests Java + 305 JavaScript ; imedge 4 166 Java + 11 JavaScript, sans échec, erreur ou test Java ignoré. JaCoCo : impos 26 450 lignes et 13 468 branches ; imedge 20 160 lignes et 9 700 branches ; tous les compteurs manqués sont à zéro. JavaScript externe instrumenté à 100 %. La table des paramètres BackOffice intègre les deux nouvelles clés.
+
+Cotation : LC-07-04-07 et LC-07-04-08 promues par CODE de non couvertes à intégralement couvertes. Seuls L374, O374, L375, O375 et les hauteurs de ces deux lignes changent dans le classeur. PDF : pages 1–2 actualisées, page 39 ajoutée, pages 3–38 préservées. P1 : 416/477 intégrales (87,2 %), 14 partielles (2,9 %), soit 430/477 intégrales ou partielles (90,1 %). Ligne de caisses : 537 intégrales, 45 partielles, 148 non couvertes ; couverture pondérée 76,6 %. Campagne : 123 promotions, dont 116 CODE et 7 RELECTURE.
+
+
+## HD_43 — LC-08-05-07 : duplicata du dernier ticket carte bancaire Verifone
+
+Gain : le client qui a perdu son ticket carte reçoit à la caisse le duplicata du ticket même que le TPE a composé, sans manipulation du terminal.
+
+Préconditions : construction dev, H2 mémoire jetable, matériel simulé. Le TPE virtuel accepte une transaction par `POST /api/hardware/tpe/accept` ; le corps de la requête, s’il est présent (texte), est le ticket que renvoie le terminal : copie client, puis copie commerçant après le séparateur WCL `--/--`. Ouvrir une session caissier.
+
+1. Vente réglée en carte ; le TPE accepte en renvoyant son ticket client et son ticket commerçant. IMPRIMER : le ticket de vente sort, suivi des deux tickets du terminal, à l’identique.
+2. NOUVELLE VENTE. Menu TICKET, touche DERNIER : DUPLICATA CB : « DUPLICATA CB IMPRIMÉ » ; l’imprimante reçoit « *** DUPLICATA *** » puis le ticket client du terminal, caractère pour caractère, sans le ticket commerçant. Le duplicata est archivé dans les documents client (envoi par e-mail).
+3. Ticket client conservé même s’il n’a pas été imprimé (impression conditionnelle, aucun ticket demandé) : la touche le réimprime.
+4. Vente réglée en carte sans ticket renvoyé par le terminal : le duplicata reste le ticket construit par la caisse (LC-08-05-09), en-tête magasin, « *** DUPLICATA *** », montant, autorisation. Vente sans carte : « AUCUN PAIEMENT CARTE SUR CE TICKET ».
+5. Plusieurs paiements carte sur le ticket : un duplicata par paiement, chacun avec son propre ticket du terminal quand il existe.
+6. Vérifier les libellés, les polices et le thème existants, et la lisibilité de l’écran de vente en 800 × 600, 1280 × 800 et 1366 × 768, sans défilement horizontal.
+
+Recette exécutée le 23/10/2026 sur imedge (18070) et impos (18080) réels, profil dev, bases H2 mémoire jetables, matériel simulé. Caisse : vente de 3,72 € réglée en carte, TPE simulé accepté avec un ticket client (« ************4242 », AID A0000000421010, « MONTANT = 3,72 EUR », « TICKET CLIENT ») et un ticket commerçant ; impression : ticket de vente, ticket client et ticket commerçant. Vente close ; en 800 × 600, menu TICKET, DERNIER : DUPLICATA CB : notice « ✔ DUPLICATA CB IMPRIMÉ », imprimante simulée : « *** DUPLICATA *** » puis le ticket client du terminal à l’identique, pas de ticket commerçant. Vente suivante de 2,76 € acceptée sans ticket du terminal : duplicata construit par la caisse (MONTANT 2,76 E, AUTORISATION). Écran de vente en 1280 × 800 et 1366 × 768 sans défilement horizontal. Limite : le transport Verifone attend toujours la spécification de son encadrement filaire ; la réponse du terminal est rejouée par le simulateur. Aucun TPE physique.
+
+Validation : impos 7 093 tests Java + 305 JavaScript ; imedge 4 166 Java + 11 JavaScript, sans échec, erreur ou test Java ignoré. JaCoCo : impos 26 464 lignes et 13 480 branches ; imedge 20 160 lignes et 9 700 branches ; tous les compteurs manqués sont à zéro. JavaScript externe instrumenté à 100 %.
+
+Cotation : LC-08-05-07 promue par CODE de non couverte à intégralement couverte. Seuls L516, O516 et la hauteur de cette ligne changent dans le classeur. PDF : pages 1–2 actualisées, page 40 ajoutée, pages 3–39 préservées. P1 : 417/477 intégrales (87,4 %), 14 partielles (2,9 %), soit 431/477 intégrales ou partielles (90,4 %). Ligne de caisses : 538 intégrales, 45 partielles, 147 non couvertes ; couverture pondérée 76,8 %. Campagne : 124 promotions, dont 117 CODE et 7 RELECTURE.
+
+
+## HD_43 — LC-07-15-01 à -04 / LC-13-01-01 : paiement sur monnayeur en caisse
+
+Gain : le caissier ne manipule plus les espèces, le rendu est exact, l’argent part au coffre sans prélèvement manuel et le fond du monnayeur est surveillé à chaque vente.
+
+Préconditions : construction dev, H2 mémoire jetable, matériel simulé. Le monnayeur simulé de la caisse expose le contrat du pont : `POST /api/hardware/cashchanger/deposit` (montant dû en centimes), `GET /api/hardware/cashchanger/deposit`, `POST …/deposit/fix`, `POST …/deposit/cancel`, `GET /api/hardware/cashchanger/levels` ; deux gestes de simulation : `POST /api/hardware/cashchanger/insert` (une pièce ou un billet, en centimes) et `POST /api/hardware/cashchanger/levels` (bloc `status=`, `full=`, `low=`, `high=`). Dans PARAMÈTRES CAISSE > PÉRIPHÉRIQUES, `hardware.cashchanger.enabled`, désactivé par défaut et présent sur la page des échelons. Au BackOffice, une période de coffre ouverte. Ouvrir une session caissier.
+
+1. Réglage par défaut : aucune touche MONNAYEUR ; un envoi direct de `/action/pay-cashchanger` est refusé (« MONNAYEUR NON ACTIVÉ SUR CETTE CAISSE »).
+2. LC-13-01-01 : activer le monnayeur ; niveaux simulés `low=200`, `full=NEARFULL`. Ouvrir la session : « MONNAYEUR : NIVEAU BAS 2,00 € - PRESQUE PLEIN » sur l’écran de vente.
+3. LC-07-15-01/02 : vente de 3,72 €, RÈGLEMENT, MONNAYEUR : « PAIEMENT MONNAYEUR EN COURS », « À payer : 3,72 € », 0,00 €. Insérer 2 € : 2,00 € à l’écran, « Inséré : 2,00 € » sur la visu client. Avec l’arrondi des espèces, le montant demandé est le reste arrondi.
+4. LC-07-15-01/03 : insérer 5 € : le monnayeur clôt le dépôt et rend 3,28 € ; règlement ESPECES 3,72 €, « RENDU CLIENT », tiroir fermé ; ticket « ESPECES 3,72 E / DONNE 7,00 E / RENDU MONNAIE 3,28 E ».
+5. LC-07-15-04 : TERMINER : au BackOffice, coffre, « Remise au coffre — Prélèvement automatique monnayeur » de 3,72 €, à pointer ; aucune autorisation demandée.
+6. LC-13-01-01 : niveaux `low=100,200`, `high=50`, `status=NEAREMPTY` : après la vente, « MONNAYEUR : NIVEAU BAS 1,00 € 2,00 € - NIVEAU HAUT 0,50 € - PRESQUE VIDE ». Monnayeur injoignable : « MONNAYEUR INJOIGNABLE ».
+7. Vente suivante : MONNAYEUR, insérer 1 €, VALIDER L’INSÉRÉ : ESPECES 1,00 €, reste dû ; MONNAYEUR, insérer 0,50 €, ANNULER : « MONNAYEUR : MONTANT RENDU AU CLIENT », rien d’enregistré. Une règle bloquante du moyen Espèces refuse avant que la machine ne prenne quoi que ce soit. En formation, aucun monnayeur n’est sollicité.
+8. Vérifier les libellés FR/NL/PT, les polices et le thème existants, et la lisibilité de l’écran de règlement et de la fenêtre monnayeur en 800 × 600, 1280 × 800 et 1366 × 768, sans défilement horizontal.
+
+Recette exécutée le 23/10/2026 sur imedge (18070) et impos (18080) réels, profil dev, bases H2 mémoire jetables, monnayeur simulé. BackOffice : paramètre lu `false`, enregistré `true`, présent sur la page des échelons ; période « Octobre 2026 » ouverte. Ouverture de session sur une caisse fraîche : « MONNAYEUR : NIVEAU BAS 2,00 € - PRESQUE PLEIN ». Vente de 3,72 € en 800 × 600 : fenêtre monnayeur, « À payer : 3,72 € », 0,00 € puis 2,00 €, visu client « Reste à payer : 3,72 € — Inséré : 2,00 € » ; billet de 5 € : ESPECES 3,72 €, « RENDU CLIENT 3.28 € », tiroir CLOSED, ticket conforme ; après la vente, l’alerte de l’étape 6. BackOffice : mouvements et journal du coffre « Prélèvement automatique monnayeur 3.72 », à pointer. Vente de 2,76 € : 1,00 € validé, reste 1,76 € ; dépôt de 0,50 € annulé, rien d’enregistré. Fenêtre en 1280 × 800 et 1366 × 768 sans défilement horizontal. Aucun monnayeur physique : le pilote impos-hw (`jpos.CashChanger`, option `--cashchanger-name`) est testé sur un simulateur de contrôle JavaPOS.
+
+Validation : impos 7 127 tests Java + 305 JavaScript ; imedge 4 166 Java + 11 JavaScript ; impos-hw 83 Java ; sans échec, erreur ou test ignoré. JaCoCo : impos 26 773 lignes et 13 576 branches ; imedge 20 160 lignes et 9 700 branches ; tous les compteurs manqués sont à zéro. JavaScript externe instrumenté à 100 %. La table des paramètres BackOffice intègre la nouvelle clé.
+
+Cotation : LC-07-15-01, -02, -03, -04 et LC-13-01-01 promues par CODE de non couvertes à intégralement couvertes. Limites déclarées : aucun monnayeur physique éprouvé ; le standard JavaPOS ne signale que les niveaux globaux, les dénominations sont nommées quand le monnayeur les fournit au pont. Seuls L442 à L445, L668, leurs commentaires O et leurs hauteurs changent dans le classeur. PDF : pages 1–2 actualisées, page 41 ajoutée, pages 3–40 préservées. P1 : 422/477 intégrales (88,5 %), 14 partielles (2,9 %), soit 436/477 intégrales ou partielles (91,4 %). Ligne de caisses : 543 intégrales, 45 partielles, 142 non couvertes ; couverture pondérée 77,5 %. Campagne : 129 promotions, dont 122 CODE et 7 RELECTURE.
+
+
+## HD_43 — LC-08-01-05, LC-08-01-06, LC-08-04-18, -19, -21, -22, -23, LC-05-07-03 : documents fiscaux portugais
+
+Gain : la caisse portugaise émet elle-même les documents que l’administration fiscale exige — FS, FT, NC, Recibo —, numérotés, signés et chaînés, avec ATCUD et QR code fiscal ; la conversion FS → FT et le recibo se font en caisse, sans passage par le siège, et la carte achat sociale s’encaisse dans la même transaction.
+
+Préconditions : construction dev, H2 mémoire jetable, matériel simulé (TPE virtuel accepté par `/api/hardware/tpe/accept`, imprimante simulée). Dans PARAMÈTRES CAISSE > FISCAL, trois réglages : `fiscal.pt-documents` (désactivé par défaut), `fiscal.atcud-codes` (TYPE:CODE séparés par des points-virgules, administrable par caisse) et `fiscal.certificate-number` ; les deux nouvelles clés figurent sur la page des échelons. Clé de signature de la caisse : `pos.fiscal.pt.private-key` (PKCS#8 en Base64) ; absente en dev, une clé de développement est générée au démarrage. Au BackOffice, un article (Lait UHT 1L) porte l’attribut « carte achat sociale » ; la Baguette ne le porte pas. Ouvrir une session caissier.
+
+1. Réglage par défaut : tickets inchangés, aucune touche CARTE SOCIALE ni FATURA, la touche FACTURE ouvre la facture A4 habituelle.
+2. Activer `fiscal.pt-documents`, ATCUD `FS:AAJFJMVNTN;FT:AAJFJ3VNTN;NC:AAJFJ4VNTN;RC:AAJFJ5VNTN`, certificat `2468/AT`. LC-08-01-05 : vente Lait + Baguette, NIF 123456789 saisi, réglée en carte, IMPRIMER : sous l’identité du ticket « FATURA SIMPLIFICADA », « N° FS POS01/2026/00000001 » ; au pied « xxxx-Processado por programa certificado n.º 2468/AT », « ATCUD: AAJFJMVNTN-1 » et le QR fiscal `A:…*B:123456789*C:PT*D:FS*E:N*F:…*G:FS POS01/2026/00000001*H:AAJFJMVNTN-1*I1:PT*…*Q:xxxx*R:2468`. Sans NIF : « NIF CONSUMIDOR FINAL », `B:999999990`.
+3. LC-08-04-18/19 : vente Lait, RÈGLEMENT, touche FATURA : écran DOCUMENTS FISCAUX ; VALIDER sans NIF : « LE NIF DU CLIENT EST OBLIGATOIRE ». Saisir NIF, nom et adresse au clavier tactile, VALIDER : retour au règlement, touche « ✓ FATURA ». Le ticket porte « FATURA », « N° FT POS01/2026/00000001 », le NIF, le nom et l’adresse, ATCUD AAJFJ3VNTN-1, et aucune FS. Depuis la vente, menu TICKET > FACTURE ouvre le même écran.
+4. LC-08-01-06 : vente Lait + Baguette ; CARTE SOCIALE puis VALIDER sans montant : 2,76 € réglés (le montant éligible) ; une seconde fois : « CAS: AUCUN ARTICLE ELIGIBLE ». Carte bancaire pour 0,96 €. IMPRIMER : deux papiers coupés, du même ticket : FS …/00000002 (Lait, CARTE ACHAT SOCIALE 2,76) puis FS …/00000003 (Baguette, CARTE BANCAIRE 0,96), chacun avec sa TVA et ses mentions légales.
+5. LC-08-04-21 : hors vente, TICKET > FACTURE, onglet FS VERS FATURA : date du jour et caisse proposées ; n° 9 : « DOCUMENT INTROUVABLE SUR CETTE CAISSE ». N° 2 et client : « DOCUMENTS EMIS : NC POS01/2026/00000001 - FT POS01/2026/00000002 » ; la NC (« REF. : FS …/00000002 », « MOTIF : ANNULATION, CONVERSION EN FATURA », aucun règlement) puis la FT du client sont imprimées. Une seconde conversion : « DOCUMENT DEJA ANNULE ».
+6. LC-08-04-22 : onglet RECIBO, n° 1 : « DOCUMENTS EMIS : RC POS01/2026/00000001 », recibo imprimé (client, « REF. : FT …/00000001 », MONTANT RECU, règlement, QR `I1:0`). Une seconde demande : « RECIBO DEJA EMIS POUR CETTE FATURA ».
+7. LC-05-07-03 : retour de la Baguette du ticket de l’étape 4 (aval superviseur) : le ticket de retour porte « NOTA DE CRÉDITO », « N° NC POS01/2026/00000002 », « REF. : FS POS01/2026/00000003 » (seul document portant l’article rendu), ATCUD AAJFJ4VNTN-2 et le QR.
+8. LC-08-04-23 : chaque document (FS, FT, NC, RC) porte l’ATCUD de sa série et son rang, les 4 caractères de sa signature SHA-1/RSA chaînée au document précédent de la série, la mention de certification et le QR fiscal. En formation : « AUCUN DOCUMENT FISCAL EN MODE FORMATION ».
+9. Vérifier les libellés FR/NL/PT, les polices et le thème existants, et la lisibilité de l’écran de règlement et de l’écran DOCUMENTS FISCAUX en 800 × 600, 1280 × 800 et 1366 × 768, sans défilement horizontal.
+
+Recette exécutée le 23/10/2026 sur imedge (18070) et impos (18080) réels, profil dev, bases H2 mémoire jetables, matériel simulé. BackOffice au navigateur : `fiscal.pt-documents` lu `false` puis enregistré `true`, codes ATCUD et certificat `2468/AT` enregistrés, deux clés sur la page des échelons ; attribut carte achat sociale coché sur Lait UHT 1L. Caisse : étapes 2 à 7 jouées dans l’ordre, avec les numéros et messages ci-dessus, l’étape 3 par la touche FATURA du règlement ; touche FATURA, écran DOCUMENTS FISCAUX et saisie au clavier tactile en 800 × 600 ; écrans de règlement et DOCUMENTS FISCAUX en 1280 × 800 et 1366 × 768 sans défilement horizontal. Limites : signature par une clé de développement ; le NIF émetteur imprimé au QR (`A:`) est celui du magasin de la caisse, que la synchronisation ne met pas à jour depuis le BackOffice (12123456789 en dev). Aucune imprimante physique.
+
+Validation : impos 7 195 tests Java + 312 JavaScript ; imedge 4 171 Java + 11 JavaScript, sans échec, erreur ou test Java ignoré. JaCoCo : impos 27 378 lignes et 13 948 branches ; imedge 20 166 lignes et 9 700 branches ; tous les compteurs manqués sont à zéro. JavaScript externe instrumenté à 100 %. La table des paramètres BackOffice intègre les deux nouvelles clés.
+
+Cotation : LC-05-07-03, LC-08-01-05, LC-08-01-06, LC-08-04-18, -19, -21, -22 et -23 promues par CODE de non couvertes à intégralement couvertes. Seuls L306, L457, L458, L501, L502, L504, L505, L506, leurs commentaires O et leurs hauteurs changent dans le classeur. PDF : pages 1–2 actualisées, page 42 ajoutée, pages 3–41 préservées. P1 : 430/477 intégrales (90,1 %), 14 partielles (2,9 %), soit 444/477 intégrales ou partielles (93,1 %). Ligne de caisses : 551 intégrales, 45 partielles, 134 non couvertes ; couverture pondérée 78,6 %. Campagne : 137 promotions, dont 130 CODE et 7 RELECTURE.
+
+
+## HD_43 — LC-06-02-01, -02, -04, -07, -08, -09, -10, -12, LC-08-04-15 : devis, commandes et bons de vente externes
+
+Gain : les devis, commandes et bons de vente émis par l’outil de gestion commerciale se reprennent en caisse au scan de leur code-barre ; la caisse y prend les acomptes que le document impose ou permet, les ventile par taux de TVA, met le document à jour par API et imprime une facture d’acompte, puis solde le document dans la vente avec reprise automatique des acomptes ; plusieurs bons de vente se cumulent dans une même transaction.
+
+Préconditions : construction dev, H2 mémoire jetable, matériel simulé (TPE virtuel accepté par `/api/hardware/tpe/accept`, imprimante simulée). La caisse connaît le nœud magasin (`pos.recall.document-url`). Dans PARAMÈTRES CAISSE > DEVIS ET COMMANDES, trois réglages présents sur la page des échelons : `order.external-code-pattern` (vide par défaut), `order.recall-price-source` (DOCUMENT par défaut, ou CAISSE) et `order.deposit-invoice` (désactivé par défaut). L’outil externe dépose ses documents par `POST /api/orders` sur le nœud (jeton `X-Sync-Token` s’il est configuré) : `code`, `kind` (DEVIS, COMMANDE, BON_VENTE), `label`, `depositRule` (NONE, OPTIONAL, MANDATORY), `totalAmount`, `lines` (`ean`, `label`, `quantity`, `unitPrice`, `vatRate`, `deliveredQuantity`). Documents de la recette : DV-0001 devis à acompte obligatoire (lait 20 × 3,00 €, baguette 50 × 1,20 €, TVA 5,5 %) ; DV-0002 bon de vente (lait commandé 6 livré 4 à 1,15 €, baguette 2 à 1,10 €) ; DV-0003 bon de vente (baguette commandée 3 livrée 3 à 1,05 €) ; DV-0004 commande à acompte facultatif (lait 10 et baguette commandée 5 livrée 4 à 9,99 €). Ouvrir une session caissier.
+
+1. Réglages par défaut : un code DV-0001 scanné n’est pas reconnu ; seuls les codes de commande créés en caisse le sont. Un dépôt portant une règle d’acompte inconnue est refusé (400 « Commande illisible »).
+2. LC-06-02-01 : `order.external-code-pattern` = `DV-[0-9]{4}`, `order.deposit-invoice` activé. Scanner DV-0001 sur l’écran de vente : l’écran RAPPEL PAR CODE s’ouvre sur « DEVIS DV-0001 — DEVIS CUISINE MARTIN », colonnes Article / Cdé / Livré / P.U. / Total, « Total 120,00 € », « Déjà versé 0,00 € », « Reste dû 120,00 € », « ACOMPTE OBLIGATOIRE AVANT LE RÈGLEMENT », sans touche RÉGLER DANS LA VENTE ; un envoi direct de `/action/recall/document/settle` est refusé du même message.
+3. LC-06-02-04/07, LC-08-04-15 : saisir 30,00 au pavé, ENREGISTRER L’ACOMPTE : « ACOMPTE ENREGISTRÉ », « Déjà versé 30,00 € », « Reste dû 90,00 € », touche RÉGLER DANS LA VENTE affichée. Imprimés : le justificatif « ACOMPTE », « MONTANT 30,00 E », « TVA ACOMPTE 5,50 % 1,56 E » et le code-barres, puis la « FACTURE D’ACOMPTE » « N° FACTURE POS01-FA2026-000001 » : raison sociale, adresse, SIRET, TVA intracom., commande DV-0001, articles, « TOTAL COMMANDE TTC 120,00 E », « ACOMPTE TTC 30,00 E », « TVA 5,50 % HT 28,44 TVA 1,56 », « RESTE A PAYER 90,00 E », mention d’exigibilité de la TVA.
+4. LC-06-02-04 : 999,99 € : « ACOMPTE SUPÉRIEUR AU RESTE DÛ ». Second acompte de 20,00 € : « Déjà versé 50,00 € », « Reste dû 70,00 € » ; facture POS01-FA2026-000002 avec « DEJA VERSE 30,00 E » et « RESTE A PAYER 70,00 E ». Au nœud, `GET /api/orders/DV-0001` : acompte 50, TVA « 0.055:2.6 », statut PARTIALLY_PAID, reste 70.
+5. LC-06-02-08 : RÉGLER DANS LA VENTE : articles chargés, total 120,00 €, reste à payer 70,00 € ; carte bancaire, IMPRIMER : ticket « TOTAL TTC 120,00 E », « TVA DÉJÀ PERÇUE SUR L’ACOMPTE 5,50 % 2,60 E », « REPRISE ACOMPTE 50,00 E », « CARTE BANCAIRE 70,00 E ». TERMINER : le nœud ne rappelle plus DV-0001 (404).
+6. LC-06-02-09/10/12, LC-06-02-02 : nouvelle vente, scanner DV-0002 puis DV-0003 : trois lignes, « Commandé 6 · livré 4 » sous le lait (4 × 1,15 €), « Commandé 3 · livré 3 » sous la baguette de DV-0003 ; scanner de nouveau DV-0002 : « DOCUMENT DV-0002 DÉJÀ CHARGÉ DANS LA VENTE », rien d’ajouté. Total 9,95 €, carte, IMPRIMER : « QTE COMMANDEE 6 / LIVREE 4 » et « QTE COMMANDEE 3 / LIVREE 3 » sous leurs lignes. TERMINER : DV-0002 et DV-0003 soldés au nœud (404).
+7. LC-06-02-08 : `order.recall-price-source` = CAISSE. Scanner DV-0004 depuis l’écran de vente : l’écran du document s’ouvre ; prix de la caisse (lait 2,76 €, baguette 0,96 €) au lieu des 9,99 € du document, « Total 31,44 € ». METTRE DE CÔTÉ revient à l’écran de rappel ; rappeler DV-0004 par sa saisie, RÉGLER DANS LA VENTE sans acompte : 10 × 2,76 € et 4 × 0,96 € (« Commandé 5 · livré 4 ») ; carte ; ticket conforme ; DV-0004 soldé au nœud.
+8. LC-08-04-15 : création d’une commande en caisse (écran COMMANDE, acompte 2,00 €) : la facture d’acompte suit le justificatif dans la même séquence (POS01-FA2026-000003). En formation : « AUCUN ACOMPTE EN MODE FORMATION ».
+9. Vérifier les libellés FR/NL/PT, les polices et le thème existants, et la lisibilité de l’écran du document et de l’écran de vente en 800 × 600, 1280 × 800 et 1366 × 768, sans défilement horizontal.
+
+Recette exécutée le 24/10/2026 sur imedge (18070) et impos (18080) réels, profil dev, bases H2 mémoire jetables, matériel simulé. BackOffice au navigateur : trois réglages lus `''`, `DOCUMENT`, `false`, enregistrés `DV-[0-9]{4}`, `DOCUMENT` puis `CAISSE`, `true`, présents sur la page des échelons. Documents déposés par l’API du nœud ; règle `SOMETIMES` refusée (400). Étapes 2 à 8 jouées dans l’ordre avec les écrans, messages, montants et numéros ci-dessus, l’étape 1 et le refus en formation étant établis par les tests Java ; écran du document en 800 × 600, 1280 × 800 et 1366 × 768 sans défilement horizontal. Correctif nécessaire mis au jour par la recette : le taux de TVA des lignes de document au nœud était arrondi à deux décimales (5,5 % lu 6 %) ; il garde désormais quatre décimales. Limite : la saisie manuelle d’un code contenant un tiret n’est pas possible au clavier tactile alphabétique de l’écran RAPPEL (comportement antérieur) ; la recette l’a saisie par le formulaire. Aucune imprimante physique.
+
+Validation : impos 7 243 tests Java + 312 JavaScript ; imedge 4 178 Java + 11 JavaScript, sans échec, erreur ou test Java ignoré. JaCoCo : impos 27 682 lignes et 14 128 branches ; imedge 20 216 lignes et 9 736 branches ; tous les compteurs manqués sont à zéro. JavaScript externe instrumenté à 100 %. La table des paramètres BackOffice intègre les trois nouvelles clés.
+
+Cotation : LC-06-02-01, -02, -04, -07, -08, -09, -10, -12 et LC-08-04-15 promues par CODE de non couvertes à intégralement couvertes. Seuls L311, L312, L314, L317 à L320, L322, L498, leurs commentaires O et leurs hauteurs changent dans le classeur. PDF : pages 1–2 actualisées, page 43 ajoutée, pages 3–42 préservées. P1 : 439/477 intégrales (92,0 %), 14 partielles (2,9 %), soit 453/477 intégrales ou partielles (95,0 %). Ligne de caisses : 560 intégrales, 45 partielles, 125 non couvertes ; couverture pondérée 79,8 %. Campagne : 146 promotions, dont 139 CODE et 7 RELECTURE.
+
+## HD_43 — LC-06-05-01 à -06, LC-13-06-09, -14, LC-08-06-11, LC-08-03-08, LC-08-02-02, LC-13-05-06 : selfscanning, langue du client fidèle, NIF, tickets techniques et formatés, mode école
+
+Gain : les paniers construits sur les dispositifs de selfscanning se reprennent à n’importe quelle caisse par leur code, avec contrôle partiel tiré au sort ou demandé, contrôle total demandé, issu d’un écart ou provoqué, articles complémentaires et bons de réduction appliqués au paiement ; le visueur et le ticket passent dans la langue du client fidèle, y compris pour le ticket restitué par API ; les documents fiscaux portugais impriment toujours le code pays et le NIF, ou CONSUMIDOR FINAL ; les tickets techniques activés au BackOffice sont imprimés d’office ; tous les tickets formatés (client, point de vente, formation) sont mis à disposition des services tiers par le nœud ; les transactions du mode école remontent dans une table dédiée consultable au journal électronique, hors chiffre d’affaires. Correctifs : le clavier tactile de l’écran RAPPEL porte un tiret, le justificatif d’acompte nomme le document (DEVIS, BON DE VENTE…), et un schéma mis à jour (profil demo) reçoit la précision à quatre décimales du taux de TVA des lignes de document.
+
+Préconditions : construction dev, H2 mémoire jetable, matériel simulé (TPE virtuel accepté par `/api/hardware/tpe/accept`, imprimante simulée), bouchon IMFID local renvoyant la langue `nl-BE` du compte fidélité. La caisse connaît le nœud magasin (`pos.recall.document-url`). Au BackOffice, section SELFSCANNING, sur la page des échelons : `selfscan.code-pattern` (vide par défaut), `selfscan.partial-control-rate` (0 par défaut, borné à 0–100) et `selfscan.partial-control-items` (3 par défaut, au moins 1) ; section LANGUE : `language.fidelity-holder` (désactivé par défaut). Le dispositif dépose ses paniers par `POST /api/orders` sur le nœud avec `kind` SELF_SCAN, `control` (vide, NONE, PARTIAL ou TOTAL, toute autre valeur refusée en 400) et `vouchers` (`code`, `label`, `amount`). Paniers de la recette : SS00000002 (lait 2, baguette 2, huile d’olive 1, contrôle PARTIAL), SS00000003 (lait 3, baguette 1, sans contrôle demandé, bon de 0,50 €), SS00000004 (lait 2, baguette 1, contrôle NONE, bon « BON DE REDUCTION 1 EUR » de 1,00 €). Ouvrir une session caissier.
+
+1. Réglages par défaut : un code SS00000004 scanné n’est pas reconnu. `selfscan.code-pattern` = `SS[0-9]{8}`.
+2. LC-06-05-01, -02, -03 : scanner SS00000004 sur l’écran de vente : l’écran SELFSCANNING s’ouvre sur « AUCUN CONTRÔLE », les articles déclarés, le total et le bon « BON DE REDUCTION 1 EUR » à -1,00 €. INTÉGRER DANS LA VENTE : retour à la vente, articles chargés ; ajouter Café Grains 500g au scan. Payer : bon 1,00 € appliqué d’office, carte 6,60 € ; le ticket imprime le bon. TERMINER : le nœud ne rappelle plus SS00000004 (404).
+3. LC-06-05-04 : saisir SS00000002 à l’écran RAPPEL au clavier tactile (tiret disponible) : « CONTRÔLE PARTIEL : RE-SCANNER 2 ARTICLE(S) — DEMANDÉ PAR L’APPAREIL ». Re-scanner le lait : « ARTICLE CONTRÔLÉ : LAIT UHT 1L (1/2) » ; INTÉGRER est refusé tant que le contrôle n’est pas achevé. Avec un taux de 100 %, un panier sans contrôle demandé est tiré au sort (« TIRÉ AU SORT »).
+4. LC-06-05-05 : sur SS00000002, re-scanner un article non déclaré (Café) : « ÉCART SUR Café Grains 500g : CONTRÔLE TOTAL » ; re-scanner le reste : le tableau Déclaré / Contrôlé signale 2 écarts (BAGUETTE 2/1, Café 0/1). INTÉGRER : ticket POS01 construit sur le re-scan (LAIT 2, BAGUETTE 1, HUILE 6,90, Café 4,20, total 14,50 €).
+5. LC-06-05-06 : rappeler SS00000003, CONTRÔLE TOTAL : « CONTRÔLE TOTAL PROVOQUÉ » ; tout re-scanner : 0 écart ; INTÉGRER, bon 0,50 € + carte 4,05 €, total 4,55 €. METTRE DE CÔTÉ laisse le panier rappelable.
+6. LC-13-06-09, -14 : `language.fidelity-holder` activé ; nouvelle vente, identifier la carte fidélité du client néerlandophone : le visueur client passe en néerlandais (« TOTAAL ») ; ticket imprimé en néerlandais (« TOTAAL INCL. BTW », « BANKKAART », « DANK VOOR UW BEZOEK ») ; le ticket dématérialisé de cette vente s’affiche en néerlandais (`html lang="nl"`) ; la langue remonte au nœud avec le ticket.
+7. LC-08-06-11 : `fiscal.pt-documents` activé : FS au consommateur final « NIF CONSUMIDOR FINAL », code QR `B:999999990*C:PT` ; FS au NIF 123456789 « NIF PT 123456789 » ; même règle sur FT, Recibo et Nota de Crédito.
+8. LC-08-03-08, LC-08-02-02 : impression conditionnelle activée ; mouvement de caisse DÉPENSE 2,00 € TIMBRES : ticket imprimé d’office. Au nœud, `GET /api/printouts?audience=STORE` (jeton `X-Sync-Token`) rend le ticket du mouvement, source `TicketPrinterService.printMovementTicket`, contenu Base64URL décodé « MOUVEMENT DE CAISSE … » ; `audience=CUSTOMER` rend tickets de vente et tickets carte ; `after=<dernier id>` ne rend plus rien ; une audience inconnue est refusée (400).
+9. LC-13-05-06 : en mode formation, vente de 3,72 € : BackOffice > Journal électronique, onglet « Transactions école » : date, caisse POS01, opérateur jdupont, 2 articles, 3,72 € ; le détail montre le ticket de formation ; la transaction est absente du journal transactionnel et du chiffre d’affaires.
+10. Correctifs : BV-0005 saisi avec son tiret au clavier tactile de l’écran RAPPEL se charge ; un acompte de 5,00 € sur le devis DV-0006 imprime « DEVIS DV-0006 » sur le justificatif ; une base H2 fichier dont `customer_order_lines.vat_rate` est NUMERIC(6,2), démarrée en `update`, passe à NUMERIC(6,4).
+11. Vérifier les libellés FR/NL/PT, les polices et le thème existants, et la lisibilité de l’écran SELFSCANNING et de l’écran de vente en 800 × 600, 1280 × 800 et 1366 × 768, sans défilement horizontal.
+
+Recette exécutée le 24/10/2026 sur imedge (18070) et impos (18080) réels, profil dev, bases H2 mémoire jetables, matériel simulé, bouchon IMFID (8060). BackOffice au navigateur : section SELFSCANNING et `language.fidelity-holder` lus à leur défaut, enregistrés, présents sur la page des échelons ; contrôle `SOMETIMES` refusé (400). Étapes 2 à 10 jouées dans l’ordre avec les écrans, messages, montants et numéros ci-dessus ; étape 1 et tirage au sort établis par les tests Java ; écran SELFSCANNING en 800 × 600, 1280 × 800 et 1366 × 768 sans défilement horizontal. Correctifs mis au jour par la recette : un indicateur de panier à contrôler restait levé après intégration ou mise de côté et ramenait l’écran de vente vers SELFSCANNING ; il est désormais effacé ; le détail d’une transaction école au journal montrait le jeton du logo de l’imprimante, il en est retiré (test Java). Contrôle de schéma sur base H2 fichier démarrée en `update` : 1 alignement appliqué, colonne lue NUMERIC(6,4). Limite : le contrôle des tickets techniques s’est appuyé sur le mouvement de caisse. Aucune imprimante physique.
+
+Validation : impos 7 308 tests Java + 319 JavaScript ; imedge 4 199 Java + 11 JavaScript, sans échec, erreur ou test Java ignoré. JaCoCo : impos 28 129 lignes et 14 372 branches ; imedge 20 418 lignes et 9 828 branches ; tous les compteurs manqués sont à zéro. JavaScript externe instrumenté à 100 %. La table des paramètres BackOffice intègre les quatre nouvelles clés.
+
+Cotation : LC-06-05-01 à -06, LC-13-05-06, LC-13-06-09 et -14 promues par CODE de non couvertes à intégralement couvertes ; LC-08-02-02 et LC-08-06-11 promues par CODE de partiellement à intégralement couvertes ; LC-08-03-08 promue par RELECTURE de partiellement à intégralement couverte (activations BackOffice des tickets techniques apportées par les lots antérieurs, impression d’office prouvée par la recette). Seuls L340 à L345, L460, L478, L534, L703, L712, L717, leurs commentaires O et leurs hauteurs changent dans le classeur. PDF : pages 1–2 actualisées, page 44 ajoutée, pages 3–43 préservées. P1 : 451/477 intégrales (94,5 %), 11 partielles (2,3 %), soit 462/477 intégrales ou partielles (96,9 %). Ligne de caisses : 572 intégrales, 42 partielles, 116 non couvertes ; couverture pondérée 81,2 %. Campagne : 158 promotions, dont 150 CODE et 8 RELECTURE.
+
+## HD_43 — LC-02-09-01 à -03, LC-05-03-01, LC-07-11-01, -03, LC-04-01-03, LC-05-07-02, LC-09-01-04 : hub de paiement Nexo, inaltérabilité des tickets en attente, détail des retours, programme externe
+
+Gain : la caisse dialogue avec le hub de paiement externe en protocole Nexo Retailer pour activer, annuler, imprimer et reprendre les articles dématérialisés, et pour payer par carte cadeau après lecture du solde au hub ; chaque mise en attente, reprise et purge de ticket en attente laisse un enregistrement signé et chaîné, vérifié et consultable au nœud ; le ticket de retour détaille le décagnottage et les bons retirés, et un ticket mêlant vente et retour imprime le détail des retours à part ; une touche du menu AUTRE lance le programme externe administré au BackOffice. Correctifs mis au jour par la recette : le message de l’article dématérialisé de l’écran de retour est affiché au-dessus des lignes, et le détail des retours accompagne aussi le ticket imprimé à la demande.
+
+Préconditions : construction dev, H2 mémoire jetable, matériel simulé (TPE virtuel accepté par `/api/hardware/tpe/accept`, imprimante simulée), bouchon IMFID local (gains CAGNOTTE 5 % 0,62 € et BON 5 EUR 5,00 € sur un panier de plusieurs articles, 0,14 € de cagnotte sur un article). La caisse connaît le hub par `pos.nexo.hub-url` (absent : aucun hub, comportement antérieur) ; le hub simulé du profil dev (`/api/nexo`, `GET /api/nexo/cards/{code}` pour lire un compte) connaît les cartes cadeau 6299000000000017 (30,00 €, ILLICADO) et 6299000000000025 (0,00 €) et refuse l’activation des codes commençant par 9999. Au BackOffice, sur la page des échelons : `giftcard.payment-ticket` (section CARTE CADEAU, activé par défaut), `return.separate-detail` (section RETOUR CLIENT, désactivé par défaut), `external-program.label` (défaut « PROGRAMME EXTERNE »), `external-program.path` et `external-program.arguments` (vides par défaut, section PROGRAMME EXTERNE). Fiches articles : Set de Couteaux Chef (3300000000033, 30,00 €) en « E-CARTE CADEAU 30 », « Produit dématérialisé » coché, attribut personnalisé ACTIVATION_PROVIDER = ILLICADO ; Poêle Antiadhésive (3300000000031) en « E-CARTE CADEAU LIBRE », dématérialisé, « Prix à saisir en caisse », ACTIVATION_PROVIDER = TRANSACTIS. Script de recette `cash-management.sh` exécutable, qui note ses arguments. Ouvrir une session caissier.
+
+1. Réglages par défaut : sans `external-program.path`, le menu AUTRE ne montre aucune touche de programme. Administrer `CASH MANAGEMENT`, le chemin du script et `--till POS01`.
+2. LC-09-01-04 : menu AUTRE : touche CASH MANAGEMENT ; la toucher : « PROGRAMME LANCÉ : CASH MANAGEMENT », le script note « CASH MANAGEMENT --till POS01 ». Un chemin introuvable ou non exécutable est signalé (« PROGRAMME EXTERNE INTROUVABLE : … »).
+3. LC-02-09-01 : scanner 3300000000033 : « SCANNEZ LE CODE D’ACTIVATION » ; scanner 99990001 : « ACTIVATION REFUSÉE (ACTIVATION REFUSEE PAR LE FOURNISSEUR) : ARTICLE ANNULÉ », ligne barrée. Rescanner l’article puis 9001000000001 : « ARTICLE ACTIVÉ - CODE 9001000000001 - SOLDE 30,00 € », la ligne affiche « CODE D’ACTIVATION : 9001000000001 » ; le hub montre la carte active à 30,00 €. Scanner 3300000000031 : invite PRIX À SAISIR, 15,00, puis 9001000000005 : activée à 15,00 € chez TRANSACTIS.
+4. LC-02-09-02 : activer 9001000000002, ANNULER LIGNE sur cette ligne : « ACTIVATION ANNULÉE - CODE 9001000000002 », carte inactive au hub. Activer 9001000000003 puis abandonner le ticket (aval manager) : carte inactive au hub.
+5. LC-02-09-03 : payer et terminer : après le ticket de caisse, TICKET D’ACTIVATION : ticket, article, CODE ACTIVATION 9001000000001, MONTANT 30,00 E, ANCIEN SOLDE 0,00 E, NOUVEAU SOLDE 30,00 E, FOURNISSEUR ILLICADO, CODE FOURNISSEUR S1, TRANSACTION HUB00000001.
+6. LC-05-03-01 : consommer 10,00 € sur 9001000000001 hors caisse (requête Payment au hub). Écran de retour, ticket de la vente, + sur la ligne : « SCANNEZ LE CODE UNIQUE DE L’ARTICLE DÉMATÉRIALISÉ » ; saisir 9001000000099 : « CE CODE N’EST PAS CELUI DE L’ARTICLE VENDU » ; saisir 9001000000001 : « SOLDE RESTANT 20,00 € : 20,00 € REMBOURSÉS À LA DÉSACTIVATION », montant du retour 20,00 € ; motif, ESPÈCES, aval : TICKET DE RETOUR « E-CARTE CADEAU 30 1,00 x 20,00 », TOTAL REMBOURSE 20,00 E ; la carte est déchargée et inactive au hub.
+7. LC-07-11-01 : vendre Casserole Inox (18,00 €), RÈGLEMENT, CARTE CADEAU, saisir 6299000000000017, VALIDER LA CARTE : panneau CARTE CADEAU « ****0017 · ILLICADO », SOLDE DISPONIBLE 30,00 €, MONTANT À DÉBITER proposé 18,00 ; saisir 12,40, PAYER : reste 5,60 €, solde du hub 17,60 €. Annuler ce règlement : solde du hub 30,00 €, reste 18,00 €. La carte 6299000000000025 : « CARTE CADEAU SANS SOLDE » ; 15,00 € demandés sur une carte à 12,00 € : « MONTANT SUPÉRIEUR AU SOLDE DE LA CARTE (12,00 €) » ; un montant supérieur au reste dû est ramené au reste dû.
+8. LC-07-11-03 : avec `giftcard.payment-ticket` activé, le paiement imprime PAIEMENT CARTE CADEAU : CARTE ****0017, MONTANT 12,40 E, ANCIEN SOLDE 30,00 E, SOLDE RESTANT 17,60 E, FOURNISSEUR ILLICADO, CODE FOURNISSEUR P5, TRANSACTION HUB00000005. Paramètre désactivé : aucun ticket de paiement carte cadeau.
+9. LC-04-01-03 : mettre en attente un ticket de deux articles, le reprendre, ajouter un article, le remettre en attente ; clôture Z avec aval : le ticket est purgé. BackOffice > Journal électronique, onglet « Tickets en attente » : chaîne POS01 « INTÈGRE (4 enregistrement(s)) », lignes MISE EN ATTENTE (2 articles, 3,72 €), REPRISE, MISE EN ATTENTE (3 articles, 4,32 €), PURGE À LA CLÔTURE (opérateur CLOTURE Z), chacune avec sa signature. Un enregistrement altéré ou un maillon faux rend la chaîne ROMPUE.
+10. LC-05-07-02 : vente fidélisée (carte 2990000000019) de Lait et Casserole ; retour total : le TICKET DE RETOUR imprime, sous RECALCUL DES AVANTAGES, « DECAGNOTTAGE, BONS ET COUPONS RETIRES », « Cagnotte CAGNOTTE 5 % -0,62 E », « Bon d’achat BON 5 EUR DES -5,00 E », « TOTAL RETIRE -5,62 E ». `return.separate-detail` activé : vente de Casserole et retour de Lait sur le même ticket : le ticket ne porte que « VALEUR DES RETOURS -2,76 E », suivi du ticket DETAIL DES RETOURS (LAIT UHT 1L, -1 x 2,76 E, TOTAL RETOURS -2,76 E, recalcul des avantages).
+11. Vérifier les libellés FR/NL/PT, les polices et le thème existants, et la lisibilité de l’écran de vente (code d’activation), du panneau de carte cadeau, de l’écran de retour et du menu AUTRE en 800 × 600, 1280 × 800 et 1366 × 768, sans défilement horizontal.
+
+Recette exécutée le 24/10/2026 sur imedge (18070) et impos (18080) réels, profil dev, bases H2 mémoire jetables, matériel simulé, bouchon IMFID (8060), hub Nexo simulé de la caisse. BackOffice au navigateur : les cinq réglages lus à leur défaut, enregistrés, présents sur la page des échelons ; fiches articles enregistrées. Étapes 2 à 10 jouées avec les écrans, messages, montants et numéros ci-dessus ; étape 1, programme introuvable, maillon rompu et retour partiel fidélisé établis par les tests Java ; écrans de l’étape 11 sans défilement horizontal aux trois résolutions. Correctifs mis au jour par la recette : le message de l’article dématérialisé de l’écran de retour était rangé sous les touches de règlement, hors de l’écran en 800 × 600 et 1280 × 800 ; il est affiché au-dessus des lignes du ticket. Le détail des retours n’accompagnait que le ticket imprimé d’office ; il suit aussi le ticket imprimé à la demande ou choisi à la fin de la vente (tests Java). Limites : le moteur de valorisation simulé ne chiffre pas le panier conservé, d’où un retour partiel fidélisé sans retrait en recette, prudence établie par les tests Java ; aucune imprimante physique, aucun hub réel.
+
+Validation : impos 7 385 tests Java + 319 JavaScript ; imedge 4 207 Java + 11 JavaScript, sans échec, erreur ou test Java ignoré. JaCoCo : impos 29 148 lignes et 14 826 branches ; imedge 20 535 lignes et 9 874 branches ; tous les compteurs manqués sont à zéro. JavaScript externe instrumenté à 100 %. La table des paramètres BackOffice intègre les cinq nouvelles clés.
+
+Cotation : LC-02-09-01 à -03, LC-04-01-03, LC-05-03-01, LC-05-07-02, LC-07-11-01 et -03 promues par CODE de partiellement à intégralement couvertes ; LC-09-01-04 promue par CODE de non couverte à intégralement couverte. Seuls L108 à L110, L236, L290, L305, L427, L429, L538, leurs commentaires O et leurs hauteurs changent dans le classeur. PDF : pages 1–2 actualisées, page 45 ajoutée, pages 3–44 préservées. P1 : 460/477 intégrales (96,4 %), 3 partielles (0,6 %), soit 463/477 intégrales ou partielles (97,1 %). Ligne de caisses : 581 intégrales, 34 partielles, 115 non couvertes ; couverture pondérée 81,9 %. Campagne : 167 promotions, dont 159 CODE et 8 RELECTURE.
+
+## HD_43 — BO-03-06-01, -08, -10, -30 à -38, -45, -48, -51, -54, -56, -57, -59, -62, -63, -64 : gestion des codes-barres
+
+Gain : au Back Office, une plage de codes-barres de paiement se rattache au bon d’achat ou au titre-restaurant du référentiel des moyens de paiement ; une plage REGISTRY devient plage d’émission et la caisse compose de ses positions (TPV, n° de ticket, heure, dates, montant, séquence, magasin) le numéro des avoirs et cartes cadeau qu’elle imprime en code-barres ; une plage FONCTION ouvre une fonction caisse ; la carte superviseur se crée, s’imprime et vaut aval ; le nœud récupère par FTP les fichiers des balances ; les instruments émis et les codes de paiement lus remontent au nœud et se consultent au journal électronique. En caisse : symbologies administrées (2D, Code 128 alphanumérique d’article jusqu’à 38 caractères), clé de Luhn des cartes de fidélité, alerte de lecture hors ligne, alerte de bon inconnu, GS1 AI 17 forçable par un superviseur avec messages administrés, paniers qbusting. Correctifs mis au jour par la recette : la création au BackOffice d’un moyen de paiement, d’une plage de codes-barres ou d’une plage article échouait (ligne insérée avant d’être décrite) ; la page Comptes ne s’affichait plus (`page.items` au lieu de `page.rows`) ; une lecture des paramètres depuis un fil sans contexte de requête du nœud (flux de tickets) laissait le nœud publier les valeurs par défaut aux caisses jusqu’au prochain enregistrement ; le journal d’un titre papier porte le montant réellement réglé.
+
+Préconditions : construction dev, H2 mémoire jetable, matériel simulé, nœud imedge et deux caisses POS01 et POS02, serveur FTP local (utilisateur balance). Au BackOffice, page des échelons : `fidelity.card-luhn` (FIDÉLITÉ, désactivé), `gs1.expiry-block-days` (0), `gs1.expiry-message` et `gs1.short-date-message` (vides), `gs1.expiry-alert` accepte SUPERVISOR, `qbusting.code-pattern` (QBUSTING, vide), `scan.symbologies` (SCAN, vide), `scan.offline-alert` (NONE / INFO / BLOCK, défaut NONE), `voucher.unknown-alert` (INFO / BLOCK, défaut BLOCK), `balance.ftp-host`, `-port` (21), `-user`, `-password`, `-directory` (/), `-interval-seconds` (0) (BALANCE). Administrer : luhn activé, GS1 SUPERVISOR, 1 jour de refus, 5 jours de date courte, « PRODUIT PÉRIMÉ LE {date} », « DATE COURTE : {date} », `^QB\d{6}$`, `EAN13;EAN8;CODE128;GS1;QR`, INFO, INFO, FTP 127.0.0.1:2121 /drops toutes les 10 s. Moyens de paiement 900101 VOUCHER « Bon d’achat magasin » et 900102 TR « Titre restaurant ». Plages : CADEAU_COMPOSE (98, 24 chiffres, REGISTRY, émission GIFT_CARD ; TPV 3–4, ticket 5–10, date DDMMYY 11–16, montant 17–21, séquence 22–24) ; TR_PAPIER (77, 14 chiffres, montant encodé 11–14, moyen 900102) ; plages article FONCTION FN_ATTENTE (23, fonction tickets en attente) et FN_NUMERO (24, fonction lue dans la zone article). Carte superviseur d’Albert Einstein (PICKER) créée à l’écran Comptes.
+
+1. BackOffice : rattacher une plage à CB : « Moyen de paiement inconnu pour une plage scannée. » ; déclarer émettrice une plage non REGISTRY : refus ; plage FONCTION nommant LOTTERY : « Fonction caisse inconnue : LOTTERY. » La carte superviseur imprimable porte le nom et le Code 128 du badge, relu « 22222222 » ; la colonne propose ensuite Imprimer et Retirer.
+2. BO-03-06-54 : scanner 2990000001231 : « CARTE FIDÉLITÉ REFUSÉE : CLÉ DE CONTRÔLE INVALIDE » ; 2990000001230 : client identifié.
+3. BO-03-06-01, -10 : `]d1ABC123` : « SYMBOLOGIE NON ACCEPTÉE : DATAMATRIX » ; `]E03300000000001` : POMMES GOLDEN ; article ART2024QR importé au nœud : `]Q1ART2024QR` et `]C0ART2024QR` l’enregistrent ; ART2024XX reste « CODE INCONNU ».
+4. BO-03-06-64, -51 : GS1 `]C1010330000000000517<J-2>` : « PRODUIT PÉRIMÉ LE … » et AUTORISATION REQUISE ; aval de jdupont : « AUTORISATION REFUSÉE » ; aval d’aeinstein (porteur de carte) : article enregistré. GS1 à J+3 : « DATE COURTE : … », article enregistré.
+5. BO-03-06-30 à -38, -62 : vendre la carte cadeau 3400025000001 en POS01 : numéro 980100000224102602500002 (98 | 01 | 000002 | 241026 | 02500 | 002) imprimé en clair et `[[BARCODE …]]` ; ajouter TIME HHMM puis HHMMSS en 25–28 / 25–30 : 9801000001241026025000011417 et 980100000224102602500002141838. Journal, onglet « Codes-barres imprimés » : POS01, transaction, numéro, 25,00 €, date d’impression, expiration, solde.
+6. BO-03-06-48, -63 : en POS02, articles 3,84 €, RÈGLEMENT, scanner la carte émise par POS01 : réglée 3,84 € « Carte cadeau composée » ; le nœud porte le solde 21,16 € sous l’émetteur POS01. Scanner 989999999999999999999999 : « BON INCONNU DU SYSTÈME : AUCUN RÈGLEMENT » ; `voucher.unknown-alert` BLOCK : « BON INCONNU AU REGISTRE ». Journal, onglet « Codes-barres passés » : TPV, transaction, plage, montant, expiration, date d’utilisation, trouvé OUI / NON.
+7. BO-03-06-08 : scanner 77123456780850 en règlement : « Titre restaurant » 2,16 € (assiette éligible), journalisé 2,16 €.
+8. BO-03-06-59 : 2300000000000 ouvre l’écran des tickets en attente, 2400005000000 le rappel de document, 2400001000000 la métrologie ; 2400099000000 : « FONCTION CAISSE INCONNUE POUR CE CODE ».
+9. BO-03-06-57 : déposer au nœud la commande QBUSTING QB000123 (2 lignes) ; la scanner : « QBUSTING QB000123 CHARGÉ » ; QB999999 : « CODE INCONNU ».
+10. BO-03-06-45 : nœud suspendu, attendre l’échec du tirage : scanner un article : « CAISSE HORS LIGNE : CODE TRAITÉ SANS LE NOEUD MAGASIN », article enregistré ; en BLOCK : « CAISSE HORS LIGNE : CODE REFUSÉ », article non enregistré ; nœud revenu : lecture normale.
+11. BO-03-06-56 : déposer dans /drops un fichier `reference;counter;ean;label;quantity;unit;price` (sachet 0000004242, 2 lignes) : lu et renommé `.done` ; scanner 2700000042427 : « TICKET COMPTOIR 0000004242 INTÉGRÉ (2 LIGNE(S)) ».
+12. Vérifier les libellés FR/NL/PT, les polices et le thème existants, et la lisibilité de l’écran d’aval, de l’écran de règlement et de l’écran de vente en 800 × 600, 1280 × 800 et 1366 × 768, sans défilement horizontal.
+
+Recette exécutée le 24/10/2026 sur imedge (18070), impos POS01 (18080) et POS02 (18081) réels, profil dev, bases H2 mémoire jetables, matériel simulé, bouchon IMFID (8060), serveur FTP pyftpdlib (2121). BackOffice au navigateur : les quatorze nouveaux réglages lus à leur défaut, enregistrés avec `gs1.expiry-alert` et `gs1.expiry-warn-days`, présents sur la page des échelons ; nouvelle plage créée à l’écran, listes « Moyen de paiement », « Plage d’émission » et « Fonction caisse » renseignées ; carte superviseur imprimée et décodée. Étapes 1 à 11 jouées avec les écrans, messages, montants et numéros ci-dessus ; sondage par code et programme externe par code établis par les tests Java. Écrans de caisse sans défilement horizontal aux trois résolutions ; les pages BackOffice débordent en 800 × 600 par l’en-tête commun, comme toutes les pages BackOffice existantes. Limites : le nœud n’interroge aucune base centrale des instruments ; acomptes et bons fidélité ne figurent pas au journal des codes imprimés ; aucune imprimante ni balance physique.
+
+Validation : impos 7 446 tests Java + 319 JavaScript ; imedge 4 246 Java + 11 JavaScript, sans échec, erreur ou test Java ignoré. JaCoCo : impos 29 608 lignes et 15 134 branches ; imedge 20 913 lignes et 10 056 branches ; tous les compteurs manqués sont à zéro. JavaScript externe instrumenté à 100 %. La table des paramètres BackOffice intègre les quatorze nouvelles clés.
+
+Cotation (feuille Back Office) : BO-03-06-01, -08, -10, -30 à -34, -37, -38, -45, -51, -54, -56, -59, -63 et -64 promues par CODE de partiellement à intégralement couvertes ; BO-03-06-57 promue par CODE de non couverte à intégralement couverte ; BO-03-06-48 et -62 restent partielles, commentaire actualisé. Seuls L236, L243, L245, L262 à L266, L269, L270, L277, L283, L286, L288, L289, L291, L295, L296, les commentaires O de ces lignes et de L280 et L294 et leurs hauteurs changent dans le classeur. PDF : pages 1–2 actualisées, page 46 ajoutée, pages 3–45 préservées. Back Office P1 : 407/704 intégrales (57,8 %), 223 partielles (31,7 %), soit 630/704 intégrales ou partielles (89,5 %) ; toutes priorités : 437 / 266 / 93, couverture pondérée 71,6 %. Ligne de caisses inchangée : P1 460/477. Campagne : 185 promotions, dont 177 CODE et 8 RELECTURE.
+
+## HD_43 — BO-01-01-03, BO-01-02-01, -03, -06, -09, -10, BO-01-03-03, -04, BO-01-04-01, -02, -03, -05, -06, -08 : comptes, authentification, profils et accès
+
+Gain : le contrôle d’accès par profil couvre tout le BackOffice : chacun des 212 gestes des écrans déclare sa fonctionnalité (46 au catalogue) et son option (visualisation, création, modification, suppression), un filtre commun interroge les profils de l’utilisateur sur les échelons de ses affectations et répond « Droit refusé » (403) sinon ; plus aucun écran ne repose sur un rôle fixe. Une option se soumet à validation, par l’utilisateur ou par un compte d’un profil valideur ; refus, validations et modifications s’écrivent au Journal d’administration (écran, filtre, extraction CSV). Le profil porte un niveau hiérarchique : un compte n’attribue que des profils de son niveau ou d’un niveau inférieur, à des comptes d’un niveau strictement inférieur. Un compte se rattache à des échelons (pays, enseigne, PDV, type de point de contact, point de contact) ; la création sans code génère badge, PIN et mot de passe provisoire sur une fiche imprimable ; l’action « Réinitialiser » régénère PIN et/ou mot de passe. Authentification OpenID Connect (SSO du groupement) à côté du mot de passe, réglée par compte et par échelon (`auth.bo-sign-in`). Le nœud central distribue aux PDV comptes, profils et affectations de leurs échelons ; le référentiel EMPLOYEES d’une caisse ne porte plus que les comptes qu’elle admet. Menu « Favoris » en tête de la navigation, menus, fonctionnalités et types de rapport masquables. Correctifs mis au jour par la recette : création d’un compte sans badge ou sans prénom (erreur 500), mot de passe distribué haché deux fois à l’application du référentiel, atterrissage sur le tableau de bord refusé à un compte à profil (il arrive désormais sur le premier écran de son menu).
+
+Préconditions : construction dev, H2 mémoire jetable, matériel simulé ; nœud central imedge (18071, rôle central), nœud PDV 07039 (18070, `pos.central-url` vers le central, `pos.sso.enabled=true`), fournisseur OIDC simulé (18099, jetons RS256, JWKS), caisse impos POS01 (18080) rattachée au nœud PDV. Au BackOffice, page des échelons : `auth.bo-sign-in` (SESSION CAISSE, ANY / PASSWORD / SSO, défaut ANY).
+
+1. BO-01-02-06 : écran Comptes, créer Paule Lefort sans badge, PIN ni mot de passe : fiche « Identifiants de Paule Lefort » avec badge en Code 128, PIN à 4 chiffres et mot de passe provisoire de 10 caractères ; créer sans prénom : « Le prénom est obligatoire. »
+2. BO-01-03-03 : créer les profils Direction (niveau 5), Chef de caisse (niveau 3), Marketing (niveau 1, « Tout le menu » Articles, création des sélections soumise à validation par l’utilisateur, suppression des attributs soumise à validation par le profil Chef de caisse).
+3. BO-01-03-04 : affecter Chef de caisse à Alice Martin sur PDV:07039, Marketing à Paule sur ENSEIGNE:ITM ; une affectation sur TPV:POS01 : « Échelon invalide : un pays, une enseigne, un point de vente ou « * ». »
+4. Première connexion de Paule : redirigée vers `/admin/password`, changement accepté.
+5. BO-01-04-01, -02, -06 : navigation de Paule limitée au menu Articles ; Articles, Sélections, Attributs : 200 ; Paramètres caisse et Comptes : 403 « Droit refusé » ; création de campagne : 403.
+6. BO-01-04-03 : créer la sélection PROMO NOEL : fenêtre « Validation requise » ; mot de passe faux : « Validation refusée » ; bon mot de passe : « Sélection « PROMO NOEL » enregistrée. »
+7. BO-01-04-05 : créer l’attribut BIO (sans validation) puis le supprimer : fenêtre de validation ; identifiants de Paule : refus (pas le profil valideur) ; identifiants du chef : « Attribut « BIO » supprimé. »
+8. Écran Journal d’administration filtré sur paule : 8 lignes (2 refus d’écran, 1 refus de création, 2 validations refusées, 3 gestes effectués avec leur valideur) ; extraction CSV de 9 lignes (en-tête compris).
+9. BO-01-03-03 : le chef affecte Direction à Paule : « Le profil « Direction » est d’un niveau supérieur au vôtre. » ; Marketing : accepté ; sur l’admin : « Vous n’administrez que les comptes d’un niveau inférieur au vôtre. » ; créer un compte de niveau 3 : refus.
+10. BO-01-02-03 : le chef crée hote1 (TPV:POS01) et hote2 (TPV:POS02), fiches générées.
+11. BO-01-02-10 : le chef réinitialise Paule : « Secrets réinitialisés : remettez-les au titulaire. », ancien mot de passe refusé, provisoire imposant le changement ; réinitialiser l’admin ou son propre compte : refus.
+12. BO-01-04-08 : écran Mes favoris (admin) : Comptes et Journal d’administration en favoris, menu Financier et Codes postaux masqués, un type de rapport masqué : navigation « Favoris, Paramétrage, Articles, Administration, Supervision », 15 puis 14 rapports listés, le rapport masqué reste accessible (200).
+13. BO-01-02-01 : page de connexion, « Se connecter avec le SSO du groupement » : Paule connectée par le fournisseur, Sélections 200, Paramètres caisse 403 ; identité inconnue : « Aucun compte actif n’admet la connexion SSO pour cette identité. »
+14. BO-01-02-09 : Paule en « SSO seulement » : mot de passe refusé, SSO admis ; `auth.bo-sign-in` à PASSWORD : pas de bouton SSO, SSO refusé (« La connexion SSO n’est pas activée sur ce nœud. ») ; à SSO : l’admin refusé par mot de passe, admis par SSO ; retour à ANY.
+15. BO-01-01-03 : au central, profil Marketing enseigne, comptes mkt.itm (ENSEIGNE:ITM) et pdv.autre (PDV:07040), affectation ; le central remet mkt.itm au PDV 07039 et pdv.autre au PDV 07040 seulement ; après le tirage du PDV 07039 : mkt.itm présent avec le badge « central », connecté avec le mot de passe du central et routé vers le premier écran de son menu, changement de mot de passe refusé au PDV ; pdv.autre absent.
+16. BO-01-02-03 : référentiel EMPLOYEES de POS01 : hote1 présent, hote2 absent ; en caisse POS01, hote1 prend son poste par identifiant et par badge avec le PIN généré, hote2 refusé.
+17. Vérifier les polices et le thème existants et la lisibilité des écrans Comptes, Profils, Affectations, Journal d’administration, Mes favoris, fenêtre de validation et page de connexion en 800 × 600, 1280 × 800 et 1366 × 768, sans défilement horizontal du contenu.
+
+Recette exécutée le 24/10/2026 sur un nœud central imedge (18071), un nœud PDV 07039 (18070) et la caisse impos POS01 (18080), profil dev, bases H2 mémoire jetables, matériel simulé, fournisseur OIDC simulé (18099) ; scénario joué après le premier tirage des référentiels du PDV (l’échelon ENSEIGNE:ITM ne se résout qu’une fois le PDV connu du nœud). Étapes 1 à 16 jouées avec les messages, codes HTTP et listes ci-dessus ; fiches générées (badge Code 128, PIN, mot de passe provisoire) ; journal de 8 lignes et CSV de 9 lignes ; Paule et mkt.itm arrivent sur `/admin/articles`. Écrans Comptes, fiche d’identifiants, profil, Utilisateurs, Journal d’administration, Mes favoris, Droit refusé, fenêtre de validation et page de connexion sans défilement horizontal du contenu aux trois résolutions ; en 800 × 600 l’en-tête commun du BackOffice déborde, comme sur toutes les pages BackOffice existantes. Correctif de recette supplémentaire : la grille des droits du profil débordait de 31 px en 800 × 600 (colonne Validation resserrée sous 900 px). Limites : un point de contact (TPV:…) ne se choisit dans la liste des échelons d’un compte qu’une fois déclaré au référentiel des points de caisse ; la caisse n’impose le changement du PIN généré à la première prise de poste que si `auth.password-expiry-days` est administré (BO-01-02-06 reste partielle) ; aucun fournisseur d’identité réel.
+
+Validation : imedge 4 329 tests Java + 11 JavaScript, sans échec, erreur ou test ignoré. JaCoCo : 21 947 lignes et 10 844 branches, tous les compteurs manqués à zéro. JavaScript externe instrumenté à 100 %. Un test d’architecture vérifie que chaque geste des écrans BackOffice déclare sa fonctionnalité ; la table des paramètres BackOffice intègre `auth.bo-sign-in`. Aucun fichier impos modifié.
+
+Cotation (feuille Back Office) : BO-01-01-03, BO-01-02-03, -09, -10, BO-01-03-03, -04, BO-01-04-01, -02, -03, -05, -06 et -08 promues par CODE de partiellement à intégralement couvertes ; BO-01-02-01 promue par CODE de non couverte à intégralement couverte ; BO-01-02-06 reste partielle, commentaire actualisé. Seuls L4, L8, L9, L13, L14, L19 à L26, les commentaires O de ces lignes et de L11 et leurs hauteurs changent dans le classeur. PDF : pages 1–2 actualisées, page 47 ajoutée, pages 3–46 préservées. Back Office P1 : 417/704 intégrales (59,2 %), 214 partielles (30,4 %), soit 631/704 intégrales ou partielles (89,6 %) ; toutes priorités : 450 / 254 / 92, couverture pondérée 72,5 % ; bloc 01 : 20 / 3 / 2. Ligne de caisses inchangée : P1 460/477. Campagne : 198 promotions, dont 190 CODE et 8 RELECTURE.
+
+## HD_43 — BO-01-01-04, BO-01-01-05, BO-01-02-07 : langues du Back Office, clé Dallas, échelons de caisse
+
+Gain : le Back Office imedge est traduit en français, néerlandais et portugais. Le bean `i18n` lit les catalogues `messages/msg_fr|nl|pt.properties` (3 100 entrées par langue, le français faisant référence). Les 66 gabarits d'écran passent par `{inject:i18n.get(...)}`. Les textes calculés par le serveur (notices, menus, libellés d'énumérations, descriptions des paramètres) restent en français dans le code et sont traduits à l'affichage par `i18n.text(...)`.
+
+La langue suit cet ordre : celle de l'opérateur (écran Comptes), puis la langue de référence de l'échelon du nœud (`language.system`, posée au pays, à l'enseigne ou au PDV), puis le français.
+
+En dessous de 1 000 px, l'en-tête, les tableaux, les onglets du journal et la table de synchronisation se replient ; les paires de champs de période du journal passent à la ligne au lieu de déborder.
+
+Clé Dallas (iButton) :
+- elle s'attribue au compte à l'écran Comptes : seize chiffres hexadécimaux, unique ;
+- elle descend aux caisses dans le référentiel EMPLOYEES, et aux PDV dans les comptes distribués par le central ;
+- là où `auth.dallas-key` est activé, la clé lue par le lecteur de la caisse (`POST /api/pos/dallas`) ouvre la session sans code PIN.
+
+Échelons d'un compte : la liste propose aussi les caisses vues sur la ligne, et un champ « Autres TPV » accepte des identifiants de caisses ni déclarées ni vues.
+
+Report du lot 16 sur la caisse impos :
+- colonnes `echelon_scopes`, `auth_mode` et `central_managed` de `Employee`, méthodes `allowsPasswordLogin`, `allowsSsoLogin` et `adoptBackOfficePasswordHash` ;
+- refus du mot de passe pour un compte SSO seulement sur les surfaces machine ;
+- pas de changement de mot de passe imposé à un compte SSO ou central.
+
+Correctifs mis au jour par la recette : l'en-tête du Back Office débordait en 800 × 600 ; les tableaux Articles, Bons de réduction et Synchronisation, ainsi que les onglets du journal, débordaient en 800 × 600 ; les champs de période du journal se chevauchaient à toutes les résolutions.
+
+Préconditions : construction dev, H2 mémoire jetable, matériel simulé ; nœud imedge PDV 07039 (18070) et caisse impos POS01 (18080) rattachée au nœud. Page des échelons :
+- `language.system` (LANGUE, défaut fr) ;
+- `auth.dallas-key` (SESSION CAISSE, désactivé).
+
+1. BO-01-02-03 : écran Comptes, créer tpv7 sur PDV:07039 avec « Autres TPV » = ` POS07, pos08` : échelons « PDV 07039, TPV POS07, TPV POS08 » ; à la modification, TPV:POS07 et TPV:POS08 restent sélectionnés. Une fois POS01 connecté, la liste propose « TPV POS01 — vu sur la ligne ».
+2. BO-01-02-07 : poser `auth.dallas-key` à activé. Créer scol (TPV:POS01) avec la clé `01:a2:b3:c4:d5:e6:f7:08`, enregistrée `01A2B3C4D5E6F708`.
+   - La même clé sur un autre compte : « Cette clé Dallas est déjà attribuée à scol. »
+   - La clé `12345` : « Clé Dallas invalide : seize chiffres hexadécimaux. »
+3. BO-01-02-07 : le référentiel EMPLOYEES de POS01 porte la clé.
+   - POS01 verrouillée, présenter la clé au lecteur (`POST /api/pos/dallas`) : la page de verrouillage ouvre la session sans PIN et affiche le contrôle du matériel.
+   - Clé inconnue : `/lock?error=true`.
+   - `DALLAS:01A2B3C4D5E6F708` saisi sans lecture : `/lock?error=true`.
+   - `XYZ` présenté au lecteur : 400.
+   - Paramètre désactivé, après le tirage : la clé lue est ignorée.
+4. BO-01-01-04 : poser `language.system` à nl.
+   - La page de connexion est en néerlandais (`lang="nl"`), les écrans de l'administrateur aussi : « Accounts », menus Instellingen, Artikelen, Administratie, Supervisie, Financieel.
+   - Une notice calculée en français, « Cet identifiant est déjà pris. », s'affiche « Deze gebruikers-ID is al in gebruik. ».
+   - Le compte lise, administré en portugais, voit ses écrans en portugais sur le même nœud (`lang="pt"`, « Diário eletrónico »).
+5. BO-01-01-05 : parcourir les 48 écrans du menu, Mes favoris et Mot de passe en fr, nl et pt, à 800 × 600, 1280 × 800 et 1366 × 768 : pas de défilement horizontal, aucun champ ni bloc qui déborde de son conteneur.
+6. Vérifier les polices et le thème existants. Les paramètres affichent leur libellé et leur description dans la langue de la page.
+
+Recette exécutée le 24/10/2026 sur imedge (18070) et impos POS01 (18080), profil dev, bases H2 mémoire jetables, matériel simulé. Les étapes 1 à 6 ont été jouées avec les messages, codes et textes ci-dessus. Le balayage des 48 écrans dans les trois langues aux trois résolutions ne signale aucun débordement.
+
+Limites :
+- aucun lecteur iButton physique : le lecteur est simulé par l'appel au point d'entrée de la caisse ;
+- les données (libellés d'articles, de touches, de gabarits d'impression) restent dans la langue où elles ont été saisies.
+
+Validation : imedge 4 348 tests Java + 11 JavaScript ; impos 7 466 Java + 319 JavaScript, sans échec, erreur ni test ignoré. JaCoCo : imedge 22 130 lignes et 10 950 branches, impos 29 700 lignes et 15 212 branches, tous les compteurs manqués à zéro ; JavaScript externe instrumenté à 100 %. La table des paramètres BackOffice intègre auth.dallas-key ; un test vérifie que les trois catalogues ont les mêmes clés et les mêmes paramètres, et que chaque libellé appelé par les gabarits existe.
+
+Cotation (feuille Back Office) : BO-01-01-04 est promue par CODE de partiellement à intégralement couverte ; BO-01-01-05 et BO-01-02-07 sont promues par CODE de non couvertes à intégralement couvertes.
+
+Seuls L5, L6, L12, les commentaires O de ces lignes et leurs hauteurs changent dans le classeur. PDF `synthese-imedge-HD_43.pdf` : pages 1–2 réécrites sur imedge, page 48 ajoutée, pages 3–47 préservées.
+
+Back Office P1 : 420/704 intégrales (59,7 %), 213 partielles (30,3 %), 71 non couvertes (10,1 %), soit 633/704 intégrales ou partielles (89,9 %). Toutes priorités : 453 / 253 / 90, couverture pondérée 72,8 %. Bloc 01 : 23 / 2 / 0.
+
+Campagne : 201 promotions, dont 193 CODE et 8 RELECTURE.
+
+## HD_43 — Lot 18 : BO-10 Règles et BO-08 Supervision
+
+Gain : le Back Office imedge administre les règles de caisse du bloc BO-10 et la supervision et le déploiement du bloc BO-08.
+
+Règles BO-10, toutes posées à `/admin/settings` (ou par échelon à `/admin/echelons`) et descendues aux caisses avec les autres paramètres :
+- canaux externes (section CANAUX EXTERNES) : e-commerce `channel.ecommerce.*`, self-scanning `channel.selfscan.*`, gestion commerciale `channel.commercial.*`, Q-busting `channel.qbusting.*`, mobilité `channel.mobility.*`, bons de vente `channel.sales-slip.*`. Activation, mode de récupération, ajout d'articles, identifiant, source du prix, coupons, EAN générique des articles inconnus, canal transmis au moteur de promotion, vente interdite, impression automatique, acompte, paiement fictif. Le nœud reçoit les commandes e-commerce (`POST /api/ecommerce/orders`) et les enregistre comme tickets d'une caisse virtuelle rattachée à un îlot ; l'écran `/admin/ecommerce-orders` garde le compte rendu et la commande d'origine ;
+- fidélité (section FIDÉLITÉ) : soldes des cagnottes, nom du porteur, moyen de paiement, compte et mot de passe masqué, délais, date de commande, promotions personnalisées déclenchées, regroupement par catégorie, sous-famille ;
+- règles de caisse : tiroir en mode école, article inconnu, règle d'arrondi, décimales de facture, mot de passe à l'ouverture, longueur du code, mode de validation superviseur, code article sur ticket et écrans, ticket balance, message de vente interdite, regroupement des lignes, GS1 et alertes par AI, report des mises à jour de référentiel pendant une vente ;
+- documents et fiscal : identifiants SAF-T FS et NC, certificat et export SAF-T PT (`/admin/saft`), éco-taxes, textes du chèque, logos monétique et sans contact, montant dû agrandi, tri et sous-totaux par famille, langues de l'afficheur client et du système, écran déconnecté, courriel du ticket, décimales et symbole des pesées, lignes annulées et lignes identiques sur le ticket.
+
+Supervision BO-08, sur le central et sur chaque magasin :
+- consoles d'intégration, d'usage des fonctions, d'activité, d'inventaire et de maintenance (`/admin/supervision/{integration,usage,activity,inventory,maintenance}`), avec graphiques, filtres par échelon et exports CSV/XLSX ;
+- API de réception par domaine `GET /api/supervision/integrations?domain=VAT_RATES` ;
+- déploiement par lots (`/admin/deployment`) : versions publiées, cibles, prérequis, période, pilotes, mise à jour au démarrage, reprise automatique, forçage, retour arrière ;
+- conservation et réintégration automatique ou manuelle des dépôts du central, ordres de maintenance à distance tracés ;
+- page mobile des alertes caisses (`/dashboard/mobile`).
+
+Correctifs mis au jour par la recette :
+- création d'un îlot, et d'un pays, d'une enseigne ou d'un PDV, en erreur 500 ;
+- prix de la ligne marquée inconnue repris de l'article générique ;
+- événements fidélité de clôture envoyés avec le compte de déploiement et un délai fixe ;
+- tiroir resté fermé en mode école ;
+- ventilation de TVA et totaux de facture divergents en arrondi administré ;
+- message de vente interdite non saisissable sur la fiche article ;
+- décimales et symbole absents du ticket comptoir ;
+- apparence hors ligne peu visible ;
+- appels superviseur des caisses en 404 au magasin ;
+- réintégration planifiée en échec et réponses sans erreur classées partielles ;
+- état de mise à jour non remis à zéro sur une nouvelle version cible ;
+- textes restés en français sur les écrans nl et pt, débordements de tableaux à 800, 1280 et 1366 px.
+
+Préconditions : construction dev, bases H2 mémoire jetables, matériel simulé. Nœuds :
+- nœud imedge magasin PDV 07039 et sa caisse impos POS01, lancée avec `-Dpos.recall.document-url` vers le magasin et `-Dpos.fid.url` vers un bouchon imfid (comptes avec nom du porteur, `POST /api/accounts/{carte}/pots`, promotions de carte, événements, source `/gc/orders`, réponse en 3 s pour les cartes contenant 777) ;
+- caisse POS02 sur le PDV 07039, pour les règles paires et impaires ;
+- central imedge, pour BO-08 et BO-10-08-23 ;
+- second magasin PDV 07040 (enseigne NET, adhérent ADH07040) et sa caisse POS01, déclarés au central par `/admin/echelons`, pour les cas multi-PDV.
+
+Ports de la recette : passe RC1 magasin 19070, caisse 19080, imfid 19060 ; passe RC2 magasin 20070, caisse 20080, imfid 20060, central 20090 ; passe RC3 central 21090, magasin 07039 21070 avec POS01 21080 et POS02 21081, magasin 07040 21071 avec POS01 21082. Un paramètre enregistré atteint la caisse en 60 s au plus.
+
+**Canaux e-commerce, self-scanning, gestion commerciale, Q-busting, mobilité, bons de vente**
+
+1. BO-10-01-01, BO-10-01-03 : `channel.ecommerce.enabled` désactivé, `POST /api/ecommerce/orders` sur W0 : `"status":"DISABLED"`, « E-commerce non activé sur ce point de vente » ; le panier ECOMMERCE saisi en caisse : « E-COMMERCE : CANAL NON ACTIVÉ SUR CE MAGASIN ».
+   - Activé, W1 : `{"status":"INTEGRATED","ticketNumber":"ECOM-W1","total":3.20,"unknownLines":1,…,"payments":[{"method":"PAYPAL","integratedAs":"CARD"}]}`.
+   - Nouvel envoi de W1 : `"alreadyReceived":true`, rien n'est enregistré deux fois. `GET /api/ecommerce/orders/W1` rend le compte rendu, `GET /api/ecommerce/tickets/ECOM-W2` le ticket.
+2. BO-10-01-06, BO-10-01-07, BO-10-01-09, BO-10-01-14 :
+   - `unknown-item-ean=3300000000030`, W2 : `"outcome":"UNKNOWN","carriedOn":"3300000000030"`, ligne « INCONNU WEB [ART. INCONNU 9990001] » au prix 1,00 de la commande ; sans EAN générique, la ligne est intégrée et signalée UNKNOWN.
+   - `price-source=POS` : Lait de W3 à 2,76 ; `TRANSACTION` : W4 à 1,10.
+   - `default-tender=VOUCHER` : `"integratedAs":"VOUCHER"` ; `XYZ` : W7 REJECTED « Moyen de paiement par défaut inconnu de l'encaissement ».
+   - `forbidden-items=ACCEPT` : W5 INTEGRATED, `"forbiddenLines":1` ; `REJECT` : W6 `"status":"REJECTED","message":"Article en vente interdite"`.
+3. BO-10-01-08, BO-10-01-11 : créer l'îlot WEB (« Îlot créé. »), poser `island=WEB` : W20 intégrée, point d'encaissement ECOM rattaché à l'îlot WEB sur `/admin/checkout-points` ; îlot NOPE : « Îlot inconnu : NOPE ». `archive=true` : `/admin/ecommerce-orders` montre le compte rendu et la « Commande d'origine » ; `archive=false` : W11 avec le compte rendu seul.
+4. BO-10-01-04, BO-10-01-05 : `return-ticket-types=Retour web`, rechercher ECOM-W1 à l'écran de retour et le rendre en « Retour magasin » : « TYPE DE RETOUR NON AUTORISÉ POUR UN TICKET E-COMMERCE » ; en « Retour web », le visa est demandé. `return-article-types=Retour partiel web`, rendre un Lait sur deux d'ECOM-W2 en « Retour web » : même refus ; en « Retour partiel web », le retour passe au visa.
+5. BO-10-01-13, BO-10-01-22, BO-10-01-28, BO-10-01-31, BO-10-01-34 : poser le canal de promotion de chaque canal et rappeler un panier ; la requête de valorisation porte `"promotionChannel":"WEB"` (e-commerce, avec `"deliveryMode":"IN_STORE"`, self-scanning, gestion commerciale, Q-busting) ou `"promotionChannel":"OTHER"` (self-scanning, mobilité).
+6. BO-10-01-15 à BO-10-01-18 :
+   - `selfscan.enabled=false`, panier SE…-CMD… saisi : « SELFSCANNING : CANAL NON ACTIVÉ SUR CE MAGASIN » ; activé, le panier est chargé.
+   - `retrieval-mode=SCAN`, code saisi : « CE DOCUMENT SE RÉCUPÈRE PAR LE SCAN DE SON CODE-BARRES » ; `KEYED`, code scanné : « CE DOCUMENT SE RÉCUPÈRE PAR LA SAISIE DE SON CODE À L'ÉCRAN RAPPEL ».
+   - `add-items=AFTER`, article puis panier : « PANIER SELFSCANNING REFUSÉ : DES ARTICLES SONT DÉJÀ SAISIS » ; `BEFORE`, article après le panier : « AJOUT D'ARTICLE INTERDIT APRÈS LE PANIER SELFSCANNING » ; `NONE` : les deux refusés.
+   - `identifier=CUSTOMER`, code du panier saisi : « PANIER SELFSCANNING : SAISIR LE N° CLIENT À L'ÉCRAN RAPPEL » ; numéro client 4242001 : panier chargé (Lait, Eau).
+7. BO-10-01-19 à BO-10-01-21, BO-10-01-23 :
+   - source du prix POS : Lait 2,76 € ; TRANSACTION : Lait 1,10 €.
+   - `coupons=false` : « 1 COUPON(S) DU PANIER NON REPRIS » ; `true` : paiement « BON 1 EUR 1,00 ».
+   - EAN générique 3300000000030 : ligne « INCONNU SLS [ART. INCONNU 9990002] », bandeau « 1 ARTICLE(S) INCONNU(S) MARQUÉ(S) » ; en prix POS, Lait 2,76 € et ligne inconnue 2,00 € (prix du panier).
+   - `forbidden-items=REJECT` : « VENTE INTERDITE : Lot rappelé (retrait conso) (CODE 3660000099999) », rien de chargé.
+8. BO-10-01-24 à BO-10-01-29 :
+   - `commercial.forbidden-items=REJECT`, DEVIS avec l'article interdit : « VENTE INTERDITE : Lot rappelé (retrait conso) (CODE 3660000099999) ».
+   - `retrieval-mode=KEYED`, COMMANDE scannée : « CE DOCUMENT SE RÉCUPÈRE PAR LA SAISIE… ». `transmission=PULL`, `pull-url` vers `/gc/orders` du bouchon, `pull-minutes=1` : `GET /api/orders/GC1-CMD900` sur le nœud rend la commande tirée.
+   - Modèle BONGC et `auto-print-template=BONGC`, COMMANDE réglée par carte : l'imprimante simulée sort « BON GC POS01-00000016 / DOCUMENTS CO12-CMD13 / Lait x1 2,76 / TOTAL 2,76 » puis coupe.
+   - `deposit-tender=CARD`, acompte 1,00 : acompte enregistré pour CO10-CMD11 sous CARD, `acompteAlreadyPaid 1.0000` au nœud.
+   - `price-source=POS` : Lait réglé 2,76 € (1,10 sur le document).
+9. BO-10-01-30, BO-10-01-32, BO-10-01-33 : `qbusting.retrieval-mode=SCAN`, code saisi : refus « …PAR LE SCAN DE SON CODE-BARRES » ; scanné : « QBUSTING QB…-CMD… CHARGÉ OK ». REJECT : « VENTE INTERDITE : Lot rappelé (retrait conso) (CODE 3660000099999) ». Prix POS : Lait 2,76 €.
+10. BO-10-01-36, BO-10-01-37, BO-10-01-39 : `mobility.price-source=TRANSACTION` : Lait 1,10 €, Eau 0,50 € ; REJECT : même message de vente interdite. Transaction payée CARD 1,00 sur 1,60 €, `fictitious-tender=VOUCHER` : CARTE BANCAIRE 1,00 + BON D'ACHAT 0,60, reste 0,00, « MOBILITÉ : VOUCHER AJOUTÉ POUR 0,60 € ».
+11. BO-10-01-40, BO-10-01-41 : `sales-slip.retrieval-mode=KEYED`, bon scanné : « CE DOCUMENT SE RÉCUPÈRE PAR LA SAISIE… » ; saisi : « BON DE VENTE BO…-CMD… CHARGÉ OK ». Prix POS : Lait 2,76 €.
+
+**Fidélité**
+
+12. BO-10-02-33 : `fidelity.pot-balances-enabled=true`, carte 2990000012344 : la caisse appelle `POST /api/accounts/2990000012344/pots {"earnAmount":5.62,"burnAmount":0}`.
+    - `/fidelity` : « SOLDES DES CAGNOTTES : Cagnotte : 12,50 € Cagnotte carburant : 3,20 € ».
+    - Ticket réimprimé après clôture : « SOLDES DES CAGNOTTES / Cagnotte 12,50 E / Cagnotte carburant 3,20 E » sous SOLDES CARTE.
+13. BO-10-03-04, BO-10-03-06 : `show-holder-name=true`, scan de la carte 2990000000011 : « DURAND Anne · 2990000000011 · 12,50 € ». `payment-tender=VOUCHER`, paiement fidélité 1,00 et signature : « BON D'ACHAT 1,00 ».
+14. BO-10-03-08, BO-10-03-10 : saisir `fidelity.password` ; le champ est masqué, « renseigné — vide = inchangé » ; un enregistrement à vide donne « 0 paramètre(s) enregistré(s) » et garde la valeur ; sur `/admin/echelons`, la valeur de `fidelity.password` est masquée. L'appel du compte et l'événement de clôture partent en `Basic posuser:S3cret!`. `read-timeout-ms=800`, imfid à 3 s : « SERVICE FIDÉLITÉ INDISPONIBLE » après 0,82 s ; `5000` : porteur affiché après 3,05 s.
+15. BO-10-03-17, BO-10-03-22, BO-10-08-22 :
+    - `order-date-enabled=true`, COMMANDE rappelée : `"orderDate":"2026-10-25T07:58:49"` dans la valorisation, la demande de gain et l'événement de clôture.
+    - `jv-promotion-enabled=true`, promotion de carte sur 3300000000002 vendue : `"triggeredPromotions":[{"ean":"3300000000002",…,"quantity":1}]` dans l'événement de clôture.
+    - `send-subfamily=true` : `"familyCode":"20200200","subFamilyCode":"202002000001"` dans la valorisation, `subFamilyCode` dans la demande de gain.
+16. BO-10-03-20 : `fidelity.advantage-grouping=CATEGORY`, imfid rend PRODUITS FRAIS (rang 2) puis EPICERIE (rang 1) : le ticket imprime « EPICERIE / BON 5 EUR DES 10 EUR +5,00 E » puis « PRODUITS FRAIS / CAGNOTTE 5 % +0,62 E ».
+
+**Règles de caisse**
+
+17. BO-10-02-12 : vente en espèces en mode école. `drawer.open-in-training=false` : tiroir fermé, journal « Tiroir laissé fermé : mode école (BO-10-02-12) » ; `true` : tiroir ouvert. L'ouverture manuelle suit la même règle.
+18. BO-10-02-14 : `scan.unknown-manual-entry=true`, scan de ZZZ999 : « ARTICLE INCONNU : ZZZ999 — SAISISSEZ LA FAMILLE OU LE CODE », puis SAISIE DIRECTE « Article inconnu, vendez-le par sa famille ou son code : ZZZ999 ».
+19. BO-10-02-18, BO-10-02-19 : `calc.rounding-mode=DOWN`, PLU 4020 1,257 kg × 1,08 : 1,35 (1,36 en HALF_UP) ; ticket « TVA 20,00% HT 1,12 TVA 0,23 » ; facture : TVA 1,12/0,23, TOTAL HT 1,12, TOTAL TVA 0,23. `invoice.decimals-line-total-ht=3` : facture A4 « Total HT 0,900 € », facture 42 colonnes « Total HT 0,900 », ligne pesée « 1,133 ».
+20. BO-10-02-22, BO-10-02-23 : `auth.password-required-on-open=false`, badge 12341234 sur `/lock` : la caisse s'ouvre seule ; `true` : elle attend le code. `auth.pin-length=6` : `/pin-change` à 4 chiffres « Le nouveau code doit comporter 6 chiffres » ; compte créé sur imedge : code généré « 120132 ».
+21. BO-10-02-31 : `supervisor.validation-mode` :
+    - CODE_PASSWORD : mcurie/1111 accepté ;
+    - BARCODE : 11111111 tapé sans lecture « AUTORISATION REFUSÉE », badge lu accepté sans code ;
+    - BARCODE_PASSWORD : badge lu + 1111 accepté ;
+    - BARCODE_CODE_PASSWORD : badge + jdupont refusé, badge + mcurie/1111 accepté ;
+    - DALLAS : clé 01-A2-B3-C4-D5-E6-F7-08 sur `/api/pos/dallas` acceptée ; consignes « Présentez le code-barres superviseur », « Présentez la clé Dallas superviseur ».
+22. BO-10-02-34, BO-10-02-35 : `display.show-ean=true`, indicateur faux sur 3300000000001 et vrai sur 3300000000002 : EAN imprimés sous LAIT et BAGUETTE, aucun sous POMMES ; `false` : seul « 3300000000002 » ; DUPLICATA N°1 identique. Écran de vente : EAN 3300000000002 et 3300000000003 (actif), 3300000000002 seul (inactif) ; l'afficheur client ne porte l'EAN que sur LAIT.
+23. BO-10-05-01 : `balance.ticket-mode=API_FTP` : `POST /api/sync/balance-ticket` 200, scan 2700000000427 : « TICKET COMPTOIR 0000000042 INTÉGRÉ (2 LIGNE(S)) » ; `FTP` : 403 « Récupération des tickets balance par l'API désactivée » ; `OFF` : 403 et le code 27… est lu « ARTICLE INCONNU ».
+24. BO-10-07-20 : défaut « PRODUIT INTERDIT À LA VENTE » ; `sale.forbidden-message` : « RETRAIT RAPPEL : VOIR ACCUEIL » ; message « RAPPEL LOT 12 : NE PAS VENDRE » saisi sur la fiche de 3660000099999 : il l'emporte.
+25. BO-10-08-25, BO-10-08-32 : vente ouverte, libellé de 3300000000003 modifié sur imedge : « Référentiel PRODUCTS différé : vente en cours », l'article scanné reste « BAGUETTE TRADITION » ; après clôture, « BAGUETTE MODIF » 4 s plus tard. `sale.group-lines=false` : même EAN deux fois, deux lignes x1 ; `true` : une ligne x3.
+26. BO-10-09-01, BO-10-09-04 : `gs1.enabled=true` : (01)03300000000002 donne LAIT UHT 1L ; `false` : « ARTICLE INCONNU : (01)03300000000002 … ». `gs1.ai-alerts` : `10=SUPERVISOR:Lot {value} à contrôler` refuse « Lot LOT42 à contrôler » avec le panneau superviseur, visé la ligne est ajoutée ; `21=WARN` ajoute la ligne et « Numéro de série SN777 » ; `22=BLOCK` refuse « Variante V1 refusée ». Observation : un AI absent de la table du lecteur (240) est lu comme l'AI 24, donc une alerte `240=…` ne se déclenche pas.
+
+**Documents et fiscal**
+
+27. BO-10-06-01 à BO-10-06-03 : `/admin/saft` « FS POS01/2026/00000001 FS (1) » et « NC POS01/2026/00000001 NC (2) » ; `fiscal.saft-id-fs=5`, `fiscal.saft-id-nc=6` : « FS (5) », « NC (6) », export `<HeaderComment>FS=5;NC=6</HeaderComment>`. FS et NC impriment « Processado por programa certificado n.º 1234/AT » ; l'export `SAFT-PT_12123456789_2026-10-01_2026-10-25.xml` porte AuditFileVersion 1.04_01 et SoftwareCertificateNumber 1234.
+28. BO-10-06-05, BO-10-06-06 : `ecotax.attributes=DEEE=Eco DEEE;DEA=Eco mobilier;PILES>NOPRINT;PNEUS;EMB`. En LINE, sous LAIT : « Eco DEEE 0,50 E / Eco mobilier 0,30 E / PNEUS 0,20 E / EMB 0,05 E », PILES non imprimée ; en TOTAL, sous la ventilation de TVA. `customer.invoice-export-ecotax=true` : CSV de `/admin/documents` avec TOTAL_ECO_TAX 1.1500, PILES compris.
+29. BO-10-07-05, BO-10-07-13, BO-10-07-14 : `cheque.unit-text=Euro(s)`, `cheque.cent-text=Cent(s)`, recto de 2,50 : « deux Euro(s) et cinquante Cent(s) ». Images « Logo monétique » et « Logo sans contact » déposées, paiement carte : `[[IMAGE 384 109 …]]` au-dessus des tickets TPE client et commerçant. `ticket.due-amount-large=true` : « [[DOUBLE]]TOTAL TTC … 3,72 E » puis « [[/DOUBLE]] ».
+30. BO-10-07-15, BO-10-08-30, BO-10-08-31 : `ticket.line-order=FAMILY` avec sous-totaux et gras : titres de famille, « SOUS-TOTAL [[BOLD]]8,28 E[[/BOLD]] ». `ticket.cancelled-lines-print=true` : « CONCOMBRE / ANNULE 3,60 E », hors des totaux. `ticket.identical-lines-detailed=true` : trois lignes « LAIT UHT 1L 2,76 » sur le ticket, x3 à l'écran.
+31. BO-10-07-17, BO-10-07-18 : `language.customer-display=nl`, `language.customer-second=fr` : `/customer` en `lang="nl"`, « Welkom / Bienvenue », « TOTAL / TOTAAL », « Reste à payer / Nog te betalen ». `language.system=nl` puis `pt` : BackOffice (Instellingen, Parametrização) et caisse (KASSA, CAIXA) dans cette langue.
+32. BO-10-07-19 : `display.offline-enabled=true`, délai 0, nœud magasin suspendu : après 31 à 32 s, colonne ticket hachurée, cadre orange, bandeau « *** MODE DÉCONNECTÉ — SERVEUR MAGASIN INJOIGNABLE *** » ; retour normal 1 s après la reprise du nœud.
+33. BO-10-07-22, BO-10-07-23 : `ticket.email-offer=true` : `/action/finish` mène à `/ticket-email` (« Envoi du dernier ticket »). `ticket.email-editable=false`, carte avec adresse : « Adresse connue du programme de fidélité : Cette adresse ne peut pas être modifiée en caisse. anne.durand@example.test » ; sans adresse : « Saisissez celle qu'il vous donne ».
+34. BO-10-08-28, BO-10-08-29 : `unit.weight-decimals=2`, `unit.weight-symbol=KG` : écran, afficheur et ticket « 1,26 KG x 1,08 E/KG », facture A4 « 1,26 KG », facture 42 colonnes « 1,26 KG x 1,08 (HT 0,90) », ticket comptoir « LAIT UHT 1L 2,00 KG » ; par défaut « 0,734 kg ».
+
+**Supervision et déploiement** (central, magasins 07039 et 07040)
+
+35. BO-08-01-17, BO-08-01-19 : `/admin/supervision/integration` du central : 80 intégrations, graphique OK/KO ; `?group=ENSEIGNE` « —, ITM, NET », `?pdv=07040` 27 lignes, `?status=KO` une ligne (VAT_RATES du central) ; exports `integration.csv` et `integration.xlsx`. `GET /api/supervision/integrations?domain=VAT_RATES` : 200, une entrée par nœud (`"pdv":"07039","kind":"REGISTER","node":"POS01","received":true`), le dépôt en échec du central en `"received":false`, détail ABANDONED.
+36. BO-08-02-02 : `/admin/supervision/usage` : fonctions de caisse `/action/pay-card`, `/action/session/open`, `/action/unlock` et gestes du BackOffice (`deployment:addTargets` ×21, `remote_maintenance:issue`) ; `?enseigne=NET` ne montre que le PDV 07040, `?channel=CAISSE` trois fonctions sur deux nœuds ; exports CSV et XLSX.
+37. BO-08-03-02, BO-08-03-03 : sur un lot, ajouter les cibles :
+    - `UNIT 07040` : « 1 cible(s) ajoutée(s) » ; `ECHELON ENSEIGNE NET` : la seule caisse du 07040 ;
+    - `ECHELON COUNTRY FR` règle impaire : « 07039 Caisse POS01 » et « 07040 Caisse POS01 » ; `UNIT 07039` règle paire : POS02 seule ;
+    - `ADHERENT ADH07040` : magasin 07040 seul ; `VERSION 1.0-SNAPSHOT` : caisses des deux PDV ;
+    - liste `07039;POS02 / 07040;POS01 / 99999;POS09` : « 1 cible(s) ajoutée(s), inconnu(s) : 99999;POS09 » ;
+    - « Sélection enregistrée » (pilotes), rappel ; nom inconnu : « Sélection introuvable. ».
+38. BO-08-03-01, BO-08-03-04 : la page du lot affiche « Prérequis respectés », « Version trop ancienne (minimum 1.5) », « Nœud jamais vu : version inconnue », « Hors ligne : mise à jour au prochain démarrage » (POS01 arrêtée), « Déjà à jour », et « N cible(s) prête(s) — M cible(s) à surveiller ». Période invalide : « Période illisible : attendu jj/mm/aaaa hh:mn, la fin après le début. » ; « Période enregistrée. » pour le lot MULTI du 02/12/2026 21:00 au 02/12/2026 23:45.
+39. BO-08-03-05, BO-08-03-07 : lot CENTRALE (IMEDGE 3.0, ligne CENTRAL) : cible « Appliquée », « Application imedge 3.0 » dans l'inventaire du central. Lot SAISON (IMPOS 2.0, période passée) sur POS01 : en marche, WAITING_WINDOW ; après redémarrage, « Mise à jour 1.0-SNAPSHOT -> 2.0 : DOWNLOADING / VERIFYING / INSTALLING / APPLIED (Version 2.0 en service) ».
+40. BO-08-03-09, BO-08-03-10, BO-08-03-06 : lot PILOTE-BO (IMEDGE 2.5) sur le seul 07040 : « Magasin 07040 2.5 (Appliquée) », 07039 reste « 1.0-SNAPSHOT (Au repos) ». Lot PILOTE-CAISSE (IMPOS 2.5), caisses paires du 07039 : « 07039 Caisse POS02 2.5 (Appliquée) », les autres caisses restent en 1.0-SNAPSHOT. `/admin/deployment` : graphique des versions « IMEDGE 3.0, IMPOS 1.0-SNAPSHOT, IMPOS 2.5, IMEDGE 2.5… », vues `?group=COUNTRY|ENSEIGNE|PDV`, `?enseigne=NET` 5 lignes, `?status=KO|OK`, exports `deploiement.csv` et `deploiement.xlsx`.
+41. BO-08-04-01, BO-08-04-02, BO-08-04-14 :
+    - paquet défectueux retenté à chaque rapport jusqu'à `deployment.max-attempts=3` (ROLLED_BACK à 07:39:58, 07:40:58, 07:41:58), puis ABANDONED ;
+    - « Forcer » : « 1 cible(s) forcée(s). », la caisse retente aussitôt ;
+    - ordre « Relance du tirage des référentiels » : « Tirage des référentiels relancé » sur 07039 et 07040 ;
+    - IMPOS 2.6 en « paquet défectueux » : « 07040 Caisse POS01 » « Retour arrière — Autotest de la version 2.6 en échec : retour à la version 1.0-SNAPSHOT » ;
+    - pendant une coupure du central, le magasin journalise « Rapport de nœud impossible » ; son rapport est reçu au redémarrage.
+42. BO-08-04-03 à BO-08-04-08 (réintégration automatique au central) :
+    - PRICES sur EAN inconnu en « Lignes rejetées », puis, après PRODUCTS, « (integration-retry) Réintégration du dépôt 10 (PRICES) » : « Intégré », 2 tentatives ;
+    - PRODUCTS sans type rejoué chaque minute jusqu'à « Abandonné » ; PRODUCTS avec colonne ATTRIBUTES « Intégré » ;
+    - NOMENCLATURE « Intégré » ;
+    - CUSTOMERS à raison sociale vide et VAT_RATES `AB|5.5` en « Lignes rejetées », réintégrés jusqu'à « Abandonné » ; activité du central « Synchronisation — Intégrations en erreur : VAT_RATES » ;
+    - OFFERS « Intégré », corps vide « Refusé » (400) ; au magasin, BUDGET_GROUPS en échec de connexion puis « Rejouer ».
+43. BO-08-04-09 à BO-08-04-13 (réintégration manuelle) : « Réintégrer » sur PRICES : « Dépôt PRICES réintégré : APPLIED. » ; ordre « Relance des intégrations en erreur » au central : « Effectué — 4 dépôt(s) réintégré(s) », puis « 5 dépôt(s) réintégré(s) » avec CUSTOMERS ; « Relance du tirage des référentiels » au magasin 07040 et à la caisse POS01 ; « Relance de la livraison des flux moteur » : « Livraison des flux moteur relancée ».
+44. BO-08-04-15, BO-08-04-16, BO-08-04-20 :
+    - `/admin/supervision/activity` : central, deux magasins, trois caisses ; graphiques « —, 07039, 07040 » et « —, ITM, NET » ; filtres `?enseigne=NET`, `?pdv=07039`, `?country=FR&kind=STORE` ; exports.
+    - Imprimante de POS02 sans papier (simulée) puis ordre « Contrôle des périphériques » : « Caisses en anomalie » (`?kind=REGISTER&status=KO`) ne liste que « 07039 Caisse POS02 KO Périphérique — Imprimante : En panne ».
+    - `/admin/supervision/inventory` : matériel, logiciel, périphériques « Disponible » ou « En panne », graphique « Imprimante 2/1 », `?category=PERIPHERAL&status=KO`, export CSV.
+45. BO-08-04-17 : `/admin/supervision/maintenance` :
+    - « Relance du TPV » : En attente, Envoyé, puis Effectué « Réinitialisation terminal effectuée » ;
+    - réinitialisation du scanner de 07040/POS01 et de l'imprimante ;
+    - « Contrôle des périphériques » : `BALANCE=AVAILABLE, … IMPRIMANTE TICKETS=FAILED…` ;
+    - réinitialisation matérielle pendant une vente : « En échec — Vente en cours : ordre refusé ».
+46. BO-10-08-23 : magasin tirant du central, audit désactivé : `/admin/sync` « Traçage désactivé… » ; `referential.update-audit-enabled=true` : « Les 7 dernières intégrations… », lignes domaine / empreinte / 25/10 09:33:21 / APPLIED ; côté caisse, lignes DEFERRED pendant une vente.
+
+**Alertes mobiles**
+
+47. BO-10-08-02 : `dashboard.mobile-alerts-enabled` désactivé : `/dashboard/mobile` « L'affichage des alertes caisses sur mobile n'est pas activé au back-office. », `/dashboard/mobile/data` `enabled:false`. Activé, appel superviseur PRIX de POS01 : `{"terminal":"POS01","reason":"PRIX","status":"PENDING"}` ; autoriser : AUTHORISED ; refuser : REFUSED ; acquitter : l'alerte disparaît. En 390 × 844, pas de défilement horizontal.
+48. Parcourir le menu du BackOffice (57 pages, favoris et mot de passe compris) sur le central et le magasin, en fr, nl et pt, à 800 × 600, 1280 × 800 et 1366 × 768 : pas de défilement horizontal, aucun bloc ni champ qui déborde ; écrans de caisse rappel, fidélité, visa et afficheur client dans les trois langues.
+
+Recette exécutée le 25/10/2026 en trois passes (RC1 canaux et fidélité, RC2 règles de caisse, documents et fiscal, RC3 supervision, déploiement et alertes mobiles), profil dev, bases H2 mémoire jetables, matériel simulé, bouchon imfid. Les étapes 1 à 48 ont été jouées avec les messages, codes et valeurs ci-dessus. La passe finale du balayage des écrans du BackOffice ne signale aucun débordement sur les six parcours (deux nœuds, trois langues), et les 84 captures des écrans de supervision et de déploiement sont conformes.
+
+Limites :
+- BO-10-08-23 est partielle : l'audit des mises à jour est tenu par domaine, pas article par article ;
+- BO-08-04-17 est partielle : maintenance par ordres à distance tracés, sans prise en main de l'écran à distance ;
+- la mise à jour applicative est simulée : la séquence téléchargement, contrôle d'empreinte, installation, autotest et retour arrière est réelle, mais aucun binaire n'est remplacé ;
+- aucun TPE réel : le logo sans contact, qui suit le mode de lecture rendu par le terminal, n'est prouvé que par les tests Java ;
+- aucun lecteur iButton physique : la clé Dallas superviseur est présentée par l'appel au point d'entrée de la caisse ;
+- la purge par ancienneté des commandes e-commerce archivées et la validité au seul jour J des bons de vente sont prouvées par les tests Java, faute de données anciennes en dev.
+
+Validation : imedge 5 094 tests Java + 11 JavaScript ; impos 8 234 Java + 319 JavaScript, sans échec, erreur ni test ignoré. JaCoCo : imedge 26 274 lignes et 12 926 branches, impos 32 649 lignes et 16 861 branches, tous les compteurs manqués à zéro ; JavaScript externe instrumenté à 100 %. Les 302 classes copiées entre imedge et impos sont identiques au paquet près (seuls les scénarios Group*IT, homonymes sans être des copies, diffèrent).
+
+Cotation (feuille Back Office) : les 110 lignes non intégrales des blocs 08 Supervision et 10 Règles sont recotées. 108 passent intégralement couvertes, dont 103 par CODE et 5 par RELECTURE (BO-10-02-22, BO-10-07-14, -18, -22, -23, déjà servies et prouvées en recette) ; BO-08-04-17 passe de non couverte à partiellement couverte ; BO-10-08-23 reste partielle, son commentaire actualisé. Back Office P1 : 516/704 intégrales (73,3 %), 157 partielles (22,3 %), 31 non couvertes (4,4 %), soit 673/704 intégrales ou partielles (95,6 %). Toutes priorités : 561 / 188 / 47, couverture pondérée 82,3 %. Bloc 08 : 45 / 1 / 0 ; bloc 10 : 170 / 1 / 0. Campagne : 310 promotions, dont 297 CODE et 13 RELECTURE.
+## HD_43 — Lot 19 : BO-03 Paramétrage caisse
+
+Gain : le Back Office imedge administre le paramétrage caisse du bloc BO-03 et les caisses impos l'appliquent : configuration par caisse, par îlot et groupée, matériel, menus et écrans de caisse, déploiement immédiat ou programmé (partiel ou complet) et paramètres datés, moyens de règlement, dépenses et mode dégradé monétique, remises et rabais, types de retour, modèles de ticket et documents imprimables, factures, messages fidélité et prestataires, groupes d'articles, codes-barres et GS1.
+
+Écrans et domaines nouveaux du Back Office :
+- `/admin/register-config` : configuration par caisse (échelon CHECKOUT_POINT), par îlot et groupée (îlot, type, liste de caisses, toutes, date facultative), données de formation ;
+- `/admin/cash-menus` (domaine CASH_MENUS) : modèles de menu caisse ;
+- `/admin/releases` : déploiement partiel et complet programmés, paramètres datés ;
+- `/admin/return-types` (RETURN_TYPES), `/admin/prepaid-cards` (PREPAID_CARD_TYPES), `/admin/printable-documents` (PRINTABLE_DOCUMENTS) ;
+- rapports `/admin/reports/deposit-returns` et `/admin/reports/returns-by-type` ;
+- enrichis : `/admin/tenders`, `/admin/lists` (dépenses, remises et rabais), `/admin/coupons` (plages de codes-barres), `/admin/article-groups`, `/admin/touches`, `/admin/providers`, `/admin/templates`, `/admin/checkout-points`, `/admin/checkout-islands`, `/admin/day-end`, `/admin/echelons`, `/admin/journal/barcodes-issued`, détail de ticket du journal.
+
+Correctifs mis au jour par la recette :
+- flux Catalina jamais livré (boucle de livraison hors transaction) ;
+- repères `%Champ%` de la fiche magasin imprimés en clair dans les modèles d'entête et de pied ;
+- type et adresse du terminal monétique lus une seule fois au démarrage, donc jamais appliqués ; codes monétiques VIC lus hors du contexte de l'appelant ;
+- réponse d'un terminal réel en erreur de contexte : paiement accepté perdu ;
+- création d'une devise en erreur 500 ;
+- ligne de retour en vente non remontée au magasin (rapports de déconsigne et de retours par type faux) ; bon de déconsigne 298… lu comme article pesé ;
+- duplicata d'acompte sans le motif de l'original ;
+- aperçu de facture « N° commande true » et « Échéance true » ; ligne d'attributs coupée sur le rouleau ; numéro de compte obligatoire sans effet et refus muet ;
+- lignes promotion du moteur jamais imprimées (écart de revalorisation nul) ;
+- zone fidélité absente d'un ticket imprimé à la demande avant clôture ;
+- ticket d'acompte portant le numéro du client au lieu de sa raison sociale ;
+- promotions de carte d'un client précédent reportées sur les paniers sans carte ;
+- fichier de flux PRODUCTS, FAMILIES ou PRICES rejoué à chaque changement : désactivations d'articles et volumes de vente jamais reçus en caisse ;
+- en-tête de colonne compté comme code inconnu à l'import d'une liste d'articles ;
+- paramètre daté remplaçant aussitôt la valeur courante (F19 : valeur programmée tenue à côté de la valeur courante) ;
+- vente non soldée clôturable par `/action/finish` ; erreur de paiement restée affichée après un geste réussi ; garantie chèque absente du journal du Back Office (FX) ;
+- textes restés en français sur les écrans nl et pt (journal d'audit, aide ATCUD, touches dégradé et formation, écran de paiement, modal prix, parcours facture, natures des rapports), débordements de tableaux à 800, 1280 et 1366 px (prestataires, déploiements, listes, clients), pavés numériques coupés à 800 × 600.
+
+Préconditions : construction dev, bases H2 mémoire jetables recréées à chaque lancement, matériel simulé (simulateur du module matériel, imprimante facturette, monnayeur, TPE). Nœuds :
+- nœud imedge magasin PDV 07039, lancé avec `-Dpos.pdv.number=07039` ;
+- caisse impos POS01 (îlot L1, ligne avant) et caisse C04 (îlot SLS, libre-service, exclu du flux Planexa) ;
+- bouchon imfid (`shortMessage` de 3 lignes, 6 `commercialMessages` de 11 lignes), enregistreur HTTP (système de file unique, serveur Catalina), moteur de valorisation simulé, puits d'impression A4, partenaire de recherche externe, garantie chèque simulée (`cheque.guarantee-provider=SIMULATEUR`) ;
+- central imedge (`pos.role=central`) et second magasin PDV 07040 avec sa caisse POS01, `pos.sync.central-url` vers le central, pour BO-03-06-48.
+
+Ports de la recette : passe RK magasin 19070, POS01 19080, C04 19081, imfid 19060, enregistreur 19065 ; passe RL magasin 20070, POS01 20080, imfid 20060, passerelle TPE 20081 ; passe RM central 21090, magasin 07039 21070 et POS01 21080, magasin 07040 21071 et POS01 21082, bouchons 21060 ; passe F19 magasin 22070 (fuseau Australia/Adelaide, pour franchir minuit pendant la séance) et POS01 22080 ; passe FX magasin 23070 et caisse 23080. Une modification enregistrée atteint la caisse en 1,5 à 2,5 s.
+
+**Configuration des caisses et configuration groupée**
+
+1. BO-03-09-01 : désactiver POS01 sur `/admin/checkout-points`.
+   - `/admin/reports/settlements` : « 0 ligne(s) … Aucune donnée sur la période demandée. » (actif : « CARD 3 … 2,40 € ») ; « Inclure les caisses désactivées » (`?inactive=true`) la remontre.
+   - Déverrouillage de la caisse : 303 vers `/lock?error=deactivated`.
+   - `/admin/day-end` : « Caisses ouvertes » liste POS01 et C04 actives, plus rien une fois désactivées ; l'alarme hors ligne et la clôture consolidée les ignorent.
+2. BO-03-09-02, BO-03-09-03, BO-03-09-04 : `/admin/register-config`, niveau CHECKOUT_POINT, POS01, « Configuration enregistrée ».
+   - entête HDR2 et pied FTR2 : « ENTETE DEUX TPV / Lille … PIED DEUX TPV » ; par défaut « ENTETE UN » ;
+   - `ticket.vat-table` NONE : aucune ligne de TVA ; AMOUNT_ONLY : « Dont TVA 0,10 E » ; COMBINED : en plus « TVA 20,00% HT 0,50 TVA 0,10 » ; SEPARATE : coupon après la coupe « DÉTAIL TVA / Ticket: POS01-00000011 / TVA 20,00% HT 0,50 TVA 0,10 » ;
+   - logos LOGO1 et LOGO2 importés en « Logo de ticket » ; `print.logo-code=LOGO2` : `[[IMAGE 384 121 ///wAAD///gAAH…]]`, LOGO1 : `[[IMAGE 384 86 ////…]]`.
+3. BO-03-09-08 : la liste de l'hôtesse technique propose « 77770001 — Hélène Hotesse ».
+   - Sur POS01 (Caisse) : « Une hôtesse technique ne s'affecte qu'à une caisse libre-service. » ; badge d'un caissier : « Le badge 77770002 n'est pas celui d'une hôtesse technique. ».
+   - Enregistrée sur C04, elle vise une annulation de ticket sur C04 ; refusée sur POS01.
+4. BO-03-09-09 : code-barres ticket désactivé : aucun code ; CODE128 : `[[BARCODE POS01-00000016]]` ; QR : `[[QR POS01-00000017]]` ; duplicata « DUPLICATA N°1 » avec `[[QR POS01-00000005]]`, rien une fois désactivé.
+5. BO-03-09-10 : file unique non activée : touche absente, « La file unique n'est pas activée sur cette caisse. ». `queue.single-enabled` et `queue.single-url` posés : menu AUTRE « FILE UNIQUE : DISPONIBLE » ; appuis : « Caisse déclarée disponible pour le client suivant. » puis « Caisse déclarée non disponible. », l'enregistreur reçoit `{"terminal":"POS01","state":"AVAILABLE",…}` puis `UNAVAILABLE` ; adresse injoignable : « Système de file unique injoignable : l'état n'a pas été transmis. ».
+6. BO-03-09-11, BO-03-09-14, BO-03-09-15, BO-03-09-16, BO-03-09-17 (matériel) :
+   - tiroir désactivé, adresse 0x48F : touche `/drawer-open` masquée, `GET /api/pos/hardware-configuration` « drawer.enabled=false drawer.address=0x48F », `POST /api/pos/hardware-configuration/push` : PUSHED, bloc visible sur `/api/hardware/configuration` du simulateur ;
+   - balance active, PLU 4020 à 1,250 kg : « 1,250 kg POMMES GOLDEN 1,250 kg x 1,08 €/kg 1,35 € » ; `hardware.scale.enabled=false` : « POIDS INVALIDE » ; balance DIGI 192.168.1.50:2001 : bloc « scale.protocol=DIGI scale.address=192.168.1.50 scale.port=2001 » ;
+   - scanner de C04 désactivé : en-tête « Scanner : Désactivé », code ignoré ; réactivé, EAU MINÉRALE ajoutée ; pilote OPOS, périphérique DLS_Magellan_9800i, motifs Datalogic;Magellan : bloc poussé, la caisse laisse le scanner OPOS au module.
+7. BO-03-09-18 : second scanner désactivé : `POST /api/pos/scan/customer` 204 ignoré ; activé : article refusé en 422 « Le scanner client ne lit que les cartes de fidélité et les coupons. », carte 2990000000011 en 200, écran « 2990000000011 · 12,50 € », le scanner principal ajoute les articles dans la même vente.
+8. BO-03-09-19, BO-03-09-29, BO-03-09-30, BO-03-09-31 (monétique) :
+   - `payment.terminal-type=VERIFONE`, adresse localhost:19067, sans redémarrage : client Verifone utilisé (« PAIEMENT REFUSE » injoignable, puis « Verifone exchange not implemented ») ; type vidé : TPE simulé, « CARTE BANCAIRE 0,60 » ;
+   - `terminal.island-label=ILOT-L1` sur l'îlot L1 : export SETTINGS de POS01 et bloc « payment.island-label=ILOT-L1 », ajouté sous D7V à la requête Verifone ;
+   - TR, ECOCHEQUE, GIFTPASS avec `{DAJ}01`, `{DBJ}01`, `{DCJ}01` : l'export TENDERS les porte, la requête est construite sur le fil de l'appelant ;
+   - `terminal.pdv-label-enabled=true`, `terminal.pdv-label={D7P}PDV07039` : présents dans l'export SETTINGS de POS01.
+9. BO-03-09-20 : prestataire CATALINA CATA vers l'enregistreur ; flux désactivé : 0 événement ; `catalina.enabled=true` sur POS01 : `POST /catalina/events` en 2 s avec `lines` (EAN 3300000000007, qté 2, 1.2) et `payments` (CARD 1.2) ; vente sur C04, non activée : 0.
+10. BO-03-09-21, BO-03-09-22 : `hardware.printer.enabled=false` : rien d'imprimé ; true : ticket imprimé ; EPSON_TM, 19200, page 1252, largeur 58, retournement du chèque : bloc poussé et enregistré par le simulateur. `printer2` LOCAL A4 USB1 avec FACTURE:A4 : facture POS01-F000001 en HTML A4 sur `GET /api/hardware/printer2/content`, rien sur le rouleau ; format TICKET : « N° FACTURE POS01-F000002 » ; désactivée : rouleau.
+11. BO-03-09-27 : `touch.external-apps=MONNAYEUR>…;MALFORME;CALC>…` : touches MONNAYEUR (`/external-app/0`) et CALC (`/external-app/1`) au menu AUTRE, entrée mal formée ignorée ; `/external-app/0` : 303 vers l'adresse ; `/external-app/7` : 404.
+12. BO-03-10-06 : `export.planexa-enabled=true` : « 1 flux produit(s) pour le 2026-10-25. », `planexa-20261025.csv` « 2026-10-25;POS01;L1;12:00;23;23;15.00 … TOTAL » ; C04 (îlot SLS « Exclu du flux Planexa ») absente, présente une fois la case décochée.
+13. BO-03-10-18, BO-03-10-19, BO-03-10-20 :
+    - « Installer les données de formation » : « Données de formation installées : 5 élément(s) créé(s). », second clic « 0 élément(s) créé(s). » ; scan 3770000990010 : « ARTICLE TEST 1 1,00 € » ; formation/9999 ouvre « Caisse Formation » ;
+    - fiche magasin renseignée : entête « BIENVENUE A Vaucresson - Intermarché Vaucresson », pied « TEL 01 47 00 00 00 TVA FR99123456789 SIRET 12345678900099 CPT FR76 3000 4000 0500 0012 3456 789 », facture avec la fiche entière ;
+    - modèle HDR3 « %Nom Magasin% », « %Téléphone% %Ville% », « TVA : %TVA% » : « Intermarché Vaucresson / 01 47 00 00 00 Vaucresson / TVA : FR99123456789 » ; `%Inconnu%` conservé.
+14. Configuration groupée (BO-03-10) : formulaire de groupe de `/admin/register-config` (clé, valeur, cible Îlot / Type / Liste / Toutes, date facultative) : « Appliquée à l'îlot … » ou « Configuration appliquée à 1 caisse(s). ».
+
+**Menus de caisse**
+
+15. BO-03-09-06, BO-03-10-16 : `/admin/cash-menus`, 101 modèles (SLS, LIGNE, M01 à M99) : « Menus caisse (101) ». SLS choisi sur le point POS01 : barre de menus [articles, autre], 3 colonnes, Remise, Remise globale et Quantité masquées ; modèle inconnu : « Menu caisse inconnu : NOPE ».
+16. BO-03-10-09 : `menu.code=LIGNE` sur l'îlot L1 : POS01 en 4 colonnes, grandes touches ; SLS sur le point : le point l'emporte (articles et autre, 3 colonnes, ticket compact).
+17. BO-03-10-17 : SLS : écran client `#cartLines{display:none}` (TOTAL_ONLY), ticket virtuel compact ; sans modèle, écran hôtesse 1920x1080 : 3 colonnes ; `discount.enabled=false` masque les touches de remise ; CHEQUE inactif absent de l'écran de paiement, présent une fois actif.
+
+**Déploiement immédiat, programmé, partiel et complet, paramètres datés**
+
+18. BO-03-12-01 : enregistrer un formulaire : `/api/referential/stamp` 1792926733151 → 1792926733152, la caisse applique en 1,5 s.
+19. BO-03-12-02 : `period.pdv-actions` avec FOO inconnue et SAFE_COUNT en double : `/admin/day-end` « Clôtures consolidées … 2026-10-25 Clôturée 2 26 16.80 CLOSE_REGISTERS: 2 caisse(s) encore ouverte(s), fermeture ordonnée / SAFE_COUNT … / Z_REPORT … / BANK_DEPOSIT … » ; un jour fermé du calendrier ressort CLOSED_DAY.
+20. BO-03-12-03 (partiel) : `/admin/releases`, « Programmer mes prochaines modifications » : « Vos prochaines modifications partiront le 25/10/2026 12:53. » et bandeau vert.
+    - HDR3 modifié : tampon et empreinte DOCUMENT_TEMPLATES inchangés, la caisse garde l'ancien entête ; ligne « Modèles de document … Partiel /admin/templates/save Oui ».
+    - « Avancer » : « Déploiement avancé… », la caisse imprime « ENTETE PROGRAMMEE » ; date atteinte : libéré seul (historique « Libéré », Par vide), « ENTETE A L HEURE ».
+    - libellé de moyen de règlement modifié puis « Annuler » : « Déploiement annulé : le back-office reprend la version des caisses. », libellé revenu à « Titre restaurant » ; date passée : « La date d'effet doit être une date à venir. ».
+21. BO-03-12-04 (complet) : « Programmer un déploiement complet » : « Déploiement complet programmé le 25/10/2026 13:17 : 25 domaine(s) retenu(s). » ; menu SLS passé à 2 colonnes et HDR3 modifiés depuis des formulaires non armés : retenus, la caisse garde 3 colonnes et l'ancien entête ; tout avancé : 2 colonnes et « ENTETE COMPLET ».
+22. Paramètres datés (BO-03-12-03, BO-03-10, passe F19) : îlot L1 `terminal.island-label=ILOT-L1`, POS01 `hardware.drawer.address=0x48F`, échelon `hardware.printer.paper-width=80`, appliqués en 1 s. Programmer pour le 26/10/2026 :
+    - POS01 drawer.address 0x500 et island-label LBL-POS01 : « Configuration enregistrée. » ; paper-width 58 sur `/admin/echelons` : « Paramètre d'échelon enregistré. » ; groupe LISTE POS01 `queue.single-url=http://q` : « Configuration appliquée à 1 caisse(s). » ;
+    - l'export de POS01 garde 0x48F, ILOT-L1 (hérité), 80, sans queue.single-url ; empreinte SETTINGS inchangée (`9d9372dd…`) ; la caisse montre 0x48F, ILOT-L1 et 80 ;
+    - indications « Valeur actuelle : 0x48F · Valeur programmée le 26/10/2026 : 0x500 » et « Valeur actuelle : héritée · Valeur programmée le 26/10/2026 : LBL-POS01 » ; `/admin/releases` 4 lignes avec les deux valeurs ; `/admin/echelons` « Valeurs programmées (4) » ;
+    - annuler drawer.address : « Paramètre daté annulé. », 0x48F conservé ; avancer island-label : « Paramètre daté appliqué dès maintenant. », LBL-POS01 en caisse en 1 s ; reprogrammer 0x600 par le formulaire de groupe : la caisse reste à 0x48F ;
+    - minuit d'Adelaïde : journal « promoteDue with today: 2026-10-26 » à 00:00:13, SETTINGS appliqués 2 s plus tard : drawer.address=0x600, paper-width=58, export queue.single-url=http://q ; plus aucune valeur programmée.
+
+**Moyens de règlement, dépenses, mode dégradé monétique**
+
+23. BO-03-02-01 : `/admin/tenders`, AMEX, nature CARD, « American Express » : « Moyen de règlement créé. », touche « American Express », ticket « American Express 4,92 E » ; nature VOUCHER : « Nature de règlement inconnue de la caisse : VOUCHER ».
+24. BO-03-02-20 : CHEQUE « Apport / dépense autorisé » : proposé sur `/cash-movement` ; dépense de 10 € par chèque : `/withdrawal` « Chèques … -10,00 € », espèces inchangées ; bordereau « CHEQUE -10,00 E ».
+25. BO-03-02-26, BO-03-02-29 : ACOMPTE « Duplicata en plus », acompte de 30 € sur CMD-4512 : « Acompte client » puis « Acompte client - DUPLICATA », MOTIF « Acompte commande CMD-4512 ». CHEQUE avec les îlots « CLS », POS01 sur l'îlot CLS : « REGLEMENT SOUMIS A CONTROLE SUR CET ILOT » ; liste vide : aucun appel.
+26. BO-03-02-34, BO-03-02-36 : vente carte avec trames du terminal ; `payment.card-receipt-attached=true` : 2 coupes ; false : 3 coupes ; `payment.card-receipt-printed=false` : 1 coupe, aucune ligne CB. POS01 `hardware.cashchanger.enabled=true` et CASH « Connecté au monnayeur » : ESPÈCES poste `/action/pay-cashchanger`, panneau « MONNAYEUR EN COURS », 5 € insérés et TERMINER : CASH 2,76 €.
+27. BO-03-02-37 : `/admin/prepaid-cards` GIFT (NEXO, ILLICADO, `6299:16`) ; carte 6299000000000017 : « ****0017 · ILLICADO SOLDE DISPONIBLE 30,00 € », 29,00 € sur `/voucher-balance` après 1 € payé.
+    - Paiement décoché : « CARTE Carte cadeau Illicado NON ACCEPTEE EN PAIEMENT » ; consultation décochée : « CONSULTATION DU SOLDE NON AUTORISEE POUR LA CARTE … » ; activation décochée : ligne barrée, « ACTIVATION NON AUTORISEE POUR LA CARTE … ».
+    - LOCAL : émetteur local seul, hub jamais appelé ; plage `62-99` refusée.
+28. BO-03-02-39, BO-03-02-42 : CHF à 1,05 € avec rendu DEVISE, 25 CHF pour 23,52 € : « Rendu Client 2,60 CHF », ticket « DEVISE CHF 23,52 E / 22,40 CHF TAUX 1.050000 ». `change-order.roll-values=2:50.00:25;1:25.00:25` : « Rouleau 2€ × 25 (50.00€) » et « Rouleau 1€ × 25 (25.00€) » ; `2:40.00:25` ignoré.
+29. BO-03-02-44 : AMEX `D16:43;D46:1010`, terminal en passerelle (`pos.tpe.mode=bridge`) : `{D16}43` : « American Express 2,76 E » ; `{D16}20{D46}1010` : « American Express » ; `{D16}20` : « CARTE BANCAIRE » ; saisie `D17:43` : « Correspondance monétique invalide : D17:43 ».
+30. BO-03-02-45 à BO-03-02-47 : `/admin/lists`, liste de justification « Dépenses » servant EXPENSE.
+    - `CONTROL:BLOKING` : « Option inconnue … CONTROL:BLOKING » ; TIMBRES 40 € en CHEQUE : bordereau « MOYEN CHEQUE » ;
+    - RESTO désactivée : absente de la caisse au tirage suivant, envoi forcé refusé (`error=reason`) ; réactivée, elle revient ;
+    - BLOCKING, 60 € pour 50 € : « MONTANT SUPERIEUR AU MAXIMUM DE LA DEPENSE » ; SUPERVISOR, 25 € pour 20 € : fenêtre responsable, visa mcurie ; WARNING, 35 € pour 30 € : « MOUVEMENT ENREGISTRE AU-DELA DU MAXIMUM DE LA DEPENSE ».
+31. BO-03-02-48 à BO-03-02-50 : délai par défaut 15 min ; à 1 min, le mode dégradé forcé s'arrête seul après 60 s ; bascule `payment.degraded-mode=true` : carte acceptée d'office, 70 s plus tard la caisse attend le terminal. Visa d'activation : sans superviseur « AUTORISATION REFUSEE », mcurie « MODE DÉGRADÉ MONÉTIQUE ACTIVÉ (1 MIN) » ; visa de désactivation : mcurie « MODE DÉGRADÉ MONÉTIQUE DÉSACTIVÉ » ; chaque visa retiré, le geste passe sans superviseur.
+
+**Remises et rabais**
+
+32. BO-03-07-03, BO-03-07-06 : liste « Remises et rabais » ; touches ligne « -20% », « Rabais 1,50 », « Libre » au modal prix. « -20% » : « LAIT UHT 1L (Discount -20,00%) 2,21 € » ; « Rabais 1,50 » : « COCA-COLA 1.5L (Remise -1,50€) 0,66 € » ; « Remise ticket » (PERCENT,TICKET) : « REMISE TICKET (5 %) -0,44 € » ; PERCENT et AMOUNT ensemble refusés.
+33. BO-03-07-04 : « Libre » `AMOUNT,MAX:30` : modal « Libre — plafond 30 » ; 40 : « PLAFOND DE LA TOUCHE Libre : 30 » ; 2 : après le visa du geste, « (Remise -2,00€) ».
+34. BO-03-07-09 : « -20% » supprimée : touches ligne ['Rabais 1,50','Libre'] ; « Remise ticket » désactivée : plus de touche ticket ; touche forgée : « TOUCHE DE REMISE INCONNUE ».
+
+**Retours**
+
+35. BO-03-13-01 à BO-03-13-03 : `/admin/return-types`, TCK « Retour ticket » (mode ticket, actif) créé ; libellé manquant et plage inconnue refusés ; « Reprendre les types existants » : « 2 type(s) de retour repris de la liste et du paramètre. » ; `/return` : Contenant, Article défectueux, Retour ticket. TMP inutilisé : « Type de retour supprimé. » ; TCK utilisé : « Le type de retour TCK est rattaché à 1 retour(s) : il a été désactivé et non supprimé. » ; « Désactiver » retire la touche au tirage suivant, « Activer » la rend.
+36. BO-03-13-04 : « Retour ticket » : bandeau « Scannez le ticket d'origine ou saisissez son N° et sa date » ; « 0001 » : « TYPE DE RETOUR TICKET : SCANNEZ LE TICKET D'ORIGINE OU SAISISSEZ SON NUMERO ET SA DATE » ; n° seul : « …SAISISSEZ LE NUMERO ET LA DATE DU TICKET D'ORIGINE » ; n° et 25/10/2026, n° complet ou scan du ticket : détail ouvert. Les autres types restent en retour en vente.
+37. BO-03-13-11, BO-03-13-12 : `deposit.article-eans` et type DECON (déconsigne) ; vente, retour, bon 298… : `/admin/reports/deposit-returns` « Consigne 3300000000007 1,20 € / Retour déconsigne DECON 2,76 € / Reprise article consigné 0,60 € / Bon de déconsigne 2980000000508 5,08 € », TOTAL 1,20 € / 9,04 €. `/admin/reports/returns-by-type` : « Retour en vente · DECON · Déconsigne · LAIT UHT 1L · 2,76 € », « Retour en vente · TRI · Retour tri · POMMES GOLDEN · 3,50 € » et le remboursement TCK ; code de la plage RETTRI (type TRI) : « RETOUR Retour tri ENREGISTRE » sans superviseur, avec `return.without-origin-allowed=false`.
+
+**Templates et documents imprimables**
+
+38. BO-03-03-01 : `print.conditional-enabled=true`, `print.forced-documents=CARTE_PREPAYEE;DEMAT` : carte cadeau 6299000000000017 payée 2,76 : « PAIEMENT CARTE CADEAU … SOLDE RESTANT 27,24 E » ; article démat : « TICKET D'ACTIVATION … CODE ACTIVATION 7777000011112222 » ; clé retirée : rien ; FID forcé : « PAIEMENT FIDELITE / PAIEMENT TOTAL FID 1,00 E ».
+39. BO-03-03-06, BO-03-03-09 : ticket en attente intégré « TICKET EN ATTENTE / POS01-00000025 / [[BARCODE POS01-00000025]] / Date : 25/10/2026 12:45 » ; modèle ATT1 (« Ticket en attente ») : « MODELE MAGASIN ATTENTE / … / IMPRIME LE 25/10/2026 12:46 / N TICKET POS01-00000027 ». Acompte 2,00 sur CO79-CMD79 : « ACOMPTE / COMMANDE CO79-CMD79 / CLIENT ACME SARL / MONTANT 2,00 E / TVA ACOMPTE C 5,50% … HT 0,18 TTC 0,19 / B 20,00% … / [[BARCODE …]] ».
+40. BO-03-03-17, BO-03-03-23 : `ticket.line-order=FAMILY`, `ticket.family-level` 0 : « LAIT DEMI-ECREME », 1 : « FRAIS LS », 2 : « CREMERIE LS ». Avantage moteur « PROMO COCA -0,50 » : `ticket.promotion-placement=LINE` sous COCA-COLA, FOOTER au-dessus de TOTAL TTC, chacun l'emportant sur la place rendue par le moteur.
+41. BO-03-04-06, BO-03-04-09, BO-03-04-10, BO-03-04-14 : `/admin/printable-documents`, FACT_PRO (FACTURE, A4), BL_SLIP (BON_LIVRAISON, FACTURETTE), UNUSED : « Document créé. » ; caisse « Quel document ? FACTURE PRO / BON DE LIVRAISON MICR / DOC INUTILISE ».
+    - « Désactiver » BL_SLIP : « Document désactivé : il n'est plus proposé en caisse. » ; « Activer » : `/invoice/type/BL_SLIP` revient ;
+    - supprimer FACT_PRO imprimé : « Document déjà imprimé en caisse : il est désactivé et non supprimé. » ; TMP : « Document supprimé. » ;
+    - FACT_PRO en A4 : HTML vers l'imprimante réseau (3 pages), rouleau vide ; BL_SLIP : « Insérez la feuille 1 sur 5 », feuillets sur `/api/hardware/slip/content` ; UNUSED : rouleau.
+
+**Factures**
+
+42. BO-03-03-02, BO-03-03-04 : revue, « N° de commande » CMD-4711 : rouleau « N° commande CMD-4711 », A4 « N° commande : CMD-9 » ; sans échéance « Paiement dès réception de la facture », BETA « Échéance 30/11/2026 » ; titre « FACTURE PRO » ; `invoice.a4-lines-per-page=2` : « Page 1 / 3 … Page 3 / 3 » ; `invoice.slip-lines=12` : « Page 1 / 5… ». `ticket.vat-code=true` : « B 20,00 % 3,60 € 0,72 € 4,32 € », ticket « TVA B 20,00% HT 2,30 TVA 0,46 ».
+43. BO-03-03-21 : `invoice.article-attributes=ORIGINE` : « Famille : LAIT DEMI-ECREME, ORIGINE : FRANCE » sur l'aperçu, le rouleau et l'A4 ; rien sur le ticket.
+44. BO-03-04-16, BO-03-04-18 : `invoice.account-number-required=true`, client de passage : « Ce document exige un client portant un numéro de compte. » ; ACME (C100) : `/invoice/document/1`. `invoice.customer-validation=true` : « Vérifiez avant d'émettre … ACME SARL Compte C100 12 rue de la Paix 75002 Paris SIRET … NIF PT123456789 CHANGER » ; false : document ouvert directement.
+45. BO-03-04-27, BO-03-05-08 : `fiscal.pt-documents=true` ; `fiscal.atcud-codes=FS:ABC` : « ATCUD: 0-1 » ; FS:AAJFJMVNTN : « ATCUD: AAJFJMVNTN-2 » au-dessus de `[[QR …H:AAJFJMVNTN-2…]]`, SAF-T `<ATCUD>AAJFJMVNTN-1</ATCUD>`. `ticket.footer-url=https://avis.intermarche.example/q` : ticket et facture rouleau finissent par `[[QR https://avis.intermarche.example/q]]`, l'A4 écrit l'adresse.
+
+**Messages fidélité et prestataires**
+
+46. BO-03-03-26, BO-03-03-27, BO-03-03-35 : carte fidélité, ticket imprimé par IMPRIMER TICKET.
+    - « MSG2L LIGNE 1 BONJOUR / MSG2L LIGNE 2 MERCI » avant « CAGNOTTE DU JOUR +0,14 E », troisième ligne coupée ; `fidelity.short-message-printed=false` : absent ;
+    - « COM1 L1…L10 … COM5 L10 » avant « Dont TVA » ; `fidelity.commercial-messages-max=2` : COM1 et COM2 ; 1 : COM1 ;
+    - « SOLDES CARTE / SOLDE DISPONIBLE 12,50 E / TOTAL AVANTAGES JOUR 0,14 E / MONTANT UTILISE 1,00 E » et « SOLDES DES CAGNOTTES / CAGNOTTE 12,64 E / POUPANCA COMBUSTIVEL 3,20 E ».
+47. BO-03-08-06, BO-03-08-07 : `/admin/providers`, HUBSIM « ARTICLE DEJA ACTIVE » → « Produit déjà activé » à la seconde activation ; HUBSIM SUCCESS : « ✔ Carte acceptée ». ILLICADO SUCCESS, texte ticket « Réglé {montant}, solde {solde} (carte {carte}) » : « Réglé 2,76 E, solde 21,72 E (carte / ****0017) » ; activation HUBSIM : « Réglé 7,20 E, solde 7,20 E (carte / ****2222) ».
+48. BO-03-11-05, BO-03-11-06 : NEXO1 (Produits dématérialisés, NEXO Retailer, Au scan produit) et WYN1 (Wynid, À la fin du paiement) : « Fournisseur déclaré. » ; NEXO1 avec la sélection d'articles DEMAT et le modèle HDR1 listé.
+
+**Groupes d'articles**
+
+49. BO-03-01-03 : dupliquer GRPX (parent PARENTX, sous-groupe SUBX) en GRPY : « Groupe « GRPX » dupliqué en « GRPY » avec 1 sous-groupe(s). » ; lignes « GRPY … PARENTX 6 » et « GRPY-SUBX … GRPY 2 ».
+50. BO-03-01-04, BO-03-01-05 : plage INT-000..INT-005 : 2 articles ; famille « 20 » (FRAIS LS) : Lait ; libellé « chips » : 1 ; « Ajouter au niveau 0 » : « 2 article(s) ajouté(s) au groupe « NIVEAU-0 ». » ; écran de vente : touches « Biscuits Chocolat 200g » et « Eau Minérale 1.5L », tuiles à la racine de SAISIE DIRECTE, aucune touche `/manual/cat/NIVEAU-0` ; « Eau Minérale 1.5L » vend « x1 EAU MINÉRALE 1.5L 0,60 € ».
+51. BO-03-01-10, BO-03-01-13 : `/manual/cat/GRPX` : Baguette, Chips, Lait, Miel, Riz. Ventes, puis « Recalculer les volumes de vente » sur `/admin/touches` : « Volumes de vente recalculés : 5 article(s) vendu(s) sur la période. » ; `touch.article-sort-volume=true` : Lait, Riz, Miel, Baguette, Chips.
+52. BO-03-01-16, BO-03-01-17 : import xlsx (en-tête EAN, 3 codes) : « 2 article(s) importé(s) dans le groupe « GRPX », 1 code(s) inconnu(s) », CSV accepté. « Désactiver » Lait : absent du groupe en caisse, scan « CODE INCONNU » ; réactivé, il revient avec sa description et ORIGINE.
+
+**Codes-barres et GS1**
+
+53. BO-03-06-41, BO-03-06-42 : plage EXTERNAL_LOOKUP, « Champ de la réponse » `article.ean` : `{"article":{"ean":"3300000000002"}}` → « x1 LAIT UHT 1L 2,76 € », réponse sans le champ → « REPONSE DU SERVICE EXTERNE ILLISIBLE ». Plage PROMOTION_ENGINE : « CODE 2812345678901 TRANSMIS AU MOTEUR DE PROMOTION », second scan « DEJA TRANSMIS », `scannedBarcodes: ['2812345678901']` ; `valuation.local-only=true` : « MOTEUR DE PROMOTION NON APPELE : CODE NON TRANSMIS ».
+54. BO-03-06-43 : plage PROMOTION PROMO-BEURRE en AMOUNT, 2700220001500 : « PROMOTION PROMO-BEURRE DECLENCHEE SUR BEURRE DOUX 250G », puis « DEJA DECLENCHEE » ; `cardPromotions: {ean 3300000000009, AMOUNT, 1.5, IMMEDIATE_DISCOUNT}`, `scannedPromotions: ['PROMO-BEURRE']`.
+55. BO-03-06-44, BO-03-06-58 : article ACTIVATION_REQUIRED : « SCANNEZ LE CODE D'ACTIVATION ! », ligne « CODE D'ACTIVATION : 7777000011112222 », activé sur le hub (« TRANSACTION HUB00000001 », HUBSIM). CUSTOMER_ORDER 2500047000000 : « COMMANDE 00047 CHARGÉ OK » (mode BOTH ; KEYED : « CE DOCUMENT SE RÉCUPÈRE PAR LA SAISIE… ») ; 2599999000000 : « COMMANDE 99999 INCONNUE DU NOEUD MAGASIN ».
+56. BO-03-06-48 (central, 07039, 07040) : carte cadeau 296000000000001 émise au 07039, présente au central, scannée au paiement au 07040 : réglée 2,76, solde 22,24 € au central et au 07040 ; code inconnu en BLOCK : « BON INCONNU AU REGISTRE », en INFO : « BON INCONNU DU SYSTÈME : AUCUN RÈGLEMENT ! ».
+57. BO-03-06-62 : `/admin/journal/barcodes-issued` : « POS01 POS01-00000040 Carte cadeau 296000000000001 25,00 € 25/10/2026 13:04:41 — 25,00 € » et « POS01 <id du mouvement> Acompte CO78-CMD78 2,00 € ».
+58. GS1 : `gs1.ai-alerts=240=BLOCK:Réf {value}`, scan `]C10103300000000002240REF77` : refusé « Réf REF77 » ; sans l'alerte : « x1 LAIT UHT 1L ».
+
+**Garantie chèque et clôture non soldée**
+
+59. BO-03-02-24 : CHEQUE avec « Autorisation chèque » et « Saisie du n° de compte », `cheque.guarantee-provider=SIMULATEUR`.
+    - Sans compte : « NUMERO DE COMPTE DU CHEQUE OBLIGATOIRE » ;
+    - compte 123, 20 € : « CHEQUE GARANTI - AUTORISATION GAR000001 », sans superviseur, puis recto imprimé (« deux euros et zéro centimes … 2,00 EUR ») ;
+    - compte 000… : « CHEQUE REFUSE PAR LA GARANTIE : CHEQUE EN OPPOSITION » ; 1600 € : « …MONTANT SUPERIEUR AU PLAFOND GARANTI » ;
+    - compte 999… : « GARANTIE CHEQUE INDISPONIBLE - AUTORISATION SUPERVISEUR REQUISE » ; fournisseur vide : « AUTORISATION CHEQUE REQUISE », mcurie autorise ; MICR décoché : chèque enregistré sans lecteur.
+60. Clôture non soldée et erreur de paiement (passe FX) : panier de 4,92 €.
+    - `GET /action/finish` depuis l'écran de vente : 303 vers `/`, « VENTE NON SOLDEE - RESTE A PAYER 4,92 € », panier conservé ; `/pay` s'ouvre avec la zone de message vide ;
+    - espèces 1,00 €, puis `/action/finish` : 303 vers `/pay`, « …RESTE A PAYER 3,92 € », paiement CASH 1,00 conservé ; même résultat en HEAD ;
+    - chèque sans compte : « NUMERO DE COMPTE DU CHEQUE OBLIGATOIRE », effacé au geste suivant ; chèque de 3,92 € sur le compte 123 : seul « CHEQUE GARANTI - AUTORISATION GAR000001 », reste 0,00 ;
+    - `/action/finish` : 303 vers `/` ; journal de la caisse : trois « Closing refused » et un seul TICKET_CLOSED, après paiement.
+61. Journal du Back Office, ticket POS01-00000001 CLOSED : « CASH 1,00 / CHEQUE — Garantie chèque : GAR000001 (SIMULATEUR) 3,92 » ; en nl « Chequegarantie: », en pt « Garantia de cheque: ».
+62. Parcourir le menu du Back Office (63 pages et sous-pages du lot 19) en fr, nl et pt, à 800 × 600, 1280 × 800 et 1366 × 768 : pas de défilement horizontal, aucun tableau ni champ qui déborde, aucun texte français sur les pages nl et pt hors données ; écrans de caisse vente, paiement, mouvements, modal prix, recherche de retour et parcours facture dans les trois langues.
+
+Recette exécutée le 25/10/2026 en cinq passes (RK configuration des caisses, menus et déploiement ; RL moyens de règlement, dépenses, remises et retours ; RM modèles, documents, factures, fidélité, prestataires, groupes d'articles et codes-barres ; F19 paramètres datés, date franchie à minuit ; FX clôture non soldée, erreur de paiement et garantie chèque au journal), profil dev, bases H2 mémoire jetables, matériel simulé, bouchons imfid, valorisation, impression A4, file unique, Catalina et garantie chèque. Les étapes 1 à 62 ont été jouées avec les messages, codes et valeurs ci-dessus. Les balayages du menu du Back Office sont propres dans les trois langues après correctifs, et les 351 captures `bo19-*` et `pos19-*` des écrans du lot sont conformes.
+
+Limites :
+- onze lignes restent partielles :
+  - BO-03-09-15, -17, -21, -22 : les pilotes DIGI, la couche OPOS Datalogic, l'application du type, de la vitesse, de la page de code et de la largeur d'imprimante, et le pilote de la seconde imprimante relèvent du module matériel, hors de ces dépôts ; la seconde imprimante ne se choisit pas par document en caisse ;
+  - BO-03-09-19 : les protocoles Ingenico SIBS et Worldline ne sont pas implémentés, et l'échange Verifone non plus ;
+  - BO-03-09-29, -30, -31 : la trame et l'échange filaire Verifone restent à écrire ; les codes et le label sont placés en fin de trame en attendant la spécification Verifone ;
+  - BO-03-09-27 : le lancement d'un exécutable local est volontairement refusé, pour la sécurité ;
+  - BO-03-11-05, -06 : fournisseurs, protocoles et phases d'appel sont administrés, mais les échanges NEXO, wynid, Prosodie et ATOS ne sont pas implémentés ;
+- BO-03-06-43 : la promotion part au moteur au format documenté des promotions de carte ; imvaluation n'est pas dans ces dépôts, la recette l'a jouée avec un moteur simulé ;
+- BO-03-03-26, -27 : les champs `shortMessage` et `commercialMessages` du contrat imfid sont prouvés avec un bouchon ; le service imfid doit encore les émettre ;
+- déploiement programmé : un domaine retenu absorbe toute modification ultérieure jusqu'à la date, et l'annulation suit les règles d'application de chaque domaine ; un seul paramètre daté en attente par niveau et par clé ;
+- BO-03-06-48 : après une utilisation dans un autre magasin, le magasin émetteur garde sa ligne au solde d'émission ; le central et le magasin d'utilisation portent le solde à jour ; transmission au mieux (2 s, sans reprise).
+
+Validation : imedge 5 355 tests Java + 11 JavaScript ; impos 8 544 Java + 319 JavaScript, sans échec, erreur ni test ignoré. JaCoCo : imedge 29 013 lignes et 14 360 branches, impos 35 041 lignes et 18 442 branches, tous les compteurs manqués à zéro ; JavaScript externe instrumenté à 100 %. Les 313 classes copiées entre imedge et impos sont identiques au paquet près.
+
+Cotation (feuille Back Office) : les 97 lignes non intégrales du bloc 03 Paramétrage sont recotées : 86 passent intégralement couvertes, dont 84 par CODE et 2 par RELECTURE (BO-03-06-44, BO-03-06-58) ; 11 restent partielles, leurs commentaires actualisés (BO-03-09-15, -17, -19, -21, -22, -27, -29, -30, -31, BO-03-11-05, -06). Back Office P1 : 591/704 intégrales (83,9 %), 92 partielles (13,1 %), 21 non couvertes (3,0 %), soit 683/704 intégrales ou partielles (97,0 %). Toutes priorités : 647 / 112 / 37, couverture pondérée 88,3 %. Bloc 03 : 286 / 11 / 0. Campagne : 396 promotions, dont 381 CODE et 15 RELECTURE.
+## HD_43 — Lot 20 : BO-02 Référentiels, BO-07 e-Commerce, BO-09 Fin de journée
+
+Gain : le Back Office imedge intègre et administre les référentiels du bloc BO-02 et les caisses impos les appliquent : codes de vente, code interne, modes de passage et unités de mesure, articles liés et complémentaires, nomenclature, recherche multicritère, sélections et droits par champ de la fiche, TVA par pays avec exonérations et mentions légales, ventes pour un tiers, étiquettes électroniques, tares et rappel de lots ; remontée des clients en compte et documents fiscaux portugais ; points de vente numérotés, importés, changeant d'enseigne avec héritage, regroupés par adhérent jusqu'au journal électronique central. Le bloc BO-07 intègre les ventes des systèmes tiers e-commerce et mobilité (canal, PDV d'origine, fidélité, livre de caisse, factures et SAF-T, NIF). Le bloc BO-09 complète la fin de journée : tickets en attente enregistrés et remis à zéro, fermeture forcée avec ticket technique, éditions imprimées, scripts avant et après, déclaration automatique des îlots libre-service, activation du lancement automatique et contrôle caisse / serveur.
+
+Écrans et domaines nouveaux du Back Office :
+- `/admin/measure-units` (domaine MEASURE_UNITS diffusé avant PRODUCTS), `/admin/article-field-rights`, `/admin/eeg-providers` ;
+- `/admin/third-party-systems` ; rapports « Chiffre d'affaires par canal », « État caissière détaillé » (l'état existant devient « État caissière synthétique ») et « CA par point de vente et par adhérent » ;
+- `/admin/documents/view` (détail d'un document) ; `/admin/adherent-journal` et son détail, sur le nœud central ;
+- flux `POST /feeds/import/RECALL_LOTS` et `POST /feeds/import/PDVS` ; colonnes nouvelles des flux PRODUCTS (SALE_CODES, CHECKOUT_MODE, VAT_NUMBER, VAT_EXEMPT, unité…) et VAT_RATES (COUNTRY, LEGAL_MENTION, EXEMPT, EXEMPTION_CODE) ;
+- enrichis : `/admin/articles` (recherche, fiche, action de masse, envoi EEG), `/admin/article-selections`, `/admin/vat-rates`, `/admin/lists` (contenants de tare), `/admin/images` (usage « Visuel de contenant de tare »), `/admin/customers`, `/admin/documents`, `/admin/echelons` (vue d'héritage, table des adhérents), consoles de supervision (filtre adhérent), `/admin/ecommerce-orders`, `/admin/day-end`, `/admin/checkout-islands`, `/admin/reports` (TVA par famille, ventes par famille).
+
+Correctifs mis au jour par la recette et par les groupes :
+- distribution du référentiel (groupe P) : la caisse n'appliquait que le dernier fichier de flux puis prenait l'empreinte du magasin, si bien que deux deltas entre deux tirages ou une modification du back-office antérieure au tirage ne l'atteignaient jamais ; les fichiers de flux portent désormais l'empreinte avant et après intégration, la caisse n'applique un fichier que depuis son état de base et retombe sinon sur les pages complètes ;
+- modèle de TVA réconcilié (groupe PQ) : un seul drapeau d'exonération avec son code, une seule empreinte de régime, le régime nommé par l'article l'emporte sur celui du prix ; ventilation par taux, régime, exonération et vente pour un tiers, dans le même ordre sur le ticket, le coupon TVA et les totaux enregistrés ;
+- nouveau tirage de la TVA en caisse par mise à jour et non par effacement (les prix perdaient leur lien de TVA) ; NC, FT et RC renvoyées au magasin après conversion ou reçu ;
+- code interne vide stocké en chaîne vide (second article en violation d'unicité) ; repli ligne à ligne de l'import des prix sur un champ inexistant ; refus de quantité entière resté affiché après une saisie valide ;
+- écran de fin de journée sans tickets en attente (les caisses n'envoient pas leurs paniers) : le nœud les lit désormais dans la chaîne des enregistrements de tickets en attente ;
+- critère famille ignorant le schéma de nomenclature : un rayon ou une activité ne sélectionnait rien (recherche, sélections, rapports, exports) ;
+- rapport TVA par famille groupé par taux seul : deux régimes à 0 % fusionnés, ligne exonérée classée sous le premier régime à 0 % ;
+- FT et NC portugaises imprimant les exonérations en « 0,00% » et fusionnant la TVA pour tiers ;
+- vue de document affichant le balisage brut d'impression (`[[IMAGE …]]`, `[[QR …]]`, `[[BARCODE …]]`) ;
+- vue d'héritage listant des profils affectés à une autre enseigne ;
+- ticket technique d'un poste verrouillé imprimant « Opérateur : — » ;
+- textes restés en français sur les écrans nl et pt (critères de sélection en chaîne brute, natures de connecteur EEG, choix des options de rapport, issue des appels superviseur au tableau de bord, libellés de graphique de rapport, « désactivé » de la fin de journée, écran des fruits de la caisse) ; libellés du code article qui ne citaient que l'écran ; rapport des ventes par famille débordant à 800, 1280 et 1366 px.
+
+Préconditions : construction dev (`-Dquarkus.profile=dev`, jeu de données et matériel simulé compris), bases H2 mémoire jetables recréées à chaque lancement, matériel simulé (balance, imprimante, scanner). Nœuds :
+- nœud imedge magasin avec sa caisse impos POS01 ;
+- pour les cas PDV et adhérent : central imedge (`pos.role=central`) et deux magasins 10001 et 10002 de l'adhérent AD1, `pos.sync.central-url` vers le central, chacun avec sa caisse POS01 ;
+- bouchons : imfid, gestion commerciale (réponses 503, 503 puis 200), imprimante réseau en port brut, fournisseur d'étiquettes électroniques REST ;
+- flux importés par `POST /feeds/import/{CODE}` (admin/admin), listes de la colonne ATTRIBUTES séparées par des virgules.
+
+Ports de la recette : passe RA magasin 19070 (PDV 07039, FR/ITM une fois les échelons posés), POS01 19080, central 19090 (balayage seul), bouchon EEG 19061 ; passe RB central 20090, magasins 10001 sur 20070 et 10002 sur 20071, caisses 20080 et 20081, bouchons imfid 20060, gestion commerciale 20061 et imprimante réseau 20062.
+
+**Articles : codes, modes de passage, unités, quantités**
+
+1. BO-02-03-03, BO-02-03-04 : flux PRODUCTS `SALE_CODES=3770002000014;PPV7720`, code interne `INTPERC20` ; scans 3770002000014, PPV7720 puis INTPERC20 : une seule ligne « x3 PERCEUSE P20 3 x 99,00 € ».
+2. BO-02-03-05 : TV en `CHECKOUT_MODE=PRICE_CALL` sans prix : « PRIX DE L'ARTICLE INTROUVABLE : VENTE IMPOSSIBLE » ; tarifée 399,00 puis `/action/price-mod/force_price` : « PRIX IMPOSÉ PAR LA FICHE ARTICLE ».
+3. BO-02-03-06 : SALADE `MEAL_VOUCHER_ELIGIBLE` ; TR de 20 € sur un ticket de 160,64 € : accepté pour 6,00, ticket « TICKET RESTO 6,00 E » ; ticket de LAIT seul : « TR: AUCUN ARTICLE ELIGIBLE », journal « Paiement TR refusé ».
+4. BO-02-03-09 : remise sur PERCEUSE (`DISCOUNT_FORBIDDEN`) : « REMISE INTERDITE SUR CET ARTICLE » ; remise ticket de 10 % sur TV 399, SALADE 6 et PERCEUSE 99 : « REMISE TICKET (10 %) -40,50 € », perceuse exclue ; `discountForbidden` dans la requête de valorisation.
+5. BO-02-03-11, BO-02-03-18 : GraphQL `updateProduct(attributes: "RECALL=true…", saleCodes: ["SAL2026"])` répondue 200 ; fiche « Article en retrait / rappel » cochée et SAL2026 affiché ; au tirage suivant, scans de POMMES et de SAL2026 : « ARTICLE EN RETRAIT/RAPPEL ».
+6. BO-02-03-17 : `/admin/measure-units`, « Charger les unités standard » : « 10 unité(s) standard créée(s) », compteur « 10 / 99 » ; CABLE importé en unité B : saisie « 1,50 € / mb », ligne « 2,50 mb x 1,50 €/mb », ticket « 2,50 mb x 1,50 E/mb ».
+7. BO-02-03-21, BO-02-03-22, BO-02-03-23 :
+   - FLEURS (`PRICE_TO_ENTER`) : « PRIX À SAISIR », 7,50 : « 1 pce x 7,50 €/pce » ;
+   - PILES (`QUANTITY_TO_ENTER`) : 2,5 : « QUANTITÉ ENTIÈRE REQUISE », puis 3 : « 3 pce PILES P20 12,00 € », erreur effacée ;
+   - CABLE (`DECIMAL_QUANTITY_TO_ENTER`) : 2,5 : « 2,50 m x 1,50 €/m 3,75 € ».
+8. BO-02-03-24, BO-02-03-25 (partiels) : POMMES (WEIGHED) scannée par son EAN passe à la balance : « 1,234 kg x 2,50 €/kg 3,09 € » ; `GET /api/pos/deposit-control` : POMMES `weighed:true, expectedKg:1.234`, CHAISE `bulky:true, controlled:false, expectedKg:null`.
+9. BO-02-03-39 : liste TARES (TARE_CONTAINER) sur `/admin/lists`, BQS 0,035 actif, SAC 0,010 inactif ; image BQS d'usage « Visuel de contenant de tare » ; écran `/fruits` de la caisse : « TARE : AUCUNE » et bouton BQS avec son visuel, SAC absent.
+10. Distribution : deux fichiers PRODUCTS avant un même tirage : la caisse prend les pages et tous les articles sont présents ; delta sur une caisse à jour : « appliqué depuis le contenu » ; fichier de flux puis modification au back-office avant le tirage : fichier puis pages appliqués, libellé final « LAIT BO ».
+
+**Articles liés et complémentaires, nomenclature, fiche**
+
+11. BO-02-03-15 : BIERE `LINKED_ARTICLE_EAN` / `LINKED_ARTICLE_QUANTITY=6` : « x1 BIERE P20 1,20 € / x6 CONSIGNE P20 6 x 0,10 € 0,60 € ».
+12. BO-02-03-16 : `COMPLEMENTARY_EANS` modifiés sur la fiche de LAIT, tirage suivant (différé tant qu'une vente est ouverte) ; scan de LAIT : « À PROPOSER : VIS P20, CHEVILLES P20 » (`article.complementary-suggestions`, `article.complementary-max` = 3).
+13. BO-02-03-14, BO-02-03-28 : flux NOMENCLATURE et « Rattacher au nœud » : « Activité 20 FRAIS LS › Rayon 2020 CREMERIE LS › Famille 20200200 LAIT › Sous-famille 202002000001 LAIT DEMI-ECREME » ; fiche : « Code TVA de l'article », « TVA appliquée B — 20 % (régime du prix) », mode de passage, unité « B — Mètre bobine (mb) », fournisseur, prix EEG et attributs.
+
+**Recherche, sélections, droits de champ**
+
+14. BO-02-03-30 : `/admin/articles` : plu=4921 → POMMES ; internalCode, description, brand=VISCO (2), supplier=Outils / F01, prix 20–100, vat=9 → DON, attribut BULKY → CHAISE ; family=20 (activité) → articles LAIT.
+15. BO-02-03-31 : `/admin/article-selections`, sélections Visserie, Gros prix et Frais (famille 20) pour 07039 ; « Copie de Gros prix » dupliquée et retrouvée (q=Copie) ; export CSV de « Gros prix » (6 lignes) ; ventes par famille restreintes à « Gros prix » 582,10 € ; rapport TVA restreint à « Frais » 2 lignes ; critères traduits (« Prijs van (€) : 20 · Prijs tot (€) : 500 »).
+16. BO-02-03-12 : action de masse sur la sélection « Visserie » : « Code article à l'écran activé sur 2 article(s). » ; ligne caisse « VIS P20 3770002000021 », ticket « VIS P20 / 3770002000021 ».
+17. BO-02-03-33 : `/admin/article-field-rights`, profils « Chef de rayon » (mcurie) et « Comptable », EAN, TVA et suppression réservés à Comptable :
+    - pour mcurie, champs EAN et TVA désactivés, suppression absente ; EAN et TVA postés ignorés, libellé « Lait Marie » enregistré ; suppression : « Votre profil ne permet pas de supprimer un article. » ;
+    - en admin : LAIT vendu « déjà vendu : désactivé et conservé », CHEVILLES jamais vendu « supprimé ».
+
+**TVA par pays, exonérations, mentions légales, compte de tiers**
+
+18. BO-02-02-01 : `/admin/vat-rates`, régimes 10 (0 %, exonéré, m07 enregistré M07, « Isento artigo 9.º do CIVA ») et 11 (0 %, exonéré, M16, « Isento artigo 14.º do RITI »), 14 second régime à 20 % ; exonération à 6 % : « Une exonération porte un taux de 0 %. » ; régime BE 13 servi au 07039 tant que le PDV n'a pas de pays, exclu une fois FR/ITM/07039 déclaré.
+19. BO-02-02-01, BO-02-02-02 : `fiscal.pt-documents=true`, `ticket.vat-code=true`, `ticket.vat-table=COMBINED` ; FS POS01/2026/00000001 : lignes « CODE TVA : K », « CODE TVA : L », tableau « TVA K EXO HT 2,76 TVA 0,00 / TVA L EXO HT 0,96 TVA 0,00 », puis « Isento artigo 9.º do CIVA / Isento artigo 14.º do RITI » ; conversion : « NC POS01/2026/00000001 - FT POS01/2026/00000001 », les deux avec les deux mentions ; le RC de la FT imprime les deux mentions ; rapport TVA par famille : « 10 Isento 10 » et « 11 Isento 11 » distincts.
+20. BO-02-03-26, BO-02-03-27 : régime 9 exonéré par VAT_RATES, DON en `VAT_NUMBER=9` ; fiche « Code TVA de l'article J — 0 % Exonere dons (EXO) » ; ticket « TVA J EXO HT 1,00 TVA 0,00 » ; flux de chiffre d'affaires « EXO;1.00 » ; rapport TVA par famille « 9 Exonere dons ».
+21. BO-02-03-41, BO-02-03-42, BO-02-03-43 : TIMBRE en `THIRD_PARTY_SALE` :
+    - ticket « TVA B 20,00% (cpte tiers) HT 1,25 TVA 0,25 » à côté de « TVA B 20,00% HT 51,78 TVA 10,36 » ; FT et NC portugaises avec les mêmes rubriques ;
+    - rapport TVA par famille : le total 20 % exclut TIMBRE et HUILE, 71,06 € = 64,64 + 13,92 − 1,50 − 6,00 ;
+    - flux régénérés par `/admin/sync/export` : tranca3 « COMPTE_TIERS;1.50;1.50;0.00 », « EXO;1.00 » ; tranfc « TVA_COMPTE_TIERS;-0.25 », « TOTAL_HORS_TVA_TIERS;629.89 ».
+
+**Étiquettes électroniques**
+
+22. BO-02-03-37, BO-02-03-38 (partiels) : `eeg.enabled=true`, fournisseurs HAN (simulé) et SES (REST, bouchon 19061) sur `/admin/eeg-providers` ;
+    - fiche : « Prix affiché par les étiquettes électroniques: Hanshow 99.00 € Conforme / SES-imagotag 99.0 € Conforme », le bouchon reçoit `GET /prices/3770002000007` ;
+    - envoi depuis la liste avec la sélection « Gros prix » : « Prix de 6 article(s) envoyés à 2 fournisseur(s) d'EEG sur 2 », le bouchon reçoit `POST /prices [{"ean":"3300000000033","price":30.00},…]`.
+
+**Rappel de lots**
+
+23. BO-02-03-44 : `POST /feeds/import/RECALL_LOTS` `3770002000113|L2401;L2402` : `{"updated":1}` ; GS1 `010377000200011310L2401` : « PRODUIT EN RAPPEL - LOT L2401 », refusé ; lot L9999 vendu ; scan de l'EAN : « PRODUIT EN RAPPEL - LOTS : L2401, L2402 ».
+
+**Clients et remontée**
+
+24. BO-02-04-13 : `channel.commercial.customer-uplink-url` vers le bouchon 20061 ; ville de C0002 changée en « Porto Corrigido » : fiche « En attente d'acquittement — 0 tentative(s) », puis « 1… / 2 tentative(s) (HTTP 503) », puis « Acquittée le 2026-10-25T18:13:21 » ; le bouchon journalise 503, 503, 200 `{"accountNumber":"C0002","source":"BACK_OFFICE",…}`.
+25. BO-02-04-13 : client créé en caisse (`/invoice/customer/create`, Café Ribeira, PT503504564) : reçu par le bouchon `{"accountNumber":"POS01-CLI000001","origin":"REGISTER","source":"REGISTER",…}` ; les clients importés de la gestion commerciale ne remontent pas.
+
+**Documents fiscaux PT**
+
+26. BO-02-04-19 : `/admin/documents` liste RC, NC, FT, « FS · annulé », la FACTURE et la FS e-commerce ; chaque filtre de type ne rend que son type ; NIF 123456789 : FT, RC et FS ECOM2026/1-2 ; CSV `FT POS01/2026/00000001;FT;…;123456789;…;0-1;FS POS01/2026/00000002;0` ; `/admin/documents/view?number=FT POS01/2026/00000001` : ATCUD, document d'origine, QR code et lignes, sans balisage brut.
+
+**Points de vente : numéro, enseigne, import, héritage, adhérents et journal par adhérent**
+
+27. BO-02-05-03 (central) : `POST /feeds/import/PDVS` : 3 PDV créés, pays FR/PT et enseignes IF/IP, ligne 5 (123) rejetée ; rejeu : 0 créé, 0 mis à jour ; ligne de renumérotage : 1 mis à jour ; ancien numéro inconnu : « PDV à renommer introuvable » ; fichier rejoué après le passage de 10001 en IP à l'écran : 10001 reste sous IP.
+28. BO-02-05-01 : « 1234 » : « Le numéro de PDV doit comporter exactement 5 chiffres. » ; 10004→10005 à l'écran puis 10005→10007 par import (PREVIOUS_NUMBER) ; recréer 10004 : « Le numéro 10004 a été porté par un autre point de vente… » ; renuméroter vers 10001 : « Ce numéro de PDV est déjà utilisé. » ; historique de 10007 « Numéro 10005 10007 Import / Numéro 10004 10005 Écran ».
+29. BO-02-05-02 : 10001 passé de IF à IP : historique « Enseigne IF IP » ; hérités fiscal.pt-documents et language.system=pt (Enseigne IP), receipt.footer.legal (Pays PT), ticket.vat-code (Enseigne IP) ; magasin et back-office en pt ; caisse 20080 « TVA remplacé : 7 régime(s) » et « gabarits appliqués : 1 » ; modèle RECU_PT (COUNTRY:PT) imprimé « FATURA SIMPLIFICADA » ; profil « Caissier Portugal » affecté à ENSEIGNE:IP reçu par 10001, pas par 10002.
+30. BO-02-05-04 : vue d'héritage de 10001 sur `/admin/echelons` du central : chaque paramètre avec son origine (Enseigne IP, Pays PT), TVA « 10 IVA normal (23 % PT) · 11 Isento (0 % PT) », modèle « RECU_PT (COUNTRY:PT) », comptes et profils « jdupont : Caissier Portugal » ; pour 10002/IF, plus de profil de l'enseigne IP.
+31. BO-02-05-05 : ventes sur les deux caisses, panier annulé sur 20081 ; les magasins journalisent « Journal remonté au nœud central : … ticket(s) pour le PDV … » ; central `/admin/adherent-journal?adherent=AD1` : 11 lignes (caisse, e-commerce ECOM/MOBI, annulé) de 10001 et 10002.
+    - filtres : AD2 0, pdv 1, CANCELLED 2, montant 5–7 7, pays PT 10, enseigne IF 1, caisse + numéro 2, date future 0 ;
+    - « Ouvrir » : « Provenance AD1 / 10002 — Villeurbanne / Reçu au nœud central le … », lignes, paiements et ticket imprimé ; identifiant inconnu : « Aucun ticket remonté… » ;
+    - rapport « CA par point de vente et par adhérent » : « AD1 10001 … 8 42,72 € / AD1 10002 … 2,76 € », option « * » : une ligne AD1 ; console `group=ADHERENT&adherent=AD1` : « AD1 : 4 / 0 » ; table des adhérents sur l'écran Échelons.
+32. BO-02-05-01, BO-02-05-05 : après 10002→10008, journal par adhérent et rapport CA gardent les tickets sous « 10002 Villeurbanne (ancien n°, actuel 10008) » ; sur un magasin, `/admin/adherent-journal` indique que ce nœud n'est pas le nœud central.
+
+**Systèmes tiers e-commerce et mobilité, canal, fidélité, factures et NIF**
+
+33. BO-07-01-01 : `/admin/third-party-systems`, SITE_WEB (e-commerce, PDV 0101) et APP_MOB (mobilité) ; avec leurs jetons (`X-Integration-Token`) : INTEGRATED ECOM-W1001 et MOBI-M2001 ; jeton inconnu : 401 « Jeton de système tiers inconnu » ; mobilité sans système : DISABLED « Aucun système tiers de mobilité déclaré » ; `channel.integration.token-required=true` et jeton partagé seul : 401 « Jeton de système tiers obligatoire » ; système désactivé : DISABLED « Système tiers désactivé ».
+34. BO-07-01-02 : `pdvNumber=99999` : REJECTED « Point de vente d'origine inconnu du nœud magasin » ; rapport « Chiffre d'affaires par canal » et écran des commandes : « E-commerce 5 31,00 € / Mobilité 1 6,20 € » ; au central, les tickets e-commerce comptent pour le PDV 10001.
+35. BO-07-01-03 : commande avec la carte 4242424242 : le bouchon imfid reçoit `POST /api/events/ticket-closed {"ticketRef":"2026-ECOM-W1001","card":"4242424242",…,"promotionChannel":"WEB"}` ; rapport `fidelityQueued=true`, écran « Cagnotté ».
+36. BO-07-01-04 : `tranfc-20261025.csv` : « ECOMMERCE/PAYPAL;31.00;5 » et « MOBILITY/PAYPAL;6.20;1 ».
+37. BO-07-01-06 : SAF-T du jour : FS ECOM2026/1-3 et FS MOBI2026/1 en SourceBilling P ; documents de la plateforme WEB2026/42 et « FS WEB2026/43 » (format `TYPE SERIE/RANG`) en SourceBilling I.
+38. BO-07-01-07, BO-07-01-08 : `customer.tax-id-pt-check=true` ; NIF 123456789 conservé ; « pt 123 456 789 » : PT123456789 ; 123456788 : REJECTED « NIF client invalide » ; NIF dans le rapport de commande, l'écran des commandes et CustomerTaxID du SAF-T ; sans NIF : customerTaxId 999999990, `customerTaxIdDefaulted=true`, `/api/ecommerce/tickets/ECOM-W1005` rend 999999990, SAF-T CustomerID « Consumidor final ».
+
+**Fin de journée : tickets en attente, fermeture forcée, éditions, scripts, déclaration automatique, contrôle caisse / serveur**
+
+39. BO-09-01-05, BO-09-01-06, BO-09-01-08, BO-09-03-03 (fin de période automatique, magasin 10002, heure de fin 17:50, ticket en attente, vente en cours) :
+    - alerte « Fin de periode a 17:50 . Il reste 3 min … 1 ticket(s) en attente » ;
+    - journal « Fermeture de fin de période demandée à la caisse POS01 (déclaration automatique de l'hôte) » ; la caisse en pleine vente attend, puis imprime après paiement « TICKET TECHNIQUE / FERMETURE FORCÉE DE CAISSE / Cause : fin de période », journal « Ticket technique de fermeture forcée imprimé — fin de période » ;
+    - journal « Clôture avec ticket en attente POS01-00000002 … 0.96 » et « Fin de journée … 1 ticket(s) en attente enregistré(s) » ; carte « Tickets en attente enregistrés à la clôture » : sort « RAZ demandée », par « Fin de période automatique » (`period.parked-raz=true`) ; « Remise à zéro du ticket en attente POS01-00000002 demandée … par Fin de période automatique » ;
+    - traitement « Fin de période du 2026-10-25 : [DAY, WEEK] ».
+40. BO-09-03-03 : `period.auto-launch=false`, heure de fin passée : « Fin de période automatique désactivée : traitement du 2026-10-25 non lancé ».
+41. BO-09-01-08 : ticket mis en attente, « RAZ de la caisse » sur `/admin/day-end` : « Remise à zéro demandée pour 1 ticket(s) en attente. » ; caisse « AUCUN TICKET EN ATTENTE » ; journal « 1 ticket(s) en attente remis à zéro sur ordre du back-office ».
+42. BO-09-03-01 : `/admin/checkout-islands`, îlot CLS en déclaration automatique avec l'hôte 12341234, POS01 en SELF_CHECKOUT_NCR ; ordre CLOSE_SESSION_AUTO_DECLARE (« déclaration automatique de l'hôte ») ; Z « Especes comptees 102,76 = theorique, ECART 0,00 ».
+43. BO-09-02-01, BO-09-02-03, BO-09-02-04 (lancement manuel) : `period.hooks-enabled=true`, `period.hook-before=avant.sh`, `period.hook-after=apres.sh` ;
+    - « Fin de journée lancée : 1 caisse(s) ouverte(s) à fermer, 0 déconnectée(s), 1 ticket(s) en attente. Traitement de fin de période exécuté. » ; POS01-00000003 « Enregistré », journal « Clôture avec ticket en attente POS01-00000003… » ;
+    - la caisse imprime le Z puis « TICKET TECHNIQUE », « Déclaration : automatique (théorique) », « En attente : 1 ticket(s) annulé(s) », « Opérateur : 12341234 / Nom : Jean Dupont », tous deux journalisés ;
+    - avant.sh et apres.sh exécutés avec le code 0, sortie affichée sur l'écran, journal « Point d'entrée avant/après fin de période … exécuté ».
+44. BO-09-01-10 : `period.reports-printer=localhost:20062` ; « État caissière synthétique », « État caissière détaillé » et « État des règlements » marqués « imprimé le … » ; l'imprimante simulée reçoit 3 travaux `%PDF-1.4` portant ces titres ; journal « État de fin de période cashiers imprimé sur localhost:20062 ».
+45. BO-09-03-05 : `period.register-check=true` ; cas conforme : « Contrôle caisse / serveur du 2026-10-25 : caisse 1 ticket(s) 2.76, serveur 1 ticket(s) 2.76 — conforme, référentiel resynchronisé » ; magasin 2 relancé sans ses données (serveur 0 ticket) : la caisse journalise « écart, 1 vente(s) renvoyée(s) » et le magasin détient à nouveau POS01-00000001.
+
+**Écrans**
+
+46. Parcourir le menu du Back Office en fr, nl et pt, à 800 × 600, 1280 × 800 et 1366 × 768, sur le magasin (91 pages : menu complet, favoris, fiche, sélections, nouveau profil, tous les rapports) et sur le central : pas de défilement horizontal, aucun champ qui déborde, aucun texte français sur les pages nl et pt hors données ; écran des fruits et saisies de prix, d'unité et lignes de vente de la caisse dans les trois langues.
+
+Recette exécutée le 25/10/2026 en deux passes (RA référentiel articles et TVA ; RB clients, documents, points de vente et adhérents, e-commerce et fin de journée), profil dev, bases H2 mémoire jetables, matériel simulé, bouchons imfid, gestion commerciale, imprimante réseau et étiquettes électroniques. Les étapes 1 à 46 ont été jouées avec les messages, codes et valeurs ci-dessus : 52 exigences conformes, 4 partielles. Les balayages du menu du Back Office sont propres dans les trois langues après correctifs, et les 261 captures `bo20-*` et `pos20-*` des écrans du lot sont conformes.
+
+Limites :
+- quatre lignes restent partielles :
+  - BO-02-03-24, BO-02-03-25 : le contrôle à la dépose (poids attendu des lignes pesées, lignes encombrantes non contrôlées) n'est exposé que par l'API `GET /api/pos/deposit-control` ; aucune caisse libre-service ni balance de sécurité ne le consomme ;
+  - BO-02-03-37, BO-02-03-38 : plusieurs fournisseurs, lecture du prix affiché en direct et envoi des prix passent par un contrat REST générique et un mur simulé ; les protocoles propres aux fournisseurs (SES, Hanshow) ne sont pas implémentés ;
+- BO-07-01-03 : le panier d'une commande e-commerce part à imfid sans les offres du moteur de promotion ; imfid recalcule le cagnottage sur le seul panier ;
+- BO-09-01-10 : les éditions automatiques exigent une imprimante réseau qui imprime le PDF reçu sur son port brut (9100).
+
+Validation : imedge 5 699 tests Java + 11 JavaScript ; impos 8 634 Java + 319 JavaScript, sans échec, erreur ni test ignoré. JaCoCo : imedge 32 032 lignes et 16 314 branches, impos 35 638 lignes et 18 851 branches, tous les compteurs manqués à zéro ; JavaScript externe instrumenté à 100 %. Les 323 classes copiées entre imedge et impos sont identiques au paquet près.
+
+Cotation (feuille Back Office) : les 56 lignes non intégrales des blocs 02 Référentiels, 07 e-Commerce et 09 Fin de journée sont recotées : 52 passent intégralement couvertes par CODE ; BO-02-03-24 et -25 restent partielles ; BO-02-03-37 et -38 passent de non couvertes à partiellement couvertes. Back Office P1 : 630/704 intégrales (89,5 %), 60 partielles (8,5 %), 14 non couvertes (2,0 %), soit 690/704 intégrales ou partielles (98,0 %). Toutes priorités : 699 / 75 / 22, couverture pondérée 92,5 %. Bloc 02 : 68 / 4 / 0 ; bloc 07 : 7 / 0 / 0 ; bloc 09 : 19 / 0 / 0. Campagne : 450 promotions, dont 435 CODE et 15 RELECTURE.
+
+## HD_43 — Lot 21 : BO-04 Utilitaires, BO-05 Financier, BO-06 Rapports, BO-11 Flux sortants
+
+Gain : le bloc BO-04 complète le journal électronique (quinze événements avec plage de montants, annulations de règlement, codes inconnus, tickets self-scanning contrôlés et vérifiés, serveur monétique secondaire, colonnes école et autonome réelles, duplicata de facture, TVA par taux), la supervision (aval par fonction de caisse, par profil et par îlot, cartes superviseur créées et imprimées au back-office, alerte globale traitée depuis n'importe quelle page) et le contrôle (barre d'indicateurs sur toutes les pages, écrans responsives, tableau de bord composé des données du système, surveillance en direct, alertes de caisse typées et bornées, justifications par fonction, fermeture à distance, traçabilité complète). Le bloc BO-05 apporte les archives fiscales art. 88, l'e-invoicing et l'e-reporting par plateforme de dématérialisation, le SAF-T mensuel et au fil de l'eau, l'export des transactions sur 12 ans, l'intégration des recettes hors caisse, la validation des mouvements, la remise au coffre, les salariés et les monnayeurs, et un théorique par moyen de paiement identique au Z de la caisse. Le bloc BO-06 livre les graphiques, les sondages, les listes de clients et de factures, les états de ventes, caissières, acomptes et avoirs, codes raison, TVA, détaxe et promotions, exportés dans la langue de la page. Le bloc BO-11 ouvre les flux sortants vers la gestion commerciale, Catalina, les panélistes, la vidéosurveillance, les bornes de prix, les monnayeurs, NEXO, les étiquettes électroniques, l'AT, l'e-commerce et la fidélité VT, GT et VT2. Couverture gagnée : 78 lignes passent de 56 partielles et 22 non couvertes à 75 intégrales et 3 partielles ; Back Office P1 de 630 à 685 intégrales sur 704 (89,5 % → 97,3 %), plus aucune P1 non couverte, couverture pondérée de 92,5 % à 98,6 %.
+
+Écrans et domaines nouveaux du Back Office :
+- journal électronique : critères événement, règlement annulé, codes inconnus, self-scanning (SELF_SCAN, SELF_SCAN_CONTROLLED, SELF_SCAN_VERIFIED), serveur secondaire (SECONDARY_SERVER), taux de TVA ; page duplicata `/admin/journal/document/{id}/duplicate` ;
+- `/dashboard/control` et barre de contrôle sur toutes les pages, `/dashboard/live`, bandeau d'alerte global avec Autoriser / À traiter en caisse / Refuser / Acquitter, `POST /dashboard/force-close/{caisse}` ; `/admin/accounts` (création de compte) et `/admin/accounts/supervisor-card` ;
+- écrans Archives fiscales, E-invoicing, E-reporting, SAF-T, Transactions fiscales et Flux de recettes ; API `POST /api/fiscal/einvoicing/status`, `POST /api/fiscal/ereporting/ack`, `GET /api/fiscal/saft/documents`, flux `POST /feeds/import/SAFE_RECEIPTS?mode=<flux>` ; enrichis : historique des journées (validation, correction, transfert), pochettes, salariés, monnayeurs ;
+- `/admin/promotions`, `/admin/tax-refunds`, `/admin/messages` (sondages, import de codes postaux), `/admin/customers/edit` (facturation) ; rapports nouveaux : état caissière, profil des performances, commandes express / normales, synthèse hebdomadaire, acomptes / avoirs / bons, factures, clients, ventes par emplacement, ventes magasin, articles promotionnels, sondages, codes postaux, détaxe ; graphiques `?chart=BAR|LINE|PIE` ; extractions planifiées `/admin/reports/runs/{n}` ;
+- fournisseurs Service commercial tirés (« Récupérer maintenant »), `GET /api/price-kiosk/{ean}`, `GET /api/sync/voucher-burn/{n}`, `POST /api/ecommerce/valuation` ; flux paigs1, vignett, colonne REMISES_AMONT de cafamil, clifact / clilfact / cliregl / clitva ; caisse : écrans `/vignettes` et `/cash-changer` ;
+- paramètres nouveaux, entre autres : `journal.secondary-monetic-servers`, `auth.endorsement-profiles`, `control.alert-rules`, `justification.function-routes`, `control.indicators-bar`, `control.revenue-level`, `control.revenue-top`, `audit.watched-menus`, `supervision.global-alerts`, `supervision.live-event-types`, `fiscal.*` (archives, e-invoicing, e-reporting, `fiscal.saft-realtime`, échéance, rejeu), `safe.*` (pochettes, forçage, plafond d'acompte), `report.express-max-items`, `report.station-families`, `integration.pull-*`, `export.*`, `vignette.*`, `kiosk.*`, `eeg.auto-push-*`, `hardware.cashchanger.movements`, `nexo.*`, `channel.ecommerce.*`, `fidelity.vt-*`, `fidelity.gt-*`, `fidelity.vt2-enabled`.
+
+Correctifs mis au jour par la recette et par les groupes :
+- défauts de la recette du lot 20 (groupe W) : réponses JSON des importeurs invalides (désormais construites avec Jackson, `{"error":…}` compris) ; pied de page du central qui se disait nœud magasin ; journal par adhérent qui ne retrouvait pas un PDV par son ancien numéro ; 168 libellés français sans accents ; « CAISSE 04 | Opérateur : MARIE » en dur sur les en-têtes de la caisse ; prix EEG « 99.0 € » ; mutations GraphQL qui ne déplaçaient pas l'empreinte du référentiel, si bien que la caisse ne voyait la modification qu'au tirage suivant ;
+- balayage des formats (groupe X) : montants, taux, quantités et dates bruts sur toutes les pages du back-office et de la caisse (« 2.7600 € », « 0.2000 », « x0.756 », « 2026-10-25T20:35 ») ; JSON construit à la main (recherche de nomenclature invalide au-delà de 50 résultats, ordres de caisse lus par expression régulière) ; codes bruts (CASH, FINISHED, « [DAY, WEEK] ») et français restant sur les pages nl et pt ;
+- théorique par moyen de paiement (groupe CS) : la carte « Théorique par moyen de paiement » du magasin et le Z de la caisse décrivaient deux tiroirs différents (règlements et mouvements mélangés, apports, dépenses espèces, fond de caisse et remboursements espèces absents de la ligne Espèces) ; règlements (`totalsByMethod`) et théorique par moyen (`theoreticalByMethod`, Espèces = théorique du Z) sont séparés dans les deux copies de CashSessionService, et l'historique des journées, son CSV, les totaux figés et l'écran de prélèvement de la caisse lisent le théorique ; le X et le Z imprimés écrivent ESPECES / CARTE BANCAIRE au lieu de CASH / CARD ;
+- recette RS (BO-04) : aide de l'écran des listes citant des codes que la caisse ne sert pas ; journal fonctionnel avec dates ISO, codes bruts (FORCE_PRICE, « PRICE_MODIFICATION par mcurie », SUPERVISOR, YESNO, BLOCK, « payment:CHEQUE ») et montants non formatés ; tare déduite non remontée au magasin (l'événement déduction ne trouvait rien) ; « &nbsp; » littéral sur le détail de retour et « click &amp; collect » échappé sur l'écran de rappel de la caisse ; `/admin/accounts` en HTTP 500 et rôles en code brut ;
+- recette RT (BO-05, BO-11) : fichier refusé compté « intégré » au tirage ; refus de la borne de prix servis en application/octet-stream ; `burnedAt` à la microseconde ou à la minute ; date ISO dans les notices de régénération des flux ; instants de Tlogextr, trandet et facterp à la microseconde ou à la minute ; « 1 documents » ; UUID du mouvement dans le motif d'une correction ; chiffres et codes coupés en deux à 800 × 600 et tableau des transactions fiscales débordant de 13 px ; décade d'e-reporting extraite à la main puis transmise automatiquement avant sa fin ; recettes à montant ou date illisible perdues sans erreur (le 32/13/2026 crédité à la date du jour) ; écran des comptes en HTTP 500 ;
+- recette RV (BO-06) : état des règlements en codes bruts et total compté deux fois ; état des remboursements avec moyen brut et identifiant de base au lieu du ticket ; codes raison « CANCEL_TICKET par mcurie », caissière vide et réponses de sondage listées ; drapeau école « O/N » en français sur nl et pt ; caissière sans nom faussant les moyennes ; sondages de début et de fin servis hors transaction puis retirés ; clients volatils créés en caisse remontés « Client en compte » ; réponses de sondage enregistrées comme appels superviseur (« DEMANDE EN COURS : SONDAGE ») ; boutons Oui/Non de la caisse et réponses de l'écran des messages non traduits ; rappel du moment, des jours et des heures ajouté à l'état des sondages ; camembert dessiné en ovale ; codes de famille hors nomenclature tronqués dans la barre de contrôle (« EAU_ ») ; « Type retour » en nl ;
+- groupe S : page de poursuite du contrôle de caisse en HTTP 500 ; caisse affichant « accordée par Autorisé par » ; écran facture de la caisse en HTTP 500 sans ticket ; texte de caisse non échappé sur le tableau de supervision ; événements de prix, de ligne et d'annulation de règlement sans ticket ni caissière ; clés de règle en majuscules ; taux de TVA affiché « 0,2 % » et filtre 20 sans résultat ;
+- groupe T : documents FS non remontés au nœud (ticket renvoyé après scellement) ; tirage ne reconnaissant pas un fichier inchangé ; instants à la minute ou à la microseconde et montants à 4 décimales sur le fil ; drapeau GS1 perdu entre le scan et l'export ; ligne ECOM dans le flux des vignettes et ventes e-commerce dans le journal Anaveo ; appel VT portant le libellé du bon au lieu du code du moyen ; paramètre d'écotaxe en double ; simulateur du hub NEXO sans Completion ;
+- groupe U : FS et NC portugais jamais reçus par le nœud ; correction et transfert en HTTP 500 (identifiant de 39 caractères pour une colonne de 36) ; JSON brut affiché à l'écran ; colonne TVA des mouvements du coffre montrant le TTC ; personne morale affichée « - Nom » ; formulaire des flux de recettes acceptant des valeurs trop longues ; identifiant fiscal de l'acheteur absent du XML d'e-reporting ;
+- groupe V : rapport de taux de carte fidélité en HTTP 500 ; ligne de moyenne comptée deux fois dans le total ; titres de colonnes coupés au milieu des mots ; date brute et échecs masqués des extractions planifiées ; question de transaction effaçant le sondage affiché ; ingestion d'un ticket sans statut de valorisation en échec ; reçu imprimé pour un panier de formation ; noms de superviseur vides ;
+- réconciliation TU : un seul mécanisme de transmission SAF-T au fil de l'eau (SOAP RegisterInvoice pour l'AT, JSON pour les autres points d'accès, un seul rejeu) et un seul paramètre `fiscal.saft-realtime` ; un seul formateur de montants et un seul jeu de libellés de moyens de paiement ; une entité mise deux fois en file dans un même lot n'est expédiée qu'une fois ; « Recette » du journal du coffre traduit « Test » en nl et pt ;
+- groupe Z : terminal simulé et pont matériel simulé sans serveur monétique (balise VWAY absente, routes de paiement du pont en 404 en dev) ; services de l'e-reporting classés en biens dans le TransactionsReport (désormais TLB1 / TPS1) ; décision instantanée du pont simulé déclenchant une mise à jour concurrente du ticket (le simulateur répond désormais « en cours » avant de décider) ;
+- groupe R : à la caisse, la décision du terminal de paiement passé par le pont matériel était appliquée hors du verrou de la caisse, en concurrence avec l'écran de paiement : `StaleStateException`, fil `tpe-follow` arrêté et ticket clos sans règlement en base (2 tickets sur 21 au rejeu) ; désormais chaque décision (acceptation, refus, erreur, affichage) est appliquée sous le verrou de la caisse et une seule fois (jeton de transaction), pour le débit, le débit combiné, le débit et le crédit forcés du mode dégradé, le remboursement net et le remboursement de retour ; l'échec d'un ancien suivi n'efface plus la transaction suivante ; fausse erreur de démarrage « No employee in the database » sur les constructions dev ;
+- réconciliation SV : drapeaux « saisi » et « scanné » unifiés et restaurés après redémarrage de la caisse ; même règle de comptage pour le duplicata du journal et celui des rapports ; libellés manquants de VIGNETTES_DECLARED et CASH_OPERATION_TIMED ; deux traductions nl de « Espèces » et « Secteurs » traduit « Taart » ; en-têtes du CSV du journal et colonne TVA en français sur nl et pt ; exports CSV, XLSX et PDF, duplicata et bordereau de détaxe dans la langue de la page.
+
+Préconditions : construction dev (`-Dquarkus.profile=dev`, jeu de données et matériel simulé compris), bases H2 mémoire jetables recréées à chaque lancement (`drop-and-create`), matériel simulé (imprimante, scanner, terminal de paiement, monnayeur). Nœuds :
+- nœud imedge magasin (PDV 07039) avec ses caisses impos POS01 et POS02 (îlot CLS pour POS01), ou C04 pour les flux et le financier ;
+- pour les cas PDV et adhérent : central imedge (`pos.role=central`) et magasin 10002 avec `pos.sync.central-url` vers le central ;
+- bouchons des receveurs externes : Catalina, TFREMA / DS (gestion commerciale), Anaveo, borne de prix, AT (`POST /at`, SOAP), plateforme de dématérialisation PDP (e-invoicing, e-reporting, SAF-T JSON), étiquettes électroniques EEG, e-commerce (`/web/events`), fidélité imfid (VT, GT, VT2), et un bouchon du moteur de valorisation pour la caisse ;
+- connexion back-office admin/admin ; caisse jdupont / 1234, avals mcurie / 1111 (manager) et aeinstein (profil Chef de caisse).
+
+Ports de la recette : passe RS magasin 19070 (PDV 07039 ; PDV 10002 avec `central-url` pour le journal par adhérent), POS01 19080, POS02 19081, central 19090, bouchons imfid 19060 et EEG 19061 ; passe RT magasin 20070, caisse C04 20080, bouchons imfid 20060 et receveurs de flux 20061 ; passe RV magasin 21070, POS01 21080, bouchon imfid 21060 ; rejeu CS magasin 38070, caisse C04 38080.
+
+**Journal électronique : événements, annulations de règlement, articles inconnus, self-scanning, liste et export, duplicata, TVA**
+
+1. BO-04-01-14 : `/admin/journal?event=…`, liste des quinze événements ; la plage de montants est masquée pour TRAINING et OFFLINE (`data-range`) :
+   - CANCELLED → POS01-00000003 ; DEDUCTION → POS01-00000006 (tare 0,050 kg ; plage 1–2 → 1, ≥ 5 → 0) ; DISCOUNT → POS01-00000004 (0,4–0,6 → 1, ≥ 1 → 0) ; RETURN → POS01-00000005 (5,5–6,5 → 1) ; NEGATIVE → POS01-00000007 (−3…−2 → 1) ;
+   - FORCED_PRICE → POS01-00000002 (1–2 → 1, ≥ 2 → 0) ; PRICE_ENTERED, CARRIED_OUT et VAT_EXEMPT → POS01-00000002 ; SCANNED → 11 tickets (2–3 → 7) ; NO_SALE → 2 lignes ; STORE_VOUCHER et VENDOR_COUPON → POS01-00000005 ;
+   - TRAINING → une ligne POS02 « École O » ; OFFLINE → POS01-00000008 (magasin gelé 45 s).
+2. BO-04-01-19 : règlement espèces de 1,00 annulé avec aval ; `flag=PAYMENT_CANCELLED&paymentCancelMethod=CASH&paymentCancelMin=0,5&paymentCancelMax=2` → POS01-00000004 ; moyen CARD → 0 ; minimum 3 → 0.
+3. BO-04-01-34 : scan de 9999999999994 : « CODE INCONNU » ; `unknownCodeMin=9999999999990&unknownCodeMax=9999999999999` → POS01-00000004, plage 1–2 → 0 ; détail « Codes inconnus scannés 9999999999994 ».
+4. BO-04-01-41, BO-04-01-42, BO-04-01-43 : paniers SS2101 et SS2103 poussés sur `/api/orders/` puis repris en caisse :
+   - `flag=SELF_SCAN` → POS01-00000009 et POS01-00000010, colonne Autonome = O ;
+   - SS2101 en contrôle total provoqué par l'hôtesse (`/action/selfscan/total`) : `flag=SELF_SCAN_CONTROLLED` → POS01-00000009, événement « Contrôle self-scanning (hôtesse) » SS2101 ;
+   - SS2103 en contrôle partiel « demandé par l'appareil » : `flag=SELF_SCAN_VERIFIED` → POS01-00000010, événement « Vérification self-scanning (système) ».
+5. BO-04-01-48 : `journal.secondary-monetic-servers=4` ; ticket POS09-00000001 poussé sur `/api/sync/ticket` avec un règlement CARD `moneticServer=4` : trouvé par `flag=SECONDARY_SERVER`.
+   - recette Z de bout en bout : vente carte normale (`/api/hardware/tpe/accept`) C04-00000001 non trouvée par `flag=SECONDARY_SERVER` ; avec `payment.degraded-mode=true`, vente carte C04-00000002 trouvée ; par le pont matériel simulé (`payment.terminal-type=INGENICO_SIBS`), vente normale C04-00000003 non trouvée, débit dégradé forcé VWAY4 C04-00000004 trouvé.
+6. BO-04-01-50 : la liste affiche N° TPV, transaction, caissière, date, heure, montant, nombre d'articles, École, Autonome et la TVA par taux, chaque ligne avec « Ouvrir » ; `/admin/journal/export` → `journal.csv` (UTF-8 avec BOM, « ; ») : `TPV;Transaction;Caissière;…;École;Autonome;TVA`, ligne `POS01;POS01-00000009;…;N;O;20 % HT 5,40 TVA 1,08` ; en nl `TPV;Transactie;Kassier;Datum;…;20 % excl. btw 3,20 btw 0,64`.
+7. BO-04-01-53 : facture POS01-F000001 émise en POS01 ; le détail de POS01-00000005 renvoie à `/admin/journal/document/1/duplicate` : « FACTURE POS01-F000001 DUPLICATA — Impressions : 2 » ; événement « Duplicata imprimé » journalisé.
+8. BO-04-01-55 : `vatRate=20` et `vatRate=0,2` → 14 tickets ; `vatRate=0` → POS01-00000002 ; détail « 0 % 3,00 0,00 3,00 / 20 % 6,83 1,37 8,20 » ; liste et CSV « 20 % HT … TVA … ».
+
+**Supervision : règles par îlot, cartes superviseur, alertes et réponses du back-office**
+
+9. BO-04-02-01 : à l'échelon îlot CLS, `gesture.function-endorsements=POST /action/pay-cash=REQUIRED:Chef de caisse` ; en POS01 (îlot CLS), paiement espèces retenu : mcurie → « AUTORISATION REFUSÉE », aeinstein (Chef de caisse) accepté et paiement rejoué (complet, ESPECES 2,76) ; POS02, sans îlot, paie sans aval.
+10. BO-04-02-09, BO-04-02-11 : `/admin/accounts` répond 200 ; compte pmartin créé (« Paul Martin … Manager niveau 2 ») ; `POST /admin/accounts/supervisor-card id=5` émet le badge 82300628 ; `/admin/accounts/supervisor-card?id=5` : « CARTE SUPERVISEUR Paul Martin 82300628 », code-barres Code 128 en SVG et bouton d'impression.
+11. BO-04-02-12 : ouverture du tiroir en POS01 : `/dashboard/alerts` et bandeau de chaque page du back-office « Ouverture du tiroir sans vente », avec Autoriser / À traiter en caisse / Refuser / Acquitter ; `GET /dashboard/call/10/authorise` 204 → caisse « granted: Le Manager », VALIDER, tiroir ouvert ; `refuse` 204 → aval effacé.
+
+**Tableau de bord et contrôles : indicateurs, surveillance en direct, alertes, justifications, listes, fermeture à distance, traçabilité**
+
+12. BO-04-03-01, BO-04-03-02 : barre de contrôle sur chaque page : « CA du jour 57,60 € · Clients encaissés 14 · Panier moyen (articles) 1,66 · Écart N-1 … · EPIC 21,48 € … » ; `/dashboard/control-data` rend CA, clients, panier, N-1 et CA par niveau de nomenclature ; à 375 × 667, journal, journal fonctionnel, tableau de bord, contrôle, direct, alertes mobiles, paramètres et comptes sans défilement horizontal en fr, nl et pt (scrollWidth 375), de même à 800, 1280 et 1366 px.
+13. BO-04-03-03, BO-04-03-15 : `dashboard.indicators=event:CONTROL_ALERT;event:JUSTIFICATION_CHOSEN;event:PRICE_MODIFIED;event:LINE_CANCELLED;payment:cheque` → `/dashboard-data` rend ces cinq tuiles, dans cet ordre, avec leurs comptes.
+14. BO-04-03-07 : `/dashboard/live-data` liste 50 opérations (TICKET_CLOSED, TICKET_CANCELLED, PRICE_MODIFIED, DRAWER_OPENED, DRAWER_FORCED_OPEN, REFUND_CREATED, PAYMENT_CANCELLED, ENDORSEMENT_*, CONTROL_ALERT, JUSTIFICATION_CHOSEN), libellées, par exemple « Fonction GET /drawer-open — réponse non ».
+15. BO-04-03-08, BO-04-03-09 : règles de `control.alert-rules` :
+    - `barcode:299*=BLOCK` : « ALERTE DE CAISSE : CODE-BARRES 299* », article non vendu ;
+    - `function:GET /drawer-open=YESNO` : question, puis NON → « FONCTION ABANDONNÉE » ;
+    - article YESNO `max=1` : question posée une fois, le second ORANGINA passe sans question (x2 ORANGINA) ;
+    - article SUPERVISOR `profiles=Chef de caisse` : mcurie refusé, aeinstein accepté ;
+    - paiement chèque BACKOFFICE avec notification : `/dashboard/alerts` « Moyen de paiement Chèque — Chèque à contrôler ».
+16. BO-04-03-10, BO-04-03-12 : `/admin/lists`, J21 (DRAWER_OPEN) et J22 (`CANCEL_TICKET;PRICE_MOD;CANCEL_LINE`) ; en caisse, l'ouverture du tiroir propose « Erreur de saisie / Demande client / Ajout de monnaie », l'abandon du ticket et la modification de prix seulement « Erreur de saisie / Réclamation client », l'annulation de ligne la liste CANCEL_LINE ; journal « Justification » : CANCEL_TICKET « ERS - Erreur de saisie », PRICE_MOD « RCL - Réclamation client ».
+17. BO-04-03-13 : `POST /dashboard/force-close/POS02` 204 ; POS02 imprime « TICKET TECHNIQUE FERMETURE FORCÉE DE CAISSE … Session : POS02-S00001 … Cause : back-office » ; journal « Session clôturée — POS02-S00001 - fermeture forcée sans comptage ».
+18. BO-04-03-14, BO-04-03-04 : `audit.watched-menus=journal;settings` ; journal fonctionnel : « Accès à un menu », TPV « Back-office », « admin : Journal (/admin/journal) » et « admin : Paramètres caisse (/admin/settings) », connexions « Connexion admin » ; toutes les utilisations des contrôles y figurent avec leur ticket : Alerte de caisse (règle et réponse), Justification, Aval accordé / refusé, Décision du back-office (Autorisation, Refus, Fermeture forcée), Remise / forçage, Annulation article, Règlement annulé, libellées en fr, nl et pt.
+
+**Financier : mise à disposition des transactions et archives, e-invoicing, e-reporting, SAF-T mensuel et temps réel, export des transactions**
+
+19. BO-05-01-01 : écran Archives fiscales : « Archives produites : TaxAuditExtracts_07039_20261026.zip, TaxAuditReports_07039_20261026.zip » ; septembre archivé automatiquement ; l'archive Reports contient synthese.txt (« Chaînage des signatures : intègre ») et empreintes.txt (SHA-256).
+20. BO-05-01-02 : `fiscal.einvoicing-enabled=true`, plateforme `fiscal.pdp-provider` déclarée ; factures A4 C04-F000002/4 de Boulangerie Martin (SIRET) avec la mention « Facture électronique transmise par plateforme… », Müller GmbH (DE) sans ; XML CII EN16931 bien formé ; statuts « 205 — Approuvée », puis « 212 — Encaissée » après un push ; `POST /api/fiscal/einvoicing/status` : 400 « Statut inconnu. », 401 sur mauvaise clé.
+21. BO-05-01-03 : `fiscal.ereporting-enabled=true`, période DECADE ; XML avec les synthèses quotidiennes B2C et une InternationalInvoice `buyerVat` DE123456789 ; décades passées transmises automatiquement (« Acceptée (ACK-145) ») ; accusé poussé : « Rejetée Montant incohérent » ; la décade en cours attend un « Transmettre » manuel.
+   - PaymentsReport (recette Z) : article 3300000000003 coché « Prestation de services (e-reporting des paiements) » (nl « Dienstverlening (e-reporting van betalingen) », pt « Prestação de serviços (e-reporting dos pagamentos) ») ; extraction du jour avant la vente : `<PaymentsReport/>` ; vente C04-00000005 (service 0,96 + lait 2,26 = 3,22) ; nouvelle extraction : `<DailyPayments date="2026-10-26" category="TPS1" scope="B2C">` taux 20, AmountIncludingTax 0.96, TaxAmount 0.16, TaxableAmount 0.80 ; TransactionsReport avec une synthèse TLB1 et une synthèse TPS1.
+22. BO-05-01-04 : écran SAF-T : rappel de l'échéance du 25 ; « Fichier SAF-T extrait : SAFT-PT_07039_20261031.xml » (bien formé, contient FS C04/2026/00000002), puis « Fichier SAF-T déclaré transmis à l'administration. ».
+23. BO-05-01-05 : `fiscal.saft-realtime=true`, AT (fournisseur Fiscal / SAFT) et SAFTPDP déclarés ; FS C04/2026/00000001 envoyé une fois à SAFTPDP (JSON, « Envoyé ACK-160 ») et une fois à l'AT (SOAP RegisterInvoice) ; écran « points d'accès : 2 — envoyés : 2 — en échec : 0 » ; `GET /api/fiscal/saft/documents` : 200 avec la clé, 401 sans.
+24. BO-05-01-06 : écran Transactions fiscales : FT → 4 documents ; NIF FR44732829320 → 3 ; « Müller » → « 1 document » ; fragment de ticket, TTC 5–30 et HT 4–10 filtrés ; « abc » → alerte ; totaux par client affichés ; exports CSV, xlsx et PDF en 200.
+
+**Financier : mouvements hors encaissement, coffre, salariés, monnayeurs, théorique par moyen de paiement**
+
+25. BO-05-02-03 : écran Flux de recettes : STATION, GAZ_BOUTEILLE (deux taux, TVA 4,42) et GAZ_CITERNE intégrés ; renvoi du même fichier : « 0 créée(s), 1 mise(s) à jour » ; `POST /feeds/import/SAFE_RECEIPTS?mode=STATION` accepté ; montant ou date illisible : « 1 erreur(s) ».
+26. BO-05-02-09, BO-05-02-10 : historique des journées :
+    - « Mouvement validé. » ; nom de validateur de 21 caractères refusé ; « Correction enregistrée. » (motif « Correction du mouvement du 26/10/2026 00:12 : … ») ; « Transfert de règlement enregistré. » ; validation de la journée refusée tant que des mouvements ne sont pas validés ; « Chiffre d'affaires net de la journée validé. », puis « déjà validée » ;
+    - pochette refusée avant la validation de la journée ; P-001 et P-002 acceptées ; P-003 : « compte déjà 2 pochette(s) ».
+27. BO-05-02-15 : fiche « Nettoyage Pro SARL » (personne morale) créée ; « Plafond d'acompte dépassé : 100,00 € autorisés, 80,00 € déjà versés. » ; saisie de niveau 2 : « …niveau de forçage 2 : il se valide par un niveau supérieur. » ; tout valider : « 4 validé(s), 4 réservé(s) » ; le compte chefcoffre de niveau 3 valide : « Mouvement validé. ».
+28. BO-05-02-16 : écran des monnayeurs : Chargement 50,00, Comptage (écart −12,50), Réalignement, puis « Vente C04-00000013 6,96 → 44,46 » ; aucune requête n'est faite à l'automate.
+29. BO-05-02-09 (théorique par moyen de paiement, rejeu CS) : `cash.movement-tenders=CASH;CHEQUE` ; fond de caisse 100, vente espèces 5,52, apport 20, dépense espèces 5 (« Achat de timbres »), prélèvement 30, vente carte 0,96, dépense chèque 8 :
+    - X de la caisse : « Règlements ESPÈCES 5,52 € CARTE BANCAIRE 0,96 € Fond de caisse 100,00 € Mouvements nets -15,00 € Espèces théoriques 90,52 € » ; écran de prélèvement : Espèces 90,52 €, Chèques -8,00 € ;
+    - Z imprimé : « REGLEMENTS ESPECES 5,52 E / CARTE BANCAIRE 0,96 E », « Especes theorique 90,52 E », « Especes comptees 90,52 E », « ECART 0,00 E » ;
+    - historique des journées du magasin : « Total théorique 83,48 € », Espèces 90,52, Carte bancaire 0,96, Chèque -8,00 ; session C04-S00001 comptée 90,52, théorique 90,52, écart 0,00.
+
+**Rapports : graphiques, sondages, clients, factures**
+
+30. BO-06-01-04 : `/admin/reports/{code}?chart=BAR|LINE|PIE` sur les 19 rapports d'agrégat ; productivité horaire `series=customers&series=sales` ; rapports de liste sans graphique ; données nulles : « aucune donnée à représenter » ; 33 rapports × 3 graphiques × fr/nl/pt en HTTP 200 ; camembert circulaire.
+31. BO-06-03-01, BO-06-03-02 : `/admin/messages`, sondages avec numéro, question, moment, type de réponse, actif, dates, jours, heures et îlots « IL1;IL2 » :
+    - en caisse, S7 (TRANSACTION_START) posé au premier article ; S3 (TRANSACTION_END, IL1;IL2) à la clôture avec OUI/NON, JA/NEE, SIM/NÃO ; S4 (IL2 seul), S5 (autre jour) et S6 (06:00–06:30) jamais posés ; SONDAGE-7 scanné pose S7, SONDAGE-4 rien sur IL1 ;
+    - `surveys?pick=3&pick=7` : « Oui » → 1 client, 100,0 %, 8,76 €, 30,4 %, panier 8,76 €, 2,00 articles, 0,00 point ; sous-total par sondage ; rappels « Sondage n° 3 — … — réponses : Oui / Non — du — au — — actif » et « Sondage n° 7 — moment : … — jours : … — heures : 00:00 – 24:00 ».
+32. BO-06-03-03 : import « 2 code(s) postal(aux) importé(s) » ; en caisse, 9999999 → « CODE POSTAL HORS LISTE », 1000001 enregistré 1000-001 ; rapport postal-codes : 1000-001 → 1 client, 8,76 € ; extraction xlsx planifiée en néerlandais (« Postcode-enquête … »).
+33. BO-06-03-04 : `customers?option=VOLATILE` : POS01-CLI000001 « Client volatile » ; `/admin/customers/edit` : « Fiche enregistrée. » ; la liste montre une ligne d'adresse principale et une ligne de facturation (« 5 avenue de la Gare 59000 Lille », Facturation), facturation au pourcentage, profession Architecte ; noms D–E → 3 lignes, X–Z → aucune.
+34. BO-06-03-05, BO-06-04-03 : rapport invoices : 07039, POS01-F000001, FACTURE, Paul / Durand, POS01-CLI000001, 9,36 / 7,80 / 1,56 €, POS01-00000001, 0102030405, p@durand.fr ; préambule « Rapport édité le … — point de vente 07039 » ; `option=BON_LIVRAISON` vide ; exports CSV, XLSX et PDF en 200 ; « Réimprimer (duplicata) » : « FACTURE N° POS01-F000001 — DUPLICATA N° 1 » (fr), « FACTUUR nr. … DUPLICAAT nr. 2 » (nl), « FATURA N.º … SEGUNDA VIA N.º 3 » (pt).
+
+**Rapports : ventes par famille, emplacement, magasin et horaire**
+
+35. BO-06-04-01 : family-sales en 21 colonnes, sous-total par rayon « Sous-total 2020 », filtre `family=2020`.
+36. BO-06-04-02, BO-06-04-07 : `location-sales?option=15&ean=…` : « 23:30 – 23:45 », 3300000000002, LAIT UHT 1L, 202002000001, 2,76 €, 5,00, 11,52 €, puis TOTAL ; filtre de plage d'EAN ; `hourly-sales?option=15&hourFrom=23:00&hourTo=23:59` : tranches d'un quart d'heure ; `ean=3300000000002` à 60 min : 5 unités, 11,52 €.
+37. BO-06-04-05 : store-sales : ventes nettes 27,84 €, brutes 31,08 €, TVA brute 4,80 €, prélèvements 20,00 €, 7 articles scannés et 2 saisis, puis détail par moyen de paiement (Carte bancaire / Espèces / Bon d'achat) ; `PREVIOUS_DAY` à zéro.
+38. BO-06-04-06 : hourly-productivity, options 60/30/15 ; tranches « 00:30 – 00:45 » avec caisses ouvertes et moyennes ; ligne « Moyenne par tranche » ; graphique LINE ; depuis la page nl, « Planifier l'extraction » : « Extraction planifiée. », puis `/admin/reports/runs/3` est un PDF en néerlandais (« Verkoopstaat winkel »).
+
+**Rapports : caissières, acomptes, avoirs et bons, codes raison**
+
+39. BO-06-06-01 : un ticket mis en attente puis repris, un autre laissé, un panier de formation mis en attente ; `pending-tickets?option=ALL` : POS01-00000003 rappelé (ticket et caissière de rappel), POS01-00000004 en attente, FORMATION-1 mode école « Oui » (nl « Ja ») ; total 3 tickets, 9,72 € ; WAITING et RECALLED filtrent.
+40. BO-06-06-02, BO-06-06-03, BO-06-06-08 :
+    - cashier-performance : Jean Dupont et « Moyenne magasin », un verrouillage manuel (VERROUILLER puis badge 12341234 / 1234) ; cashier-orders avec `report.express-max-items=2` : commandes express et normales, rang d'efficacité ;
+    - cashier-state SUMMARY et DETAIL (`cashier=12341234`) : non-ventes, clients, ventes, retours, remises, puis par moyen ventes, prélèvements 20,00 €, fond de caisse 100,00 €, apports, sorties ; récapitulatif TVA et durées ;
+    - cashier-weekly : « 26/10/2026 – 01/11/2026 », Jean Dupont, « Carte bancaire 26,88 € ; Espèces 0,96 € ; Bon d'achat 0,96 € », sous-total et ligne de signature.
+41. BO-06-06-06 : stored-values : avoir 297000000000001 émis par le remboursement POS01-R000001 et utilisé sur POS01-00000006 (0,96 €) ; acompte CMD4242 de 15,00 € ; options ISSUED et USED, îlots IL1 et IL2 filtrés.
+42. BO-06-06-07 : reason-codes : « Aval de mcurie : Annulation du ticket », « Prélèvement coffre », « Aval de mcurie : Mode école », « Remboursement », « Motif de retour » ; en nl « Goedkeuring van mcurie: Annulering van het ticket » ; réponses de sondage absentes.
+
+**Rapports : TVA, détaxe, promotions**
+
+43. BO-06-07-01, BO-06-07-02 : vat-by-family aux niveaux 0 à 3 et en SYNTHESIS, sous-total par rayon ; `report.station-families=2020` : préambule « Chiffre d'affaires de la station exclu : 2020 » ; fidelity-vat SUMMARY, puis DETAIL sur POS01-00000001..00000002 (2 lignes et TOTAL), colonnes magasin et site e-commerce.
+44. BO-06-07-03 : `/admin/tax-refunds` : « Bordereau BV20261026-POS01-00000001 prêt à imprimer. » ; ticket inconnu : « Ticket inconnu ou non clôturé. » ; bordereau PDF en fr, nl et pt (« 20 % : 9,36 / 1,56 € ») ; « Remboursement de la détaxe enregistré. », puis « Ce bordereau est déjà remboursé. » ; rapport tax-refunds « Remboursé ».
+45. BO-06-08-01, BO-06-08-02 : `/admin/promotions` : « Promotion enregistrée. » ; ticket valorisé poussé au magasin (la caisse dev n'a pas de moteur de promotion) ; `promotion-cashiers?option=VALUE&cashier=12341234` : OFF1 « Lot de 3 laits », Jean Dupont, 1, 6,00 €, 2,28 €, 38,0 % ; PERCENT vide ; `promotion-articles?family=2020` : 3300000000002, LAIT UHT 1L, OFF1, 3,00, 6,00 €, 2,28 €, AMONT « Oui ».
+
+**Flux sortants : émetteur, Catalina, CA par famille, facturation clients en compte, GS1, panel, vignettes**
+
+46. BO-11-01-01 : fournisseur Service commercial (GC) ; « Récupérer maintenant » : `GET /gc/PRODUCTS` (Bearer key-GC) crée « Café pull RT21 » ; tirage suivant : « 0 intégré(s), 2 inchangé(s) » ; fichier refusé par l'import : « 0 intégré(s), 0 inchangé(s), 1 en échec ».
+47. BO-11-01-07 (partiel) : vente close : `POST /catalina` (Bearer key-CAT) `{"storeId":"07039","laneId":"C04","transactionId":"C04-00000001","loyaltyCardNumber":"2990000000011","totalAmount":37.06,…}`.
+48. BO-11-01-08 : `export.family-sales-upstream-offers=REMB`, offre REMB-LAIT (bouchon du moteur) ; `cafamil-20261026.csv` : `LAIT DEMI-ECREME;5.000;11.30;9.42;1.88;0.00;2.50;5`, la colonne REMISES_AMONT portant les 5 × 0,50 € de remises immédiates.
+49. BO-11-01-12 : facture C04-F000001 d'un client en compte : `clifact` (enregistrement H), `clilfact` (3 enregistrements L), `cliregl` (`RC04-F000001 001CASH …3706`) et `clitva` (T, puis E d'écotaxe avec `customer.invoice-export-ecotax`).
+50. BO-11-01-18 : `paigs1` : lignes SCAN et REGLEMENT pour 952600013436712345 avec GS1=O et BRULE=O, puis TOTAL ; second scan du bon : « BON DÉJÀ CONSOMMÉ EN CAISSE C04, TICKET C04-00000003 » ; `GET /api/sync/voucher-burn/{n}` : `burnedAt "2026-10-26T00:36:34"`.
+51. BO-11-01-19 : `MS.07039.299.zip` contient Scannels.299, Scvenmag.299 et Tlogextr.299, instants à la seconde.
+52. BO-11-01-20 : ticket de 37,06 € : « VIGNETTES 3 » (10 € la vignette) ; `/vignettes` : « Vignettes théoriques 3 », puis « Déclaration enregistrée … déjà déclarées 2 » ; saisie non numérique refusée ; `vignett-20261026.csv` : `C04;C04-S00001;jdupont;7;7;2;-5`.
+
+**Flux sortants : temps réel, borne de prix, cash management, produits dématérialisés, EEG**
+
+53. BO-11-02-01, BO-11-02-04 (partiels) : pour chaque vente close, le bouchon reçoit TFREMA `{"eventType":"VENTE","pdv":"07039",…}`, DS `DS07039 C04 C04-00000001 …226` et le journal Anaveo `C04|2026-10-26T00:36:06|ARTICLE|LAIT UHT 1L|1.00|2.26 … TOTAL|CLOSED|3|37.06`.
+54. BO-11-02-06 : `GET /api/price-kiosk/3300000000002` (Bearer key-KIOSK) : `{"price":2.76,"offer":true}` ; formats XML et TEXT ; 401 « Borne de prix non déclarée », 404 « Article inconnu », 403 désactivée, en text/plain.
+55. BO-11-03-03 : `hardware.cashchanger.movements=true` ; paiement de 37,06 € : « ESPECES 37,06 / DONNE 42,06 / RENDU 5,00 » ; écran `/cash-changer` : 882 → 902 € (apport) → 852 € (prélèvement) ; distribution de 0,03 € : « MONNAYEUR : MOUVEMENT NON RÉALISÉ, RIEN N'A ÉTÉ ENREGISTRÉ ».
+56. BO-11-03-04 : `nexo.hub-url`, `nexo.poi-id`, `nexo.activation-moment=PAYMENT` ; au scan : « CODE D'ACTIVATION », puis « ACTIVATION À L'ENTRÉE EN PAIEMENT » ; carte activée sur le hub NEXO à l'entrée en paiement ; ticket d'activation « NOUVEAU SOLDE 20,00 E / TRANSACTION HUB00000002 ».
+57. BO-11-03-05 : `eeg.auto-push-enabled=true` ; premier envoi : 40 prix sur `/eeg/prices` ; après le changement de prix de 3300000099991, seul `[{"ean":"3300000099991","price":4.90}]` est envoyé.
+
+**Flux sortants : webservices SAF-T, e-commerce, fidélité VT, GT et VT2**
+
+58. BO-11-04-02 : FS scellé et envoyé une fois par point d'accès : `POST /at` (text/xml, SOAP RegisterInvoice, Bearer key-AT) : « AT Envoyé 0 — AT-159 » ; après un échec de l'AT, le rejeu affiche « Envoyé (1) ».
+   - WS-Security (recette Z) : sans identifiants, l'écran SAF-T indique « En-tête WS-Security de l'AT : inactif… » et FS C04/2026/00000001 part sans `<S:Header>` ; avec `fiscal.at-subuser=599999993/37`, un mot de passe et un certificat de développement, « …actif… » et FS 00000002 porte `<wsse:Security><wsse:UsernameToken>` (Username, Password, Nonce, Created) : le Nonce se déchiffre en clé de 16 octets, le mot de passe et l'horodatage UTC se restituent, accusé « 0 — AT-39 » ; certificat illisible : « …certificat de la clé publique illisible… », FS 00000003 en échec puis « Envoyé (5) » une fois le certificat rétabli.
+59. BO-11-04-03 : `POST /api/ecommerce/valuation` relayé au moteur (200) ; commandes INTEGRATED, INTEGRATED et REJECTED, chaque statut posté sur `/web/events` (Bearer key-WEB).
+60. BO-11-04-05, BO-11-04-06, BO-11-04-07 :
+    - appel VT synchrone `/api/events/ticket-closed` (`X-Fidelity-Call: VT`) avec `payments [{"method":"CASH","amount":37.06}]` ;
+    - VT répond 500 : `/api/gt` (`X-Fidelity-Call: GT`) appelé 3 fois, arrêté dès que le bouchon accepte (202) ;
+    - `/api/earn` appelé après VT et avant l'impression ; ticket « CAGNOTTE PREVISIONNELLE 12,64 E ».
+
+**Correctifs du lot 20, formats et écrans**
+
+61. Correctifs W (rejeu RS) :
+    - `POST /feeds/import/PRODUCTS` : `{"createdCount":1,"updatedCount":0,"errors":["Line 3 ignored (fewer cells than the header): TRONQ\"UE|x","Line 4 ignored (empty key 'EAN')"]}` lu par `json.loads` ; code inconnu `NO"PE` : 400 lisible ;
+    - pied du central « Nœud central : référentiel et paramétrage des échelons… » (nl « Centraal knooppunt: … », pt « Nó central: … »), magasin « Nœud magasin : … » ;
+    - central, 10002 renuméroté 10008 : `?pdv=10002` et `?pdv=10008` → « Résultats (1) AD1 · 10002 Villeurbanne (ancien n°, actuel 10008) POS01 POS01-00000001 … 28,80 », `?pdv=10009` → 0 ;
+    - `/admin/day-end` « Fin de journée », « Le compte à rebours », « États édités en fin de période » ; `/admin/lists` « Listes administrées », « Créer une liste », « Libellé » ;
+    - `/cash-count`, `/pin-change`, `/drawer-error`, `/supervisor` et `/fidelity` : « CAISSE POS01 | Opérateur : Jean Dupont » ;
+    - article 3300000000002 : « SES-imagotag 99,00 € » en fr, nl et pt (bouchon 99.0) ;
+    - `updateProduct` : « recordApplied PRODUCTS » à la caisse 0,8 s plus tard, scan « ORANGINA W7C » ; vente ouverte : « PRODUCTS différé : vente en cours ».
+62. Balayage X : fiche article « Prix de vente courant 2,76 € TTC · 2,30 € HT · TVA 20,00 % » (nl « 2,76 € incl. btw · 2,30 € excl. btw · BTW 20,00 % », pt « 2,76 € c/ IVA · 2,30 € s/ IVA · IVA 20,00 % ») ; pager « Articles 1 à 38 sur 38 » ; aucune décimale brute ni date ISO sur 85 pages magasin et 77 pages central en fr, nl et pt, hors valeurs de saisie, versions et exemple de gabarit ; `/feeds/import/status` de la caisse, `/api/commands/POS01` du magasin et recherche de nomenclature lus par un vrai parseur JSON.
+63. Écrans : menu du Back Office parcouru en fr, nl et pt à 800 × 600, 1280 × 800 et 1366 × 768 (magasin 85 pages, central 77 pages, plus favoris et mot de passe), les 33 rapports et leurs graphiques, les écrans de caisse vignettes, monnayeur, tickets en attente, sondages (oui/non, numérique, code postal) et contrôles (question, justification, refus) : pas de défilement horizontal, aucun champ qui déborde, aucune clé brute, aucun texte français sur les pages nl et pt hors données ; exports CSV, XLSX et PDF des rapports en nl et pt traduits.
+
+Recette exécutée le 26/10/2026 en trois passes (RS journal électronique, supervision et contrôle avec le rejeu des correctifs W et X ; RT flux sortants et financier ; RV rapports) et un rejeu CS du théorique par moyen de paiement, profil dev, bases H2 mémoire jetables, matériel simulé, bouchons des receveurs externes. Les étapes 1 à 63 ont été jouées avec les messages, codes et valeurs ci-dessus : 75 exigences conformes, 3 partielles faute de spécification des receveurs (BO-11-01-07, BO-11-02-01, BO-11-02-04) ; BO-04-01-48, BO-05-01-03 et BO-11-04-02, partielles à la recette, sont complétées aux étapes 5, 21 et 58. Rejeu R du paiement carte par le pont matériel simulé répondant sans délai (`pos.mock.tpe.running-readings=0`), écran de paiement sollicité en parallèle : avant correctif, 2 `StaleStateException` et les tickets POS01-00000002 et POS01-00000017 clos sans règlement ; après correctif, 20 débits, 5 débits combinés, 5 débits dégradés forcés, 8 remboursements nets et 6 remboursements de retour, chacun avec exactement un règlement carte égal au total, aucune exception au journal. Les balayages du menu du Back Office sont propres dans les trois langues après correctifs, et les 779 captures `bo21-*` et `pos21-*` des écrans du lot sont conformes.
+
+Limites :
+- trois lignes restent partielles, faute des documents des receveurs :
+  - BO-11-01-07 : chaque vente close part à Catalina (magasin, caisse, transaction, carte de fidélité, total, clé Bearer), mais les noms de champs suivent une lecture de l'interface Catalina Pos Web Service V1.21, dont le document n'est pas disponible ;
+  - BO-11-02-01 : les ventes unitaires partent en temps réel en JSON TFREMA et en enregistrements DS à largeur fixe, mais les dispositions de ces deux éditeurs ne sont pas disponibles ;
+  - BO-11-02-04 : DataTimeRealExport envoie à Anaveo un journal texte par vente, mais le protocole propre à Anaveo n'est pas spécifié.
+
+Validation : imedge 6 116 tests Java + 11 JavaScript ; impos 8 810 Java + 328 JavaScript, sans échec, erreur ni test ignoré. JaCoCo : imedge 38 808 lignes et 19 877 branches, impos 37 052 lignes et 19 746 branches, tous les compteurs manqués à zéro ; JavaScript externe instrumenté à 100 %. Les 325 classes copiées entre imedge et impos sont identiques au paquet près.
+
+Cotation (feuille Back Office) : les 78 lignes non intégrales des blocs 04 Utilitaires, 05 Financier, 06 Rapports et 11 Flux sortants sont recotées : 75 passent intégralement couvertes par CODE ; BO-11-01-07 passe de non couverte à partiellement couverte ; BO-11-02-01 et -02-04 restent partielles. Back Office P1 : 685/704 intégrales (97,3 %), 19 partielles (2,7 %), aucune non couverte, soit 704/704 intégrales ou partielles (100 %). Toutes priorités : 774 / 22 / 0, couverture pondérée 98,6 %. Bloc 04 : 71 / 0 / 0 ; bloc 05 : 23 / 0 / 0 ; bloc 06 : 31 / 0 / 0 ; bloc 11 : 31 / 3 / 0. Campagne : 525 promotions, dont 510 CODE et 15 RELECTURE.
+
+## HD_43 — Recotation de la Ligne de caisses et défauts de caisse corrigés (26/10/2026)
+
+Gain : les 149 lignes non intégrales de la feuille Ligne de caisses ont été confrontées au code actuel d'impos, sur preuve seulement. 32 passent intégralement couvertes (28 par RELECTURE, 4 par CODE après correction), 16 passent de non couvertes à partielles, LC-02-07-12 redescend à non couverte. Ligne de caisses : 581 / 34 / 115 → 613 / 38 / 79, couverture pondérée 81,9 % → 86,6 % ; P1 460 / 3 / 14 → 460 / 5 / 12.
+
+Défauts corrigés (impos, un test chacun) : « Discount » en anglais sur la caisse française ; bandeau « SUPERVISEUR » non traduit ; quantité décimale armée acceptée sur un article à l'unité (scan, code saisi, saisie directe, touches, famille, GS1, plage partenaire, annulation par scan) ; invite « QUANTITÉ 1.5 » ; EAN rogné sur les touches à 6 colonnes ; textes français de la saisie directe en nl et pt ; titre « Matériel indisponible » permanent ; prix en vigueur absent de l'invite de prix du retour ; bon de réduction imprimé « BON D'ACHAT » ; libellé du moyen CAS absent ; jeton Resto Flash scanné refusé (« CODE INCONNU ») et pavé numérique seul ; base de TVA et total HT de facture à 3 décimales seulement complétés d'un zéro ; quantité du bon d'échange au format monétaire ; dépense espèces enregistrée dans le moyen de la dépense précédente ; total d'apport recalculé en flottant ; erreurs JavaScript « selectItem » et « PosKeyboards is not defined » sur six écrans de tiroir ; libellés français du bordereau de mouvement.
+
+Préconditions : construction dev (`-Dquarkus.profile=dev`), bases H2 mémoire jetables, matériel simulé ; nœud magasin imedge et caisse impos ; paramètres administrés au Back Office du magasin et tirés par la caisse.
+
+**Défauts de caisse**
+
+1. Remise ligne 10 % sur BISCUITS : « BISCUITS CHOCOLAT 200G (Remise -10,00%) 2,16 € » à l'écran et sur la visu client ; nl « Korting -10,00% », pt « Desconto -10,00% ».
+2. `gesture.endorsement-scope=PER_TICKET`, aval de mcurie : bandeau « SUPERVISEUR mcurie — FIN SUPERVISEUR », nl « SUPERVISOR mcurie — EINDE SUPERVISOR », pt « SUPERVISOR mcurie — FIM SUPERVISOR ».
+3. QUANTITÉ 1,5 armée : invite « QUANTITÉ 1,5 — SAISISSEZ L'ARTICLE » ; scan de CHIPS 3300000000014 : « QUANTITÉ INVALIDE », total 0,00 ; même refus par code saisi et saisie directe ; QUANTITÉ 2 puis scan : « CHIPS CLASSIQUES 150G 2 x 1,80 € ».
+4. LC-02-07-09 : `touch.show-ean=true`, 3 à 6 colonnes en 800 × 600, 1280 × 800 et 1366 × 768 : les 13 chiffres de l'EAN tiennent dans la touche, sur une ligne.
+5. Saisie directe en nl : « Start », « < TERUG », « VORIGE », « PAGINA 1 / 2 », « VOLGENDE » ; en pt : « Início », « < VOLTAR », « ANTERIOR », « PÁGINA 1 / 2 », « SEGUINTE ».
+6. Page matériel : tous périphériques présents → titre « Matériel disponible » ; visu client coupée → « Matériel indisponible ».
+7. LC-05-02-15 : type de retour « Prix révisé » avec prix à confirmer, scan d'Huile d'Olive : « PRIX À SAISIR HUILE D'OLIVE 1L PRIX ACTUEL : 6,00 € » (nl « HUIDIGE PRIJS: 6,00 € », pt « PREÇO ATUAL: 6,00 € ») ; 4,50 confirmé, ligne de retour à 4,50.
+8. Bon de réduction réglé : le ticket imprime son propre libellé (« Bon générique 1,00 E »).
+9. CHIPS éligible carte achat sociale : écran de règlement « CARTE ACHAT SOCIALE » (nl « SOCIALE AANKOOPKAART », pt « CARTÃO DE COMPRAS SOCIAL »), ticket « CARTE ACHAT SOCIALE 1,80 E ».
+10. LC-07-06-04 : zone RESTO FLASH ouverte, scan de « RF-QR-PAYLOAD-0001 » → règlement RESTOFLASH 2,76 €, reste 0,00, ticket « RESTO FLASH 2,76 E » ; pavé alphanumérique en capitales.
+11. LC-08-04-26 : décimales de facture à 3, une ligne de 10,03 € à 20 % : total HT de ligne 8,358 €, base du tableau de TVA 8,358 €, TVA 1,67 €, « Sous-total HT 8,358 € ».
+12. Bon d'échange : « 1,500 kg POMMES GOLDEN », « 1        LAIT UHT 1L », sans montant.
+13. MOUVEMENT, dépense TENDER:CHEQUE puis dépense sans moyen : le moyen revient à Espèces ; un envoi portant encore CHEQUE sans choix manuel est enregistré en espèces ; un TR choisi à la main imprime « MOYEN TR ».
+14. LC-12-04-02 : apport 50 € × 2 → 100,00 €, 20 € × 3 → 160,00 €, pièces 0,10 € × 3 → 160,30 €, total conservé entre onglets, aucune erreur de page ; bordereau « APPORT DE MONNAIE … Billet 20 € x2 40,00 E ».
+
+**Recotation, preuves en dev des promotions**
+
+15. Session : clé Dallas (`auth.dallas-key`) → ouverture sans PIN, clé tapée refusée ; reprise de pause par la clé de l'opérateur seul ; déverrouillage forcé par mcurie/1111 vers le changement de PIN ; aval PER_TICKET demandé à la première annulation, pas à la seconde, de nouveau après FIN SUPERVISEUR.
+16. Vente : 3300000009999 inconnu → « ARTICLE INCONNU … SAISISSEZ LA FAMILLE OU LE CODE », famille EPICERIE à 2,35 → « ÉPICERIE & DIVERS 2,35 € », ticket « ARTICLE INCONNU / CODE LU 3300000009999 / Caisse : POS01 » ; prix forcé : « Prix initial: 6,00€ » sur la visu client et le ticket.
+17. Second scanner client : carte lue entre deux scans opérateur rattachée ; article lu sur ce scanner refusé (422).
+18. Self-scanning : panier EXT-0001 rappelé par le client 2990000000013 ; CAFÉ GRAINS ajouté, total 7,60 € ; « CONTRÔLE TOTAL : RE-SCANNER TOUS LES ARTICLES », écarts 2 → 0 ; EXT-0002 « AUCUN CONTRÔLE » → « CONTRÔLE TOTAL PROVOQUÉ » ; bon 1,00 € puis carte 6,60 €.
+19. Resto Flash code 482913 : RESTOFLASH 0,96 €, reste 0,00 ; réimpression « 00000004 » → C04-00000004 seul, BON POUR ÉCHANGE imprimé ; NIF portugais contrôlé : 123456780 refusé, ESB12345678 et « DE 1234/56.789-0123X » acceptés.
+
+Recette exécutée le 26/10/2026 par quatre groupes de recotation (blocs LC-01/02, LC-03 à 06, LC-07/08, LC-09 à 14) puis par le groupe de correction, profil dev, bases H2 mémoire jetables, matériel simulé, nœud magasin et caisse réels.
+
+Limites : protocoles Verifone (c18, D5Y, c2g, chèque automatique), Ingenico SIBS et Worldline dans le module matériel, hors de ces dépôts ; API Restoflash signée ; NEXO pour les titres prépayés papier ; wynid, Prosodie, ATOS ; RFID ; gestion de file. LC-02-07-12 redescend : les tuiles de groupe n'affichent jamais le prix au kilo.
+
+Validation : imedge 6 117 tests Java + 11 JavaScript ; impos 8 850 Java + 346 JavaScript, sans échec, erreur ni test ignoré. JaCoCo : imedge 38 811 lignes et 19 877 branches, impos 37 120 lignes et 19 808 branches, tous les compteurs manqués à zéro ; JavaScript externe instrumenté à 100 %. Les 325 classes copiées entre imedge et impos sont identiques au paquet près.

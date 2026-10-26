@@ -6,6 +6,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -26,7 +27,7 @@ class JournalTicketDetailTest {
     void detailStoresHeaderAndChildren() {
         JournalTicketDetail.Line line = new JournalTicketDetail.Line(
                 1, "Lait", "3001", "42", "x2", "3,00", "REMISE", false);
-        JournalTicketDetail.Payment payment = new JournalTicketDetail.Payment("CASH", "3,00", null);
+        JournalTicketDetail.Payment payment = new JournalTicketDetail.Payment("CASH", "3,00", null, null, null);
         JournalTicketDetail detail = new JournalTicketDetail("C04-00000001", "C04", "CLOSED",
                 "31/08/2026", "10:00", "Jean Dupont", "12341234", "IM Lyon", "CARTE1",
                 "3,00", "2,85", "0,15", List.of(line), List.of(payment), List.of());
@@ -92,9 +93,23 @@ class JournalTicketDetailTest {
      */
     @Test
     void paymentStoresMethodAndAmount() {
-        JournalTicketDetail.Payment payment = new JournalTicketDetail.Payment("CARD", "10,00", null);
+        JournalTicketDetail.Payment payment = new JournalTicketDetail.Payment("CARD", "10,00", null, null, null);
         assertEquals("CARD", payment.method);
         assertEquals("10,00", payment.amount);
+        assertNull(payment.guaranteeAuthorization);
+        assertNull(payment.guaranteeProvider);
+    }
+
+    /**
+     * A guaranteed cheque carries its guarantee authorization and provider
+     * (BO-03-02-24).
+     */
+    @Test
+    void paymentStoresTheChequeGuarantee() {
+        JournalTicketDetail.Payment payment =
+                new JournalTicketDetail.Payment("CHEQUE", "2,00", null, "GAR000001", "SIMULATEUR");
+        assertEquals("GAR000001", payment.guaranteeAuthorization);
+        assertEquals("SIMULATEUR", payment.guaranteeProvider);
     }
 
     /**

@@ -1,5 +1,9 @@
 package com.intermarche.edge.ui.admin;
 
+import io.quarkus.security.Authenticated;
+import com.intermarche.edge.security.FeatureAccess;
+import com.intermarche.edge.domain.setting.Feature;
+import com.intermarche.edge.domain.people.CrudOption;
 import com.intermarche.edge.domain.campaign.Campaign;
 import com.intermarche.edge.domain.util.DateTimeProvider;
 import com.intermarche.edge.service.campaign.BudgetStatusClient;
@@ -8,7 +12,6 @@ import com.intermarche.edge.service.campaign.CampaignService;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
@@ -34,7 +37,7 @@ import java.util.Map;
  *
  * <p>The store node is the BO maître: administering a campaign is a store gesture,
  * not a register one. Every write follows the imedge admin cycle
- * POST &rarr; 303 &rarr; a one-shot notice, {@code @RolesAllowed("ADMIN")}
+ * POST &rarr; 303 &rarr; a one-shot notice, {@code @FeatureAccess}
  * throughout (nav visibility is gated by the CAMPAIGN {@code Feature}). Every
  * save reprojects the {@code BUDGET_GROUPS} feed so the engine's budget view
  * follows the back office.
@@ -78,7 +81,8 @@ public class AdminCampaignResource {
      * @return the list page
      */
     @GET
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.CAMPAIGN)
     @Transactional
     public TemplateInstance list(@QueryParam("notice") String notice,
             @QueryParam("noticeOk") @DefaultValue("true") boolean noticeOk) {
@@ -111,7 +115,8 @@ public class AdminCampaignResource {
      */
     @GET
     @Path("/fiche")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.CAMPAIGN)
     @Transactional
     public TemplateInstance fiche(@QueryParam("code") String code,
             @QueryParam("notice") String notice,
@@ -140,7 +145,8 @@ public class AdminCampaignResource {
      */
     @POST
     @Path("/create")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.CAMPAIGN, option = CrudOption.CREATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response create(MultivaluedMap<String, String> form) {
@@ -174,7 +180,8 @@ public class AdminCampaignResource {
      */
     @POST
     @Path("/save")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.CAMPAIGN, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response save(MultivaluedMap<String, String> form) {
@@ -205,7 +212,8 @@ public class AdminCampaignResource {
      */
     @POST
     @Path("/offers")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.CAMPAIGN, option = CrudOption.UPDATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response offers(MultivaluedMap<String, String> form) {
@@ -248,7 +256,8 @@ public class AdminCampaignResource {
      */
     @POST
     @Path("/duplicate")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.CAMPAIGN, option = CrudOption.CREATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response duplicate(MultivaluedMap<String, String> form) {

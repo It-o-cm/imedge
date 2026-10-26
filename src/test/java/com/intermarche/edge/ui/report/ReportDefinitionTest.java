@@ -122,4 +122,22 @@ class ReportDefinitionTest {
     void optionChoicesDefaultsToEmpty() {
         assertTrue(new BareReport().optionChoices().isEmpty());
     }
+
+    /**
+     * The lot 21 defaults: the registers as only filter, no multiple choice,
+     * no range, no preamble, no break, no signature, no row action.
+     */
+    @Test
+    void theLotTwentyOneDefaultsOfferNothing() {
+        BareReport report = new BareReport();
+        assertEquals(java.util.EnumSet.of(ReportFilter.TERMINALS), report.filters());
+        assertNull(report.pickLabel());
+        assertTrue(report.pickChoices().isEmpty());
+        assertNull(report.boundLabel());
+        assertTrue(report.preamble(new ReportCriteria()).isEmpty());
+        assertNull(report.breakKey());
+        assertNull(report.signature());
+        assertNull(report.rowLink(List.of()));
+        assertNull(report.rowLinkLabel());
+    }
 }

@@ -23,8 +23,13 @@ public class PosSetting extends PanacheEntity {
     @Column(name = "setting_key", length = 64, unique = true, nullable = false)
     public String settingKey;
 
-    /** The parameter value, as text (typed by the catalog entry). */
-    @Column(name = "setting_value", length = 255, nullable = false)
+    /**
+     * The parameter value, as text (typed by the catalog entry). Wide enough
+     * for the rule lists the store administers one per line — register
+     * alerts, justified functions, function endorsements (BO-04-03-08/10,
+     * BO-04-02-01) — which outgrow a single line of 255 characters.
+     */
+    @Column(name = "setting_value", length = 4000, nullable = false)
     public String settingValue;
 
     /**

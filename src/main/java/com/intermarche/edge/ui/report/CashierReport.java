@@ -19,14 +19,10 @@ import java.util.Map;
  * her register over the period — customers, takings, articles, cancellations,
  * price forcings and discounts.
  *
- * <p>What this state can NOT yet carry, and why, so nobody looks for it: the
- * requirement also asks for the duration and the share of the session spent
- * scanning, taking payment, idle or counting. Those are not figures the node is
- * missing, they are figures NOBODY MEASURES — the register does not
- * instrument the cashier's gestures with a clock. Producing them would mean
- * timestamping every gesture at the till, which is a lot of the register and
- * none of the back office; inventing them from the ticket's open and close
- * times would give a number that looks like a measure and is not one.
+ * <p>The complete state — drawer openings, tenders, VAT recap, cancellations
+ * and the durations the register now measures, in summary or detail per
+ * cashier — is {@link CashierStateReport}; this one is its one-line-per-cashier
+ * synthesis, the form the end of period edits.
  *
  * <p>Restricted to the cashiers the operator selected when they selected any:
  * « sélection d'une, plusieurs ou toutes les caissières ».
@@ -57,7 +53,7 @@ public class CashierReport implements ReportDefinition {
      */
     @Override
     public String label() {
-        return "État caissière";
+        return "État caissière synthétique";
     }
 
     /**
@@ -93,8 +89,8 @@ public class CashierReport implements ReportDefinition {
                 ReportColumn.count("tickets", "Nb de clients"),
                 ReportColumn.amount("sales", "Ventes"),
                 ReportColumn.count("items", "Nb d'articles"),
-                ReportColumn.amount("basket", "Panier moyen"),
-                ReportColumn.percent("itemsPerCustomer", "Articles par client"),
+                ReportColumn.average("basket", "Panier moyen"),
+                ReportColumn.decimal("itemsPerCustomer", "Articles par client"),
                 ReportColumn.count("cancelCount", "Nb annulations"),
                 ReportColumn.amount("cancelAmount", "Montant annulations"),
                 ReportColumn.count("forcingCount", "Nb forçages prix"),
@@ -191,12 +187,13 @@ public class CashierReport implements ReportDefinition {
                         "select t.cashier, count(t), sum(t.totalIncludingTax), sum(t.itemCount)"
                                 + " from Ticket t"
                                 + " where t.status = :closed and t.closingDate >= :from"
-                                + " and t.closingDate < :to" + cashierFilter(criteria)
+                                + " and t.closingDate < :to" + cashierFilter(criteria) + criteria.terminalFilter("t.terminalId")
                                 + " group by t.cashier", Object[].class)
                 .setParameter("closed", Ticket.TicketStatus.CLOSED)
                 .setParameter("from", criteria.from())
                 .setParameter("to", criteria.to());
         bindCashiers(query, criteria);
+        criteria.bindTerminals(query);
         return query.getResultList();
     }
 
@@ -210,11 +207,12 @@ public class CashierReport implements ReportDefinition {
         var query = entityManager.createQuery(
                         "select t.cashier, count(l), sum(l.totalPrice) from Ticket t join t.lines l"
                                 + " where l.cancelled = true and l.cancellationDate >= :from"
-                                + " and l.cancellationDate < :to" + cashierFilter(criteria)
+                                + " and l.cancellationDate < :to" + cashierFilter(criteria) + criteria.terminalFilter("t.terminalId")
                                 + " group by t.cashier", Object[].class)
                 .setParameter("from", criteria.from())
                 .setParameter("to", criteria.to());
         bindCashiers(query, criteria);
+        criteria.bindTerminals(query);
         return query.getResultList();
     }
 
@@ -231,11 +229,12 @@ public class CashierReport implements ReportDefinition {
                                 + " where t.status = :closed and t.closingDate >= :from"
                                 + " and t.closingDate < :to and l.originalUnitPrice is not null"
                                 + " and l.modifierType is not null and l.cancelled = false"
-                                + cashierFilter(criteria) + " group by t.cashier", Object[].class)
+                                + cashierFilter(criteria) + criteria.terminalFilter("t.terminalId") + " group by t.cashier", Object[].class)
                 .setParameter("closed", Ticket.TicketStatus.CLOSED)
                 .setParameter("from", criteria.from())
                 .setParameter("to", criteria.to());
         bindCashiers(query, criteria);
+        criteria.bindTerminals(query);
         return query.getResultList();
     }
 

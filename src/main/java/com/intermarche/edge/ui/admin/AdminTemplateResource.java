@@ -1,12 +1,15 @@
 package com.intermarche.edge.ui.admin;
 
+import io.quarkus.security.Authenticated;
+import com.intermarche.edge.security.FeatureAccess;
+import com.intermarche.edge.domain.setting.Feature;
+import com.intermarche.edge.domain.people.CrudOption;
 import com.intermarche.edge.domain.setting.DocumentTemplate;
 import com.intermarche.edge.service.BannerLines;
 import com.intermarche.edge.service.DocumentTemplateService;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
@@ -46,7 +49,7 @@ import java.util.List;
  * is the worst place to discover a typo.
  *
  * <p>Same admin cycle as the other back-office pages: POST &rarr; 303 &rarr; a
- * one-shot notice, {@code @RolesAllowed("ADMIN")} throughout.
+ * one-shot notice, {@code @FeatureAccess} throughout (BO-01-04-01).
  */
 @Path("/admin/templates")
 public class AdminTemplateResource {
@@ -78,7 +81,8 @@ public class AdminTemplateResource {
      * @return the page
      */
     @GET
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.TEMPLATE)
     @Produces(MediaType.TEXT_HTML)
     public TemplateInstance templatesPage(@QueryParam("notice") String notice,
             @QueryParam("noticeOk") String noticeOk) {
@@ -100,7 +104,8 @@ public class AdminTemplateResource {
      */
     @POST
     @Path("/preview")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.TEMPLATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Produces(MediaType.TEXT_HTML)
     public TemplateInstance previewTemplate(MultivaluedMap<String, String> form) {
@@ -128,7 +133,8 @@ public class AdminTemplateResource {
      */
     @POST
     @Path("/copy")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.TEMPLATE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Produces(MediaType.TEXT_HTML)
     public TemplateInstance copySource(MultivaluedMap<String, String> form) {
@@ -297,6 +303,7 @@ public class AdminTemplateResource {
                 .data("newPicks", picksFor(newType, templates))
                 .data("newReferences", documentTemplateService.references(newType))
                 .data("draft", draft)
+                .data("echelons", EchelonChoices.nodeLevel())
                 .data("notice", notice)
                 .data("noticeOk", noticeOk);
     }
@@ -316,40 +323,36 @@ public class AdminTemplateResource {
      */
     @GET
     @Path("/api/references")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.TEMPLATE)
     @Produces(MediaType.APPLICATION_JSON)
     public Response apiReferences(@QueryParam("type") String typeName) {
         LOGGER.info("Entering method apiReferences with type: " + typeName);
-        StringBuilder body = new StringBuilder("[");
-        boolean first = true;
+        com.fasterxml.jackson.databind.node.ArrayNode body =
+                com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.arrayNode();
         for (DocumentTemplateService.Reference reference
                 : documentTemplateService.references(documentType(typeName))) {
-            if (!first) {
-                body.append(',');
-            }
-            first = false;
-            body.append("{\"expression\":\"").append(escape(reference.getExpression()))
-                    .append("\",\"sample\":\"").append(escape(reference.getSample()))
-                    .append("\",\"loop\":").append(reference.getLoop() == null ? "null"
-                            : "\"" + escape(reference.getLoop()) + "\"")
-                    .append('}');
+            body.addObject()
+                    .put("expression", flat(reference.getExpression()))
+                    .put("sample", flat(reference.getSample()))
+                    .put("loop", reference.getLoop() == null ? null : flat(reference.getLoop()));
         }
         LOGGER.info("Exiting method apiReferences");
-        return Response.ok(body.append(']').toString()).build();
+        return Response.ok(body.toString()).build();
     }
 
     /**
-     * Escapes a value for the JSON body above.
+     * Puts a value on one line for the picker, which shows it in a single
+     * row; the JSON library escapes it.
      *
      * @param value the value, possibly null
-     * @return the escaped value, never null
+     * @return the value on one line, never null
      */
-    private String escape(String value) {
+    private String flat(String value) {
         if (value == null) {
             return "";
         }
-        return value.replace("\\", "\\\\").replace("\"", "\\\"")
-                .replace("\n", " ").replace("\r", " ");
+        return value.replace("\n", " ").replace("\r", " ");
     }
 
     /**
@@ -409,7 +412,8 @@ public class AdminTemplateResource {
      */
     @POST
     @Path("/save")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.TEMPLATE, option = CrudOption.CREATE, updateKey = "code", entity = com.intermarche.edge.domain.setting.DocumentTemplate.class)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response saveTemplate(MultivaluedMap<String, String> form) {
@@ -442,6 +446,16 @@ public class AdminTemplateResource {
                     + DocumentTemplate.MIN_WIDTH + " et " + DocumentTemplate.MAX_WIDTH + ".",
                     false);
         }
+        // BO-02-05-04: the echelon the template is posed at, read like every
+        // echelon scope. A register-level scope is refused: a document model is
+        // inherited down the organisation tree, and a lane is not a branch of it.
+        String scope = com.intermarche.edge.domain.people.EchelonScope.normalize(
+                trimmed(form, "echelonScope"));
+        if (!trimmed(form, "echelonScope").isEmpty() && (scope == null
+                || !com.intermarche.edge.domain.people.EchelonScope.isNodeLevel(scope))) {
+            LOGGER.info("Exiting method saveTemplate");
+            return redirect("Échelon du gabarit invalide.", false);
+        }
         DocumentTemplate existing = DocumentTemplate.findByCode(code);
         DocumentTemplate template = existing == null ? new DocumentTemplate() : existing;
         template.code = code;
@@ -463,6 +477,8 @@ public class AdminTemplateResource {
         // printed copy, both blank for a shop that numbers and names nothing.
         template.numberPrefix = blankToNull(trimmed(form, "numberPrefix"));
         template.copyTitles = blankToNull(trimmed(form, "copyTitles"));
+        template.echelonScope = com.intermarche.edge.domain.people.EchelonScope.ALL.equals(scope)
+                ? null : scope;
         template.priority = intOr(form.getFirst("priority"), 100);
         template.active = form.getFirst("active") != null;
         if (existing == null) {
@@ -482,7 +498,8 @@ public class AdminTemplateResource {
      */
     @POST
     @Path("/delete")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.TEMPLATE, option = CrudOption.DELETE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response deleteTemplate(MultivaluedMap<String, String> form) {

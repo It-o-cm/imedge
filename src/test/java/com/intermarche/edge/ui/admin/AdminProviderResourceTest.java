@@ -275,4 +275,53 @@ class AdminProviderResourceTest {
             verify(existing, times(1)).delete();
         }
     }
+    /** BO-03-08-06/07: both absent key legs refuse substitutions before querying the referential. */
+    @Test
+    void providerMessagesRequireBothKeys() {
+        AdminProviderResource resource = newResource();
+        assertTrue(refused(resource.saveProviderMessage(form("messageCode", "4"))));
+        assertTrue(refused(resource.saveProviderMessage(form("providerCode", "GIFT"))));
+    }
+
+    /** BO-03-08-06/07: substitutions create, update and delete without losing provider-specific wording. */
+    @Test
+    void providerMessagesFollowTheirOwnCrudCycle() {
+        AdminProviderResource resource = newResource();
+        var message = mock(com.intermarche.edge.domain.setting.ProviderMessage.class);
+        PanacheQuery<com.intermarche.edge.domain.setting.ProviderMessage> lookup = mock(PanacheQuery.class);
+        try (var base = mockStatic(PanacheEntityBase.class);
+             var created = mockConstruction(com.intermarche.edge.domain.setting.ProviderMessage.class)) {
+            base.when(() -> PanacheEntityBase.find("providerCode = ?1 and messageCode = ?2", "GIFT", "4")).thenReturn(lookup);
+            assertFalse(refused(resource.saveProviderMessage(form("providerCode", "GIFT", "messageCode", "4", "screenText", "WAIT", "ticketText", "PAPER", "messageActive", "on"))));
+            var inserted = created.constructed().get(0);
+            assertEquals("GIFT", inserted.providerCode);
+            assertEquals("4", inserted.messageCode);
+            assertEquals("WAIT", inserted.screenText);
+            assertEquals("PAPER", inserted.ticketText);
+            assertTrue(inserted.active);
+            verify(inserted).persist();
+            when(lookup.firstResult()).thenReturn(message);
+            assertFalse(refused(resource.saveProviderMessage(form("providerCode", "GIFT", "messageCode", "4", "screenText", "READY"))));
+            assertEquals("READY", message.screenText);
+            assertNull(message.ticketText);
+            assertFalse(message.active);
+            assertFalse(refused(resource.deleteProviderMessage(form("providerCode", "GIFT", "messageCode", "4"))));
+            verify(message).delete();
+            when(lookup.firstResult()).thenReturn(null);
+            assertTrue(refused(resource.deleteProviderMessage(form("providerCode", "GIFT", "messageCode", "4"))));
+        }
+    }
+
+    /** BO-03-11: an explicitly failed notice is passed to the provider page without becoming a success. */
+    @Test
+    void failedNoticeRemainsFailedOnTheProviderPage() {
+        var resource = newResource();
+        var view = mock(TemplateInstance.class, org.mockito.Mockito.RETURNS_SELF);
+        when(resource.adminProviders.data(anyString(), any())).thenReturn(view);
+        try (var base = mockStatic(PanacheEntityBase.class)) {
+            assertSame(view, resource.providersPage("FAILED", "false"));
+        }
+        verify(view).data("noticeOk", false);
+    }
+
 }

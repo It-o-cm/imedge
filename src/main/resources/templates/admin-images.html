@@ -9,76 +9,76 @@
 !}
 {#include admin-layout}
 
-{#title}Images{/title}
+{#title}{inject:i18n.get('t.images')}{/title}
 
 {#body}
 <div class="page-head">
     <div>
-        <h1>Images</h1>
-        <p class="page-sub">Les logos de ticket par pays, enseigne et point de vente, et les visuels des avantages fidelite. L'echelon le plus proche gagne : un logo pose sur le PDV l'emporte sur celui de son enseigne, qui l'emporte sur celui de son pays, qui l'emporte sur le defaut du groupe. La ligne que ce magasin imprime est marquee <strong>utilisee ici</strong>.</p>
+        <h1>{inject:i18n.get('t.images')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.les-logos-de-ticket-par-pays-enseigne')} <strong>{inject:i18n.get('t.utilisee-ici')}</strong>.</p>
     </div>
 </div>
 
 {#if notice}
-<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{notice}</div>
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
 {/if}
 
 <div class="card">
-    <h2 class="card-title">Importer une image</h2>
-    <p class="card-sub">Echelon vide : l'image est le defaut du groupe. Un echelon demande son code (code pays, code enseigne, numero de PDV). Un visuel d'avantage demande le code de l'avantage — le code de la regle fidelite, ou son type pour une famille entiere.</p>
+    <h2 class="card-title">{inject:i18n.get('t.importer-une-image')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.echelon-vide-l-image-est-le-defaut')}</p>
     <form method="post" action="/admin/images/save" id="imageForm">
         <div class="form-grid">
-            <label>Code<input type="text" name="code" maxlength="40" required></label>
-            <label>Libelle<input type="text" name="label" maxlength="80" required></label>
-            <label>Usage
+            <label>{inject:i18n.get('t.code')}<input type="text" name="code" maxlength="40" required></label>
+            <label>{inject:i18n.get('t.libelle-2')}<input type="text" name="label" maxlength="80" required></label>
+            <label>{inject:i18n.get('t.usage')}
                 <select name="usage">
-                    {#for usage in usages}<option value="{usage}">{usage.label}</option>{/for}
+                    {#for usage in usages}<option value="{usage}">{inject:i18n.text(usage.label)}</option>{/for}
                 </select>
             </label>
-            <label>Echelon
+            <label>{inject:i18n.get('t.echelon')}
                 <select name="level">
-                    <option value="">Defaut du groupe</option>
-                    <option value="COUNTRY">Pays</option>
-                    <option value="ENSEIGNE">Enseigne</option>
-                    <option value="PDV">Point de vente</option>
+                    <option value="">{inject:i18n.get('t.defaut-du-groupe')}</option>
+                    <option value="COUNTRY">{inject:i18n.get('t.pays')}</option>
+                    <option value="ENSEIGNE">{inject:i18n.get('t.enseigne-2')}</option>
+                    <option value="PDV">{inject:i18n.get('t.point-de-vente')}</option>
                 </select>
             </label>
-            <label>Code echelon<input type="text" name="echelonCode" maxlength="20"></label>
-            <label>Code avantage<input type="text" name="advantageCode" maxlength="40"></label>
-            <label>Fichier image<input type="file" id="imgFile" accept="image/*" required></label>
-            <label class="check"><input type="checkbox" name="active" checked> Active</label>
+            <label>{inject:i18n.get('t.code-echelon-2')}<input type="text" name="echelonCode" maxlength="20"></label>
+            <label>{inject:i18n.get('t.code-avantage')}<input type="text" name="advantageCode" maxlength="40"></label>
+            <label>{inject:i18n.get('t.fichier-image')}<input type="file" id="imgFile" accept="image/*" required></label>
+            <label class="check"><input type="checkbox" name="active" checked> {inject:i18n.get('t.active')}</label>
         </div>
         <input type="hidden" name="imgData" id="imgData">
-        <button class="btn btn-primary" type="submit">Importer</button>
+        <button class="btn btn-primary" type="submit">{inject:i18n.get('t.importer')}</button>
     </form>
 </div>
 
 <div class="card">
-    <h2 class="card-title">Les images</h2>
+    <h2 class="card-title">{inject:i18n.get('t.les-images')}</h2>
     <table class="admin-table">
         <thead>
-            <tr><th>Apercu</th><th>Code</th><th>Libelle</th><th>Usage</th><th>Echelon</th><th>Avantage</th><th>Active</th><th></th></tr>
+            <tr><th>{inject:i18n.get('t.apercu')}</th><th>{inject:i18n.get('t.code')}</th><th>{inject:i18n.get('t.libelle-2')}</th><th>{inject:i18n.get('t.usage')}</th><th>{inject:i18n.get('t.echelon')}</th><th>{inject:i18n.get('t.avantage')}</th><th>{inject:i18n.get('t.active')}</th><th></th></tr>
         </thead>
         <tbody>
             {#for image in images}
             <tr class="{#if !image.active}row-muted{/if}">
-                <td>{#if image.imageData}<img src="{image.imageData}" alt="{image.label}" style="max-height:44px; max-width:120px;">{/if}</td>
-                <td class="mono">{image.code}{#if image.resolved} <strong>(utilisee ici)</strong>{/if}</td>
-                <td>{image.label}</td>
-                <td>{image.usageLabel}</td>
-                <td>{#if image.level}{image.level} {image.echelonCode}{#else}defaut du groupe{/if}</td>
+                <td>{#if image.imageData}<img src="{image.imageData}" alt="{inject:i18n.text(image.label)}" style="max-height:44px; max-width:120px;">{/if}</td>
+                <td class="mono">{image.code}{#if image.resolved} <strong>{inject:i18n.get('t.utilisee-ici-2')}</strong>{/if}</td>
+                <td>{inject:i18n.text(image.label)}</td>
+                <td>{inject:i18n.text(image.usageLabel)}</td>
+                <td>{#if image.level}{image.level} {image.echelonCode}{#else}{inject:i18n.get('t.defaut-du-groupe-2')}{/if}</td>
                 <td class="mono">{image.advantageCode}</td>
-                <td>{#if image.active}oui{#else}non{/if}</td>
+                <td>{#if image.active}{inject:i18n.get('t.oui')}{#else}{inject:i18n.get('t.non')}{/if}</td>
                 <td class="cell-actions">
-                    <form method="post" action="/admin/images/delete" onsubmit="return confirm('Supprimer definitivement l image {image.code} ?');">
+                    <form method="post" action="/admin/images/delete" onsubmit="return confirm('{inject:i18n.js('t.supprimer-definitivement-l-image')} {image.code} ?');">
                         <input type="hidden" name="id" value="{image.id}">
-                        <button class="btn btn-danger" type="submit">Supprimer</button>
+                        <button class="btn btn-danger" type="submit">{inject:i18n.get('t.supprimer')}</button>
                     </form>
                 </td>
             </tr>
             {/for}
             {#if images.isEmpty()}
-            <tr><td colspan="8" class="cell-empty">Aucune image administree : la caisse imprime le logo de son installation.</td></tr>
+            <tr><td colspan="8" class="cell-empty">{inject:i18n.get('t.aucune-image-administree-la-caisse-imprime-le')}</td></tr>
             {/if}
         </tbody>
     </table>
@@ -106,4 +106,4 @@
 </script>
 {/body}
 
-{#footer}Les images administrees ici descendent aux caisses au tirage suivant, deja resolues pour ce magasin.{/footer}
+{#footer}{inject:i18n.get('t.les-images-administrees-ici-descendent-aux-caiss')}{/footer}

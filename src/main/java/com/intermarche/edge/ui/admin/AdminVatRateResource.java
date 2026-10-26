@@ -1,11 +1,14 @@
 package com.intermarche.edge.ui.admin;
 
+import io.quarkus.security.Authenticated;
+import com.intermarche.edge.security.FeatureAccess;
+import com.intermarche.edge.domain.setting.Feature;
+import com.intermarche.edge.domain.people.CrudOption;
 import com.intermarche.edge.domain.catalog.Price;
 import com.intermarche.edge.domain.catalog.VatRate;
 import io.quarkus.qute.Location;
 import io.quarkus.qute.Template;
 import io.quarkus.qute.TemplateInstance;
-import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 import jakarta.ws.rs.Consumes;
@@ -26,7 +29,9 @@ import org.jboss.logging.Logger;
 
 /**
  * The back office's VAT page ({@code /admin/vat-rates}): the VAT referential,
- * regime by regime (BO-02-03-14).
+ * regime by regime (BO-02-03-14), each with the country it answers to, the
+ * legal mention it obliges and its exemption (BO-02-02-01, BO-02-02-02).
+ * Several regimes may carry the same percentage: the number is the identity.
  *
  * <p>Until this screen the table was fed by file alone, like the prices and the
  * products. A file is the right channel for a hundred thousand rows; it is the
@@ -49,7 +54,7 @@ import org.jboss.logging.Logger;
  * commercial management's own numbering, so the screen says so.
  *
  * <p>Same admin cycle as the other back-office pages: POST &rarr; 303 &rarr; a
- * one-shot notice, {@code @RolesAllowed("ADMIN")} throughout.
+ * one-shot notice, {@code @FeatureAccess} throughout (BO-01-04-01).
  */
 @Path("/admin/vat-rates")
 public class AdminVatRateResource {
@@ -132,7 +137,8 @@ public class AdminVatRateResource {
      * @return the page
      */
     @GET
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.VAT_RATE)
     @Transactional
     public TemplateInstance vatRatesPage(@QueryParam("notice") String notice,
                                          @QueryParam("noticeOk") @DefaultValue("true") boolean noticeOk) {
@@ -165,12 +171,14 @@ public class AdminVatRateResource {
      * a number can be corrected without the write losing track of which row it
      * was correcting. A blank identifier is a creation.
      *
-     * @param form the posted form (id, number, ratePercent, label)
+     * @param form the posted form (id, number, ratePercent, label, country,
+     *        legalMention, exempt, exemptionCode)
      * @return a 303 redirect carrying the notice
      */
     @POST
     @Path("/save")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.VAT_RATE, option = CrudOption.CREATE, updateKey = "id")
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response saveVatRate(MultivaluedMap<String, String> form) {
@@ -203,10 +211,22 @@ public class AdminVatRateResource {
         // prints what it printed before.
         String country = country(AdminForms.text(form, "country"));
         String legalMention = AdminForms.text(form, "legalMention");
+        // BO-02-02-01, BO-02-03-26/27: an EXEMPTION is a regime of its own,
+        // distinct from a zero rate, printed under the EXO heading, and it
+        // carries the code the tax administration knows it by. A code typed means an exemption; an exemption that taxes is a
+        // contradiction the referential refuses rather than prints.
+        String exemptionCode = exemptionCode(AdminForms.text(form, "exemptionCode"));
+        boolean exempt = form.getFirst("exempt") != null || exemptionCode != null;
+        if (exempt && rate.signum() != 0) {
+            LOGGER.info("Exiting method saveVatRate");
+            return AdminForms.redirect(PAGE, "Une exonération porte un taux de 0 %.", false);
+        }
         if (edited == null) {
             VatRate created = new VatRate(number, rate, label);
             created.country = country;
             created.legalMention = legalMention;
+            created.exempt = exempt;
+            created.exemptionCode = exemptionCode;
             created.persist();
             LOGGER.info("Exiting method saveVatRate");
             return AdminForms.redirect(PAGE, "Régime de TVA créé.", true);
@@ -216,6 +236,8 @@ public class AdminVatRateResource {
         edited.label = label;
         edited.country = country;
         edited.legalMention = legalMention;
+        edited.exempt = exempt;
+        edited.exemptionCode = exemptionCode;
         LOGGER.info("Exiting method saveVatRate");
         return AdminForms.redirect(PAGE, "Régime de TVA enregistré.", true);
     }
@@ -237,6 +259,22 @@ public class AdminVatRateResource {
     }
 
     /**
+     * Normalises the posted exemption code ({@code BO-02-02-01}): trimmed and
+     * raised to upper case, cut to the column's ten characters; nothing typed
+     * answers null.
+     *
+     * @param raw the posted value, possibly null
+     * @return the code, or null
+     */
+    static String exemptionCode(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String code = raw.trim().toUpperCase(java.util.Locale.ROOT);
+        return code.length() > 10 ? code.substring(0, 10) : code;
+    }
+
+    /**
      * Removes a regime, provided no price names it.
      *
      * <p>Refused and not cascaded: detaching the prices would silently drop
@@ -250,7 +288,8 @@ public class AdminVatRateResource {
      */
     @POST
     @Path("/delete")
-    @RolesAllowed("ADMIN")
+    @Authenticated
+    @FeatureAccess(value = Feature.VAT_RATE, option = CrudOption.DELETE)
     @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
     @Transactional
     public Response deleteVatRate(MultivaluedMap<String, String> form) {

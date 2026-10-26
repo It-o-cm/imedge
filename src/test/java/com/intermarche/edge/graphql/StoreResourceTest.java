@@ -58,6 +58,13 @@ class StoreResourceTest {
     /** The resource under test; the trait default method is real, no collaborators are injected. */
     private final StoreResource resource = new StoreResource();
 
+    /** The stamp mover of the resource, a mock: every successful mutation calls it. */
+    private final ReferentialChangeNotifier referentialChange = org.mockito.Mockito.mock(ReferentialChangeNotifier.class);
+
+    {
+        resource.referentialChange = referentialChange;
+    }
+
     /**
      * Builds a real {@link Store} carrying the supplied code and name.
      *
@@ -383,6 +390,7 @@ class StoreResourceTest {
             panache.when(() -> Store.deleteById(STORE_ID)).thenReturn(true);
             boolean result = resource.deleteStore(STORE_ID);
             assertTrue(result);
+            verify(referentialChange).changed();
         }
     }
 

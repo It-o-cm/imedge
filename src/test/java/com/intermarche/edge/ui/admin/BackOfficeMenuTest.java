@@ -146,10 +146,11 @@ class BackOfficeMenuTest {
             BackOfficeMenu.Group administration = groups.stream()
                     .filter(group -> "Administration".equals(group.getLabel()))
                     .findFirst().orElseThrow();
-            // Four remain, by name: the menu grew BO-01-01-01 (accounts),
-            // BO-04-02-07 (lists) and BO-03-03-15 (images), and each of its
-            // features stays independently hideable.
-            assertEquals(List.of("Utilisateurs", "Comptes", "Listes", "Images"),
+            // Five remain, by name: the menu grew BO-01-01-01 (accounts),
+            // BO-04-02-07 (lists), BO-03-03-15 (images) and BO-01-01-03 (the
+            // administration log), and each of its features stays
+            // independently hideable.
+            assertEquals(List.of("Utilisateurs", "Comptes", "Listes", "Images", "Journal d'administration"),
                     administration.getEntries().stream()
                             .map(BackOfficeMenu.Entry::getLabel).toList());
         }
@@ -166,7 +167,7 @@ class BackOfficeMenuTest {
         try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
             stubOperator(mocked, operator, Set.of(Feature.PROFILE.getKey(),
                     Feature.USER.getKey(), Feature.ACCOUNT.getKey(),
-                    Feature.POS_LIST.getKey(), Feature.STORE_IMAGE.getKey()));
+                    Feature.POS_LIST.getKey(), Feature.STORE_IMAGE.getKey(), Feature.AUDIT.getKey()));
             List<BackOfficeMenu.Group> groups = menu.getGroups();
             assertTrue(groups.stream().noneMatch(g -> "Administration".equals(g.getLabel())));
             assertEquals(Menu.values().length - 1, groups.size());
@@ -245,6 +246,42 @@ class BackOfficeMenuTest {
         try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
             stubOperator(mocked, operator, Set.of());
             assertEquals(Menu.values().length, menu.getGroups().size());
+        }
+    }
+
+    /**
+     * BO-01-04-08: the favorite features open the navigation in a "Favoris"
+     * menu of their own, and a hidden menu disappears whole.
+     */
+    @Test
+    void favoritesLeadAndAHiddenMenuDisappears() {
+        BackOfficeMenu menu = menuFor("hd", true);
+        Employee operator = new Employee();
+        operator.id = 5L;
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubOperator(mocked, operator, Set.of("STAR:" + Feature.ACCOUNT.getKey(),
+                    "MENU:" + Menu.ADMINISTRATION.name()));
+            List<BackOfficeMenu.Group> groups = menu.getGroups();
+            assertEquals("Favoris", groups.get(0).getLabel());
+            assertEquals(List.of("Comptes"), groups.get(0).getEntries().stream()
+                    .map(BackOfficeMenu.Entry::getLabel).toList());
+            assertTrue(groups.stream().noneMatch(g -> "Administration".equals(g.getLabel())));
+            assertEquals(Menu.values().length, groups.size());
+        }
+    }
+
+    /**
+     * A favorite the operator may no longer open does not appear in the
+     * "Favoris" menu, which then does not appear at all.
+     */
+    @Test
+    void anUnopenableFavoriteIsLeftOut() {
+        BackOfficeMenu menu = menuFor("hd", false);
+        Employee operator = new Employee();
+        operator.id = 5L;
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            stubOperator(mocked, operator, Set.of("STAR:" + Feature.ACCOUNT.getKey()));
+            assertTrue(menu.getGroups().isEmpty());
         }
     }
 }

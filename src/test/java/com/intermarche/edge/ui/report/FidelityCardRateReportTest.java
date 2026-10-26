@@ -85,7 +85,7 @@ class FidelityCardRateReportTest {
         assertEquals("BO-06-06-11", report.requirement());
         assertEquals(ReportFamily.CASHIERS, report.family());
         assertEquals("Niveau de détail", report.optionLabel());
-        assertEquals(List.of(FidelityCardRateReport.BY_CASHIER, FidelityCardRateReport.BY_STORE),
+        assertEquals(List.of("CASHIER:Par caissière", "STORE:Total point de vente"),
                 report.optionChoices());
         assertEquals(6, report.columns().size());
     }
@@ -105,7 +105,7 @@ class FidelityCardRateReportTest {
                 new Object[]{morning.plusHours(3), alice, "2990000000026"}));
         List<List<Object>> rows = report.rows(new ReportCriteria());
         assertEquals(1, rows.size());
-        assertEquals("2026-10-15", rows.get(0).get(0));
+        assertEquals(java.time.LocalDate.of(2026, 10, 15), rows.get(0).get(0));
         assertEquals("007", rows.get(0).get(1));
         assertEquals(4L, rows.get(0).get(3));
         assertEquals(2L, rows.get(0).get(4));
@@ -170,5 +170,43 @@ class FidelityCardRateReportTest {
         org.mockito.Mockito.verify(entityManager)
                 .createQuery(contains("t.terminalId in :terminals"), eq(Object[].class));
         assertTrue(report.rows(new ReportCriteria()).isEmpty());
+    }
+    /** BO-06: a cashier without a badge never matches an explicit cashier selection. */
+    @Test
+    void explicitCashierSelectionRejectsAnUnidentifiedCashier() throws Exception {
+        var criteria = new ReportCriteria();
+        criteria.cashiers.add("BADGE");
+        var employee = new com.intermarche.edge.domain.people.Employee();
+        employee.badgeId = null;
+        var method = FidelityCardRateReport.class.getDeclaredMethod("selected", ReportCriteria.class, com.intermarche.edge.domain.people.Employee.class);
+        method.setAccessible(true);
+        org.junit.jupiter.api.Assertions.assertEquals(false, method.invoke(new FidelityCardRateReport(), criteria, employee));
+    }
+
+    /** BO-06-06-11: a day without customers has a zero card share rather than a division error. */
+    @Test
+    void emptyCustomerCountHasZeroCardShare() throws Exception {
+        var method = FidelityCardRateReport.class.getDeclaredMethod("share", long.class, long.class);
+        method.setAccessible(true);
+        assertEquals(java.math.BigDecimal.ZERO, method.invoke(new FidelityCardRateReport(), 0L, 0L));
+    }
+
+    /** BO-06-06-11: a ticket without a cashier remains counted when the edition selects every cashier. */
+    @Test
+    void unidentifiedCashierStillCountsInAnUnfilteredEdition() {
+        var report = reportOver(List.<Object[]>of(new Object[]{LocalDateTime.of(2026, 10, 20, 12, 0), null, null}));
+        var rows = report.rows(new ReportCriteria());
+        assertEquals(1, rows.size());
+        assertEquals("", rows.get(0).get(1));
+        assertEquals(1L, rows.get(0).get(3));
+        assertEquals(0L, rows.get(0).get(4));
+    }
+
+    /** BO-06-01-04: the chart draws the card share, each bar named by its cashier. */
+    @Test
+    void theChartDrawsTheCardShare() {
+        FidelityCardRateReport report = new FidelityCardRateReport();
+        assertEquals(5, report.chartColumn());
+        assertEquals(2, report.chartLabelColumn());
     }
 }

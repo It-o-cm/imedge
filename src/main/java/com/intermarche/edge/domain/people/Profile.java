@@ -48,6 +48,22 @@ public class Profile extends BaseEntity {
     @Column(length = 255)
     public String description;
 
+    /**
+     * The hierarchical level of the profile, zero being the lowest
+     * (BO-01-03-03): an account hands out only profiles of its own level or
+     * below, so nobody grants more than they hold.
+     */
+    @Column(name = "hierarchy_level", nullable = false)
+    public int hierarchyLevel = 0;
+
+    /**
+     * Whether the profile was distributed by the central node (BO-01-03-04):
+     * a central profile is rewritten by the next distribution and removed when
+     * the centre withdraws it; a local one belongs to the store.
+     */
+    @Column(name = "central_managed", nullable = false)
+    public boolean centralManaged = false;
+
     /** The grants that make up the profile — never null, possibly empty. */
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "profile_grants", joinColumns = @JoinColumn(name = "profile_id"))
@@ -108,6 +124,6 @@ public class Profile extends BaseEntity {
      */
     @Override
     public int getChecksum() {
-        return Objects.hash(name, description, grants);
+        return Objects.hash(name, description, hierarchyLevel, grants);
     }
 }
