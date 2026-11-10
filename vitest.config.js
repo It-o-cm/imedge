@@ -69,6 +69,16 @@ export default defineConfig({
       reporter: ['text', 'json', 'html'],
       reportsDirectory: 'target/js-coverage',
       all: false,
+      // The gate, the JavaScript twin of the pom's JaCoCo gate: 100 % of
+      // branches (and statements, functions, lines), and it never goes down.
+      // A branch added without its spec fails the test phase; the fix is to
+      // cover it, never to lower this threshold.
+      thresholds: {
+        branches: 100,
+        statements: 100,
+        functions: 100,
+        lines: 100,
+      },
     },
   },
 });

@@ -576,7 +576,7 @@ public class EcommerceReturnService {
         Map<String, BigDecimal> returned = new HashMap<>();
         Set<Long> counted = new HashSet<>();
         for (TicketLine found : matched.values()) {
-            if (found == null || found.lineUid == null || found.lineUid.isBlank() || !counted.add(found.id)) {
+            if (found.lineUid == null || found.lineUid.isBlank() || !counted.add(found.id)) {
                 continue;
             }
             BigDecimal prior = BigDecimal.ZERO;

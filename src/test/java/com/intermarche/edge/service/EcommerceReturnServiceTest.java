@@ -403,6 +403,46 @@ class EcommerceReturnServiceTest {
     }
 
     /**
+     * The prior-returns map is keyed by snapshot line, so a matched ticket line
+     * is excluded from it when it carries no line identity (a null or a blank
+     * {@code lineUid}, both reached when the line is matched on its EAN) and a
+     * ticket line already counted is counted only once: of five matched lines —
+     * one booked, one matched twice, one with a null id, one with a blank id —
+     * only the booked line, which an earlier return took one unit back, appears
+     * in {@code previousReturns.returned}, at that one unit.
+     *
+     * @throws Exception never
+     */
+    @Test
+    void previousReturnsExcludesLinesWithoutIdentityAndCountsEachOnce() throws Exception {
+        EcommerceReturnService service = service();
+        Ticket original = new Ticket();
+        original.ticketNumber = "ECOM-W1";
+        original.terminalId = "ECOM";
+        original.lines.add(line(1, "u1", "E1", "3", "6.00", "0.20"));
+        original.lines.add(line(2, "d2", "E2", "2", "4.00", "0.20"));
+        original.lines.add(line(3, null, "E3", "1", "2.00", "0.20"));
+        original.lines.add(line(4, "  ", "E4", "1", "2.00", "0.20"));
+        doReturn(order("B1")).when(service).integration("W1");
+        doReturn(original).when(service).ticket("ECOM-W1");
+        RefundLine prior = new RefundLine();
+        prior.quantity = new BigDecimal("1");
+        doReturn(List.of(prior)).when(service).refundedLines(1L);
+        EcommerceReturnService.ReturnDto request = request(returned("E1", "1", "ORDER"),
+                returned("E2", "1", "ORDER"), returned("E2", "1", "ORDER"),
+                returned("E3", "1", "ORDER"), returned("E4", "1", "ORDER"));
+        request.orderReference = "W1";
+        request.orderSnapshot = snapshot();
+        service.record(request, "{}");
+        JsonNode sent = valuation(service);
+        JsonNode returnedNode = sent.path("previousReturns").path("returned");
+        Assertions.assertEquals(1, returnedNode.size());
+        Assertions.assertEquals(0,
+                new BigDecimal("1").compareTo(returnedNode.path("u1").decimalValue()));
+        Assertions.assertTrue(returnedNode.path("d2").isMissingNode());
+    }
+
+    /**
      * The CANCELLATION is declared for the node's point of sale when the
      * order names none (absent, blank or no order at all); a declaration the
      * engine refuses, cannot be reached for, or finds nothing in is reported

@@ -22,17 +22,19 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
  * @param {string} relativePath Project-relative path of the source, e.g.
  *   "src/main/resources/META-INF/resources/admin-assets/sync-refresh.js".
  * @param {object} [options] Loading options.
- * @param {string|number} [options.bust] A cache-busting token appended to the import URL so
- *   the module is evaluated afresh (a second boot), used to cover a boot arm that a single
- *   evaluation cannot reach. Istanbul still attributes coverage to the real file path.
+ * @param {string|number} [options.bust] A re-evaluation marker kept for callers that boot the
+ *   same source several times (a second boot covers a boot arm a single evaluation cannot
+ *   reach). The fresh evaluation is driven by the caller's {@code vi.resetModules()}, not by a
+ *   URL query: a query-suffixed id (…/menu-layout.js?bust=p1) is instrumented but attributed
+ *   to that suffixed path, which the coverage include (admin-assets/*.js) does not match, so
+ *   the file would vanish from the report. Importing the real, unsuffixed path keeps Istanbul's
+ *   attribution on the actual source file while resetModules still forces the re-run.
  * @returns {Promise<object>} The object exposing the source's top-level functions.
  */
 export async function loadScript(relativePath, options = {}) {
+  void options.bust;
   const absolute = resolve(ROOT, relativePath);
-  let url = pathToFileURL(absolute).href;
-  if (options.bust !== undefined) {
-    url += `?bust=${options.bust}`;
-  }
+  const url = pathToFileURL(absolute).href;
   const module = await import(/* @vite-ignore */ url);
   return module.default;
 }
