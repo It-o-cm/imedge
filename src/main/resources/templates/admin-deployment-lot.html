@@ -1,0 +1,124 @@
+{!
+ ! One deployment lot (BO-08-03-01 to -05, -09, -10, BO-08-04-02): its
+ ! version and pilot flag, its window jj/mm/aaaa hh:mn, its targets with the
+ ! prerequisites of each (version level, node online), the six ways of
+ ! selecting targets (unit, echelon, point-of-sale attribute, logical rule on
+ ! the registers, imported list, recall of a saved selection), the saving of
+ ! the selection, the launch and the close, and the forcing of a failed
+ ! target. `view` = DeploymentConsoleService.LotView.
+!}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.dep-lot')} {view.lot.code}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.dep-lot')} {view.lot.code}</h1>
+        <p class="page-sub">{view.lot.product} {view.lot.version} — {inject:i18n.code('t.code-lot-', view.lot.status)}{#if view.lot.pilot} — {inject:i18n.get('t.dep-phase-pilote')}{/if}{#if view.lot.label} — {view.lot.label}{/if}</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn" href="/admin/deployment?lot={view.lot.code}">{inject:i18n.get('t.dep-console')}</a>
+        <form method="post" action="/admin/deployment/lot/{view.lot.code}/schedule" class="card-action" data-confirm="{inject:i18n.get('t.dep-lancer-confirm')}">
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.dep-lancer')}</button>
+        </form>
+        <form method="post" action="/admin/deployment/lot/{view.lot.code}/close" class="card-action" data-confirm="{inject:i18n.get('t.dep-cloturer-confirm')}">
+            <button class="btn btn-danger" type="submit">{inject:i18n.get('t.dep-cloturer')}</button>
+        </form>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
+{/if}
+{#if !view.release}
+<div class="alert alert-error" role="status">{inject:i18n.get('t.dep-version-non-publiee')}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.dep-periode-de-mise-a-jour')}</h2>
+    <form method="post" action="/admin/deployment/lot/{view.lot.code}/window" class="field-grid">
+        <div class="field"><label class="field-label" for="lw-start">{inject:i18n.get('t.dep-debut')}</label><input class="input-control" id="lw-start" type="text" name="windowStart" value="{view.windowStart}" placeholder="jj/mm/aaaa hh:mn" required></div>
+        <div class="field"><label class="field-label" for="lw-end">{inject:i18n.get('t.dep-fin')}</label><input class="input-control" id="lw-end" type="text" name="windowEnd" value="{view.windowEnd}" placeholder="jj/mm/aaaa hh:mn" required></div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.dep-enregistrer')}</button></div>
+    </form>
+</div>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.dep-ajouter-des-cibles')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.dep-ajouter-sous-titre')}</p>
+    <form method="post" action="/admin/deployment/lot/{view.lot.code}/targets" class="field-grid">
+        <div class="field"><label class="field-label" for="tg-mode">{inject:i18n.get('t.dep-mode')}</label>
+            <select class="input-control" id="tg-mode" name="mode">
+                <option value="UNIT">{inject:i18n.get('t.dep-mode-unitaire')}</option>
+                <option value="ECHELON">{inject:i18n.get('t.dep-mode-echelon')}</option>
+                <option value="ATTRIBUTE">{inject:i18n.get('t.dep-mode-attribut')}</option>
+                <option value="IMPORT">{inject:i18n.get('t.dep-mode-import')}</option>
+                <option value="RECALL">{inject:i18n.get('t.dep-mode-rappel')}</option>
+            </select></div>
+        <div class="field"><label class="field-label" for="tg-level">{inject:i18n.get('t.dep-niveau')}</label>
+            <select class="input-control" id="tg-level" name="level">
+                <option value="COUNTRY">{inject:i18n.get('t.sup-pays')}</option>
+                <option value="ENSEIGNE">{inject:i18n.get('t.sup-enseigne')}</option>
+                <option value="ADHERENT">{inject:i18n.get('t.dep-adherent')}</option>
+                <option value="VERSION">{inject:i18n.get('t.dep-version-installee')}</option>
+            </select></div>
+        <div class="field"><label class="field-label" for="tg-value">{inject:i18n.get('t.dep-valeur')}</label><input class="input-control" id="tg-value" type="text" name="value" list="tg-selections" placeholder="{inject:i18n.get('t.dep-valeur-aide')}"></div>
+        <datalist id="tg-selections">{#for selection in view.selections}<option value="{selection.name}"></option>{/for}</datalist>
+        <div class="field"><label class="field-label" for="tg-rule">{inject:i18n.get('t.dep-regle-caisses')}</label>
+            <select class="input-control" id="tg-rule" name="rule">
+                <option value="ALL">{inject:i18n.get('t.dep-toutes-les-caisses')}</option>
+                <option value="EVEN">{inject:i18n.get('t.dep-caisses-paires')}</option>
+                <option value="ODD">{inject:i18n.get('t.dep-caisses-impaires')}</option>
+            </select></div>
+        <div class="field"><label class="field-label" for="tg-lines">{inject:i18n.get('t.dep-liste-externe')}</label><textarea class="input-control" id="tg-lines" name="lines" rows="4" placeholder="07039&#10;07039;C04&#10;CENTRAL"></textarea></div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.dep-ajouter')}</button></div>
+    </form>
+    <form method="post" action="/admin/deployment/lot/{view.lot.code}/selection" class="filter-bar">
+        <div class="filter-field">
+            <label class="filter-label" for="sv-name">{inject:i18n.get('t.dep-nom-de-la-selection')}</label>
+            <input id="sv-name" type="text" name="name" maxlength="60" required>
+        </div>
+        <div class="filter-actions"><button class="btn" type="submit">{inject:i18n.get('t.dep-enregistrer-la-selection')}</button></div>
+    </form>
+</div>
+
+<div class="card">
+    <div class="card-head">
+        <h2 class="card-title">{inject:i18n.get('t.dep-cibles-et-prerequis')}</h2>
+        <form method="post" action="/admin/deployment/lot/{view.lot.code}/force-failed" class="card-action" data-confirm="{inject:i18n.get('t.dep-forcer-confirm')}">
+            <button class="btn" type="submit">{inject:i18n.get('t.dep-forcer-les-echecs')}</button>
+        </form>
+    </div>
+    <p class="card-sub">{view.readyCount} {inject:i18n.get('t.dep-cibles-pretes')} — {view.blockedCount} {inject:i18n.get('t.dep-cibles-a-surveiller')}</p>
+    <table class="sync-table">
+        <thead>
+            <tr><th>{inject:i18n.get('t.sup-point-de-vente')}</th><th>{inject:i18n.get('t.sup-noeud')}</th><th>{inject:i18n.get('t.dep-version-en-service')}</th><th>{inject:i18n.get('t.dep-prerequis')}</th><th>{inject:i18n.get('t.sup-etat')}</th><th>{inject:i18n.get('t.sup-detail')}</th><th>{inject:i18n.get('t.sup-action')}</th></tr>
+        </thead>
+        <tbody>
+            {#for row in view.rows}
+            <tr class="{#if row.ko}row-error{/if}">
+                <td>{row.pdv ?: '—'}</td>
+                <td>{inject:i18n.code('t.code-kind-', row.kind)} {row.nodeId}</td>
+                <td class="mono">{row.currentVersion ?: '—'}</td>
+                <td>{#if row.prerequisiteOk}<span class="badge badge-ok">{inject:i18n.text(row.prerequisite)}</span>{#else}<span class="badge badge-off">{inject:i18n.text(row.prerequisite)}</span>{/if}</td>
+                <td>{inject:i18n.code('t.code-target-', row.state)}</td>
+                <td class="cell-error cell-long">{inject:i18n.text(row.message.or('—'))}</td>
+                <td class="cell-action">
+                    <form method="post" action="/admin/deployment/lot/{view.lot.code}/target/{row.id}/force" class="card-action">
+                        <button class="btn btn-small" type="submit">{inject:i18n.get('t.dep-forcer')}</button>
+                    </form>
+                    <form method="post" action="/admin/deployment/lot/{view.lot.code}/target/{row.id}/remove" class="card-action">
+                        <button class="btn btn-small btn-ghost" type="submit">{inject:i18n.get('t.dep-retirer')}</button>
+                    </form>
+                </td>
+            </tr>
+            {/for}
+            {#if view.rows.isEmpty()}
+            <tr><td colspan="7" class="cell-empty">{inject:i18n.get('t.dep-aucune-cible')}</td></tr>
+            {/if}
+        </tbody>
+    </table>
+</div>
+<script src="/admin-assets/confirm.js"></script>
+{/body}

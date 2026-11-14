@@ -45,7 +45,7 @@
                     <td class="col-muted"><em>{inject:i18n.get('t.tout-le-menu')}</em></td>
                     <td class="col-actions">—</td>
                     <td class="col-actions">
-                        <label class="toggle">
+                        <label class="field-check">
                             <input type="checkbox" name="hideMenu" value="{menu.name}" aria-label="{inject:i18n.get('t.masquer-le-menu')} {inject:i18n.text(menu.label)}"{#if menu.hidden} checked{/if}>
                             <span>{inject:i18n.get('t.masque')}</span>
                         </label>
@@ -56,13 +56,13 @@
                     <td class="col-muted"></td>
                     <td>{inject:i18n.text(row.label)}</td>
                     <td class="col-actions">
-                        <label class="toggle">
+                        <label class="field-check">
                             <input type="checkbox" name="star" value="{row.key}" aria-label="{inject:i18n.get('t.favori')} {inject:i18n.text(row.label)}"{#if row.starred} checked{/if}>
                             <span>{inject:i18n.get('t.favori')}</span>
                         </label>
                     </td>
                     <td class="col-actions">
-                        <label class="toggle">
+                        <label class="field-check">
                             <input type="checkbox" name="hide" value="{row.key}" aria-label="{inject:i18n.get('t.masquer')} {inject:i18n.text(row.label)}"{#if row.hidden} checked{/if}>
                             <span>{inject:i18n.get('t.masquee')}</span>
                         </label>
@@ -91,7 +91,7 @@
                     <td class="col-muted">{inject:i18n.text(report.family)}</td>
                     <td>{inject:i18n.text(report.label)}</td>
                     <td class="col-actions">
-                        <label class="toggle">
+                        <label class="field-check">
                             <input type="checkbox" name="hideReport" value="{report.code}" aria-label="{inject:i18n.get('t.masquer')} {inject:i18n.text(report.label)}"{#if report.hidden} checked{/if}>
                             <span>{inject:i18n.get('t.masque')}</span>
                         </label>

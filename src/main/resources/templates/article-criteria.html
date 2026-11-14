@@ -1,0 +1,108 @@
+{!
+ ! The multi-criteria fields of an article search (BO-02-03-30) and of a saved
+ ! article selection (BO-02-03-31), shared by the article list and the
+ ! selections screen so the two can never offer different criteria. Expects
+ ! `criteria` (ArticleSearchCriteria), `types`, `attributeDefs` (boolean
+ ! catalog entries), `vatRates` and `familyNodes` in the including context.
+!}
+<div class="field-grid">
+    <div class="field">
+        <label class="field-label" for="s-text">{inject:i18n.get('t.texte-ean-libelle-code-interne')}</label>
+        <input class="input-control" id="s-text" type="text" name="text" value="{criteria.text ?: ''}">
+    </div>
+    <div class="field">
+        <label class="field-label" for="s-plu">{inject:i18n.get('t.plu')}</label>
+        <input class="input-control" id="s-plu" type="text" name="plu" value="{criteria.plu ?: ''}">
+    </div>
+    <div class="field">
+        <label class="field-label" for="s-internal">{inject:i18n.get('t.code-interne')}</label>
+        <input class="input-control" id="s-internal" type="text" name="internalCode" value="{criteria.internalCode ?: ''}">
+    </div>
+    <div class="field">
+        <label class="field-label" for="s-description">{inject:i18n.get('t.description')}</label>
+        <input class="input-control" id="s-description" type="text" name="description" value="{criteria.description ?: ''}">
+    </div>
+    <div class="field">
+        <label class="field-label" for="s-checkout">{inject:i18n.get('t.libelle-encaissement')}</label>
+        <input class="input-control" id="s-checkout" type="text" name="checkoutLabel" value="{criteria.checkoutLabel ?: ''}">
+    </div>
+    <div class="field">
+        <label class="field-label" for="s-brand">{inject:i18n.get('t.marque')}</label>
+        <input class="input-control" id="s-brand" type="text" name="brand" value="{criteria.brand ?: ''}">
+    </div>
+    <div class="field">
+        <label class="field-label" for="s-supplier">{inject:i18n.get('t.p20-fournisseur-code-ou-nom')}</label>
+        <input class="input-control" id="s-supplier" type="text" name="supplier" value="{criteria.supplier ?: ''}">
+    </div>
+    <div class="field">
+        <label class="field-label" for="s-supplier-article">{inject:i18n.get('t.p20-article-fournisseur-code-ou-nom')}</label>
+        <input class="input-control" id="s-supplier-article" type="text" name="supplierArticle" value="{criteria.supplierArticle ?: ''}">
+    </div>
+    <div class="field">
+        <label class="field-label" for="s-family">{inject:i18n.get('t.p20-familles-rayons')}</label>
+        <input class="input-control" id="s-family" type="text" name="family" list="s-family-nodes" value="{#each criteria.families}{it}{#if it_hasNext},{/if}{/each}">
+        <datalist id="s-family-nodes">
+            {#for node in familyNodes}
+            <option value="{node.code}">{node.description ?: node.code}</option>
+            {/for}
+        </datalist>
+        <span class="field-hint">{inject:i18n.get('t.p20-codes-separes-par-des-virgules')}</span>
+    </div>
+    <div class="field">
+        <label class="field-label" for="s-price-min">{inject:i18n.get('t.p20-prix-de')}</label>
+        <input class="input-control" id="s-price-min" type="text" name="priceMin" inputmode="decimal" value="{criteria.priceMin ?: ''}">
+    </div>
+    <div class="field">
+        <label class="field-label" for="s-price-max">{inject:i18n.get('t.p20-prix-a')}</label>
+        <input class="input-control" id="s-price-max" type="text" name="priceMax" inputmode="decimal" value="{criteria.priceMax ?: ''}">
+    </div>
+    <div class="field">
+        <label class="field-label" for="s-vat">{inject:i18n.get('t.tva')}</label>
+        <select class="input-control" id="s-vat" name="vat">
+            <option value="">{inject:i18n.get('t.toutes')}</option>
+            {#for rate in vatRates}
+            <option value="{rate.number}" {#if criteria.vat && criteria.vat == rate.number}selected{/if}>{rate.code()} — {rate.getRateFormatted()} % {rate.label ?: ''}</option>
+            {/for}
+        </select>
+    </div>
+    <div class="field">
+        <label class="field-label" for="s-type">{inject:i18n.get('t.type')}</label>
+        <select class="input-control" id="s-type" name="type">
+            <option value="">{inject:i18n.get('t.tous')}</option>
+            {#for type in types}
+            <option value="{type.name}" {#if criteria.type && criteria.type.name == type.name}selected{/if}>{type.name}</option>
+            {/for}
+        </select>
+    </div>
+    <div class="field">
+        <label class="field-label" for="s-status">{inject:i18n.get('t.statut')}</label>
+        <select class="input-control" id="s-status" name="status">
+            <option value="ALL">{inject:i18n.get('t.tous')}</option>
+            <option value="ACTIVE" {#if criteria.status.name == 'ACTIVE'}selected{/if}>{inject:i18n.get('t.actifs')}</option>
+            <option value="INACTIVE" {#if criteria.status.name == 'INACTIVE'}selected{/if}>{inject:i18n.get('t.desactives')}</option>
+        </select>
+    </div>
+    <div class="field">
+        <label class="field-label" for="s-forbidden">{inject:i18n.get('t.vente')}</label>
+        <select class="input-control" id="s-forbidden" name="forbidden">
+            <option value="">{inject:i18n.get('t.toutes')}</option>
+            <option value="yes" {#if criteria.forbidden == true}selected{/if}>{inject:i18n.get('t.interdites')}</option>
+            <option value="no" {#if criteria.forbidden == false}selected{/if}>{inject:i18n.get('t.autorisees')}</option>
+        </select>
+    </div>
+    <div class="field">
+        <label class="field-label" for="s-ean-from">{inject:i18n.get('t.ean-de')}</label>
+        <input class="input-control" id="s-ean-from" type="text" name="eanFrom" value="{criteria.eanFrom ?: ''}">
+    </div>
+    <div class="field">
+        <label class="field-label" for="s-ean-to">{inject:i18n.get('t.ean-a')}</label>
+        <input class="input-control" id="s-ean-to" type="text" name="eanTo" value="{criteria.eanTo ?: ''}">
+    </div>
+</div>
+<div class="field-grid">
+    {#for def in attributeDefs}
+    <div class="field">
+        <label class="field-check"><input type="checkbox" name="attr" value="{def.code}" {#if criteria.attributes.contains(def.code)}checked{/if}> <span>{inject:i18n.text(def.label)}</span></label>
+    </div>
+    {/for}
+</div>

@@ -92,68 +92,200 @@ public class RefApplyService {
     }
 
     /**
+     * Rows handled between two flush-and-clear of the persistence context while
+     * the big referentials are applied (PRODUCTS, the FAMILIES memberships,
+     * PRICES), aligned on {@code quarkus.hibernate-orm.jdbc.batch_size}.
+     * <p>
+     * In AUTO flush mode every query first dirty-checks every entity the session
+     * holds. A loop issuing one query per row over a session that keeps every
+     * row already applied therefore costs O(n&sup2;): 8 000 articles took more
+     * than three minutes, and the 109 204 articles of a real store never fitted
+     * in the 60 s transaction. Loading each chunk in one query and clearing the
+     * session after it keeps every check, and the session, to one chunk.
+     */
+    static final int CHUNK = 1000;
+
+    /** The session the big referentials are flushed and cleared through, by chunk. */
+    @Inject
+    jakarta.persistence.EntityManager entityManager;
+
+    /**
      * Applies a family snapshot: upsert by code (families carry no active
-     * flag; absents are left in place), then rebuilds the GROUP TREE and the
-     * article memberships the snapshot describes.
+     * flag; absents are left in place), then brings the GROUP TREE and the
+     * article memberships to what the snapshot describes.
      * <p>
      * The edges matter as much as the rows: without them a register receives
      * flat, empty groups, and the touch grid shows buttons with nothing behind
      * them — everything the back office administered would stop at the store
-     * node. They are rebuilt in three passes because a snapshot ordered by code
-     * puts parents and children in any order, and because clearing a collection
-     * while wiring another would erase what an earlier row had just received.
-     * Articles are resolved by EAN and are already applied at this point:
-     * PRODUCTS comes before FAMILIES in {@code DOMAINS} for that reason.
+     * node. Both edge sets are the snapshot's truth, so a family removed from a
+     * group upstream leaves it here too; a parent may come after its child in a
+     * snapshot ordered by code, which is why the edges are gathered over the
+     * whole snapshot before any collection is touched. Articles are resolved by
+     * EAN and are already applied at this point: PRODUCTS comes before FAMILIES
+     * in {@code DOMAINS} for that reason.
+     * <p>
+     * Collections are UPDATED IN PLACE and only when they differ: an unchanged
+     * snapshot writes nothing, where emptying and refilling them rewrote the
+     * whole membership table at every pull. The memberships are compared by
+     * identifiers read in two queries, and only the families whose members
+     * moved are loaded, with their articles, a chunk at a time.
      *
      * @param dtos the snapshot rows
      */
     @Transactional
     public void applyFamilies(List<RefPayloads.FamilyDto> dtos) {
-        LOGGER.info("Entering method applyFamilies with dtos: " + dtos);
-        // FIRST PASS: the rows themselves. The edges cannot be wired here —
-        // a parent may appear after its child in a snapshot ordered by code.
-        Map<String, ProductFamily> byCode = new HashMap<>();
+        LOGGER.info("Entering method applyFamilies with " + dtos.size() + " row(s)");
+        // FIRST PASS: the rows, every family of this node read in ONE query with
+        // its children. The edges cannot be wired here — a parent may appear
+        // after its child in a snapshot ordered by code.
+        Map<String, ProductFamily> held = new HashMap<>();
+        for (ProductFamily family : ProductFamily.<ProductFamily>list(
+                "select distinct f from ProductFamily f left join fetch f.productFamilies")) {
+            held.put(family.code, family);
+        }
+        Map<String, ProductFamily> byCode = new java.util.LinkedHashMap<>();
         for (RefPayloads.FamilyDto dto : dtos) {
-            ProductFamily family = ProductFamily.find("code", dto.code).firstResult();
+            ProductFamily family = held.get(dto.code);
             if (family == null) {
                 family = new ProductFamily();
                 family.code = dto.code;
+                held.put(dto.code, family);
             }
             family.description = dto.description;
             family.flags = dto.flags;
             family.persist();
             byCode.put(dto.code, family);
         }
-        // SECOND PASS: empty every edge collection BEFORE wiring any of them.
-        // Clearing inside the wiring loop would erase the children a family
-        // received from a row processed earlier — the snapshot is applied in
-        // code order, a parent can come after its child.
+        // SECOND PASS: the tree and the wanted memberships, gathered over the
+        // whole snapshot, then the tree applied in place.
+        Map<String, Set<ProductFamily>> children = new HashMap<>();
+        Map<String, Set<String>> eans = new HashMap<>();
         for (RefPayloads.FamilyDto dto : dtos) {
-            ProductFamily family = byCode.get(dto.code);
-            family.productFamilies.clear();
-            family.products.clear();
-        }
-        // THIRD PASS: the tree and the memberships. Both collections are
-        // REPLACED, never merged: the snapshot is the truth, so a family
-        // removed from a group upstream leaves it here too.
-        for (RefPayloads.FamilyDto dto : dtos) {
-            ProductFamily family = byCode.get(dto.code);
+            children.computeIfAbsent(dto.code, code -> new HashSet<>());
+            eans.computeIfAbsent(dto.code, code -> new HashSet<>()).addAll(dto.productEans);
             for (String parentCode : dto.parentCodes) {
-                ProductFamily parent = byCode.get(parentCode);
-                if (parent != null) {
-                    parent.productFamilies.add(family);
+                if (byCode.containsKey(parentCode)) {
+                    children.computeIfAbsent(parentCode, code -> new HashSet<>()).add(byCode.get(dto.code));
                 }
             }
-            for (String ean : dto.productEans) {
-                Product product = Product.find("ean", ean).firstResult();
-                if (product != null) {
-                    family.products.add(product);
-                }
-            }
-            family.persist();
         }
+        for (Map.Entry<String, Set<ProductFamily>> edge : children.entrySet()) {
+            replaceInPlace(byCode.get(edge.getKey()).productFamilies, edge.getValue());
+        }
+        Map<String, Long> familyIds = new java.util.LinkedHashMap<>();
+        for (Map.Entry<String, ProductFamily> family : byCode.entrySet()) {
+            familyIds.put(family.getKey(), family.getValue().id);
+        }
+        flushAndClear();
+        // THIRD PASS: the memberships, compared by identifiers.
+        applyMemberships(familyIds, eans);
         LOGGER.infof("Référentiel familles appliqué: %d ligne(s)", dtos.size());
         LOGGER.info("Exiting method applyFamilies");
+    }
+
+    /**
+     * Brings the article memberships of the snapshot families to the wanted
+     * ones: the held and the wanted members are compared by identifier, and
+     * only the families that differ are loaded and rewired, in groups whose
+     * wanted articles reach {@link #CHUNK}, the session cleared after each.
+     *
+     * @param familyIds the snapshot families, code to identifier
+     * @param wantedEans the EANs each snapshot family must contain, by code
+     */
+    private void applyMemberships(Map<String, Long> familyIds, Map<String, Set<String>> wantedEans) {
+        Map<String, Long> productIds = new HashMap<>();
+        for (Object[] row : entityManager.createQuery(
+                "select p.ean, p.id from Product p", Object[].class).getResultList()) {
+            productIds.put((String) row[0], (Long) row[1]);
+        }
+        Map<Long, Set<Long>> heldMembers = new HashMap<>();
+        for (Object[] row : entityManager.createQuery(
+                "select f.id, p.id from ProductFamily f join f.products p", Object[].class).getResultList()) {
+            heldMembers.computeIfAbsent((Long) row[0], id -> new HashSet<>()).add((Long) row[1]);
+        }
+        Map<Long, Set<Long>> wanted = new HashMap<>();
+        List<Long> group = new java.util.ArrayList<>();
+        int load = 0;
+        for (Map.Entry<String, Long> family : familyIds.entrySet()) {
+            Set<Long> members = new HashSet<>();
+            for (String ean : wantedEans.get(family.getKey())) {
+                Long productId = productIds.get(ean);
+                if (productId != null) {
+                    members.add(productId);
+                }
+            }
+            if (members.equals(heldMembers.getOrDefault(family.getValue(), Set.of()))) {
+                continue;
+            }
+            wanted.put(family.getValue(), members);
+            group.add(family.getValue());
+            load += members.size();
+            if (load >= CHUNK) {
+                rewireMembers(group, wanted);
+                group = new java.util.ArrayList<>();
+                load = 0;
+            }
+        }
+        if (!group.isEmpty()) {
+            rewireMembers(group, wanted);
+        }
+    }
+
+    /**
+     * Rewires one group of families onto their wanted articles: the articles
+     * are read by identifier a chunk at a time, the families with their held
+     * members in one query, each membership set is updated in place, and the
+     * session is flushed and cleared.
+     *
+     * @param group the identifiers of the families to rewire
+     * @param wanted the wanted article identifiers, by family identifier
+     */
+    private void rewireMembers(List<Long> group, Map<Long, Set<Long>> wanted) {
+        List<Long> productIds = new java.util.ArrayList<>();
+        for (Long familyId : group) {
+            productIds.addAll(wanted.get(familyId));
+        }
+        Map<Long, Product> products = new HashMap<>();
+        for (int from = 0; from < productIds.size(); from += CHUNK) {
+            for (Product product : Product.<Product>list("id in ?1",
+                    productIds.subList(from, Math.min(from + CHUNK, productIds.size())))) {
+                products.put(product.id, product);
+            }
+        }
+        for (ProductFamily family : ProductFamily.<ProductFamily>list(
+                "select distinct f from ProductFamily f left join fetch f.products where f.id in ?1", group)) {
+            Set<Product> members = new HashSet<>();
+            for (Long productId : wanted.get(family.id)) {
+                members.add(products.get(productId));
+            }
+            replaceInPlace(family.products, members);
+        }
+        flushAndClear();
+    }
+
+    /**
+     * Brings a held collection to the wanted elements IN PLACE, and only when
+     * they differ: the collection Hibernate manages is kept, so an unchanged
+     * one writes nothing and a changed one writes only the rows that moved.
+     *
+     * @param held the collection the entity holds
+     * @param wanted the elements it must hold
+     * @param <T> the element type
+     */
+    static <T> void replaceInPlace(Set<T> held, Set<T> wanted) {
+        if (!held.equals(wanted)) {
+            held.retainAll(wanted);
+            held.addAll(wanted);
+        }
+    }
+
+    /**
+     * Writes the pending changes and empties the session, so the next chunk is
+     * dirty-checked alone.
+     */
+    private void flushAndClear() {
+        entityManager.flush();
+        entityManager.clear();
     }
 
     /**
@@ -208,53 +340,118 @@ public class RefApplyService {
 
     /**
      * Applies a product snapshot: upsert by EAN, absents deactivated.
+     * <p>
+     * A chunk of {@link #CHUNK} rows at a time: the articles the chunk names
+     * are read in one query (their attributes and sale codes batch-fetched),
+     * written, and the session is flushed and cleared before the next chunk.
+     * The attributes and the sale codes are updated IN PLACE and only when they
+     * differ: replacing the collection Hibernate manages deleted and re-inserted
+     * both of them for every article at every pull.
      *
      * @param dtos the snapshot rows
      */
     @Transactional
     public void applyProducts(List<RefPayloads.ProductDto> dtos) {
-        LOGGER.info("Entering method applyProducts with dtos: " + dtos);
+        LOGGER.info("Entering method applyProducts with " + dtos.size() + " row(s)");
         Set<String> seen = new HashSet<>();
-        for (RefPayloads.ProductDto dto : dtos) {
-            Product product = Product.find("ean", dto.ean).firstResult();
-            if (product == null) {
-                product = new Product();
-                product.ean = dto.ean;
+        for (int from = 0; from < dtos.size(); from += CHUNK) {
+            List<RefPayloads.ProductDto> chunk = dtos.subList(from, Math.min(from + CHUNK, dtos.size()));
+            Map<String, Product> held = productsByEan(chunk.stream().map(dto -> dto.ean).toList());
+            for (RefPayloads.ProductDto dto : chunk) {
+                Product product = held.get(dto.ean);
+                if (product == null) {
+                    product = new Product();
+                    product.ean = dto.ean;
+                    held.put(dto.ean, product);
+                }
+                product.plu = dto.plu;
+                product.name = dto.name;
+                product.description = dto.description;
+                product.icon = dto.icon;
+                product.imageData = dto.imageData;
+                product.brand = dto.brand;
+                product.referenceWeight = dto.referenceWeight;
+                product.referenceVolume = dto.referenceVolume;
+                product.productType = dto.productType != null ? ProductType.valueOf(dto.productType) : null;
+                product.unitName = dto.unitName;
+                product.active = dto.active;
+                product.forbiddenToSale = dto.forbiddenToSale;
+                product.ageRestriction = dto.ageRestriction;
+                product.checkoutLabel = dto.checkoutLabel;
+                product.infoMessage = dto.infoMessage;
+                product.internalCode = dto.internalCode;
+                product.variableWeight = dto.variableWeight;
+                product.attributes = attributesInPlace(product.attributes, dto.attributes);
+                // BO-02-03-03: the additional sale codes replace the register's own.
+                product.saleCodes = saleCodesInPlace(product.saleCodes, dto.saleCodes);
+                // BO-03-01-13: the sales volume is the store node's own computation
+                // over its registers' sales; a head office snapshot never overwrites
+                // it, a register takes what its store computed.
+                if (!keepsLocalOnSilence()) {
+                    product.salesVolume = dto.salesVolume;
+                }
+                product.persist();
+                seen.add(dto.ean);
             }
-            product.plu = dto.plu;
-            product.name = dto.name;
-            product.description = dto.description;
-            product.icon = dto.icon;
-            product.imageData = dto.imageData;
-            product.brand = dto.brand;
-            product.referenceWeight = dto.referenceWeight;
-            product.referenceVolume = dto.referenceVolume;
-            product.productType = dto.productType != null ? ProductType.valueOf(dto.productType) : null;
-            product.unitName = dto.unitName;
-            product.active = dto.active;
-            product.forbiddenToSale = dto.forbiddenToSale;
-            product.ageRestriction = dto.ageRestriction;
-            product.checkoutLabel = dto.checkoutLabel;
-            product.infoMessage = dto.infoMessage;
-            product.internalCode = dto.internalCode;
-            product.variableWeight = dto.variableWeight;
-            product.attributes = dto.attributes != null
-                    ? new java.util.HashMap<>(dto.attributes) : new java.util.HashMap<>();
-            // BO-02-03-03: the additional sale codes replace the register's own.
-            product.saleCodes = dto.saleCodes != null
-                    ? new java.util.TreeSet<>(dto.saleCodes) : new java.util.TreeSet<>();
-            // BO-03-01-13: the sales volume is the store node's own computation
-            // over its registers' sales; a head office snapshot never overwrites
-            // it, a register takes what its store computed.
-            if (!keepsLocalOnSilence()) {
-                product.salesVolume = dto.salesVolume;
-            }
-            product.persist();
-            seen.add(dto.ean);
+            flushAndClear();
         }
         int deactivated = deactivateAbsentProducts(seen);
         LOGGER.infof("Référentiel produits appliqué: %d ligne(s), %d désactivé(s)", dtos.size(), deactivated);
         LOGGER.info("Exiting method applyProducts");
+    }
+
+    /**
+     * Reads the articles of a list of EANs in one query, keyed by EAN.
+     *
+     * @param eans the EANs, possibly empty
+     * @return the articles found, by EAN; a modifiable map
+     */
+    private static Map<String, Product> productsByEan(List<String> eans) {
+        Map<String, Product> byEan = new HashMap<>();
+        if (eans.isEmpty()) {
+            return byEan;
+        }
+        for (Product product : Product.<Product>list("ean in ?1", eans)) {
+            byEan.put(product.ean, product);
+        }
+        return byEan;
+    }
+
+    /**
+     * Brings the attributes an article holds to the snapshot's, in place and
+     * only when they differ.
+     *
+     * @param held the map the article holds, or null on an article never initialised
+     * @param wanted the snapshot's attributes, or null for none
+     * @return the map the article must hold
+     */
+    static Map<String, String> attributesInPlace(Map<String, String> held, Map<String, String> wanted) {
+        Map<String, String> target = wanted == null ? Map.of() : wanted;
+        if (held == null) {
+            return new HashMap<>(target);
+        }
+        if (!held.equals(target)) {
+            held.keySet().retainAll(target.keySet());
+            held.putAll(target);
+        }
+        return held;
+    }
+
+    /**
+     * Brings the sale codes an article holds to the snapshot's, in place and
+     * only when they differ.
+     *
+     * @param held the set the article holds, or null on an article never initialised
+     * @param wanted the snapshot's codes, or null for none
+     * @return the set the article must hold
+     */
+    static Set<String> saleCodesInPlace(Set<String> held, List<String> wanted) {
+        Set<String> target = wanted == null ? new java.util.TreeSet<>() : new java.util.TreeSet<>(wanted);
+        if (held == null) {
+            return target;
+        }
+        replaceInPlace(held, target);
+        return held;
     }
 
     /**
@@ -436,31 +633,43 @@ public class RefApplyService {
      * Applies a price snapshot: full replacement (nothing references price
      * rows). Rows pointing to a product unknown on this register are skipped
      * and counted.
+     * <p>
+     * A chunk of {@link #CHUNK} rows at a time: the chunk's articles are read
+     * in one query and the regimes in another, instead of two lookups per row,
+     * and the session is flushed and cleared before the next chunk.
      *
      * @param dtos the snapshot rows
      */
     @Transactional
     public void applyPrices(List<RefPayloads.PriceDto> dtos) {
-        LOGGER.info("Entering method applyPrices with dtos: " + dtos);
+        LOGGER.info("Entering method applyPrices with " + dtos.size() + " row(s)");
         Price.deleteAll();
         int skipped = 0;
-        for (RefPayloads.PriceDto dto : dtos) {
-            Product product = dto.productEan != null
-                    ? Product.<Product>find("ean", dto.productEan).firstResult()
-                    : null;
-            if (product == null) {
-                skipped++;
-                continue;
+        for (int from = 0; from < dtos.size(); from += CHUNK) {
+            List<RefPayloads.PriceDto> chunk = dtos.subList(from, Math.min(from + CHUNK, dtos.size()));
+            Map<String, Product> products = productsByEan(chunk.stream()
+                    .map(dto -> dto.productEan).filter(java.util.Objects::nonNull).toList());
+            Map<Integer, VatRate> rates = new HashMap<>();
+            for (VatRate rate : VatRate.<VatRate>listAll()) {
+                rates.putIfAbsent(rate.number, rate);
             }
-            Price price = new Price();
-            price.product = product;
-            price.priceExcludingTax = dto.priceExcludingTax;
-            price.priceIncludingTax = dto.priceIncludingTax;
-            price.vat = VatRate.findByNumber(dto.vatNumber);
-            price.priority = dto.priority != null ? dto.priority : 0;
-            price.startDateTime = parse(dto.startDateTime);
-            price.endDateTime = parse(dto.endDateTime);
-            price.persist();
+            for (RefPayloads.PriceDto dto : chunk) {
+                Product product = dto.productEan != null ? products.get(dto.productEan) : null;
+                if (product == null) {
+                    skipped++;
+                    continue;
+                }
+                Price price = new Price();
+                price.product = product;
+                price.priceExcludingTax = dto.priceExcludingTax;
+                price.priceIncludingTax = dto.priceIncludingTax;
+                price.vat = rates.get(dto.vatNumber);
+                price.priority = dto.priority != null ? dto.priority : 0;
+                price.startDateTime = parse(dto.startDateTime);
+                price.endDateTime = parse(dto.endDateTime);
+                price.persist();
+            }
+            flushAndClear();
         }
         LOGGER.infof("Référentiel prix remplacé: %d ligne(s), %d orpheline(s) ignorée(s)",
                 dtos.size() - skipped, skipped);
@@ -2199,20 +2408,31 @@ public class RefApplyService {
 
     /**
      * Deactivates the products absent from the applied snapshot.
+     * <p>
+     * The active articles are listed by EAN and identifier only, without
+     * loading a single entity; the absent ones are then read a chunk at a
+     * time, deactivated, and the session cleared.
      *
      * @param seenEans the EANs present in the snapshot
      * @return the number of deactivated products
      */
     private int deactivateAbsentProducts(Set<String> seenEans) {
-        int deactivated = 0;
-        for (Product product : Product.<Product>listAll()) {
-            if (!seenEans.contains(product.ean) && product.active) {
-                product.active = false;
-                product.persist();
-                deactivated++;
+        List<Long> absent = new java.util.ArrayList<>();
+        for (Object[] row : entityManager.createQuery(
+                "select p.id, p.ean from Product p where p.active = true", Object[].class).getResultList()) {
+            if (!seenEans.contains((String) row[1])) {
+                absent.add((Long) row[0]);
             }
         }
-        return deactivated;
+        for (int from = 0; from < absent.size(); from += CHUNK) {
+            for (Product product : Product.<Product>list("id in ?1",
+                    absent.subList(from, Math.min(from + CHUNK, absent.size())))) {
+                product.active = false;
+                product.persist();
+            }
+            flushAndClear();
+        }
+        return absent.size();
     }
 
     /**
@@ -2278,6 +2498,7 @@ public class RefApplyService {
             menu.cashierScreen = dto.cashierScreen;
             menu.customerScreen = dto.customerScreen;
             menu.ticketModel = dto.ticketModel;
+            menu.layout = dto.layout;
             menu.persist();
             seen.add(menu.code);
         }

@@ -1,0 +1,2 @@
+Note: /Users/henridarmet/Documents/Workspaces/imedge/_to_delete/parseHD43b/impos/PaymentServiceTest.java uses unchecked or unsafe operations.
+Note: Recompile with -Xlint:unchecked for details.

@@ -65,10 +65,10 @@ export default defineConfig({
     include: ['src/test/js/**/*.spec.js'],
     coverage: {
       provider: 'istanbul',
-      include: ['src/main/resources/META-INF/resources/admin-assets/*.js'],
+      include: ['src/main/resources/META-INF/resources/**/*.js'],
       reporter: ['text', 'json', 'html'],
       reportsDirectory: 'target/js-coverage',
-      all: false,
+      all: true,
       // The gate, the JavaScript twin of the pom's JaCoCo gate: 100 % of
       // branches (and statements, functions, lines), and it never goes down.
       // A branch added without its spec fails the test phase; the fix is to

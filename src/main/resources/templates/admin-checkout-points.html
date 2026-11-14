@@ -133,8 +133,7 @@
             </select>
         </div>
         <div class="field">
-            <label class="field-label" for="pa-{point.terminalId}">{inject:i18n.get('t.actif')}</label>
-            <input id="pa-{point.terminalId}" type="checkbox" name="active" {#if point.active}checked{/if}>
+            <label class="field-check"><input id="pa-{point.terminalId}" type="checkbox" name="active" {#if point.active}checked{/if}> <span>{inject:i18n.get('t.actif')}</span></label>
         </div>
         <div class="page-actions">
             <button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer')}</button>
@@ -175,8 +174,7 @@
             </select>
         </div>
         <div class="field">
-            <label class="field-label" for="new-pactive">{inject:i18n.get('t.actif')}</label>
-            <input id="new-pactive" type="checkbox" name="active" checked>
+            <label class="field-check"><input id="new-pactive" type="checkbox" name="active" checked> <span>{inject:i18n.get('t.actif')}</span></label>
         </div>
         <div class="page-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.creer-le-point')}</button></div>
     </form>

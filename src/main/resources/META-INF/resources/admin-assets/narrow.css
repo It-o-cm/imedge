@@ -1,0 +1,88 @@
+/*
+ * Narrow screens (BO-01-01-05): the back office keeps its layout from a
+ * 800 x 600 till screen to a desktop, in French as in the longer Dutch and
+ * Portuguese labels. Below 1000 px wide, tables tighten their cells and let
+ * their headings and action buttons wrap, the journal tabs and the sync
+ * table do the same, so a screen never widens the page.
+ *
+ * Loaded LAST by admin-layout.html: it only narrows what the area sheets
+ * set, and uses the --im-* tokens of base.css.
+ */
+
+@media (max-width: 1000px) {
+    .data-table th,
+    .data-table td {
+        padding-left: 6px;
+        padding-right: 6px;
+    }
+
+    /* A long single-word heading (Dutch CONTACTPERSOON, OPENSTAAND SALDO)
+       breaks rather than pushing a nine-column table out of its card. */
+    .data-table th {
+        letter-spacing: 0;
+        overflow-wrap: anywhere;
+    }
+
+    .data-table td {
+        overflow-wrap: anywhere;
+    }
+
+    .col-actions {
+        white-space: normal;
+    }
+
+    .col-actions .btn,
+    .col-actions form {
+        margin-bottom: 4px;
+    }
+
+    .journal-tabs {
+        flex-wrap: wrap;
+    }
+
+    .journal-tab {
+        padding: 8px 10px;
+    }
+
+    .sync-table th,
+    .sync-table td {
+        padding: 6px;
+    }
+
+    .sync-table {
+        font-size: 13px;
+    }
+
+    .sync-table th,
+    .sync-table .cell-action,
+    .sync-table .btn {
+        white-space: normal;
+    }
+
+    .sync-table td {
+        overflow-wrap: anywhere;
+    }
+}
+
+/*
+ * Up to a 1366 px desktop, a table whose Dutch or Portuguese headings and
+ * data leave it a few pixels wider than its card (the account customers'
+ * nine columns in Dutch at 1280 x 800) breaks a long heading or value
+ * rather than spilling out of the card.
+ */
+@media (max-width: 1400px) {
+    .data-table th,
+    .data-table td {
+        overflow-wrap: anywhere;
+    }
+}
+
+/*
+ * A figure, a date or a short code never breaks inside itself (lot 21
+ * recette: "37,5|6", "C0|4" and "25/10/2|026" at 800 x 600): its cell wraps
+ * between words only, the neighbouring text cells keep absorbing the width.
+ */
+.data-table td.cell-keep {
+    overflow-wrap: normal;
+    word-break: normal;
+}

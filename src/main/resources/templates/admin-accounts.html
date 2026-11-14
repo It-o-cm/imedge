@@ -72,7 +72,7 @@
                 <span class="field-hint">{inject:i18n.get('t.identifiants-de-caisses-pas-encore-declarees-ni')}</span>
             </label>
             <label class="field"><span class="field-label">{#if editing}{inject:i18n.get('t.nouveau-code')}{#else}{inject:i18n.get('t.code-initial')}{/if}</span><input class="input-control" type="password" name="secret" minlength="4" autocomplete="new-password" placeholder="{#if editing}{inject:i18n.get('t.vide-inchange')}{#else}{inject:i18n.get('t.vide-genere')}{/if}"></label>
-            <label class="toggle"><input type="checkbox" name="active"{#if !editing || editing.active} checked{/if}> <span>{inject:i18n.get('t.actif')}</span></label>
+            <div class="field"><label class="field-check"><input type="checkbox" name="active"{#if !editing || editing.active} checked{/if}> <span>{inject:i18n.get('t.actif')}</span></label></div>
         </div>
         <div class="page-actions" style="margin-top: 12px;">
             <button class="btn btn-primary" type="submit">{#if editing}{inject:i18n.get('t.enregistrer')}{#else}{inject:i18n.get('t.creer')}{/if}</button>

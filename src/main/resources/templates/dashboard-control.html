@@ -1,0 +1,41 @@
+{!
+ ! BO-04-03-01 : les indicateurs de controle de l'activite en temps reel, sur
+ ! leur propre ecran — les memes que la barre affichee en tete de tous les
+ ! ecrans aux profils qui ont acces a la fonction CONTROL_INDICATORS.
+!}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.s21-indicateurs-de-controle')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.s21-indicateurs-de-controle')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.s21-indicateurs-sous-titre')}</p>
+    </div>
+</div>
+<div class="card">
+    <div class="kpi-grid">
+        <div class="kpi"><span class="kpi-label">{inject:i18n.get('t.ca-du-jour')}</span><span class="kpi-value is-accent" id="ctl-revenue">{control.revenue} €</span></div>
+        <div class="kpi"><span class="kpi-label">{inject:i18n.get('t.s21-panier-moyen-quantite')}</span><span class="kpi-value" id="ctl-basket">{control.basketQuantity}</span></div>
+        <div class="kpi"><span class="kpi-label">{inject:i18n.get('t.s21-clients-encaisses')}</span><span class="kpi-value" id="ctl-customers">{control.customers}</span></div>
+        <div class="kpi"><span class="kpi-label">{inject:i18n.get('t.s21-ca-n-1')}</span><span class="kpi-value" id="ctl-last-year">{control.lastYearRevenue} €</span></div>
+        <div class="kpi"><span class="kpi-label">{inject:i18n.get('t.s21-ecart-n-1')}</span><span class="kpi-value" id="ctl-difference">{control.difference} € ({control.differencePercent} %)</span></div>
+    </div>
+</div>
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.s21-detail-ca')}</h2>
+    {#if control.detail.isEmpty()}
+    <p class="col-muted">{inject:i18n.get('t.aucune-vente-aujourd-hui')}</p>
+    {#else}
+    <table class="data-table" id="ctl-detail">
+        <thead><tr><th>{inject:i18n.get('t.s21-rubrique')}</th><th>{inject:i18n.get('t.ca-du-jour')}</th></tr></thead>
+        <tbody>
+            {#for row in control.detail}
+            <tr><td>{row.code}{#if row.label != row.code} {inject:i18n.text(row.label)}{/if}</td><td>{row.revenue} €</td></tr>
+            {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+{/body}

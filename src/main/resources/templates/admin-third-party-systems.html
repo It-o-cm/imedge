@@ -1,0 +1,109 @@
+{! Third-party systems (BO-07-01-01): the configuration of the integration
+ ! activity of the point of sale, system by system — kind, point of sale,
+ ! virtual register, activation and token. One save form per row. !}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.r20-systemes-tiers')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.r20-systemes-tiers')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.r20-systemes-tiers-sous-titre')}</p>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.r20-systemes-declares')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.r20-jeton-aide')}</p>
+    {#if systems.isEmpty()}
+    <p class="page-sub">{inject:i18n.get('t.r20-aucun-systeme-tiers')}</p>
+    {#else}
+    {#for system in systems}
+    <form method="post" action="/admin/third-party-systems/save" class="field-grid">
+        <input type="hidden" name="code" value="{system.code}">
+        <div class="field">
+            <span class="field-label">{system.code}</span>
+            <span class="field-hint mono" style="word-break: break-all;">{system.token}</span>
+            <span class="field-hint">{inject:i18n.get('t.r20-depots')} {system.orderCount}{#if system.lastCallAt} — {system.lastCallAt}{/if}</span>
+        </div>
+        <div class="field">
+            <label class="field-label" for="sl-{system.code}">{inject:i18n.get('t.libelle')}</label>
+            <input class="input-control" id="sl-{system.code}" type="text" name="label" maxlength="100" value="{system.label}">
+        </div>
+        <div class="field">
+            <label class="field-label" for="sc-{system.code}">{inject:i18n.get('t.r20-type-de-systeme')}</label>
+            <select class="input-control" id="sc-{system.code}" name="channel">
+                {#for channel in channels}
+                <option value="{channel}" {#if system.channel == channel}selected{/if}>{inject:i18n.text(channel.label)}</option>
+                {/for}
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-label" for="sp-{system.code}">{inject:i18n.get('t.point-de-vente')}</label>
+            <select class="input-control" id="sp-{system.code}" name="pdvNumber">
+                <option value="">{inject:i18n.get('t.r20-ce-point-de-vente')}</option>
+                {#for store in stores}
+                <option value="{store.code}" {#if system.pdvNumber == store.code}selected{/if}>{store.code} — {store.name}</option>
+                {/for}
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-label" for="st-{system.code}">{inject:i18n.get('t.r20-caisse-virtuelle')}</label>
+            <input class="input-control" id="st-{system.code}" type="text" name="terminalId" maxlength="20" value="{system.terminalId ?: ''}">
+        </div>
+        <div class="field">
+            <label class="field-check"><input id="sa-{system.code}" type="checkbox" name="active" {#if system.active}checked{/if}> <span>{inject:i18n.get('t.actif')}</span></label>
+        </div>
+        <div class="page-actions">
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer')}</button>
+            <button class="btn btn-muted" type="submit" formaction="/admin/third-party-systems/token">{inject:i18n.get('t.r20-nouveau-jeton')}</button>
+        </div>
+    </form>
+    {/for}
+    {/if}
+</div>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.r20-declarer-un-systeme')}</h2>
+    <form method="post" action="/admin/third-party-systems/save" class="field-grid">
+        <div class="field">
+            <label class="field-label" for="new-code">{inject:i18n.get('t.code')}</label>
+            <input class="input-control" id="new-code" type="text" name="code" maxlength="40" required>
+        </div>
+        <div class="field">
+            <label class="field-label" for="new-label">{inject:i18n.get('t.libelle')}</label>
+            <input class="input-control" id="new-label" type="text" name="label" maxlength="100">
+        </div>
+        <div class="field">
+            <label class="field-label" for="new-channel">{inject:i18n.get('t.r20-type-de-systeme')}</label>
+            <select class="input-control" id="new-channel" name="channel">
+                {#for channel in channels}
+                <option value="{channel}">{inject:i18n.text(channel.label)}</option>
+                {/for}
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-label" for="new-pdv">{inject:i18n.get('t.point-de-vente')}</label>
+            <select class="input-control" id="new-pdv" name="pdvNumber">
+                <option value="">{inject:i18n.get('t.r20-ce-point-de-vente')}</option>
+                {#for store in stores}
+                <option value="{store.code}">{store.code} — {store.name}</option>
+                {/for}
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-label" for="new-terminal">{inject:i18n.get('t.r20-caisse-virtuelle')}</label>
+            <input class="input-control" id="new-terminal" type="text" name="terminalId" maxlength="20">
+        </div>
+        <div class="field">
+            <label class="field-check"><input id="new-active" type="checkbox" name="active" checked> <span>{inject:i18n.get('t.actif')}</span></label>
+        </div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.r20-declarer')}</button></div>
+    </form>
+</div>
+{/body}

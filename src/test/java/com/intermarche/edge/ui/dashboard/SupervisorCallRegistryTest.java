@@ -307,4 +307,25 @@ class SupervisorCallRegistryTest {
         assertEquals(List.of(first), registry.getPending());
     }
 
+    /**
+     * LS-04-03-13: an authorisation request keeps its identity and the profiles
+     * its function requires; a call that is not one carries neither — a blank
+     * identity reads as none, and a null list as no profile.
+     */
+    @Test
+    void anAuthorisationRequestKeepsItsIdentityAndProfiles() {
+        SupervisorCallRegistry registry = new SupervisorCallRegistry();
+        registry.add("C04", "Jean", "AUTORISATION SUPERVISEUR", "FUNCTION_APPROVAL", 0, " req-1 ",
+                List.of("Chef de caisse"));
+        registry.add("C04", "Jean", "Monnaie", null, 2);
+        registry.add("C05", "Jean", "AUTORISATION SUPERVISEUR", "X", 0, "  ", null);
+        List<Call> calls = registry.getPending();
+        assertEquals("req-1", calls.get(0).requestId);
+        assertEquals(List.of("Chef de caisse"), calls.get(0).requiredProfiles);
+        assertNull(calls.get(1).requestId);
+        assertTrue(calls.get(1).requiredProfiles.isEmpty());
+        assertEquals(2, calls.get(1).severity);
+        assertNull(calls.get(2).requestId);
+        assertTrue(calls.get(2).requiredProfiles.isEmpty());
+    }
 }

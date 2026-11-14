@@ -230,7 +230,12 @@
             grant.className = 'btn btn-small btn-primary';
             grant.type = 'button';
             grant.textContent = '{inject:i18n.js('t.rc3-dash-autoriser')}';
-            grant.onclick = () => fetch('/dashboard/call/' + c.id + '/authorise').then(poll);
+            /* LS-04-03-13 : un compte sans le profil exige par la fonction est
+               refuse, et le motif s'affiche. */
+            grant.onclick = () => fetch('/dashboard/call/' + c.id + '/authorise').then(r => {
+                if (r.status === 403 && (r.headers.get('Content-Type') || '').indexOf('text/plain') === 0) { r.text().then(m => window.alert(m)); }
+                poll();
+            });
             banner.appendChild(grant);
             const toTill = document.createElement('button');
             toTill.className = 'btn btn-small';

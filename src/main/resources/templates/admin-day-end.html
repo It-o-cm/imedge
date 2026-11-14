@@ -43,7 +43,7 @@
     {#if state.openRegisters.isEmpty()}
     <p class="page-sub">{inject:i18n.get('t.aucune-caisse-n-est-ouverte')}</p>
     {#else}
-    <table class="admin-table">
+    <table class="data-table">
         <thead><tr><th>{inject:i18n.get('t.caisse')}</th><th>{inject:i18n.get('t.session')}</th><th>{inject:i18n.get('t.ouverte-par')}</th></tr></thead>
         <tbody>
             {#for register in state.openRegisters}
@@ -60,7 +60,7 @@
     {#if registers.isEmpty()}
     <p class="page-sub">{inject:i18n.get('t.aucune-caisse-ne-s-est-encore-adressee')}</p>
     {#else}
-    <table class="admin-table">
+    <table class="data-table">
         <thead><tr><th>{inject:i18n.get('t.caisse')}</th><th>{inject:i18n.get('t.dernier-signe-de-vie')}</th><th>{inject:i18n.get('t.silence')}</th><th>{inject:i18n.get('t.etat-2')}</th></tr></thead>
         <tbody>
             {#for register in registers}
@@ -82,7 +82,7 @@
     {#if state.parkedCarts.isEmpty()}
     <p class="page-sub">{inject:i18n.get('t.aucun-ticket-n-est-en-attente')}</p>
     {#else}
-    <table class="admin-table">
+    <table class="data-table">
         <thead><tr><th>{inject:i18n.get('t.caisse')}</th><th>{inject:i18n.get('t.ticket')}</th><th>{inject:i18n.get('t.caissiere')}</th><th>{inject:i18n.get('t.montant-2')}</th><th>{inject:i18n.get('t.r20-raz')}</th></tr></thead>
         <tbody>
             {#for cart in state.parkedCarts}
@@ -102,7 +102,7 @@
 <div class="card">
     <h2 class="card-title">{inject:i18n.get('t.r20-traitement-de-fin-de-periode')}</h2>
     <p class="card-sub">{inject:i18n.get('t.r20-traitement-aide')} <a class="link-strong" href="/admin/settings">{inject:i18n.get('t.parametres')}</a>.</p>
-    <table class="admin-table">
+    <table class="data-table">
         <tbody>
             <tr><td>{inject:i18n.get('t.r20-lancement-automatique')}</td><td><strong>{#if autoLaunch}{inject:i18n.get('t.r20-active')}{#else}{inject:i18n.get('t.r20-desactive')}{/if}</strong></td></tr>
             <tr><td>{inject:i18n.get('t.r20-enregistrement-des-tickets-en-attente')}</td><td>{#if parkedRecord}{inject:i18n.get('t.r20-active')}{#else}{inject:i18n.get('t.r20-desactive')}{/if}</td></tr>
@@ -187,8 +187,7 @@
         <div class="field-grid">
             {#for report in reports}
             <div class="field">
-                <label class="field-label" for="rep-{report.code}">{inject:i18n.text(report.label)}</label>
-                <input id="rep-{report.code}" type="checkbox" name="report" value="{report.code}"{#if programmed.contains(report)} checked{/if}>
+                <label class="field-check"><input id="rep-{report.code}" type="checkbox" name="report" value="{report.code}"{#if programmed.contains(report)} checked{/if}> <span>{inject:i18n.text(report.label)}</span></label>
             </div>
             {/for}
         </div>
@@ -209,7 +208,7 @@
     {#if runs.isEmpty()}
     <p class="page-sub">{inject:i18n.get('t.aucune-edition-automatique-n-a-encore-ete')}</p>
     {#else}
-    <table class="admin-table">
+    <table class="data-table">
         <thead><tr><th>{inject:i18n.get('t.periode-2')}</th><th>{inject:i18n.get('t.etat-2')}</th><th>{inject:i18n.get('t.format')}</th><th>{inject:i18n.get('t.lignes')}</th><th>{inject:i18n.get('t.issue')}</th><th>{inject:i18n.get('t.r20-impression')}</th><th>{inject:i18n.get('t.document')}</th></tr></thead>
         <tbody>
             {#for run in runs}

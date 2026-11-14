@@ -457,6 +457,9 @@ public class SyncOutboxService {
         dto.resumedTerminalId = ticket.resumedTerminalId;
         dto.paymentStartedAt = iso(ticket.paymentStartedAt);
         dto.valuations = valuationDtos(ticket);
+        // DG-03-02-01/03: the recalled orders this sale settled.
+        dto.recalledOrderCodes = ticket.recalledOrderCode == null ? new java.util.ArrayList<>()
+                : new java.util.ArrayList<>(java.util.List.of(ticket.recalledOrderCode.split(";")));
         dto.closingDate = iso(ticket.closingDate);
         dto.storeCode = ticket.store != null ? ticket.store.code : null;
         dto.cashierLogin = ticket.cashier != null ? ticket.cashier.loginName : null;

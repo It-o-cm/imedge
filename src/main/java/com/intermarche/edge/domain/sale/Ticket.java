@@ -416,6 +416,15 @@ public class Ticket extends BaseEntity {
     public String resumedTerminalId;
 
     /**
+     * The codes of the recalled orders this sale settled, separated by
+     * semicolons (DG-03-02-01, -03), or null on a sale that settled none: the
+     * store node links an e-commerce or mobility order to the ticket that
+     * paid it.
+     */
+    @Column(name = "recalled_order_code", length = 200)
+    public String recalledOrderCode;
+
+    /**
      * When the cashier went to PAYMENT on this ticket (BO-06-06-02,
      * BO-06-06-03), null while it is still being rung up.
      *
@@ -436,7 +445,10 @@ public class Ticket extends BaseEntity {
     // Financial totals
     // --------------------------------------------------
 
-    /** The number of lines on the ticket. */
+    /**
+     * The number of ARTICLES the ticket sells ({@code LS-03-04-04}): units of the
+     * lines sold by the piece, one per weighed or measured line, returns apart.
+     */
     @Column(name = "item_count", nullable = false)
     public int itemCount;
 
@@ -458,6 +470,23 @@ public class Ticket extends BaseEntity {
     // --------------------------------------------------
     // Helpers
     // --------------------------------------------------
+
+    /**
+     * Counts the articles the lines of this ticket sell ({@code LS-03-04-04}): the
+     * figure printed as « Nombre d'articles » and summed by the back-office
+     * reports. A returned line is not a sold article.
+     *
+     * @return the number of articles sold
+     */
+    public int countArticles() {
+        int count = 0;
+        for (TicketLine line : lines) {
+            if (!line.returnLine) {
+                count += line.articleUnits();
+            }
+        }
+        return count;
+    }
 
     /**
      * Adds a line to the ticket.

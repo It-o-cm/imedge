@@ -542,6 +542,35 @@ public class TicketLine extends BaseEntity {
     }
 
     /**
+     * Whether this line's quantity is a weight in kilograms ({@code LS-03-04-04}):
+     * a weighing of an article sold by its PLU, never a price-embedded sticker nor
+     * a line whose weight is stated beside its quantity.
+     *
+     * @return true when the quantity is the weight
+     */
+    public boolean isWeighedQuantity() {
+        return com.intermarche.edge.domain.catalog.UnitFormat.weighedQuantity(plu, priceEmbedded, embeddedWeight);
+    }
+
+    /**
+     * How many ARTICLES this line sells ({@code LS-03-04-04}, {@code LS-03-04-06}):
+     * a weighing, a decimal or measured quantity is one article, a line sold by
+     * the piece is as many articles as its quantity says; a cancelled line sells
+     * none.
+     *
+     * @return the number of articles, never negative
+     */
+    public int articleUnits() {
+        if (cancelled || quantity == null) {
+            return 0;
+        }
+        if (isWeighedQuantity() || decimalQuantity || quantity.stripTrailingZeros().scale() > 0) {
+            return 1;
+        }
+        return quantity.abs().intValue();
+    }
+
+    /**
      * Returns the quantity formatted for display: kilograms for weighed lines,
      * a unit count otherwise.
      *

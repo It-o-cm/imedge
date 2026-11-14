@@ -1,0 +1,132 @@
+{!
+ ! Integration console (BO-08-01-17, BO-08-01-19, BO-08-04-01 to -13): the
+ ! last integration of every referential domain on every node reported here,
+ ! OK or KO, global or by echelon, with the chart and the export; then the
+ ! files deposited on THIS node, those kept for replay first, each with its
+ ! manual replay — the forcing at the central echelon. Filtered on the VAT
+ ! domain it is the reception status of the VAT referential, with its
+ ! motives (legal mentions), on each point of sale (BO-08-01-19).
+ ! `view` = ConsoleView of IntegrationRow, `view.deposits` the deposits.
+!}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.sup-console-d-integration')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.sup-console-d-integration')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.sup-integration-sous-titre')}</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn" href="/admin/supervision/integration/export?format=csv&{view.filter.query}">{inject:i18n.get('t.sup-export-csv')}</a>
+        <a class="btn" href="/admin/supervision/integration/export?format=xlsx&{view.filter.query}">{inject:i18n.get('t.sup-export-xls')}</a>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
+{/if}
+
+<form method="get" action="/admin/supervision/integration" class="filter-bar">
+    {#include admin-console-filters filter=view.filter /}
+    <div class="filter-field">
+        <label class="filter-label" for="in-domain">{inject:i18n.get('t.sup-domaine')}</label>
+        <select id="in-domain" name="domain">
+            <option value="">{inject:i18n.get('t.sup-tous')}</option>
+            {#for choice in view.choices}
+            <option value="{choice}"{#if view.filter.domain == choice} selected{/if}>{choice}</option>
+            {/for}
+        </select>
+    </div>
+    <div class="filter-field">
+        <label class="filter-label" for="in-kind">{inject:i18n.get('t.sup-type-de-noeud')}</label>
+        <select id="in-kind" name="kind">
+            <option value="">{inject:i18n.get('t.sup-tous')}</option>
+            <option value="REGISTER"{#if view.filter.kind == 'REGISTER'} selected{/if}>{inject:i18n.get('t.sup-caisses')}</option>
+            <option value="STORE"{#if view.filter.kind == 'STORE'} selected{/if}>{inject:i18n.get('t.sup-magasins')}</option>
+            <option value="CENTRAL"{#if view.filter.kind == 'CENTRAL'} selected{/if}>{inject:i18n.get('t.sup-central')}</option>
+        </select>
+    </div>
+    <div class="filter-actions">
+        <button class="btn btn-primary" type="submit">{inject:i18n.get('t.sup-afficher')}</button>
+        <a class="btn btn-ghost" href="/admin/supervision/integration?domain=VAT_RATES">{inject:i18n.get('t.sup-reception-tva')}</a>
+    </div>
+</form>
+
+<div class="card">
+    <div class="kpi-grid">
+        <div class="kpi"><span class="kpi-label">{inject:i18n.get('t.sup-integrations-ok')}</span><span class="kpi-value">{view.okCount}</span></div>
+        <div class="kpi"><span class="kpi-label">{inject:i18n.get('t.sup-integrations-ko')}</span><span class="kpi-value is-warn">{view.koCount}</span></div>
+    </div>
+    <p class="card-sub"><span class="badge badge-ok">{inject:i18n.get('t.sup-ok')}</span> <span class="badge badge-error">{inject:i18n.get('t.sup-ko')}</span></p>
+    {#if view.chart}
+    <div class="report-chart-box">{view.chart.raw}</div>
+    {#else}
+    <p class="empty-hint">{inject:i18n.get('t.sup-aucune-donnee-a-representer')}</p>
+    {/if}
+</div>
+
+<div class="card">
+    <table class="sync-table">
+        <thead>
+            <tr><th>{inject:i18n.get('t.sup-point-de-vente')}</th><th>{inject:i18n.get('t.sup-echelon')}</th><th>{inject:i18n.get('t.sup-noeud')}</th><th>{inject:i18n.get('t.sup-domaine')}</th><th>{inject:i18n.get('t.sup-statut')}</th><th>{inject:i18n.get('t.sup-integre-le')}</th><th>{inject:i18n.get('t.sup-detail')}</th></tr>
+        </thead>
+        <tbody>
+            {#for row in view.rows}
+            <tr class="{#if !row.ok}row-error{/if}">
+                <td>{row.pdv ?: '—'}</td>
+                <td>{row.country ?: '—'} / {row.enseigne ?: '—'}</td>
+                <td>{inject:i18n.code('t.code-kind-', row.kind)} {row.nodeId}</td>
+                <td>{row.domain}</td>
+                <td>{#if row.ok}<span class="badge badge-ok">{inject:i18n.get('t.sup-ok')}</span>{#else}<span class="badge badge-error">{inject:i18n.get('t.sup-ko')}</span>{/if}</td>
+                <td>{row.at ?: '—'}</td>
+                <td class="cell-error cell-long">{row.detail ?: '—'}</td>
+            </tr>
+            {/for}
+            {#if view.rows.isEmpty()}
+            <tr><td colspan="7" class="cell-empty">{inject:i18n.get('t.sup-aucune-integration')}</td></tr>
+            {/if}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <div class="card-head">
+        <h2 class="card-title">{inject:i18n.get('t.sup-depots-de-ce-noeud')}</h2>
+        <form method="post" action="/admin/supervision/integration/replay-all" class="card-action"
+              data-confirm="{inject:i18n.get('t.sup-reintegrer-tous-confirm')}">
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.sup-reintegrer-les-depots-en-erreur')}</button>
+        </form>
+    </div>
+    <p class="card-sub">{inject:i18n.get('t.sup-depots-sous-titre')}</p>
+    <table class="sync-table">
+        <thead>
+            <tr><th>{inject:i18n.get('t.sup-flux')}</th><th>{inject:i18n.get('t.sup-depose-le')}</th><th>{inject:i18n.get('t.sup-etat')}</th><th>{inject:i18n.get('t.sup-tentatives')}</th><th>{inject:i18n.get('t.sup-derniere-reponse')}</th><th>{inject:i18n.get('t.sup-action')}</th></tr>
+        </thead>
+        <tbody>
+            {#for deposit in view.deposits}
+            <tr class="{#if deposit.content}row-error{/if}">
+                <td>{deposit.code}</td>
+                <td>{deposit.depositedAt.format('dd/MM/yyyy HH:mm')}</td>
+                <td>{inject:i18n.code('t.code-deposit-', deposit.status)}</td>
+                <td>{deposit.attempts}</td>
+                <td class="cell-error cell-long">{deposit.lastResult ?: '—'}</td>
+                <td class="cell-action">
+                    {#if deposit.content}
+                    <form method="post" action="/admin/supervision/integration/{deposit.id}/replay" class="card-action"
+                          data-confirm="{inject:i18n.get('t.sup-reintegrer-le-depot')} {deposit.code} ?">
+                        <button class="btn btn-small" type="submit">{inject:i18n.get('t.sup-reintegrer')}</button>
+                    </form>
+                    {/if}
+                </td>
+            </tr>
+            {/for}
+            {#if view.deposits.isEmpty()}
+            <tr><td colspan="6" class="cell-empty">{inject:i18n.get('t.sup-aucun-depot')}</td></tr>
+            {/if}
+        </tbody>
+    </table>
+</div>
+<script src="/admin-assets/confirm.js"></script>
+{/body}

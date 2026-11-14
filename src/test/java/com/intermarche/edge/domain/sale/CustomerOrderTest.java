@@ -137,4 +137,52 @@ class CustomerOrderTest {
         org.junit.jupiter.api.Assertions.assertEquals(java.math.BigDecimal.TEN, paid.amount);
         org.junit.jupiter.api.Assertions.assertTrue(new CustomerOrder().payments.isEmpty());
     }
+
+    /**
+     * DG defect: what a device collected counts as paid, a settlement without
+     * amount counting for nothing, and lowers what remains.
+     */
+    @Test
+    void theCollectedSettlementsCountAsPaid() {
+        CustomerOrder order = order("9.72", null);
+        order.payments.add(new CustomerOrder.OrderPayment("CARD", new BigDecimal("5.00")));
+        order.payments.add(new CustomerOrder.OrderPayment("CASH", null));
+        assertEquals(new BigDecimal("5.00"), order.getCollected());
+        assertEquals(new BigDecimal("5.00"), order.getPaid());
+        assertEquals(new BigDecimal("4.72"), order.remaining());
+        order.depositPaid = new BigDecimal("1.00");
+        assertEquals(new BigDecimal("6.00"), order.getPaid());
+    }
+
+    /**
+     * A deposit is allowed by the kind, or by the document's own optional or
+     * mandatory rule; a voucher stating none takes none.
+     */
+    @Test
+    void theDepositRuleFollowsTheKindThenTheDocument() {
+        CustomerOrder order = order("10.00", "0");
+        order.kind = OrderKind.COMMANDE;
+        assertTrue(order.isDepositAllowed());
+        order.kind = OrderKind.MOBILITY;
+        assertFalse(order.isDepositAllowed());
+        order.depositRule = "OPTIONAL";
+        assertTrue(order.isDepositAllowed());
+        order.depositRule = "MANDATORY";
+        assertTrue(order.isDepositAllowed());
+        order.depositRule = "NONE";
+        assertFalse(order.isDepositAllowed());
+    }
+
+    /**
+     * DG-03-02-01, -02: the orders of some kinds are listed most recent first.
+     */
+    @Test
+    void theOrdersOfSomeKindsAreListed() {
+        CustomerOrder order = order("1.00", "0");
+        java.util.List<OrderKind> kinds = java.util.List.of(OrderKind.ECOMMERCE);
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(() -> CustomerOrder.list("kind in ?1 order by id desc", kinds)).thenReturn(java.util.List.of(order));
+            assertEquals(java.util.List.of(order), CustomerOrder.listOfKinds(kinds));
+        }
+    }
 }

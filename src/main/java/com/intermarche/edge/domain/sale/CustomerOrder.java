@@ -124,6 +124,13 @@ public class CustomerOrder extends BaseEntity {
             joinColumns = @JoinColumn(name = "order_id"))
     public List<OrderPayment> payments = new ArrayList<>();
 
+    /**
+     * The ticket the till settled the order with (DG-03-02-01, -03), or null
+     * while it is not settled or the till did not say.
+     */
+    @Column(name = "settled_ticket_number", length = 30)
+    public String settledTicketNumber;
+
     /** The order lines, frozen as administered. */
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "customer_order_lines",
@@ -131,15 +138,49 @@ public class CustomerOrder extends BaseEntity {
     public List<OrderLine> lines = new ArrayList<>();
 
     /**
-     * The amount still owed on the order: total minus deposit, never negative.
+     * The amount still owed on the order: total minus what was paid, never
+     * negative.
      *
      * @return the remaining amount in euros
      */
     public BigDecimal remaining() {
         BigDecimal total = totalAmount == null ? BigDecimal.ZERO : totalAmount;
-        BigDecimal paid = depositPaid == null ? BigDecimal.ZERO : depositPaid;
-        BigDecimal remaining = total.subtract(paid);
+        BigDecimal remaining = total.subtract(getPaid());
         return remaining.signum() < 0 ? BigDecimal.ZERO : remaining;
+    }
+
+    /**
+     * What the settlements a device or a platform collected on the order add
+     * up to (BO-10-01-39, DG-03-01-05).
+     *
+     * @return the collected amount in euros, zero when none
+     */
+    public BigDecimal getCollected() {
+        BigDecimal collected = BigDecimal.ZERO;
+        for (OrderPayment payment : payments) {
+            collected = collected.add(payment.amount == null ? BigDecimal.ZERO : payment.amount);
+        }
+        return collected;
+    }
+
+    /**
+     * What was paid on the order: the deposits plus the settlements collected
+     * before it reached the store.
+     *
+     * @return the paid amount in euros
+     */
+    public BigDecimal getPaid() {
+        return (depositPaid == null ? BigDecimal.ZERO : depositPaid).add(getCollected());
+    }
+
+    /**
+     * Whether a deposit may be taken on the order: its kind allows one, or the
+     * document states an optional or mandatory deposit (LC-06-02-04).
+     *
+     * @return true when a deposit is allowed
+     */
+    public boolean isDepositAllowed() {
+        return kind.isDepositAllowed() || "OPTIONAL".equals(depositRule) || "MANDATORY".equals(depositRule);
     }
 
     /**
@@ -200,6 +241,16 @@ public class CustomerOrder extends BaseEntity {
         }
         return find("customerAccountNumber = ?1 and kind = ?2 and status in ?3 order by id desc",
                 customerNumber.trim(), kind, List.of(OrderStatus.OPEN, OrderStatus.PARTIALLY_PAID)).firstResult();
+    }
+
+    /**
+     * Lists the orders of some kinds, most recent first (DG-03-02-01, -02).
+     *
+     * @param kinds the kinds looked for
+     * @return the orders, never null
+     */
+    public static List<CustomerOrder> listOfKinds(List<OrderKind> kinds) {
+        return list("kind in ?1 order by id desc", kinds);
     }
 
     /**

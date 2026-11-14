@@ -25,7 +25,7 @@
     <div style="overflow-x: auto;">
     <table class="data-table">
         <thead>
-            <tr><th>{inject:i18n.get('t.code')}</th><th>{inject:i18n.get('t.type')}</th><th>{inject:i18n.get('t.libelle')}</th><th>{inject:i18n.get('t.client')}</th><th>{inject:i18n.get('t.total')}</th><th>{inject:i18n.get('t.acompte')}</th><th>{inject:i18n.get('t.tva-acompte')}</th><th>{inject:i18n.get('t.reste-3')}</th><th>{inject:i18n.get('t.statut')}</th><th></th></tr>
+            <tr><th>{inject:i18n.get('t.code')}</th><th>{inject:i18n.get('t.type')}</th><th>{inject:i18n.get('t.libelle')}</th><th>{inject:i18n.get('t.client')}</th><th>{inject:i18n.get('t.total')}</th><th>{inject:i18n.get('t.dgc-regle')}</th><th>{inject:i18n.get('t.tva-acompte')}</th><th>{inject:i18n.get('t.reste-3')}</th><th>{inject:i18n.get('t.statut')}</th><th></th></tr>
         </thead>
         <tbody>
             {#for order in orders}
@@ -35,17 +35,19 @@
                 <td>{order.label ?: ''}</td>
                 <td>{order.customerAccountNumber ?: ''}</td>
                 <td>{inject:i18n.money(order.totalAmount)}</td>
-                <td>{inject:i18n.money(order.depositPaid)}</td>
+                <td>{inject:i18n.money(order.paid)}</td>
                 <td>{order.depositVatDisplay ?: '—'}</td>
                 <td>{inject:i18n.money(order.remaining())}</td>
                 <td>{inject:i18n.text(order.status.label)}</td>
                 <td>
                     {#if order.recallable}
+                    {#if order.depositAllowed}
                     <form method="post" action="/admin/orders/deposit" class="inline-form">
                         <input type="hidden" name="code" value="{order.code}">
                         <input class="input-control" type="text" name="amount" placeholder="{inject:i18n.get('t.acompte')}" size="6">
                         <button class="btn btn-muted" type="submit">{inject:i18n.get('t.acompte')}</button>
                     </form>
+                    {/if}
                     <form method="post" action="/admin/orders/cancel" class="inline-form">
                         <input type="hidden" name="code" value="{order.code}">
                         <button class="btn btn-muted" type="submit">{inject:i18n.get('t.annuler')}</button>

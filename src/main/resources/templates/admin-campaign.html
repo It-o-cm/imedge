@@ -29,23 +29,27 @@
     <h2 class="card-title">{inject:i18n.get('t.fiche')}</h2>
     <form method="post" action="/admin/campaigns/save">
         <input type="hidden" name="code" value="{campaign.code}">
-        <div class="form-row"><label>{inject:i18n.get('t.libelle')}</label><input class="input-control" name="label" value="{campaign.label ?: ''}"></div>
-        <div class="form-row"><label>{inject:i18n.get('t.debut-aaaa-mm-jj')}</label><input class="input-control" name="validFrom" type="date" value="{campaign.validFrom ?: ''}"></div>
-        <div class="form-row"><label>{inject:i18n.get('t.fin-exclue-aaaa-mm-jj')}</label><input class="input-control" name="validTo" type="date" value="{campaign.validTo ?: ''}"></div>
-        <div class="form-row"><label>{inject:i18n.get('t.plafond-montant')}</label><input class="input-control" name="maxAmount" value="{campaign.maxAmount ?: ''}"></div>
-        <div class="form-row"><label>{inject:i18n.get('t.plafond-applications')}</label><input class="input-control" name="maxApplications" value="{campaign.maxApplications ?: ''}"></div>
-        <div class="form-row"><label>{inject:i18n.get('t.par-pdv')}</label><input type="checkbox" name="perStore" {#if campaign.perStore}checked{/if}></div>
-        <div class="form-row"><label>{inject:i18n.get('t.notes')}</label><input class="input-control" name="notes" value="{campaign.notes ?: ''}"></div>
-        <div class="form-row"><label>{inject:i18n.get('t.etat')}</label><span>{inject:i18n.code('t.x21-campaign-', campaign.status)}</span></div>
-        <button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer')}</button>
+        <div class="field-grid">
+            <label class="field"><span class="field-label">{inject:i18n.get('t.libelle')}</span><input class="input-control" name="label" value="{campaign.label ?: ''}"></label>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.debut-aaaa-mm-jj')}</span><input class="input-control" name="validFrom" type="date" value="{campaign.validFrom ?: ''}"></label>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.fin-exclue-aaaa-mm-jj')}</span><input class="input-control" name="validTo" type="date" value="{campaign.validTo ?: ''}"></label>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.plafond-montant')}</span><input class="input-control" name="maxAmount" value="{campaign.maxAmount ?: ''}"></label>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.plafond-applications')}</span><input class="input-control" name="maxApplications" value="{campaign.maxApplications ?: ''}"></label>
+            <div class="field"><label class="field-check"><input type="checkbox" name="perStore" {#if campaign.perStore}checked{/if}> <span>{inject:i18n.get('t.par-pdv')}</span></label></div>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.notes')}</span><input class="input-control" name="notes" value="{campaign.notes ?: ''}"></label>
+            <div class="field"><span class="field-label">{inject:i18n.get('t.etat')}</span><span>{inject:i18n.code('t.x21-campaign-', campaign.status)}</span></div>
+        </div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer')}</button></div>
     </form>
 </div>
 
 <div class="card">
     <h2 class="card-title">{inject:i18n.get('t.consommation')}</h2>
     {#if status && status.available}
-    <div class="form-row"><label>{inject:i18n.get('t.montant-2')}</label><span>{inject:i18n.money(status.consumedAmount)} / {#if status.maxAmount != null}{inject:i18n.money(status.maxAmount)}{#else}∞{/if} {inject:i18n.get('t.reste')} {#if status.remainingAmount != null}{inject:i18n.money(status.remainingAmount)}{#else}∞{/if})</span></div>
-    <div class="form-row"><label>{inject:i18n.get('t.applications')}</label><span>{status.consumedCount} / {status.maxApplications ?: '∞'} {inject:i18n.get('t.reste-2')} {status.remainingCount ?: '∞'})</span></div>
+    <div class="field-grid">
+        <div class="field"><span class="field-label">{inject:i18n.get('t.montant-2')}</span><span>{inject:i18n.money(status.consumedAmount)} / {#if status.maxAmount != null}{inject:i18n.money(status.maxAmount)}{#else}∞{/if} {inject:i18n.get('t.reste')} {#if status.remainingAmount != null}{inject:i18n.money(status.remainingAmount)}{#else}∞{/if})</span></div>
+        <div class="field"><span class="field-label">{inject:i18n.get('t.applications')}</span><span>{status.consumedCount} / {status.maxApplications ?: '∞'} {inject:i18n.get('t.reste-2')} {status.remainingCount ?: '∞'})</span></div>
+    </div>
     <ul>
         {#for st in status.byStore}
         <li>{st.storeCode} : {inject:i18n.money(st.consumedAmount)} € / {st.consumedCount}</li>
@@ -74,12 +78,11 @@
     </ul>
     <form method="post" action="/admin/campaigns/offers">
         <input type="hidden" name="code" value="{campaign.code}">
-        <div class="form-row">
-            <label>{inject:i18n.get('t.rattacher-une-offre')}</label>
-            <input class="input-control" name="offerCode">
-            <input type="hidden" name="action" value="add">
-            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.rattacher')}</button>
+        <input type="hidden" name="action" value="add">
+        <div class="field-grid">
+            <label class="field"><span class="field-label">{inject:i18n.get('t.rattacher-une-offre')}</span><input class="input-control" name="offerCode"></label>
         </div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.rattacher')}</button></div>
     </form>
 </div>
 
@@ -87,9 +90,11 @@
     <h2 class="card-title">{inject:i18n.get('t.dupliquer')}</h2>
     <form method="post" action="/admin/campaigns/duplicate">
         <input type="hidden" name="code" value="{campaign.code}">
-        <div class="form-row"><label>{inject:i18n.get('t.nouveau-code')}</label><input class="input-control" name="newCode" required></div>
-        <div class="form-row"><label>{inject:i18n.get('t.dupliquer-aussi-les-offres')}</label><input type="checkbox" name="withOffers"></div>
-        <button class="btn btn-primary" type="submit">{inject:i18n.get('t.dupliquer')}</button>
+        <div class="field-grid">
+            <label class="field"><span class="field-label">{inject:i18n.get('t.nouveau-code')}</span><input class="input-control" name="newCode" required></label>
+            <div class="field"><label class="field-check"><input type="checkbox" name="withOffers"> <span>{inject:i18n.get('t.dupliquer-aussi-les-offres')}</span></label></div>
+        </div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.dupliquer')}</button></div>
     </form>
 </div>
 {#else}

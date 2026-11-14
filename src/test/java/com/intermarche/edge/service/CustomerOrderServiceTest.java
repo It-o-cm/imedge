@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockConstruction;
 import static org.mockito.Mockito.mockStatic;
@@ -373,6 +374,114 @@ class CustomerOrderServiceTest {
             assertSame(basket, service.recallByCustomer(" C9 ", OrderKind.SELF_SCAN));
             assertNull(service.recallByCustomer(null, OrderKind.SELF_SCAN));
             assertNull(service.recallByCustomer(" ", OrderKind.SELF_SCAN));
+        }
+    }
+
+    /**
+     * DG defect: a deposit is refused (409 upstream) on a document whose kind
+     * takes none and which states no deposit rule — a mobility transaction —
+     * and accepted on a kind that takes none when the document states an
+     * optional or a mandatory deposit.
+     */
+    @Test
+    void aDepositIsRefusedOnAKindThatTakesNone() {
+        CustomerOrderService service = new CustomerOrderService();
+        service.ticketStreamService = mock(com.intermarche.edge.service.sync.TicketStreamService.class);
+        CustomerOrder mobility = order(OrderKind.MOBILITY, OrderStatus.OPEN, "9.72");
+        assertFalse(service.recordTillDeposit(mobility, "0.2:2"));
+        assertEquals(OrderStatus.OPEN, mobility.status);
+        CustomerOrder optional = order(OrderKind.BON_VENTE, OrderStatus.OPEN, "10.00");
+        optional.depositRule = "OPTIONAL";
+        assertTrue(service.recordTillDeposit(optional, null));
+        CustomerOrder mandatory = order(OrderKind.BON_VENTE, OrderStatus.OPEN, "10.00");
+        mandatory.depositRule = "MANDATORY";
+        assertTrue(service.applyDeposit(mandatory, new BigDecimal("2.00")));
+        CustomerOrder none = order(OrderKind.BON_VENTE, OrderStatus.OPEN, "10.00");
+        none.depositRule = "NONE";
+        assertFalse(service.applyDeposit(none, new BigDecimal("2.00")));
+        org.mockito.Mockito.verifyNoInteractions(service.ticketStreamService);
+    }
+
+    /**
+     * DG-03-02-04: every status change of an e-commerce or mobility order is
+     * pushed to the platforms, never one of another kind; DG-03-02-01: the
+     * settling ticket is kept, a later push naming it completes an order
+     * settled without it, never overwrites it; what a device collected is
+     * not counted twice in the settling deposit.
+     */
+    @Test
+    void theStatusChangesArePushedAndTheTicketKept() {
+        CustomerOrderService service = org.mockito.Mockito.spy(new CustomerOrderService());
+        service.ticketStreamService = mock(com.intermarche.edge.service.sync.TicketStreamService.class);
+        com.intermarche.edge.domain.sale.EcommerceOrder integration = new com.intermarche.edge.domain.sale.EcommerceOrder();
+        integration.status = com.intermarche.edge.domain.sale.EcommerceOrder.Status.PENDING_PAYMENT;
+        org.mockito.Mockito.doReturn(integration).when(service).integration("CMD1");
+        CustomerOrder web = order(OrderKind.ECOMMERCE, OrderStatus.OPEN, "5.52");
+        web.payments.add(new CustomerOrder.OrderPayment("CARD", new BigDecimal("2.00")));
+        assertTrue(service.settleAtTill(web, " C04-000012 "));
+        assertEquals("C04-000012", web.settledTicketNumber);
+        assertEquals(new BigDecimal("3.52"), web.depositPaid);
+        assertEquals(OrderStatus.COLLECTED, web.status);
+        assertEquals(new BigDecimal("5.52"), web.getPaid());
+        org.mockito.Mockito.verify(service.ticketStreamService).onEcommerceOrderStatus(web);
+        assertEquals(com.intermarche.edge.domain.sale.EcommerceOrder.Status.SETTLED, integration.status);
+        assertEquals("C04-000012", integration.ticketNumber);
+        assertEquals("Commande réglée en caisse", integration.message);
+        assertTrue(service.settleAtTill(web, "C04-000099"));
+        assertEquals("C04-000012", web.settledTicketNumber);
+        CustomerOrder unnamed = order(OrderKind.MOBILITY, OrderStatus.PAID, "9.72");
+        assertTrue(service.settleAtTill(unnamed, " "));
+        assertNull(unnamed.settledTicketNumber);
+        assertTrue(service.settleAtTill(unnamed, "C04-000013"));
+        assertEquals("C04-000013", unnamed.settledTicketNumber);
+        CustomerOrder mobility = order(OrderKind.MOBILITY, OrderStatus.OPEN, "9.72");
+        mobility.payments.add(new CustomerOrder.OrderPayment("CARD", new BigDecimal("12.00")));
+        assertTrue(service.settleRemaining(mobility));
+        assertEquals(0, mobility.depositPaid.signum());
+        CustomerOrder paid = order(OrderKind.ECOMMERCE, OrderStatus.PAID, "1.00");
+        assertTrue(service.collect(paid));
+        CustomerOrder commande = order(OrderKind.COMMANDE, OrderStatus.OPEN, "10.00");
+        assertTrue(service.applyDeposit(commande, new BigDecimal("1.00")));
+        assertTrue(service.recordTillDeposit(commande, null));
+        org.mockito.Mockito.verify(service.ticketStreamService).onEcommerceOrderStatus(mobility);
+        org.mockito.Mockito.verify(service.ticketStreamService).onEcommerceOrderStatus(paid);
+        org.mockito.Mockito.verify(service.ticketStreamService, org.mockito.Mockito.never())
+                .onEcommerceOrderStatus(commande);
+    }
+
+    /**
+     * DG-03-01-05: only an e-commerce order the till settled marks its
+     * integration row settled — not an open or a cancelled one, not a row
+     * already integrated, not a missing row; a mobility order has no row to
+     * mark.
+     */
+    @Test
+    void onlyASettledOrderPaidShortIsMarkedSettled() {
+        CustomerOrderService service = org.mockito.Mockito.spy(new CustomerOrderService());
+        service.ticketStreamService = mock(com.intermarche.edge.service.sync.TicketStreamService.class);
+        com.intermarche.edge.domain.sale.EcommerceOrder integrated = new com.intermarche.edge.domain.sale.EcommerceOrder();
+        integrated.status = com.intermarche.edge.domain.sale.EcommerceOrder.Status.INTEGRATED;
+        org.mockito.Mockito.doReturn(integrated).when(service).integration("CMD1");
+        service.notifyStatus(order(OrderKind.ECOMMERCE, OrderStatus.PAID, "1.00"));
+        assertEquals(com.intermarche.edge.domain.sale.EcommerceOrder.Status.INTEGRATED, integrated.status);
+        org.mockito.Mockito.doReturn(null).when(service).integration("CMD1");
+        service.notifyStatus(order(OrderKind.ECOMMERCE, OrderStatus.COLLECTED, "1.00"));
+        service.notifyStatus(order(OrderKind.ECOMMERCE, OrderStatus.CANCELLED, "1.00"));
+        service.notifyStatus(order(OrderKind.ECOMMERCE, OrderStatus.OPEN, "1.00"));
+        service.notifyStatus(order(OrderKind.MOBILITY, OrderStatus.PAID, "1.00"));
+        org.mockito.Mockito.verify(service, org.mockito.Mockito.times(2)).integration("CMD1");
+        org.mockito.Mockito.verify(service.ticketStreamService, org.mockito.Mockito.times(5)).onEcommerceOrderStatus(any());
+    }
+
+    /**
+     * The integration row of an order is read by its reference.
+     */
+    @Test
+    void theIntegrationRowIsReadByReference() {
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            PanacheQuery<CustomerOrder> none = query(null);
+            ms.when(() -> PanacheEntityBase.find("reference", "W1")).thenReturn(none);
+            assertNull(new CustomerOrderService().integration("W1"));
         }
     }
 }

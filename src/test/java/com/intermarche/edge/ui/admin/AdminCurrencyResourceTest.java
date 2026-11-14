@@ -149,6 +149,22 @@ class AdminCurrencyResourceTest {
     }
 
     /**
+     * A missing label is refused with a notice before any lookup, rather than
+     * reaching the insert of a NOT NULL column (HTTP 500 in recette).
+     */
+    @Test
+    void saveRefusesAMissingLabel() {
+        AdminCurrencyResource resource = newResource();
+        Response blank = resource.saveCurrency(form("code", "USD", "euroPerUnit", "1,1", "label", " "));
+        assertEquals(303, blank.getStatus());
+        String location = java.net.URLDecoder.decode(blank.getLocation().toString(), java.nio.charset.StandardCharsets.UTF_8);
+        assertTrue(location.contains("noticeOk=false"));
+        assertTrue(location.contains("Le libellé de la devise est obligatoire."));
+        assertTrue(resource.saveCurrency(form("code", "USD", "euroPerUnit", "1,1"))
+                .getLocation().toString().contains("noticeOk=false"));
+    }
+
+    /**
      * An absent code inserts the currency, upper-casing the code and keeping the
      * full-precision rate (the franc, 6,55957).
      */

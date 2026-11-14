@@ -204,6 +204,8 @@ public final class SyncPayloads {
         public String resumedTerminalId;
         /** When the cashier went to payment (BO-06-06-02), or null. */
         public String paymentStartedAt;
+        /** The codes of the recalled orders the sale settled (DG-03-02-01, -03), empty when none. */
+        public List<String> recalledOrderCodes = new ArrayList<>();
         /** The per-line valuation trace: the promotions each line took (BO-06-08-02). */
         public List<ValuationDto> valuations = new ArrayList<>();
         public List<LineDto> lines = new ArrayList<>();

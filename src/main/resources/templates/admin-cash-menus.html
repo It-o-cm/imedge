@@ -1,0 +1,131 @@
+{! Cash menu models (BO-03-10-16/17): the library of the named menus a
+ ! register draws, assigned on the point, the island or an echelon through
+ ! the menu.code parameter. !}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.k19-menus-caisse')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.k19-menus-caisse')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.k19-menus-sous-titre')}</p>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.k19-menus-caisse')} ({menus.size()})</h2>
+    {#if menus.isEmpty()}
+    <p class="page-sub">{inject:i18n.get('t.k19-aucun-menu')}</p>
+    {#else}
+    <table class="data-table">
+        <thead><tr><th>{inject:i18n.get('t.code')}</th><th>{inject:i18n.get('t.libelle')}</th><th>{inject:i18n.get('t.actif')}</th><th class="col-actions">{inject:i18n.get('t.actions')}</th></tr></thead>
+        <tbody>
+        {#for menu in menus}
+        <tr>
+            <td>{menu.code}</td>
+            <td>{menu.label}</td>
+            <td>{#if menu.active}✓{#else}—{/if}</td>
+            <td class="col-actions">
+                <a class="btn btn-small" href="/admin/cash-menus?code={menu.code}">{inject:i18n.get('t.k19-modifier')}</a>
+                <form method="post" action="/admin/cash-menus/delete" style="display:inline;">
+                    <input type="hidden" name="code" value="{menu.code}">
+                    <button class="btn btn-small btn-danger" type="submit">{inject:i18n.get('t.supprimer')}</button>
+                </form>
+            </td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+
+<div class="card">
+    <h2 class="card-title">{#if editing}{inject:i18n.get('t.k19-modifier-le-menu')} {editing.code}{#else}{inject:i18n.get('t.k19-nouveau-menu')}{/if}</h2>
+    <form method="post" action="/admin/cash-menus/save" class="field-grid">
+        <div class="field">
+            <label class="field-label" for="m-code">{inject:i18n.get('t.code')}</label>
+            <input class="input-control" id="m-code" type="text" name="code" maxlength="40" required value="{#if editing}{editing.code}{/if}">
+        </div>
+        <div class="field">
+            <label class="field-label" for="m-label">{inject:i18n.get('t.libelle')}</label>
+            <input class="input-control" id="m-label" type="text" name="label" maxlength="100" required value="{#if editing}{editing.label}{/if}">
+        </div>
+        <div class="field">
+            <label class="field-check"><input id="m-active" type="checkbox" name="active" {#if !editing || editing.active}checked{/if}> <span>{inject:i18n.get('t.actif')}</span></label>
+        </div>
+        <div class="field">
+            <label class="field-label" for="m-columns">{inject:i18n.get('t.k19-colonnes-de-touches')}</label>
+            <input class="input-control" id="m-columns" type="number" name="keyColumns" min="0" max="4" value="{#if editing}{editing.keyColumns}{#else}0{/if}">
+            <span class="field-hint">{inject:i18n.get('t.k19-colonnes-aide')}</span>
+        </div>
+        <div class="field">
+            <label class="field-label" for="m-cashier">{inject:i18n.get('t.k19-ecran-hotesse')}</label>
+            <select class="input-control" id="m-cashier" name="cashierScreen">
+                {#for model in cashierScreens}
+                <option value="{model}" {#if editing && editing.cashierScreen == model}selected{/if}>{model}</option>
+                {/for}
+            </select>
+            <span class="field-hint">{inject:i18n.get('t.k19-ecran-hotesse-aide')}</span>
+        </div>
+        <div class="field">
+            <label class="field-label" for="m-customer">{inject:i18n.get('t.k19-ecran-client')}</label>
+            <select class="input-control" id="m-customer" name="customerScreen">
+                {#for model in customerScreens}
+                <option value="{model}" {#if editing && editing.customerScreen == model}selected{/if}>{model}</option>
+                {/for}
+            </select>
+            <span class="field-hint">{inject:i18n.get('t.k19-ecran-client-aide')}</span>
+        </div>
+        <div class="field">
+            <label class="field-label" for="m-ticket">{inject:i18n.get('t.k19-ticket-virtuel')}</label>
+            <select class="input-control" id="m-ticket" name="ticketModel">
+                {#for model in ticketModels}
+                <option value="{model}" {#if editing && editing.ticketModel == model}selected{/if}>{model}</option>
+                {/for}
+            </select>
+            <span class="field-hint">{inject:i18n.get('t.k19-ticket-virtuel-aide')}</span>
+        </div>
+        {! THE KEY LAYOUT: the tabs of the bar and the keys of each, their order,
+         ! colours and labels per language, arranged on a drawing of the register. !}
+        <div class="ml-editor" id="menuLayoutEditor">
+            <div class="ml-head">
+                <span class="field-label">{inject:i18n.get('t.k19-ml-titre')}</span>
+                <span class="ml-langs" role="group" aria-label="{inject:i18n.get('t.k19-ml-langue')}">
+                    <button type="button" class="ml-lang-choice ml-on" data-lang="fr">FR</button><button type="button" class="ml-lang-choice" data-lang="nl">NL</button><button type="button" class="ml-lang-choice" data-lang="pt">PT</button>
+                </span>
+                <span class="ml-add-slot"></span>
+                <button type="button" class="btn btn-small btn-ghost ml-reset">{inject:i18n.get('t.k19-ml-standard')}</button>
+            </div>
+            <div class="ml-register">
+                <div class="ml-grid"></div>
+                <div class="ml-bar"></div>
+            </div>
+            <div class="ml-pool">
+                <input class="input-control ml-filter" type="search" placeholder="{inject:i18n.get('t.k19-ml-chercher')}" aria-label="{inject:i18n.get('t.k19-ml-chercher')}">
+                <ul class="ml-pool-list"></ul>
+            </div>
+            <div class="ml-props"></div>
+            <input type="hidden" name="layout" value="">
+        </div>
+        <script type="application/json" id="menuLayoutData">{layoutData.raw}</script>
+        <div class="field ml-hidden-field">
+            <span class="field-label">{inject:i18n.get('t.k19-fonctions-masquees')}</span>
+            <div class="ml-hidden-list">
+            {#for function in functions}
+            <label class="field-check"><input type="checkbox" name="hidden" value="{function}" {#if hidden.contains(function)}checked{/if}> <span>{inject:i18n.text(function.label)}</span></label>
+            {/for}
+            </div>
+        </div>
+        <div class="page-actions ml-form-actions">
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer')}</button>
+            <a class="btn btn-ghost" href="/admin/cash-menus">{inject:i18n.get('t.k19-nouveau-menu')}</a>
+        </div>
+    </form>
+</div>
+<script src="/admin-assets/menu-layout.js"></script>
+{/body}

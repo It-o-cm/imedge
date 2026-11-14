@@ -1,0 +1,157 @@
+{!
+ ! Electronic journal regrouped by adhérent (BO-02-05-05), on the central node.
+ ! The form is GET so the criteria live in the URL and the pager keeps them
+ ! (`baseQuery` is the criteria minus the page, ending with '&'). `tickets` is
+ ! one PAGE of AdherentJournalRow plus the total count. `central` is false on
+ ! a store node, which receives no other point of sale's tickets. Read screen,
+ ! no POST. Renders inside the admin gabarit.
+!}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.q2-journal-par-adherent')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.q2-journal-par-adherent')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.q2-sous-titre')}</p>
+    </div>
+</div>
+
+{#if !central}
+<div class="card">
+    <p class="col-muted">{inject:i18n.get('t.q2-pas-central')}</p>
+</div>
+{/if}
+
+<form method="get" action="/admin/adherent-journal" class="card journal-form">
+    <div class="field-grid">
+        <div class="field">
+            <label class="field-label" for="f-adherent">{inject:i18n.get('t.q2-adherent')}</label>
+            <select class="input-control" id="f-adherent" name="adherent">
+                <option value="">{inject:i18n.get('t.q2-tous-les-adherents')}</option>
+                {#for code in adherents}
+                <option value="{code}" {#if criteria.adherent == code}selected{/if}>{code}</option>
+                {/for}
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-label" for="f-country">{inject:i18n.get('t.pays')}</label>
+            <select class="input-control" id="f-country" name="country">
+                <option value="">{inject:i18n.get('t.tous')}</option>
+                {#for country in countries}
+                <option value="{country.code}" {#if criteria.country == country.code}selected{/if}>{country.code} — {country.name}</option>
+                {/for}
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-label" for="f-enseigne">{inject:i18n.get('t.q2-enseigne')}</label>
+            <select class="input-control" id="f-enseigne" name="enseigne">
+                <option value="">{inject:i18n.get('t.toutes')}</option>
+                {#for enseigne in enseignes}
+                <option value="{enseigne.code}" {#if criteria.enseigne == enseigne.code}selected{/if}>{enseigne.code} — {enseigne.name}</option>
+                {/for}
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-label" for="f-pdv">{inject:i18n.get('t.point-de-vente')}</label>
+            <select class="input-control" id="f-pdv" name="pdv">
+                <option value="">{inject:i18n.get('t.tous')}</option>
+                {#for pdv in pdvs}
+                <option value="{pdv.pdvNumber}" {#if criteria.pdv == pdv.pdvNumber}selected{/if}>{pdv.pdvNumber} — {pdv.name}{#if pdv.adherentCode} ({pdv.adherentCode}){/if}</option>
+                {/for}
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-label" for="f-date-from">{inject:i18n.get('t.periode-du-au')}</label>
+            <div class="journal-range">
+                <input class="input-control" id="f-date-from" type="date" name="dateFrom" value="{criteria.dateFrom ?: ''}">
+                <input class="input-control" type="date" name="dateTo" value="{criteria.dateTo ?: ''}">
+            </div>
+        </div>
+        <div class="field">
+            <label class="field-label" for="f-terminal">{inject:i18n.get('t.n-tpv')}</label>
+            <input class="input-control" id="f-terminal" type="text" name="terminal" value="{criteria.terminal ?: ''}" maxlength="20">
+        </div>
+        <div class="field">
+            <label class="field-label" for="f-ticket">{inject:i18n.get('t.q2-n-ticket-contient')}</label>
+            <input class="input-control" id="f-ticket" type="text" name="ticket" value="{criteria.ticket ?: ''}" maxlength="30">
+        </div>
+        <div class="field">
+            <label class="field-label" for="f-amount-min">{inject:i18n.get('t.montant-de-a')}</label>
+            <div class="journal-range">
+                <input class="input-control" id="f-amount-min" type="text" name="amountMin" value="{criteria.amountMin ?: ''}">
+                <input class="input-control" type="text" name="amountMax" value="{criteria.amountMax ?: ''}">
+            </div>
+        </div>
+        <div class="field">
+            <label class="field-label" for="f-kind">{inject:i18n.get('t.type')}</label>
+            <select class="input-control" id="f-kind" name="kind">
+                <option value="">{inject:i18n.get('t.tous')}</option>
+                {#for kind in kinds}
+                <option value="{kind}" {#if criteria.kind == kind}selected{/if}>{inject:i18n.code('t.q2-kind-', kind)}</option>
+                {/for}
+            </select>
+        </div>
+        <div class="filter-actions">
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.rechercher')}</button>
+        </div>
+    </div>
+</form>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.resultats')}{tickets.total})</h2>
+    {#if tickets.empty}
+    <p class="col-muted">{inject:i18n.get('t.aucun-ticket-ne-correspond-aux-criteres')}</p>
+    {#else}
+    <p class="journal-count">{inject:i18n.get('t.tickets')} {tickets.firstIndex}–{tickets.lastIndex} {inject:i18n.get('t.sur')} {tickets.total}</p>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>{inject:i18n.get('t.q2-adherent')} / {inject:i18n.get('t.point-de-vente')}</th>
+                <th>{inject:i18n.get('t.n-tpv')}</th>
+                <th>{inject:i18n.get('t.n-transaction')}</th>
+                <th>{inject:i18n.get('t.n-caissiere')}</th>
+                <th>{inject:i18n.get('t.date')}</th>
+                <th>{inject:i18n.get('t.montant-2')}</th>
+                <th>{inject:i18n.get('t.nb-articles')}</th>
+                <th>{inject:i18n.get('t.type')}</th>
+                <th class="col-actions">{inject:i18n.get('t.detail')}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {#for row in tickets.rows}
+            <tr>
+                <td><strong>{row.adherent}</strong> · {row.pdv}{#if row.pdvName}<br><span class="col-muted">{inject:i18n.text(row.pdvName)}</span>{/if}</td>
+                <td>{row.terminal}</td>
+                <td class="cell-wrap">{row.number}</td>
+                <td>{row.cashier}</td>
+                <td>{row.date}<br>{row.time}</td>
+                <td>{row.amount}</td>
+                <td>{row.itemCount}</td>
+                <td>{inject:i18n.code('t.q2-kind-', row.kind)}</td>
+                <td class="col-actions"><a class="btn btn-small" href="/admin/adherent-journal/{row.id}">{inject:i18n.get('t.ouvrir')}</a></td>
+            </tr>
+            {/for}
+        </tbody>
+    </table>
+    {#if tickets.pageCount > 1}
+    <nav class="journal-pager">
+        {#if tickets.first}
+        <span class="btn btn-small is-disabled">{inject:i18n.get('t.precedent')}</span>
+        {#else}
+        <a class="btn btn-small" href="/admin/adherent-journal?{baseQuery}page={tickets.previous}">{inject:i18n.get('t.precedent')}</a>
+        {/if}
+        <span class="journal-pager-pos">{inject:i18n.get('t.page')} {tickets.number} / {tickets.pageCount}</span>
+        {#if tickets.last}
+        <span class="btn btn-small is-disabled">{inject:i18n.get('t.suivant')}</span>
+        {#else}
+        <a class="btn btn-small" href="/admin/adherent-journal?{baseQuery}page={tickets.next}">{inject:i18n.get('t.suivant')}</a>
+        {/if}
+    </nav>
+    {/if}
+    {/if}
+</div>
+{/body}
+
+{#footer}{inject:i18n.get('t.q2-pied')}{/footer}

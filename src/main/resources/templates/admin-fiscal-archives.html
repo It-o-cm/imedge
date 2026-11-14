@@ -1,0 +1,70 @@
+{!
+ ! Back-office FISCAL ARCHIVES (BO-05-01-01): the article-88 archives
+ ! TaxAuditExtracts_XXXXX_yyyymmdd.zip and TaxAuditReports_XXXXX_yyyymmdd.zip
+ ! of the point of sale, at the disposal of its management controller, with
+ ! their SHA-256 fingerprint; a period is produced on demand.
+!}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.u-archives-fiscales')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.u-archives-fiscales')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.u-archives-fiscales-aide')}</p>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.u-produire-les-archives')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.u-point-de-vente')} <strong>{pdv}</strong> — {#if automatic}{inject:i18n.get('t.u-archivage-auto-actif')}{#else}{inject:i18n.get('t.u-archivage-auto-inactif')}{/if}</p>
+    <form method="post" action="/admin/fiscal/archives/generate">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="a-from">{inject:i18n.get('t.du')}</label>
+                <input class="input-control" id="a-from" type="date" name="from" value="{from}" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="a-to">{inject:i18n.get('t.au')}</label>
+                <input class="input-control" id="a-to" type="date" name="to" value="{to}" required>
+            </div>
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.u-produire-les-archives')}</button>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.u-archives-disponibles')}</h2>
+    {#if archives.isEmpty()}
+    <div class="empty-state"><p>{inject:i18n.get('t.u-aucune-archive')}</p></div>
+    {#else}
+    <div class="table-scroll">
+    <table class="data-table">
+        <thead>
+        <tr><th>{inject:i18n.get('t.u-fichier')}</th><th>{inject:i18n.get('t.u-periode-couverte')}</th><th>{inject:i18n.get('t.u-produite-le')}</th><th>{inject:i18n.get('t.u-par')}</th><th>{inject:i18n.get('t.u-taille')}</th><th>SHA-256</th><th></th></tr>
+        </thead>
+        <tbody>
+        {#for archive in archives}
+        <tr>
+            <td class="link-strong">{archive.fileName}</td>
+            <td class="col-muted cell-keep">{archive.periodFrom.format('dd/MM/yyyy')} → {archive.periodTo.format('dd/MM/yyyy')}</td>
+            <td class="col-muted cell-keep">{archive.generatedAt.format('dd/MM/yyyy HH:mm')}</td>
+            <td class="col-muted">{inject:i18n.text(archive.generatedBy)}</td>
+            <td class="col-muted">{archive.sizeKb} Ko</td>
+            <td class="col-muted cell-wrap">{archive.sha256}</td>
+            <td><a class="btn btn-small btn-ghost" href="/admin/fiscal/archives/download?id={archive.id}">{inject:i18n.get('t.u-telecharger')}</a></td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+    </div>
+    {/if}
+</div>
+{/body}

@@ -1,0 +1,113 @@
+{!
+ ! Back-office ELECTRONIC SHELF LABEL providers (BO-02-03-37/38): the EEG
+ ! providers of the point of sale and their connector. The flow is subject to
+ ! the eeg.enabled parameter, whose state is shown. POST -> 303 -> notice.
+!}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.p20-etiquettes-electroniques')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.p20-etiquettes-electroniques')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.p20-fournisseurs-d-eeg-du-point-de-vente')}</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-ghost" href="/admin/articles">{inject:i18n.get('t.retour-aux-articles')}</a>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
+{/if}
+
+<div class="card">
+    {#if enabled}
+    <p><span class="badge badge-ok">{inject:i18n.get('t.p20-flux-eeg-actif')}</span></p>
+    {#else}
+    <p><span class="badge badge-off">{inject:i18n.get('t.p20-flux-eeg-inactif')}</span> {inject:i18n.get('t.p20-activez-le-parametre')} <a class="link-strong" href="/admin/settings">{inject:i18n.get('t.p20-flux-etiquettes-electroniques')}</a>.</p>
+    {/if}
+</div>
+
+<div class="card">
+    <h2 class="card-title">{#if edited}{inject:i18n.get('t.p20-modifier-le-fournisseur')}{#else}{inject:i18n.get('t.p20-nouveau-fournisseur')}{/if}</h2>
+    <form method="post" action="/admin/eeg-providers/save">
+        {#if edited}<input type="hidden" name="id" value="{edited.id}">{/if}
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="e-code">{inject:i18n.get('t.code')}</label>
+                <input class="input-control" id="e-code" type="text" name="code" maxlength="30" required value="{#if edited}{edited.code}{/if}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="e-label">{inject:i18n.get('t.libelle')}</label>
+                <input class="input-control" id="e-label" type="text" name="label" maxlength="80" required value="{#if edited}{edited.label}{/if}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="e-kind">{inject:i18n.get('t.p20-connecteur')}</label>
+                <select class="input-control" id="e-kind" name="kind">
+                    {#for kind in kinds}
+                    <option value="{kind}" {#if edited && edited.kind == kind}selected{/if}>{#if kind == 'HTTP'}{inject:i18n.get('t.ra20-eeg-kind-http')}{#else}{inject:i18n.get('t.ra20-eeg-kind-simulated')}{/if}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="e-url">{inject:i18n.get('t.p20-adresse-de-l-api')}</label>
+                <input class="input-control" id="e-url" type="text" name="baseUrl" maxlength="255" placeholder="https://" value="{#if edited}{edited.baseUrl ?: ''}{/if}">
+            </div>
+            {#if edited}
+            <div class="field">
+                <label class="field-check"><input type="checkbox" name="active" {#if edited.active}checked{/if}> <span>{inject:i18n.get('t.actif')}</span></label>
+            </div>
+            {/if}
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer')}</button>
+            {#if edited}<a class="btn btn-ghost" href="/admin/eeg-providers">{inject:i18n.get('t.annuler')}</a>{/if}
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    {#if providers.isEmpty()}
+    <div class="empty-state">
+        <p>{inject:i18n.get('t.p20-aucun-fournisseur-d-eeg')}</p>
+    </div>
+    {#else}
+    <div style="overflow-x: auto;">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>{inject:i18n.get('t.code')}</th>
+                <th>{inject:i18n.get('t.libelle')}</th>
+                <th>{inject:i18n.get('t.p20-connecteur')}</th>
+                <th>{inject:i18n.get('t.p20-adresse-de-l-api')}</th>
+                <th>{inject:i18n.get('t.statut')}</th>
+                <th class="col-actions">{inject:i18n.get('t.actions')}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {#for provider in providers}
+            <tr>
+                <td class="link-strong">{provider.code}</td>
+                <td>{provider.label}</td>
+                <td>{#if provider.kind == 'HTTP'}{inject:i18n.get('t.ra20-eeg-kind-http')}{#else}{inject:i18n.get('t.ra20-eeg-kind-simulated')}{/if}</td>
+                <td class="col-muted">{provider.baseUrl ?: '—'}</td>
+                <td>{#if provider.active}<span class="badge badge-ok">{inject:i18n.get('t.actif')}</span>{#else}<span class="badge badge-off">{inject:i18n.get('t.desactive')}</span>{/if}</td>
+                <td class="col-actions">
+                    <a class="btn btn-small btn-ghost" href="/admin/eeg-providers?edit={provider.id}">{inject:i18n.get('t.modifier')}</a>
+                    <form method="post" action="/admin/eeg-providers/delete" style="display:inline">
+                        <input type="hidden" name="id" value="{provider.id}">
+                        <button class="btn btn-small btn-danger" type="submit">{inject:i18n.get('t.supprimer')}</button>
+                    </form>
+                </td>
+            </tr>
+            {/for}
+        </tbody>
+    </table>
+    </div>
+    {/if}
+</div>
+{/body}
+
+{#footer}{inject:i18n.get('t.p20-les-prix-sont-envoyes-depuis-la-liste')}{/footer}

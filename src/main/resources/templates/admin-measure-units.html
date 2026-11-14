@@ -1,0 +1,108 @@
+{!
+ ! Back-office UNITS OF MEASURE (BO-02-03-17): the codes the Gestion
+ ! Commerciale writes on an article, with the label read here and the symbol
+ ! the documents print. The top form creates a unit, or edits the one named
+ ! by ?edit=; saving a symbol re-labels the articles carrying the code.
+ ! POST -> 303 -> notice.
+!}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.p20-unites-de-mesure')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.p20-unites-de-mesure')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.p20-codes-d-unite-integres-avec-les-articles')}</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-ghost" href="/admin/articles">{inject:i18n.get('t.retour-aux-articles')}</a>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">{#if edited}{inject:i18n.get('t.p20-modifier-l-unite')}{#else}{inject:i18n.get('t.p20-nouvelle-unite')}{/if}</h2>
+    <form method="post" action="/admin/measure-units/save">
+        {#if edited}<input type="hidden" name="id" value="{edited.id}">{/if}
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="u-code">{inject:i18n.get('t.code')}</label>
+                <input class="input-control" id="u-code" type="text" name="code" maxlength="2" required value="{#if edited}{edited.code}{/if}">
+                <span class="field-hint">{inject:i18n.get('t.p20-un-ou-deux-caracteres')}</span>
+            </div>
+            <div class="field">
+                <label class="field-label" for="u-label">{inject:i18n.get('t.libelle')}</label>
+                <input class="input-control" id="u-label" type="text" name="label" maxlength="40" required value="{#if edited}{edited.label}{/if}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="u-symbol">{inject:i18n.get('t.p20-symbole-imprime')}</label>
+                <input class="input-control" id="u-symbol" type="text" name="symbol" maxlength="20" required value="{#if edited}{edited.symbol}{/if}">
+            </div>
+            <div class="field">
+                <label class="field-check"><input type="checkbox" name="decimalAllowed" {#if edited && edited.decimalAllowed}checked{/if}> <span>{inject:i18n.get('t.p20-quantite-decimale-autorisee')}</span></label>
+            </div>
+            {#if edited}
+            <div class="field">
+                <label class="field-check"><input type="checkbox" name="active" {#if edited.active}checked{/if}> <span>{inject:i18n.get('t.actif')}</span></label>
+            </div>
+            {/if}
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer')}</button>
+            {#if edited}<a class="btn btn-ghost" href="/admin/measure-units">{inject:i18n.get('t.annuler')}</a>{/if}
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    {#if units.isEmpty()}
+    <div class="empty-state">
+        <p>{inject:i18n.get('t.p20-aucune-unite-de-mesure-declaree')}</p>
+        <form method="post" action="/admin/measure-units/standard">
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.p20-charger-les-unites-standard')}</button>
+        </form>
+    </div>
+    {#else}
+    <p class="page-sub">{units.size} / {maxUnits}</p>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>{inject:i18n.get('t.code')}</th>
+                <th>{inject:i18n.get('t.libelle')}</th>
+                <th>{inject:i18n.get('t.p20-symbole-imprime')}</th>
+                <th>{inject:i18n.get('t.p20-decimales')}</th>
+                <th>{inject:i18n.get('t.statut')}</th>
+                <th class="col-actions">{inject:i18n.get('t.actions')}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {#for unit in units}
+            <tr>
+                <td class="link-strong">{unit.code}</td>
+                <td>{unit.label}</td>
+                <td>{unit.symbol}</td>
+                <td>{#if unit.decimalAllowed}{inject:i18n.get('t.oui')}{#else}{inject:i18n.get('t.non')}{/if}</td>
+                <td>{#if unit.active}<span class="badge badge-ok">{inject:i18n.get('t.actif')}</span>{#else}<span class="badge badge-off">{inject:i18n.get('t.desactive')}</span>{/if}</td>
+                <td class="col-actions">
+                    <a class="btn btn-small btn-ghost" href="/admin/measure-units?edit={unit.id}">{inject:i18n.get('t.modifier')}</a>
+                    <form method="post" action="/admin/measure-units/delete" style="display:inline">
+                        <input type="hidden" name="id" value="{unit.id}">
+                        <button class="btn btn-small btn-danger" type="submit">{inject:i18n.get('t.supprimer')}</button>
+                    </form>
+                </td>
+            </tr>
+            {/for}
+        </tbody>
+    </table>
+    <form method="post" action="/admin/measure-units/standard" style="margin-top: 8px;">
+        <button class="btn btn-ghost" type="submit">{inject:i18n.get('t.p20-charger-les-unites-standard')}</button>
+    </form>
+    {/if}
+</div>
+{/body}
+
+{#footer}{inject:i18n.get('t.p20-le-symbole-voyage-avec-l-article')}{/footer}

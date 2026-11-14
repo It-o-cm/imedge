@@ -185,8 +185,7 @@
         </div>
         {/if}
         <div class="field">
-            <label class="field-label" for="r-inactive">{inject:i18n.get('t.k19-inclure-caisses-desactivees')}</label>
-            <input id="r-inactive" type="checkbox" name="inactive" value="true" {#if criteria.includeInactive}checked{/if}>
+            <label class="field-check"><input id="r-inactive" type="checkbox" name="inactive" value="true" {#if criteria.includeInactive}checked{/if}> <span>{inject:i18n.get('t.k19-inclure-caisses-desactivees')}</span></label>
         </div>
     </div>
     <div class="filter-actions">

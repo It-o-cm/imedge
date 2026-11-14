@@ -230,4 +230,61 @@ class RegisterCommandServiceTest {
             assertFalse(service.isPending("POS07", RegisterCommand.CommandType.PURGE_PARKED_TICKETS));
         }
     }
+
+    /**
+     * LS-04-03-13: an answer to a request is written with the request it
+     * answers, every mandatory column set before persist; one for the same
+     * request already waiting is handed back; an answer naming no request falls
+     * back on the per-kind order.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void answerIsTiedToItsRequest() {
+        RegisterCommand existing = mock(RegisterCommand.class);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
+             MockedConstruction<RegisterCommand> construction = mockConstruction(RegisterCommand.class)) {
+            PanacheQuery<RegisterCommand> none = mock(PanacheQuery.class);
+            PanacheQuery<RegisterCommand> waiting = mock(PanacheQuery.class);
+            when(waiting.firstResult()).thenReturn(existing);
+            String query = "terminalId = ?1 and commandType = ?2 and requestRef = ?3 and consumedAt is null";
+            panache.when(() -> RegisterCommand.find(query, "POS07",
+                    RegisterCommand.CommandType.SUPERVISOR_GRANTED, "req-B")).thenReturn(none);
+            panache.when(() -> RegisterCommand.find(query, "POS07",
+                    RegisterCommand.CommandType.SUPERVISOR_GRANTED, "req-A")).thenReturn(waiting);
+            RegisterCommand fresh = service.answer("POS07", RegisterCommand.CommandType.SUPERVISOR_GRANTED,
+                    "Marie Curie", "Marie Curie", "req-B");
+            assertSame(construction.constructed().get(0), fresh);
+            assertEquals("req-B", fresh.requestRef);
+            assertEquals("POS07", fresh.terminalId);
+            assertEquals(RegisterCommand.CommandType.SUPERVISOR_GRANTED, fresh.commandType);
+            assertEquals("Marie Curie", fresh.issuedBy);
+            assertNotNull(fresh.commandUid);
+            verify(fresh).persist();
+            assertSame(existing, service.answer("POS07", RegisterCommand.CommandType.SUPERVISOR_GRANTED,
+                    "Marie Curie", "Marie Curie", "req-A"));
+            stubPendingOfKind(panache, existing);
+            assertSame(existing, service.answer("POS07", RegisterCommand.CommandType.CLOSE_SESSION,
+                    "Marie Curie", "fin", null));
+            assertEquals(1, construction.constructed().size());
+        }
+    }
+
+    /**
+     * LS-04-03-13: withdrawing a request deletes the answers still waiting for
+     * it — the authorisations and refusals of that request only, or of every
+     * request of the lane when the withdrawal names none.
+     */
+    @Test
+    void withdrawAnswersDropsThePendingAnswers() {
+        String answers = "terminalId = ?1 and consumedAt is null and commandType in ?2";
+        List<RegisterCommand.CommandType> kinds = List.of(RegisterCommand.CommandType.SUPERVISOR_GRANTED,
+                RegisterCommand.CommandType.SUPERVISOR_REFUSED);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class)) {
+            panache.when(() -> RegisterCommand.delete(answers + " and requestRef = ?3", "POS07", kinds, "req-A"))
+                    .thenReturn(1L);
+            panache.when(() -> RegisterCommand.delete(answers, "POS07", kinds)).thenReturn(2L);
+            assertEquals(1L, service.withdrawAnswers("POS07", "req-A"));
+            assertEquals(2L, service.withdrawAnswers("POS07", null));
+        }
+    }
 }

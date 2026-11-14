@@ -113,7 +113,7 @@
             </div>
             <div class="field">
                 <span class="field-label">{inject:i18n.get('t.r21v-jours-d-activation')}</span>
-                <span class="survey-days">{#for d in dayNumbers}<label><input type="checkbox" name="day" value="{d}"> {inject:i18n.code('t.r21v-jour-', d)}</label> {/for}</span>
+                <span class="field-checks">{#for d in dayNumbers}<label class="field-check"><input type="checkbox" name="day" value="{d}"> <span>{inject:i18n.code('t.r21v-jour-', d)}</span></label> {/for}</span>
                 <span class="field-hint">{inject:i18n.get('t.r21v-aucun-jour-tous-les-jours')}</span>
             </div>
             <div class="field">
@@ -125,8 +125,7 @@
                 <input class="input-control" id="m-daily-to" type="time" name="dailyTo">
             </div>
             <div class="field">
-                <label class="field-label" for="m-active">{inject:i18n.get('t.actif')}</label>
-                <input id="m-active" type="checkbox" name="active" checked>
+                <label class="field-check"><input id="m-active" type="checkbox" name="active" checked> <span>{inject:i18n.get('t.actif')}</span></label>
             </div>
         </div>
         <div class="page-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer-le-message')}</button></div>
@@ -222,7 +221,7 @@
             </div>
             <div class="field">
                 <span class="field-label">{inject:i18n.get('t.r21v-jours-d-activation')}</span>
-                <span class="survey-days">{#for d in dayNumbers}<label><input type="checkbox" name="day" value="{d}" {#if row.message.days.contains(d)}checked{/if}> {inject:i18n.code('t.r21v-jour-', d)}</label> {/for}</span>
+                <span class="field-checks">{#for d in dayNumbers}<label class="field-check"><input type="checkbox" name="day" value="{d}" {#if row.message.days.contains(d)}checked{/if}> <span>{inject:i18n.code('t.r21v-jour-', d)}</span></label> {/for}</span>
             </div>
             <div class="field">
                 <label class="field-label" for="e-daily-from-{row.message.id}">{inject:i18n.get('t.r21v-heure-de-debut')}</label>
@@ -233,8 +232,7 @@
                 <input class="input-control" id="e-daily-to-{row.message.id}" type="time" name="dailyTo" value="{row.message.dailyTo ?: ''}">
             </div>
             <div class="field">
-                <label class="field-label" for="e-active-{row.message.id}">{inject:i18n.get('t.actif')}</label>
-                <input id="e-active-{row.message.id}" type="checkbox" name="active" {#if row.message.active}checked{/if}>
+                <label class="field-check"><input id="e-active-{row.message.id}" type="checkbox" name="active" {#if row.message.active}checked{/if}> <span>{inject:i18n.get('t.actif')}</span></label>
             </div>
         </div>
         <div class="page-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer')}</button></div>

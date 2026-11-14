@@ -84,7 +84,7 @@ class CampaignFeedProjectorTest {
             stubOrdered(panache, List.of(populated(), bare()));
             String content = projector.render();
             assertEquals(CampaignFeedProjector.HEADER
-                    + "\nA|2026-01-01|2026-02-01|100.00|50|true"
+                    + "\nA|2026-01-01T00:00:00|2026-02-01T23:59:59|100.00|50|true"
                     + "\nB|||||false", content);
         }
     }
@@ -114,7 +114,7 @@ class CampaignFeedProjectorTest {
             String version = projector.project();
             assertEquals("v1", version);
             verify(projector.engineFeedService).store("BUDGET_GROUPS",
-                    CampaignFeedProjector.HEADER + "\nA|2026-01-01|2026-02-01|100.00|50|true");
+                    CampaignFeedProjector.HEADER + "\nA|2026-01-01T00:00:00|2026-02-01T23:59:59|100.00|50|true");
         }
     }
 }

@@ -77,8 +77,7 @@
                 <input class="input-control" id="p-template" type="text" name="documentTemplateCode" maxlength="30">
             </div>
             <div class="field">
-                <label class="field-label" for="p-active">{inject:i18n.get('t.en-service')}</label>
-                <input id="p-active" type="checkbox" name="active" checked>
+                <label class="field-check"><input id="p-active" type="checkbox" name="active" checked> <span>{inject:i18n.get('t.en-service')}</span></label>
             </div>
         </div>
         <div class="page-actions" style="margin-top: 6px;">
@@ -163,8 +162,7 @@
                 <input class="input-control" id="pm-ticket" type="text" name="ticketText" maxlength="200">
             </div>
             <div class="field">
-                <label class="field-label" for="pm-active">{inject:i18n.get('t.actif')}</label>
-                <input id="pm-active" type="checkbox" name="messageActive" checked>
+                <label class="field-check"><input id="pm-active" type="checkbox" name="messageActive" checked> <span>{inject:i18n.get('t.actif')}</span></label>
             </div>
         </div>
         <div class="page-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer-le-message')}</button></div>

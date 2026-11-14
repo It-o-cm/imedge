@@ -272,6 +272,7 @@ public class Product extends BaseEntity {
      * flows to every register through the PRODUCTS domain.
      */
     @ElementCollection(fetch = FetchType.EAGER)
+    @org.hibernate.annotations.BatchSize(size = 1000)
     @CollectionTable(name = "product_attributes",
             joinColumns = @JoinColumn(name = "product_id"))
     @MapKeyColumn(name = "attr_code", length = 50)
@@ -299,6 +300,7 @@ public class Product extends BaseEntity {
      * article in the PRODUCTS domain.
      */
     @ElementCollection(fetch = FetchType.EAGER)
+    @org.hibernate.annotations.BatchSize(size = 1000)
     @CollectionTable(name = "product_sale_codes",
             joinColumns = @JoinColumn(name = "product_id"))
     @Column(name = "sale_code", length = 38, unique = true)

@@ -329,14 +329,6 @@
                             <outputDirectory>${project.build.directory}/site/jacoco</outputDirectory>
                         </configuration>
                     </execution>
-                    <!-- The gate. The threshold is 100 % of branches AND 100 % of lines,
-                         and it never goes down. Every branch and every line is reached by a
-                         plain unit test: what once looked unreachable (native scanner/keyboard
-                         I/O, ImageIO/font defensive paths, a documented production bug) was
-                         either dead code removed, a bug fixed and tested, or given a minimal
-                         testable seam — see COVERAGE-CAMPAIGN.md. A line or branch added
-                         without its test makes the build red; the fix is to test it, never to
-                         lower this gate. -->
                     <execution>
                         <id>coverage-gate</id>
                         <phase>verify</phase>
@@ -351,14 +343,34 @@
                                     <element>BUNDLE</element>
                                     <limits>
                                         <limit>
+                                            <counter>INSTRUCTION</counter>
+                                            <value>MISSEDCOUNT</value>
+                                            <maximum>0</maximum>
+                                        </limit>
+                                        <limit>
                                             <counter>BRANCH</counter>
-                                            <value>COVEREDRATIO</value>
-                                            <minimum>1.00</minimum>
+                                            <value>MISSEDCOUNT</value>
+                                            <maximum>0</maximum>
                                         </limit>
                                         <limit>
                                             <counter>LINE</counter>
-                                            <value>COVEREDRATIO</value>
-                                            <minimum>1.00</minimum>
+                                            <value>MISSEDCOUNT</value>
+                                            <maximum>0</maximum>
+                                        </limit>
+                                        <limit>
+                                            <counter>METHOD</counter>
+                                            <value>MISSEDCOUNT</value>
+                                            <maximum>0</maximum>
+                                        </limit>
+                                        <limit>
+                                            <counter>COMPLEXITY</counter>
+                                            <value>MISSEDCOUNT</value>
+                                            <maximum>0</maximum>
+                                        </limit>
+                                        <limit>
+                                            <counter>CLASS</counter>
+                                            <value>MISSEDCOUNT</value>
+                                            <maximum>0</maximum>
                                         </limit>
                                     </limits>
                                 </rule>

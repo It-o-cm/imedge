@@ -182,8 +182,8 @@
                 <label class="field-label" for="f-limit">{inject:i18n.get('t.plafond-de-credit')}</label>
                 <input class="input-control" id="f-limit" type="text" name="creditLimit" value="{customer.creditLimit ?: ''}">
             </div>
-            <div class="field field-check">
-                <label class="field-label"><input type="checkbox" name="blocked" {#if customer.blocked}checked{/if}> {inject:i18n.get('t.compte-bloque-au-passage-en-caisse')}</label>
+            <div class="field">
+                <label class="field-check"><input type="checkbox" name="blocked" {#if customer.blocked}checked{/if}> <span>{inject:i18n.get('t.compte-bloque-au-passage-en-caisse')}</span></label>
             </div>
         </div>
         <div class="page-actions" style="margin-top: 6px;">

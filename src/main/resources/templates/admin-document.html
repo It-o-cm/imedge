@@ -1,0 +1,98 @@
+{!
+ ! Back-office ONE DOCUMENT ISSUED AT A REGISTER (BO-02-04-19): an invoice, a
+ ! delivery note or a Portuguese FS / FT / NC / RC as it was issued — its
+ ! identity, the customer block it printed, its totals, the lines of the sale
+ ! it states and, for a Portuguese document, its ATCUD, its signature and its
+ ! fiscal QR payload; the printed image of the sale under it. READ ONLY.
+!}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.q-document-de-caisse')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{#if document}{document.number}{#else}{inject:i18n.get('t.q-document-de-caisse')}{/if}</h1>
+        {#if document}<p class="page-sub">{inject:i18n.text(document.typeTitle)}{#if document.cancelled} · {inject:i18n.get('t.q-annule')}{/if}</p>{/if}
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-ghost" href="/admin/documents">{inject:i18n.get('t.retour-a-la-liste')}</a>
+    </div>
+</div>
+
+{#if !document}
+<div class="card">
+    <div class="empty-state">
+        <p>{inject:i18n.get('t.q-document-introuvable')}</p>
+    </div>
+</div>
+{#else}
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.q-identite-du-document')}</h2>
+    <dl class="field-grid">
+        <div class="field"><dt class="field-label">{inject:i18n.get('t.type')}</dt><dd id="doc-type">{document.type}</dd></div>
+        <div class="field"><dt class="field-label">{inject:i18n.get('t.emis-le')}</dt><dd>{#if document.issuedAt}{document.issuedAt.format('dd/MM/yyyy HH:mm')}{#else}—{/if}</dd></div>
+        <div class="field"><dt class="field-label">{inject:i18n.get('t.caisse')}</dt><dd>{document.terminalId ?: '—'}</dd></div>
+        <div class="field"><dt class="field-label">{inject:i18n.get('t.ticket')}</dt><dd>{document.ticketNumber ?: '—'}</dd></div>
+        {#if document.atcud}
+        <div class="field"><dt class="field-label">ATCUD</dt><dd id="doc-atcud">{document.atcud}</dd></div>
+        <div class="field"><dt class="field-label">{inject:i18n.get('t.q-document-d-origine')}</dt><dd>{document.sourceNumber ?: '—'}</dd></div>
+        <div class="field"><dt class="field-label">{inject:i18n.get('t.q-signature')}</dt><dd>{document.hashCharacters ?: '—'}</dd></div>
+        {#else}
+        <div class="field"><dt class="field-label">{inject:i18n.get('t.impressions')}</dt><dd>{document.printCount ?: '—'}</dd></div>
+        {/if}
+    </dl>
+</div>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.client')}</h2>
+    <dl class="field-grid">
+        <div class="field"><dt class="field-label">{inject:i18n.get('t.nom')}</dt><dd>{document.customerName ?: '—'}</dd></div>
+        <div class="field"><dt class="field-label">{inject:i18n.get('t.nif')}</dt><dd id="doc-nif">{document.customerTaxId ?: '—'}</dd></div>
+        <div class="field"><dt class="field-label">{inject:i18n.get('t.compte')}</dt><dd>{document.customerAccount ?: '—'}</dd></div>
+        <div class="field"><dt class="field-label">SIRET</dt><dd>{document.customerSiret ?: '—'}</dd></div>
+    </dl>
+</div>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.q-montants')}</h2>
+    <dl class="field-grid">
+        <div class="field"><dt class="field-label">{inject:i18n.get('t.total-ht')}</dt><dd>{#if document.totalExcludingTax != null}{inject:i18n.money(document.totalExcludingTax)}{#else}—{/if} €</dd></div>
+        <div class="field"><dt class="field-label">{inject:i18n.get('t.tva')}</dt><dd>{#if document.totalVat != null}{inject:i18n.money(document.totalVat)}{#else}—{/if} €</dd></div>
+        <div class="field"><dt class="field-label">{inject:i18n.get('t.total-ttc')}</dt><dd id="doc-total">{#if document.totalIncludingTax != null}{inject:i18n.money(document.totalIncludingTax)}{#else}—{/if} €</dd></div>
+    </dl>
+</div>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.lignes')}</h2>
+    {#if lines.isEmpty()}
+    <p class="page-sub">{inject:i18n.get('t.q-aucune-ligne-de-vente-sur-ce-noeud')}</p>
+    {#else}
+    <table class="data-table">
+        <thead><tr><th>{inject:i18n.get('t.libelle')}</th><th>{inject:i18n.get('t.quantite')}</th><th>{inject:i18n.get('t.tva')}</th><th>{inject:i18n.get('t.total-ttc')}</th></tr></thead>
+        <tbody>
+            {#for line in lines}
+            <tr><td>{line.productLabel}</td><td class="col-muted">{#if line.product && line.product.plu}{inject:i18n.weight(line.quantity)}{#else}{inject:i18n.quantity(line.quantity)}{/if}</td><td class="col-muted">{inject:i18n.rate(line.vatRate)}{#if line.vatNumber} <span class="sup-muted">(n° {line.vatNumber})</span>{/if}</td><td class="sup-amount">{inject:i18n.money(line.totalPrice)} €</td></tr>
+            {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+
+{#if document.qrPayload}
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.q-code-qr-fiscal')}</h2>
+    <pre class="preview-pane" style="white-space: pre-wrap; word-break: break-all;">{document.qrPayload}</pre>
+</div>
+{/if}
+
+{#if printed}
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.q-ticket-imprime')}</h2>
+    <pre class="preview-pane" style="white-space: pre-wrap; word-break: break-all;">{printed}</pre>
+</div>
+{/if}
+{/if}
+{/body}
+
+{#footer}{inject:i18n.get('t.un-document-ne-se-modifie-pas-ici')}{/footer}

@@ -360,4 +360,44 @@ class TicketLineTest {
         Assertions.assertEquals(new BigDecimal("2.0000"),
                 priced("-2", "2.00", "-4.00").getEffectiveUnitPrice());
     }
+
+    /**
+     * LS-03-04-04: a line sells as many articles as its quantity on a piece line,
+     * one on a weighing, a decimal-quantity line or a non-whole quantity, and none
+     * when it is cancelled or carries no quantity; a returned piece line counts
+     * its units in magnitude.
+     */
+    @Test
+    void articleUnitsCountArticlesNotWeights() {
+        TicketLine pieces = new TicketLine();
+        pieces.quantity = new BigDecimal("2.000");
+        Assertions.assertEquals(2, pieces.articleUnits());
+        Assertions.assertFalse(pieces.isWeighedQuantity());
+        TicketLine weighing = new TicketLine();
+        weighing.plu = "4021";
+        weighing.quantity = new BigDecimal("2.000");
+        Assertions.assertTrue(weighing.isWeighedQuantity());
+        Assertions.assertEquals(1, weighing.articleUnits());
+        TicketLine metres = new TicketLine();
+        metres.decimalQuantity = true;
+        metres.quantity = new BigDecimal("3");
+        Assertions.assertEquals(1, metres.articleUnits());
+        TicketLine fraction = new TicketLine();
+        fraction.quantity = new BigDecimal("1.5");
+        Assertions.assertEquals(1, fraction.articleUnits());
+        TicketLine sticker = new TicketLine();
+        sticker.plu = "230";
+        sticker.priceEmbedded = true;
+        sticker.quantity = BigDecimal.ONE;
+        Assertions.assertFalse(sticker.isWeighedQuantity());
+        Assertions.assertEquals(1, sticker.articleUnits());
+        TicketLine returned = new TicketLine();
+        returned.quantity = new BigDecimal("-3");
+        Assertions.assertEquals(3, returned.articleUnits());
+        TicketLine cancelled = new TicketLine();
+        cancelled.quantity = new BigDecimal("4");
+        cancelled.cancelled = true;
+        Assertions.assertEquals(0, cancelled.articleUnits());
+        Assertions.assertEquals(0, new TicketLine().articleUnits());
+    }
 }

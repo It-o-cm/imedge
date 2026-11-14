@@ -1,0 +1,80 @@
+{!
+ ! Back-office E-INVOICING (BO-05-01-02): the electronic invoices of the point
+ ! of sale (UN/CEFACT CII, profile EN 16931), their deposit on the
+ ! dematerialisation platform and their life cycle, status by status.
+!}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.u-facturation-electronique')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.u-facturation-electronique')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.u-facturation-electronique-aide')}</p>
+    </div>
+    <div class="page-actions">
+        <form method="post" action="/admin/fiscal/e-invoicing/scan">
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.u-mettre-en-file')}</button>
+        </form>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.u-plateforme')}</h2>
+    <p class="card-sub">{#if enabled}{inject:i18n.get('t.u-einvoicing-actif')}{#else}{inject:i18n.get('t.u-einvoicing-inactif')}{/if} — {inject:i18n.get('t.u-plateforme')} : <strong>{#if platformCode}{platformCode}{#else}{inject:i18n.get('t.non-renseigne')}{/if}</strong> — {#if platformReady}{inject:i18n.get('t.u-joignable')}{#else}{inject:i18n.get('t.u-non-joignable')}{/if}</p>
+    <form method="get" action="/admin/fiscal/e-invoicing">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="e-status">{inject:i18n.get('t.u-statut')}</label>
+                <select class="input-control" id="e-status" name="status">
+                    <option value="">{inject:i18n.get('t.u-tous')}</option>
+                    {#for s in statuses}<option value="{s.name}" {#if status == s.name}selected{/if}>{s.code} — {inject:i18n.code('t.u-ei-', s.name)}</option>{/for}
+                </select>
+            </div>
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.rechercher')}</button>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    {#if invoices.isEmpty()}
+    <div class="empty-state"><p>{inject:i18n.get('t.u-aucune-facture-electronique')}</p></div>
+    {#else}
+    <div class="table-scroll">
+    <table class="data-table">
+        <thead>
+        <tr><th>{inject:i18n.get('t.u-facture')}</th><th>{inject:i18n.get('t.date')}</th><th>{inject:i18n.get('t.u-client')}</th><th>SIREN</th><th>{inject:i18n.get('t.u-ttc')}</th><th>{inject:i18n.get('t.u-statut')}</th><th>{inject:i18n.get('t.u-detail')}</th><th></th></tr>
+        </thead>
+        <tbody>
+        {#for invoice in invoices}
+        <tr>
+            <td class="link-strong cell-keep">{invoice.invoiceNumber}</td>
+            <td class="col-muted cell-keep">{invoice.issuedAt.format('dd/MM/yyyy HH:mm')}</td>
+            <td>{invoice.buyerName ?: '—'}</td>
+            <td class="col-muted cell-keep">{invoice.buyerSiren ?: '—'}</td>
+            <td class="sup-amount">{inject:i18n.money(invoice.totalIncludingTax)}</td>
+            <td>{invoice.status.code} — {inject:i18n.code('t.u-ei-', invoice.status.name)}</td>
+            <td class="col-muted cell-wrap">{#if invoice.lastError}{inject:i18n.text(invoice.lastError)}{/if}{#if invoice.platformId} ({invoice.platformId}){/if}</td>
+            <td class="col-actions">
+                <a class="btn btn-small btn-ghost" href="/admin/fiscal/e-invoicing/document?id={invoice.id}">XML</a>
+                {#if invoice.status.code < 200}
+                <form method="post" action="/admin/fiscal/e-invoicing/deposit"><input type="hidden" name="id" value="{invoice.id}"><button class="btn btn-small btn-primary" type="submit">{inject:i18n.get('t.u-deposer')}</button></form>
+                {#else if !invoice.status.last}
+                <form method="post" action="/admin/fiscal/e-invoicing/refresh"><input type="hidden" name="id" value="{invoice.id}"><button class="btn btn-small btn-ghost" type="submit">{inject:i18n.get('t.u-actualiser')}</button></form>
+                {/if}
+            </td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+    </div>
+    {/if}
+</div>
+{/body}

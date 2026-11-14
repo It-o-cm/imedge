@@ -140,6 +140,14 @@ public class RegisterCommand extends PanacheEntity {
     @Column(name = "reason", length = 200)
     public String reason;
 
+    /**
+     * The register's request this order answers ({@code LS-04-03-13}), or null
+     * for an order that answers none: an authorisation or a refusal is valid
+     * for that request only, and is dropped when the register withdraws it.
+     */
+    @Column(name = "request_ref", length = 64)
+    public String requestRef;
+
     /** When it was left for the register. */
     @Column(name = "issued_at", nullable = false)
     public LocalDateTime issuedAt = LocalDateTime.now();

@@ -50,8 +50,7 @@
                 <input class="input-control" id="tgl-{tender.code}" type="text" name="groupLabel" maxlength="60" value="{tender.groupLabel}">
             </div>
             <div class="field">
-                <label class="field-label" for="tac-{tender.code}">{inject:i18n.get('t.actif')}</label>
-                <input id="tac-{tender.code}" type="checkbox" name="active" {#if tender.active}checked{/if}>
+                <label class="field-check"><input id="tac-{tender.code}" type="checkbox" name="active" {#if tender.active}checked{/if}> <span>{inject:i18n.get('t.actif')}</span></label>
             </div>
             <div class="field">
                 <label class="field-label" for="tor-{tender.code}">{inject:i18n.get('t.ordre')}</label>
@@ -118,12 +117,10 @@
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="trb-{tender.code}">{inject:i18n.get('t.autorise-au-remboursement')}</label>
-                <input id="trb-{tender.code}" type="checkbox" name="refundAllowed" {#if tender.refundAllowed}checked{/if}>
+                <label class="field-check"><input id="trb-{tender.code}" type="checkbox" name="refundAllowed" {#if tender.refundAllowed}checked{/if}> <span>{inject:i18n.get('t.autorise-au-remboursement')}</span></label>
             </div>
             <div class="field">
-                <label class="field-label" for="trm-{tender.code}">{inject:i18n.get('t.rendu-monnaie-autorise')}</label>
-                <input id="trm-{tender.code}" type="checkbox" name="changeAllowed" {#if tender.changeAllowed}checked{/if}>
+                <label class="field-check"><input id="trm-{tender.code}" type="checkbox" name="changeAllowed" {#if tender.changeAllowed}checked{/if}> <span>{inject:i18n.get('t.rendu-monnaie-autorise')}</span></label>
             </div>
             <div class="field">
                 <label class="field-label" for="trt-{tender.code}">{inject:i18n.get('t.rendu-avec')}</label>
@@ -139,20 +136,16 @@
                 <input class="input-control" id="tvic-{tender.code}" type="text" name="vicProductCode" maxlength="20" value="{tender.vicProductCode ?: ''}">
             </div>
             <div class="field">
-                <label class="field-label" for="tls-{tender.code}">{inject:i18n.get('t.disponible-en-libre-service')}</label>
-                <input id="tls-{tender.code}" type="checkbox" name="selfServiceAllowed" {#if tender.selfServiceAllowed}checked{/if}>
+                <label class="field-check"><input id="tls-{tender.code}" type="checkbox" name="selfServiceAllowed" {#if tender.selfServiceAllowed}checked{/if}> <span>{inject:i18n.get('t.disponible-en-libre-service')}</span></label>
             </div>
             <div class="field">
-                <label class="field-label" for="tss-{tender.code}">{inject:i18n.get('t.appel-hotesse-en-libre-service')}</label>
-                <input id="tss-{tender.code}" type="checkbox" name="selfServiceSupervision" {#if tender.selfServiceSupervision}checked{/if}>
+                <label class="field-check"><input id="tss-{tender.code}" type="checkbox" name="selfServiceSupervision" {#if tender.selfServiceSupervision}checked{/if}> <span>{inject:i18n.get('t.appel-hotesse-en-libre-service')}</span></label>
             </div>
             <div class="field">
-                <label class="field-label" for="tdc-{tender.code}">{inject:i18n.get('t.declaration-automatique')}</label>
-                <input id="tdc-{tender.code}" type="checkbox" name="cashierDeclaration" {#if tender.cashierDeclaration}checked{/if}>
+                <label class="field-check"><input id="tdc-{tender.code}" type="checkbox" name="cashierDeclaration" {#if tender.cashierDeclaration}checked{/if}> <span>{inject:i18n.get('t.declaration-automatique')}</span></label>
             </div>
             <div class="field">
-                <label class="field-label" for="tpa-{tender.code}">{inject:i18n.get('t.prelevement-automatique')}</label>
-                <input id="tpa-{tender.code}" type="checkbox" name="automaticWithdrawal" {#if tender.automaticWithdrawal}checked{/if}>
+                <label class="field-check"><input id="tpa-{tender.code}" type="checkbox" name="automaticWithdrawal" {#if tender.automaticWithdrawal}checked{/if}> <span>{inject:i18n.get('t.prelevement-automatique')}</span></label>
             </div>
             <div class="field">
                 <label class="field-label" for="tti-{tender.code}">{inject:i18n.get('t.ouverture-du-tiroir')}</label>
@@ -163,28 +156,22 @@
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="tmv-{tender.code}">{inject:i18n.get('t.apport-depense-autorise')}</label>
-                <input id="tmv-{tender.code}" type="checkbox" name="movementAllowed" {#if tender.movementAllowed}checked{/if}>
+                <label class="field-check"><input id="tmv-{tender.code}" type="checkbox" name="movementAllowed" {#if tender.movementAllowed}checked{/if}> <span>{inject:i18n.get('t.apport-depense-autorise')}</span></label>
             </div>
             <div class="field">
-                <label class="field-label" for="tbk-{tender.code}">{inject:i18n.get('t.remise-en-banque')}</label>
-                <input id="tbk-{tender.code}" type="checkbox" name="bankDeposit" {#if tender.bankDeposit}checked{/if}>
+                <label class="field-check"><input id="tbk-{tender.code}" type="checkbox" name="bankDeposit" {#if tender.bankDeposit}checked{/if}> <span>{inject:i18n.get('t.remise-en-banque')}</span></label>
             </div>
             <div class="field">
-                <label class="field-label" for="tfd-{tender.code}">{inject:i18n.get('t.autorise-en-fond-de-caisse')}</label>
-                <input id="tfd-{tender.code}" type="checkbox" name="floatAllowed" {#if tender.floatAllowed}checked{/if}>
+                <label class="field-check"><input id="tfd-{tender.code}" type="checkbox" name="floatAllowed" {#if tender.floatAllowed}checked{/if}> <span>{inject:i18n.get('t.autorise-en-fond-de-caisse')}</span></label>
             </div>
             <div class="field">
-                <label class="field-label" for="ttd-{tender.code}">{inject:i18n.get('t.total-par-defaut')}</label>
-                <input id="ttd-{tender.code}" type="checkbox" name="defaultsToTotal" {#if tender.defaultsToTotal}checked{/if}>
+                <label class="field-check"><input id="ttd-{tender.code}" type="checkbox" name="defaultsToTotal" {#if tender.defaultsToTotal}checked{/if}> <span>{inject:i18n.get('t.total-par-defaut')}</span></label>
             </div>
             <div class="field">
-                <label class="field-label" for="twd-{tender.code}">{inject:i18n.get('t.detail-au-rapport-de-prelevement')}</label>
-                <input id="twd-{tender.code}" type="checkbox" name="withdrawalReportDetail" {#if tender.withdrawalReportDetail}checked{/if}>
+                <label class="field-check"><input id="twd-{tender.code}" type="checkbox" name="withdrawalReportDetail" {#if tender.withdrawalReportDetail}checked{/if}> <span>{inject:i18n.get('t.detail-au-rapport-de-prelevement')}</span></label>
             </div>
             <div class="field">
-                <label class="field-label" for="tfr-{tender.code}">{inject:i18n.get('t.remontee-fidelite')}</label>
-                <input id="tfr-{tender.code}" type="checkbox" name="fidelityReported" {#if tender.fidelityReported}checked{/if}>
+                <label class="field-check"><input id="tfr-{tender.code}" type="checkbox" name="fidelityReported" {#if tender.fidelityReported}checked{/if}> <span>{inject:i18n.get('t.remontee-fidelite')}</span></label>
             </div>
             {! BO-03-02-31, -32, -33 et -26 : le justificatif propre au moyen de
              ! paiement. Le gabarit est nomme par son code : il voyage sur son
@@ -200,24 +187,20 @@
                 <input class="input-control" id="tpc-{tender.code}" type="number" name="printCount" min="1" value="{tender.printCount}">
             </div>
             <div class="field">
-                <label class="field-label" for="tpd-{tender.code}">{inject:i18n.get('t.duplicata-en-plus')}</label>
-                <input id="tpd-{tender.code}" type="checkbox" name="printDuplicate" {#if tender.printDuplicate}checked{/if}>
+                <label class="field-check"><input id="tpd-{tender.code}" type="checkbox" name="printDuplicate" {#if tender.printDuplicate}checked{/if}> <span>{inject:i18n.get('t.duplicata-en-plus')}</span></label>
                 <span class="field-hint">{inject:i18n.get('t.un-exemplaire-portant-le-nom-de-reimpression')}</span>
             </div>
             <div class="field">
-                <label class="field-label" for="tpf-{tender.code}">{inject:i18n.get('t.impression-forcee')}</label>
-                <input id="tpf-{tender.code}" type="checkbox" name="printForced" {#if tender.printForced}checked{/if}>
+                <label class="field-check"><input id="tpf-{tender.code}" type="checkbox" name="printForced" {#if tender.printForced}checked{/if}> <span>{inject:i18n.get('t.impression-forcee')}</span></label>
                 <span class="field-hint">{inject:i18n.get('t.imprime-meme-quand-le-ticket-de-caisse')}</span>
             </div>
             {! BO-05-02-17 : deux cases et non une — ce qu'on autorise à sortir
              ! d'un moyen n'est pas ce qu'on autorise à y entrer. !}
             <div class="field">
-                <label class="field-label" for="tts-{tender.code}">{inject:i18n.get('t.transfert-autorise-en-source')}</label>
-                <input id="tts-{tender.code}" type="checkbox" name="transferSource" {#if tender.transferSource}checked{/if}>
+                <label class="field-check"><input id="tts-{tender.code}" type="checkbox" name="transferSource" {#if tender.transferSource}checked{/if}> <span>{inject:i18n.get('t.transfert-autorise-en-source')}</span></label>
             </div>
             <div class="field">
-                <label class="field-label" for="ttdst-{tender.code}">{inject:i18n.get('t.transfert-autorise-en-destination')}</label>
-                <input id="ttdst-{tender.code}" type="checkbox" name="transferDestination" {#if tender.transferDestination}checked{/if}>
+                <label class="field-check"><input id="ttdst-{tender.code}" type="checkbox" name="transferDestination" {#if tender.transferDestination}checked{/if}> <span>{inject:i18n.get('t.transfert-autorise-en-destination')}</span></label>
             </div>
             {! BO-03-02-01 : la nature de reglement d'un moyen ajoute par le magasin. !}
             {#if tender.additional}
@@ -243,27 +226,22 @@
             </div>
             {! BO-03-02-36 : les especes passent par le monnayeur de la caisse. !}
             <div class="field">
-                <label class="field-label" for="tcm-{tender.code}">{inject:i18n.get('t.connecte-au-monnayeur')}</label>
-                <input id="tcm-{tender.code}" type="checkbox" name="coinMachine" {#if tender.coinMachine}checked{/if}>
+                <label class="field-check"><input id="tcm-{tender.code}" type="checkbox" name="coinMachine" {#if tender.coinMachine}checked{/if}> <span>{inject:i18n.get('t.connecte-au-monnayeur')}</span></label>
             </div>
             {! BO-03-02-24 : le cheque automatique. !}
             {#if tender.chequeNature}
             <div class="field">
-                <label class="field-label" for="tmr-{tender.code}">{inject:i18n.get('t.lecture-micr')}</label>
-                <input id="tmr-{tender.code}" type="checkbox" name="micrReading" {#if tender.micrReading}checked{/if}>
+                <label class="field-check"><input id="tmr-{tender.code}" type="checkbox" name="micrReading" {#if tender.micrReading}checked{/if}> <span>{inject:i18n.get('t.lecture-micr')}</span></label>
             </div>
             <div class="field">
-                <label class="field-label" for="tca-{tender.code}">{inject:i18n.get('t.autorisation-cheque')}</label>
-                <input id="tca-{tender.code}" type="checkbox" name="chequeAuthorization" {#if tender.chequeAuthorization}checked{/if}>
+                <label class="field-check"><input id="tca-{tender.code}" type="checkbox" name="chequeAuthorization" {#if tender.chequeAuthorization}checked{/if}> <span>{inject:i18n.get('t.autorisation-cheque')}</span></label>
                 <span class="field-hint">{inject:i18n.get('t.autorisation-cheque-aide')}</span>
             </div>
             <div class="field">
-                <label class="field-label" for="tan-{tender.code}">{inject:i18n.get('t.saisie-du-numero-de-compte')}</label>
-                <input id="tan-{tender.code}" type="checkbox" name="accountNumberEntry" {#if tender.accountNumberEntry}checked{/if}>
+                <label class="field-check"><input id="tan-{tender.code}" type="checkbox" name="accountNumberEntry" {#if tender.accountNumberEntry}checked{/if}> <span>{inject:i18n.get('t.saisie-du-numero-de-compte')}</span></label>
             </div>
             <div class="field">
-                <label class="field-label" for="tap-{tender.code}">{inject:i18n.get('t.reimpression-automatique-du-cheque')}</label>
-                <input id="tap-{tender.code}" type="checkbox" name="chequeAutoPrint" {#if tender.chequeAutoPrint}checked{/if}>
+                <label class="field-check"><input id="tap-{tender.code}" type="checkbox" name="chequeAutoPrint" {#if tender.chequeAutoPrint}checked{/if}> <span>{inject:i18n.get('t.reimpression-automatique-du-cheque')}</span></label>
                 <span class="field-hint">{inject:i18n.get('t.reimpression-automatique-aide')}</span>
             </div>
             {#else}
@@ -368,32 +346,25 @@
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="new-tchange">{inject:i18n.get('t.rendu-monnaie-autorise')}</label>
-                <input id="new-tchange" type="checkbox" name="changeAllowed">
+                <label class="field-check"><input id="new-tchange" type="checkbox" name="changeAllowed"> <span>{inject:i18n.get('t.rendu-monnaie-autorise')}</span></label>
             </div>
             <div class="field">
-                <label class="field-label" for="new-trefund">{inject:i18n.get('t.autorise-au-remboursement')}</label>
-                <input id="new-trefund" type="checkbox" name="refundAllowed">
+                <label class="field-check"><input id="new-trefund" type="checkbox" name="refundAllowed"> <span>{inject:i18n.get('t.autorise-au-remboursement')}</span></label>
             </div>
             <div class="field">
-                <label class="field-label" for="new-tdefault">{inject:i18n.get('t.total-par-defaut')}</label>
-                <input id="new-tdefault" type="checkbox" name="defaultsToTotal" checked>
+                <label class="field-check"><input id="new-tdefault" type="checkbox" name="defaultsToTotal" checked> <span>{inject:i18n.get('t.total-par-defaut')}</span></label>
             </div>
             <div class="field">
-                <label class="field-label" for="new-tdetail">{inject:i18n.get('t.detail-au-rapport-de-prelevement')}</label>
-                <input id="new-tdetail" type="checkbox" name="withdrawalReportDetail" checked>
+                <label class="field-check"><input id="new-tdetail" type="checkbox" name="withdrawalReportDetail" checked> <span>{inject:i18n.get('t.detail-au-rapport-de-prelevement')}</span></label>
             </div>
             <div class="field">
-                <label class="field-label" for="new-tsource">{inject:i18n.get('t.transfert-autorise-en-source')}</label>
-                <input id="new-tsource" type="checkbox" name="transferSource" checked>
+                <label class="field-check"><input id="new-tsource" type="checkbox" name="transferSource" checked> <span>{inject:i18n.get('t.transfert-autorise-en-source')}</span></label>
             </div>
             <div class="field">
-                <label class="field-label" for="new-tdest">{inject:i18n.get('t.transfert-autorise-en-destination')}</label>
-                <input id="new-tdest" type="checkbox" name="transferDestination" checked>
+                <label class="field-check"><input id="new-tdest" type="checkbox" name="transferDestination" checked> <span>{inject:i18n.get('t.transfert-autorise-en-destination')}</span></label>
             </div>
             <div class="field">
-                <label class="field-label" for="new-tactive">{inject:i18n.get('t.actif')}</label>
-                <input id="new-tactive" type="checkbox" name="active" checked>
+                <label class="field-check"><input id="new-tactive" type="checkbox" name="active" checked> <span>{inject:i18n.get('t.actif')}</span></label>
             </div>
             <div class="field">
                 <label class="field-label" for="new-tmonetic">{inject:i18n.get('t.correspondance-monetique')}</label>

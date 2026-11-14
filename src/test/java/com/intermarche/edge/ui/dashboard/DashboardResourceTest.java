@@ -341,6 +341,27 @@ class DashboardResourceTest {
     }
 
     /**
+     * LS-04-03-13: a withdrawal naming its request drops the answers already
+     * issued for it; a blank request reference drops every pending answer of the
+     * lane; a payload naming no lane (null, blank) drops nothing.
+     */
+    @Test
+    void aWithdrawalDropsTheAnswersOfItsRequest() {
+        DashboardResource resource = newResource();
+        DashboardResource.CallDto named = dto(" CAISSE1 ", null, null);
+        named.requestId = " req-1 ";
+        resource.receiveCancel("ignored", named);
+        verify(resource.registerCommandService).withdrawAnswers("CAISSE1", "req-1");
+        named.requestId = "  ";
+        resource.receiveCancel("ignored", named);
+        verify(resource.registerCommandService).withdrawAnswers("CAISSE1", null);
+        resource.receiveCancel("ignored", null);
+        resource.receiveCancel("ignored", dto(null, null, null));
+        resource.receiveCancel("ignored", dto("  ", null, null));
+        verify(resource.registerCommandService, times(2)).withdrawAnswers(any(), any());
+    }
+
+    /**
      * LC-01-07-05: the register's cancellation withdraws its PENDING demands
      * from the board; the two gates refuse an off-role node and a bad token
      * without touching it.
@@ -351,6 +372,7 @@ class DashboardResourceTest {
         assertEquals(Response.Status.OK.getStatusCode(),
                 resource.receiveCancel("ignored", dto("CAISSE1", null, null)).getStatus());
         verify(resource.supervisorCallRegistry).cancelPendingFor("CAISSE1");
+        verify(resource.registerCommandService).withdrawAnswers("CAISSE1", null);
         resource.token = Optional.of("secret");
         assertEquals(Response.Status.UNAUTHORIZED.getStatusCode(),
                 resource.receiveCancel("wrong", dto("CAISSE1", null, null)).getStatus());
@@ -452,7 +474,7 @@ class DashboardResourceTest {
         assertEquals(Response.Status.FORBIDDEN.getStatusCode(), response.getStatus());
         assertEquals("Ce nœud n'a pas le rôle store", response.getEntity());
         verify(resource.supervisorCallRegistry, never())
-                .add(any(), any(), any(), any(), anyInt());
+                .add(any(), any(), any(), any(), anyInt(), any(), any());
     }
 
     /**
@@ -478,7 +500,7 @@ class DashboardResourceTest {
         }
         assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
         assertEquals("OK", response.getEntity());
-        verify(resource.supervisorCallRegistry).add("CAISSE1", "Alice", "no-change", null, 0);
+        verify(resource.supervisorCallRegistry).add("CAISSE1", "Alice", "no-change", null, 0, null, null);
     }
 
     /**
@@ -492,7 +514,7 @@ class DashboardResourceTest {
         DashboardResource.CallDto call = dto("CAISSE1", "Alice", "SONDAGE");
         Response response = resource.receiveCall("ignored", call);
         assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
-        verify(resource.supervisorCallRegistry, never()).add(any(), any(), any(), any(), anyInt());
+        verify(resource.supervisorCallRegistry, never()).add(any(), any(), any(), any(), anyInt(), any(), any());
     }
 
     /**
@@ -524,7 +546,7 @@ class DashboardResourceTest {
         }
         assertEquals(Response.Status.OK.getStatusCode(), response.getStatus());
         assertEquals("OK", response.getEntity());
-        verify(resource.supervisorCallRegistry).add("CAISSE2", "Bob", "price", null, 3);
+        verify(resource.supervisorCallRegistry).add("CAISSE2", "Bob", "price", null, 3, null, null);
     }
 
     /**
@@ -577,7 +599,7 @@ class DashboardResourceTest {
         assertEquals(Response.Status.UNAUTHORIZED.getStatusCode(), response.getStatus());
         assertEquals("Jeton invalide", response.getEntity());
         verify(resource.supervisorCallRegistry, never())
-                .add(any(), any(), any(), any(), anyInt());
+                .add(any(), any(), any(), any(), anyInt(), any(), any());
     }
 
     /**
@@ -608,9 +630,9 @@ class DashboardResourceTest {
                 .thenReturn(call);
         Response response = resource.refuse(7L, "  Geste non autorise  ");
         assertEquals(Response.Status.NO_CONTENT.getStatusCode(), response.getStatus());
-        verify(resource.registerCommandService).issue("CAISSE1",
+        verify(resource.registerCommandService).answer("CAISSE1",
                 RegisterCommand.CommandType.SUPERVISOR_REFUSED, "Marie Curie",
-                "Geste non autorise");
+                "Geste non autorise", null);
     }
 
     /**
@@ -627,12 +649,12 @@ class DashboardResourceTest {
                 "Demande refusée par le back-office", true)).thenReturn(call);
         assertEquals(Response.Status.NO_CONTENT.getStatusCode(),
                 resource.refuse(7L, "   ").getStatus());
-        verify(resource.registerCommandService).issue("CAISSE1",
+        verify(resource.registerCommandService).answer("CAISSE1",
                 RegisterCommand.CommandType.SUPERVISOR_REFUSED, "Marie Curie",
-                "Demande refusée par le back-office");
+                "Demande refusée par le back-office", null);
         assertEquals(Response.Status.NOT_FOUND.getStatusCode(),
                 resource.refuse(8L, null).getStatus());
-        verify(resource.registerCommandService, never()).issue(eq("CAISSE2"), any(), any(), any());
+        verify(resource.registerCommandService, never()).answer(eq("CAISSE2"), any(), any(), any(), any());
     }
 
     /**
@@ -689,13 +711,103 @@ class DashboardResourceTest {
         DashboardResource resource = newResource();
         SupervisorCallRegistry.Call call =
                 new SupervisorCallRegistry.Call(7L, "CAISSE1", "Alice", "Remise", null);
+        when(resource.supervisorCallRegistry.find(7L)).thenReturn(call);
         when(resource.supervisorCallRegistry.settle(7L,
                 SupervisorCallRegistry.CallStatus.AUTHORISED, null, true)).thenReturn(call);
         Response response = resource.authorise(7L);
         assertEquals(Response.Status.NO_CONTENT.getStatusCode(), response.getStatus());
-        verify(resource.registerCommandService).issue("CAISSE1",
+        verify(resource.registerCommandService).answer("CAISSE1",
                 RegisterCommand.CommandType.SUPERVISOR_GRANTED, "Marie Curie",
-                "Marie Curie");
+                "Marie Curie", null);
+    }
+
+    /**
+     * LS-04-03-13: a call that vanished between the reading and the settling
+     * (another manager settled it) is a 404 that leaves no order behind.
+     */
+    @Test
+    void anAuthorisationOnADemandSettledMeanwhileLeavesNoOrder() {
+        DashboardResource resource = newResource();
+        when(resource.supervisorCallRegistry.find(7L)).thenReturn(
+                new SupervisorCallRegistry.Call(7L, "CAISSE1", "Alice", "Remise", null));
+        assertEquals(Response.Status.NOT_FOUND.getStatusCode(), resource.authorise(7L).getStatus());
+        verify(resource.registerCommandService, never()).answer(any(), any(), any(), any(), any());
+    }
+
+    /**
+     * LS-04-03-13: a function whose aval is reserved to named profiles is
+     * authorised at a distance by an account holding one of them — the order
+     * carrying the request it answers — and refused to any other: the refusal is
+     * journalled, said in the page's language, and the demand stays pending.
+     */
+    @Test
+    void aRemoteAuthorisationKeepsTheFunctionsProfileRule() {
+        DashboardResource resource = newResource();
+        SupervisorCallRegistry.Call call = new SupervisorCallRegistry.Call(7L, "CAISSE1", "Alice",
+                "AUTORISATION SUPERVISEUR", "FUNCTION_APPROVAL", 0, "req-1", List.of("Chef de caisse"));
+        when(resource.supervisorCallRegistry.find(7L)).thenReturn(call);
+        when(resource.supervisorCallRegistry.settle(7L,
+                SupervisorCallRegistry.CallStatus.AUTHORISED, null, true)).thenReturn(call);
+        when(resource.currentUser.getName()).thenReturn("mcurie");
+        when(resource.i18n.text("Autorisation impossible : votre profil n'est pas habilité pour cette fonction"
+                + " (Chef de caisse)")).thenReturn("Autorisatie onmogelijk (Chef de caisse)");
+        com.intermarche.edge.domain.people.Employee manager = new com.intermarche.edge.domain.people.Employee();
+        manager.id = 5L;
+        com.intermarche.edge.domain.people.EmployeeProfile binding =
+                new com.intermarche.edge.domain.people.EmployeeProfile();
+        binding.profileId = 9L;
+        com.intermarche.edge.domain.people.Profile supervisor = new com.intermarche.edge.domain.people.Profile();
+        supervisor.name = "Superviseur";
+        try (var employees = mockStatic(com.intermarche.edge.domain.people.Employee.class);
+             var bindings = mockStatic(com.intermarche.edge.domain.people.EmployeeProfile.class);
+             var panache = mockStatic(io.quarkus.hibernate.orm.panache.PanacheEntityBase.class)) {
+            employees.when(() -> com.intermarche.edge.domain.people.Employee.findLogin("mcurie")).thenReturn(manager);
+            bindings.when(() -> com.intermarche.edge.domain.people.EmployeeProfile.forEmployee(5L))
+                    .thenReturn(List.of(binding));
+            panache.when(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase.findById(9L)).thenReturn(supervisor);
+            Response refused = resource.authorise(7L);
+            assertEquals(Response.Status.FORBIDDEN.getStatusCode(), refused.getStatus());
+            assertEquals("Autorisatie onmogelijk (Chef de caisse)", refused.getEntity());
+            verify(resource.supervisionJournal).handled("CAISSE1", "AUTORISATION_REFUSEE", "Marie Curie",
+                    "AUTORISATION SUPERVISEUR : profil exigé Chef de caisse");
+            verify(resource.supervisorCallRegistry, never()).settle(eq(7L), any(), any(), anyBoolean());
+            supervisor.name = " chef DE caisse ".trim();
+            assertEquals(Response.Status.NO_CONTENT.getStatusCode(), resource.authorise(7L).getStatus());
+            verify(resource.registerCommandService).answer("CAISSE1",
+                    RegisterCommand.CommandType.SUPERVISOR_GRANTED, "Marie Curie", "Marie Curie", "req-1");
+        }
+    }
+
+    /**
+     * LS-04-03-13: the profile check over every account shape — no function
+     * profile, an account unknown to the node or not yet saved, a binding to a
+     * deleted profile, a profile without a name.
+     */
+    @Test
+    void theProfileCheckReadsTheAccountsBindings() {
+        DashboardResource resource = newResource();
+        when(resource.currentUser.getName()).thenReturn("ghost");
+        assertTrue(resource.holdsRequiredProfile(List.of()));
+        com.intermarche.edge.domain.people.Employee unsaved = new com.intermarche.edge.domain.people.Employee();
+        com.intermarche.edge.domain.people.Employee saved = new com.intermarche.edge.domain.people.Employee();
+        saved.id = 6L;
+        com.intermarche.edge.domain.people.EmployeeProfile gone = new com.intermarche.edge.domain.people.EmployeeProfile();
+        gone.profileId = 1L;
+        com.intermarche.edge.domain.people.EmployeeProfile unnamed = new com.intermarche.edge.domain.people.EmployeeProfile();
+        unnamed.profileId = 2L;
+        try (var employees = mockStatic(com.intermarche.edge.domain.people.Employee.class);
+             var bindings = mockStatic(com.intermarche.edge.domain.people.EmployeeProfile.class);
+             var panache = mockStatic(io.quarkus.hibernate.orm.panache.PanacheEntityBase.class)) {
+            assertFalse(resource.holdsRequiredProfile(List.of("Chef")));
+            employees.when(() -> com.intermarche.edge.domain.people.Employee.findLogin("ghost")).thenReturn(unsaved);
+            assertFalse(resource.holdsRequiredProfile(List.of("Chef")));
+            employees.when(() -> com.intermarche.edge.domain.people.Employee.findLogin("ghost")).thenReturn(saved);
+            bindings.when(() -> com.intermarche.edge.domain.people.EmployeeProfile.forEmployee(6L))
+                    .thenReturn(List.of(gone, unnamed));
+            panache.when(() -> io.quarkus.hibernate.orm.panache.PanacheEntityBase.findById(2L))
+                    .thenReturn(new com.intermarche.edge.domain.people.Profile());
+            assertFalse(resource.holdsRequiredProfile(List.of("Chef")));
+        }
     }
 
     /**
@@ -708,7 +820,7 @@ class DashboardResourceTest {
         Response response = resource.authorise(8L);
         assertEquals(Response.Status.NOT_FOUND.getStatusCode(), response.getStatus());
         verify(resource.registerCommandService, never())
-                .issue(any(), eq(RegisterCommand.CommandType.SUPERVISOR_GRANTED), any(), any());
+                .answer(any(), eq(RegisterCommand.CommandType.SUPERVISOR_GRANTED), any(), any(), any());
     }
     /** BO-04: settled/cancel/ack endpoints independently enforce role, optional token and null DTO guards. */
     @Test
@@ -806,6 +918,8 @@ class DashboardResourceTest {
         SupervisorCallRegistry.Call bare = new SupervisorCallRegistry.Call(8L, "C05", "Jean", "Monnaie", null);
         when(resource.supervisorCallRegistry.settle(eq(7L), any(), any(), anyBoolean())).thenReturn(call);
         when(resource.supervisorCallRegistry.settle(eq(8L), any(), any(), anyBoolean())).thenReturn(bare);
+        when(resource.supervisorCallRegistry.find(7L)).thenReturn(call);
+        when(resource.supervisorCallRegistry.find(8L)).thenReturn(bare);
         resource.sendBackToTill(7L);
         resource.sendBackToTill(9L);
         resource.authorise(7L);

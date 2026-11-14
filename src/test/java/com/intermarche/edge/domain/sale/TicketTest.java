@@ -297,4 +297,29 @@ class TicketTest {
             org.junit.jupiter.api.Assertions.assertSame(row, Ticket.findLastClosedByTerminal("C04"));
         }
     }
+
+    /**
+     * LS-03-04-04: the ticket counts the ARTICLES its lines sell — two units of
+     * one line are two articles, a weighing one — and a returned line is not a
+     * sold article.
+     */
+    @Test
+    void countArticlesCountsUnitsAndLeavesReturnsOut() {
+        Ticket ticket = new Ticket();
+        TicketLine apples = new TicketLine();
+        apples.quantity = BigDecimal.ONE;
+        TicketLine bread = new TicketLine();
+        bread.quantity = new BigDecimal("2");
+        TicketLine weighing = new TicketLine();
+        weighing.plu = "4021";
+        weighing.quantity = new BigDecimal("1.234");
+        TicketLine returned = new TicketLine();
+        returned.quantity = new BigDecimal("-1");
+        returned.returnLine = true;
+        ticket.addLine(apples);
+        ticket.addLine(bread);
+        ticket.addLine(weighing);
+        ticket.addLine(returned);
+        Assertions.assertEquals(4, ticket.countArticles());
+    }
 }

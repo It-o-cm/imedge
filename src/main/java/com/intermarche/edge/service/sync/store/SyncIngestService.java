@@ -175,6 +175,10 @@ public class SyncIngestService {
         ticket.parkedAt = parse(dto.parkedAt);
         ticket.resumedAt = parse(dto.resumedAt);
         ticket.resumedTerminalId = dto.resumedTerminalId;
+        // DG-03-02-01/03: the recalled orders this sale settled, so an
+        // e-commerce or mobility order is linked to the ticket that paid it.
+        ticket.recalledOrderCode = dto.recalledOrderCodes == null || dto.recalledOrderCodes.isEmpty()
+                ? null : String.join(";", dto.recalledOrderCodes);
         // BO-06-06-02/03: when the cashier went to payment, stored verbatim.
         ticket.paymentStartedAt = parse(dto.paymentStartedAt);
         ticket.closingDate = parse(dto.closingDate);

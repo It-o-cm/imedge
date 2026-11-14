@@ -250,7 +250,7 @@ public class DataInitializer {
         campaign.code = "CAMP_ETE";
         campaign.label = "Campagne été";
         campaign.validFrom = LocalDate.of(2026, 6, 1);
-        campaign.validTo = LocalDate.of(2026, 9, 1);
+        campaign.validTo = LocalDate.of(2027, 12, 31);
         campaign.maxAmount = new BigDecimal("1000.00");
         campaign.maxApplications = 500;
         campaign.perStore = false;

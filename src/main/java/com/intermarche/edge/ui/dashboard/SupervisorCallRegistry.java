@@ -103,6 +103,19 @@ public class SupervisorCallRegistry {
         public volatile CallStatus status = CallStatus.PENDING;
         /** Why the back office refused it, or an empty string. */
         public volatile String refusalReason = "";
+        /**
+         * The register's identity of the request ({@code LS-04-03-13}), carried
+         * back on the answer so the register applies it to that request only;
+         * null for a call that is not an authorisation request.
+         */
+        public final String requestId;
+        /**
+         * The profiles one of which the authorising account must hold
+         * ({@code LS-04-03-13}): the till's own rule for the function
+         * ({@code gesture.function-endorsements}); empty when the function names
+         * none.
+         */
+        public final List<String> requiredProfiles;
 
         /**
          * Creates a pending call carrying no priority — the shape every call
@@ -131,6 +144,26 @@ public class SupervisorCallRegistry {
          */
         public Call(long id, String terminalId, String operator, String reason, String message,
                     int severity) {
+            this(id, terminalId, operator, reason, message, severity, null, List.of());
+        }
+
+        /**
+         * Creates a pending AUTHORISATION REQUEST: a call carrying the request's
+         * identity and the profiles the function requires ({@code LS-04-03-13}).
+         *
+         * @param id the registry id
+         * @param terminalId the calling register identifier
+         * @param operator the calling operator display name
+         * @param reason the call reason
+         * @param message the cashier's free message, or null (EXP-19)
+         * @param severity the priority of the administered type, 0 when none
+         * @param requestId the register's identity of the request, or null
+         * @param requiredProfiles the profiles the function requires, possibly null
+         */
+        public Call(long id, String terminalId, String operator, String reason, String message,
+                    int severity, String requestId, List<String> requiredProfiles) {
+            this.requestId = requestId == null || requestId.isBlank() ? null : requestId.trim();
+            this.requiredProfiles = requiredProfiles == null ? List.of() : List.copyOf(requiredProfiles);
             this.id = id;
             this.terminalId = terminalId;
             this.operator = operator;
@@ -172,8 +205,25 @@ public class SupervisorCallRegistry {
      */
     public void add(String terminalId, String operator, String reason, String message,
                     int severity) {
+        add(terminalId, operator, reason, message, severity, null, List.of());
+    }
+
+    /**
+     * Registers an incoming AUTHORISATION REQUEST with its identity and the
+     * profiles the function requires ({@code LS-04-03-13}).
+     *
+     * @param terminalId the calling register identifier
+     * @param operator the calling operator display name
+     * @param reason the call reason
+     * @param message the cashier's free message, or null
+     * @param severity the priority of the administered type, 0 when none
+     * @param requestId the register's identity of the request, or null
+     * @param requiredProfiles the profiles the function requires, possibly null
+     */
+    public void add(String terminalId, String operator, String reason, String message,
+                    int severity, String requestId, List<String> requiredProfiles) {
         pending.add(new Call(sequence.incrementAndGet(), terminalId, operator, reason, message,
-                severity));
+                severity, requestId, requiredProfiles));
     }
 
     /**

@@ -137,12 +137,12 @@
                 <label class="field-label" for="f-desc">{inject:i18n.get('t.description')}</label>
                 <input class="input-control" id="f-desc" type="text" name="description" value="{product.description ?: ''}" maxlength="255" {#if !editable.contains('BRAND')}disabled{/if}>
             </div>
-            <div class="field field-check">
-                <label class="field-label"><input type="checkbox" name="active" {#if product.active}checked{/if} {#if !editable.contains('STATUS')}disabled{/if}> {inject:i18n.get('t.article-actif')}</label>
+            <div class="field">
+                <label class="field-check"><input type="checkbox" name="active" {#if product.active}checked{/if} {#if !editable.contains('STATUS')}disabled{/if}> <span>{inject:i18n.get('t.article-actif')}</span></label>
                 <span class="field-hint">{inject:i18n.get('t.decoche-l-article-est-desactive-retire-du')}</span>
             </div>
-            <div class="field field-check">
-                <label class="field-label"><input type="checkbox" name="variableWeight" {#if product.variableWeight}checked{/if} {#if !editable.contains('MEASURES')}disabled{/if}> {inject:i18n.get('t.vendu-au-poids-vrac')}</label>
+            <div class="field">
+                <label class="field-check"><input type="checkbox" name="variableWeight" {#if product.variableWeight}checked{/if} {#if !editable.contains('MEASURES')}disabled{/if}> <span>{inject:i18n.get('t.vendu-au-poids-vrac')}</span></label>
                 <span class="field-hint">{inject:i18n.get('t.coche-le-poids-est-connu-a-la')}</span>
             </div>
         </div>
@@ -156,8 +156,8 @@
                 <input class="input-control" id="f-age" type="number" name="ageRestriction" min="0" value="{product.ageRestriction ?: ''}" {#if !editable.contains('STATUS')}disabled{/if}>
                 <span class="field-hint">{inject:i18n.get('t.vide-ou-0-aucun-controle')}</span>
             </div>
-            <div class="field field-check">
-                <label class="field-label"><input type="checkbox" name="forbiddenToSale" {#if product.forbiddenToSale}checked{/if} {#if !editable.contains('STATUS')}disabled{/if}> {inject:i18n.get('t.vente-interdite')}</label>
+            <div class="field">
+                <label class="field-check"><input type="checkbox" name="forbiddenToSale" {#if product.forbiddenToSale}checked{/if} {#if !editable.contains('STATUS')}disabled{/if}> <span>{inject:i18n.get('t.vente-interdite')}</span></label>
                 <span class="field-hint">{inject:i18n.get('t.l-article-est-refuse-au-scan')}</span>
             </div>
             <div class="field">
@@ -266,8 +266,8 @@
         <h2 class="card-title">{inject:i18n.get('t.attributs-declares')}</h2>
         <div class="field-grid">
             {#for attr in attributes}
-            <div class="field field-check">
-                <label class="field-label"><input type="checkbox" name="{attr.code}" {#if attr.checked}checked{/if} {#if !editable.contains('ATTRIBUTES')}disabled{/if}> {inject:i18n.text(attr.label)}</label>
+            <div class="field">
+                <label class="field-check"><input type="checkbox" name="{attr.code}" {#if attr.checked}checked{/if} {#if !editable.contains('ATTRIBUTES')}disabled{/if}> <span>{inject:i18n.text(attr.label)}</span></label>
             </div>
             {/for}
         </div>
@@ -302,8 +302,8 @@
     <div class="card">
         <h2 class="card-title">{inject:i18n.get('t.presentation')}</h2>
         <div class="field-grid">
-            <div class="field field-check">
-                <label class="field-label"><input type="checkbox" name="codeOnScreen" {#if codeOnScreen}checked{/if} {#if !editable.contains('PRESENTATION')}disabled{/if}> {inject:i18n.get('t.code-article-sur-l-ecran-caisse')}</label>
+            <div class="field">
+                <label class="field-check"><input type="checkbox" name="codeOnScreen" {#if codeOnScreen}checked{/if} {#if !editable.contains('PRESENTATION')}disabled{/if}> <span>{inject:i18n.get('t.code-article-sur-l-ecran-caisse')}</span></label>
                 <span class="field-hint">{inject:i18n.get('t.consomme-par-l-ecran-de-vente-bo')}</span>
             </div>
         </div>

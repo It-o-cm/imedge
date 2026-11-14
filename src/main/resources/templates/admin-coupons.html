@@ -65,20 +65,17 @@
                 <input class="input-control" id="o-{type.code}" type="number" name="priority" value="{type.priority}">
             </div>
             <div class="field">
-                <label class="field-label" for="a-{type.code}">{inject:i18n.get('t.active')}</label>
-                <input id="a-{type.code}" type="checkbox" name="active" {#if type.active}checked{/if}>
+                <label class="field-check"><input id="a-{type.code}" type="checkbox" name="active" {#if type.active}checked{/if}> <span>{inject:i18n.get('t.active')}</span></label>
             </div>
             <div class="field">
-                <label class="field-label" for="d-{type.code}">{inject:i18n.get('t.ligne-de-consigne')}</label>
-                <input id="d-{type.code}" type="checkbox" name="depositLine" {#if type.depositLine}checked{/if}>
+                <label class="field-check"><input id="d-{type.code}" type="checkbox" name="depositLine" {#if type.depositLine}checked{/if}> <span>{inject:i18n.get('t.ligne-de-consigne')}</span></label>
             </div>
             <div class="field">
                 <label class="field-label" for="ic-{type.code}">{inject:i18n.get('t.ilots-acceptant-la-plage')}</label>
                 <input class="input-control" id="ic-{type.code}" type="text" name="islandCodes" maxlength="1000" value="{type.islandCodes ?: ''}" placeholder="{inject:i18n.get('t.vide-tous-les-ilots')}">
             </div>
             <div class="field">
-                <label class="field-label" for="n9-{type.code}">{inject:i18n.get('t.montant-9999-saisi')}</label>
-                <input id="n9-{type.code}" type="checkbox" name="manualAmountOnAllNines" {#if type.manualAmountOnAllNines}checked{/if}>
+                <label class="field-check"><input id="n9-{type.code}" type="checkbox" name="manualAmountOnAllNines" {#if type.manualAmountOnAllNines}checked{/if}> <span>{inject:i18n.get('t.montant-9999-saisi')}</span></label>
             </div>
             {! BO-03-06-08 : le moyen de paiement que le code règle. !}
             <div class="field">
@@ -285,8 +282,7 @@
                 <input class="input-control" id="new-islands" type="text" name="islandCodes" maxlength="1000" placeholder="{inject:i18n.get('t.vide-tous-les-ilots')}">
             </div>
             <div class="field">
-                <label class="field-label" for="new-nines">{inject:i18n.get('t.montant-9999-saisi')}</label>
-                <input id="new-nines" type="checkbox" name="manualAmountOnAllNines">
+                <label class="field-check"><input id="new-nines" type="checkbox" name="manualAmountOnAllNines"> <span>{inject:i18n.get('t.montant-9999-saisi')}</span></label>
             </div>
             <div class="field">
                 <label class="field-label" for="new-tender">{inject:i18n.get('t.moyen-de-paiement-regle')}</label>
@@ -320,8 +316,7 @@
                 <input class="input-control" id="new-priority" type="number" name="priority" value="100">
             </div>
             <div class="field">
-                <label class="field-label" for="new-active">{inject:i18n.get('t.active')}</label>
-                <input id="new-active" type="checkbox" name="active" checked>
+                <label class="field-check"><input id="new-active" type="checkbox" name="active" checked> <span>{inject:i18n.get('t.active')}</span></label>
             </div>
         </div>
         <div class="page-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.creer-la-plage')}</button></div>
@@ -440,16 +435,14 @@
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="acd-{range.code}">{inject:i18n.get('t.cle-de-controle')}</label>
-                <input id="acd-{range.code}" type="checkbox" name="checkDigit" {#if range.checkDigit}checked{/if}>
+                <label class="field-check"><input id="acd-{range.code}" type="checkbox" name="checkDigit" {#if range.checkDigit}checked{/if}> <span>{inject:i18n.get('t.cle-de-controle')}</span></label>
             </div>
             <div class="field">
                 <label class="field-label" for="apr-{range.code}">{inject:i18n.get('t.priorite')}</label>
                 <input class="input-control" id="apr-{range.code}" type="number" name="priority" value="{range.priority}">
             </div>
             <div class="field">
-                <label class="field-label" for="aa-{range.code}">{inject:i18n.get('t.active')}</label>
-                <input id="aa-{range.code}" type="checkbox" name="active" {#if range.active}checked{/if}>
+                <label class="field-check"><input id="aa-{range.code}" type="checkbox" name="active" {#if range.active}checked{/if}> <span>{inject:i18n.get('t.active')}</span></label>
             </div>
         </div>
         <div class="page-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer-la-plage-article')}</button></div>
@@ -563,16 +556,14 @@
                 </select>
             </div>
             <div class="field">
-                <label class="field-label" for="new-acd">{inject:i18n.get('t.cle-de-controle')}</label>
-                <input id="new-acd" type="checkbox" name="checkDigit" checked>
+                <label class="field-check"><input id="new-acd" type="checkbox" name="checkDigit" checked> <span>{inject:i18n.get('t.cle-de-controle')}</span></label>
             </div>
             <div class="field">
                 <label class="field-label" for="new-apri">{inject:i18n.get('t.priorite')}</label>
                 <input class="input-control" id="new-apri" type="number" name="priority" value="100">
             </div>
             <div class="field">
-                <label class="field-label" for="new-aact">{inject:i18n.get('t.active')}</label>
-                <input id="new-aact" type="checkbox" name="active" checked>
+                <label class="field-check"><input id="new-aact" type="checkbox" name="active" checked> <span>{inject:i18n.get('t.active')}</span></label>
             </div>
         </div>
         <div class="page-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.creer-la-plage-article')}</button></div>

@@ -1,0 +1,92 @@
+{!
+ ! DÉTAXE (BO-06-07-03): the export sales slip of a customer's ticket, printed
+ ! at the welcome desk, and the refund of its VAT once stamped by the customs.
+!}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.r21v-detaxe')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.r21v-detaxe')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.r21v-detaxe-sous-titre')}</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-muted" href="/admin/reports/tax-refunds">{inject:i18n.get('t.r21v-suivi-du-remboursement')}</a>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.r21v-imprimer-un-bordereau')}</h2>
+    <form method="post" action="/admin/tax-refunds/issue">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="d-ticket">{inject:i18n.get('t.r21v-numero-du-ticket')}</label>
+                <input class="input-control" id="d-ticket" type="text" name="ticket" maxlength="30" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="d-customer">{inject:i18n.get('t.r21v-nom-du-client')}</label>
+                <input class="input-control" id="d-customer" type="text" name="customer" maxlength="120" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="d-country">{inject:i18n.get('t.r21v-pays-ou-immatriculation')}</label>
+                <input class="input-control" id="d-country" type="text" name="country" maxlength="60">
+            </div>
+            <div class="field">
+                <label class="field-label" for="d-document">{inject:i18n.get('t.r21v-piece-d-identite')}</label>
+                <input class="input-control" id="d-document" type="text" name="document" maxlength="60">
+            </div>
+        </div>
+        <div class="filter-actions">
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.r21v-preparer-le-bordereau')}</button>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <div class="report-table-box">
+    <table class="data-table">
+        <thead>
+        <tr>
+            <th>{inject:i18n.get('t.r21v-bordereau')}</th>
+            <th>{inject:i18n.get('t.r21v-date')}</th>
+            <th>{inject:i18n.get('t.r21v-nom-du-client')}</th>
+            <th>{inject:i18n.get('t.r21v-numero-du-ticket')}</th>
+            <th class="report-num">{inject:i18n.get('t.r21v-montant-a-rembourser')}</th>
+            <th>{inject:i18n.get('t.r21v-etat')}</th>
+            <th class="col-actions"></th>
+        </tr>
+        </thead>
+        <tbody>
+        {#for f in forms}
+        <tr>
+            <td>{f.number}</td>
+            <td>{f.createdAt.format('dd/MM/yyyy HH:mm')}</td>
+            <td>{f.customerName}</td>
+            <td>{f.ticketNumber}</td>
+            <td class="report-num">{f.refundFormatted}</td>
+            <td>{#if f.status == 'REFUNDED'}{inject:i18n.get('t.r21v-rembourse-le')} {f.refundedAt.format('dd/MM/yyyy HH:mm')}{#else}{inject:i18n.get('t.r21v-en-attente-du-visa')}{/if}</td>
+            <td class="col-actions">
+                <a class="btn btn-small btn-muted" href="/admin/tax-refunds/slip?number={f.number}">{inject:i18n.get('t.r21v-imprimer')}</a>
+                {#if f.status != 'REFUNDED'}
+                <form method="post" action="/admin/tax-refunds/refund">
+                    <input type="hidden" name="number" value="{f.number}">
+                    <button class="btn btn-small btn-primary" type="submit">{inject:i18n.get('t.r21v-rembourser')}</button>
+                </form>
+                {/if}
+            </td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+    </div>
+    {#if forms.isEmpty}
+    <div class="empty-state">{inject:i18n.get('t.r21v-aucun-bordereau')}</div>
+    {/if}
+</div>
+{/body}

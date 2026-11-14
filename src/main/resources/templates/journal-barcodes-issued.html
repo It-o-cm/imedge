@@ -1,0 +1,81 @@
+{!
+ ! Barcodes printed at the tills of the electronic journal (BO-03-06-62): the
+ ! vouchers, credit notes and gift cards the registers issued over a period.
+ ! GET form, so the period lives in the URL. Read screen, no POST. Renders
+ ! inside the admin gabarit.
+!}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.journal-electronique')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.journal-electronique')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.recherche-multicriteres-sur-les-documents-consol')}</p>
+    </div>
+</div>
+
+<nav class="journal-tabs">
+    <a href="/admin/journal" class="journal-tab">{inject:i18n.get('t.journal-transactionnel')}</a>
+    <a href="/admin/journal/functional" class="journal-tab">{inject:i18n.get('t.journal-fonctionnel')}</a>
+    <a href="/admin/journal/movements" class="journal-tab">{inject:i18n.get('t.mouvements-de-caisse')}</a>
+    <a href="/admin/journal/training" class="journal-tab">{inject:i18n.get('t.transactions-ecole')}</a>
+    <a href="/admin/journal/parked" class="journal-tab">{inject:i18n.get('t.tickets-en-attente')}</a>
+    <a href="/admin/journal/barcodes-issued" class="journal-tab is-active">{inject:i18n.get('t.codes-barres-imprimes')}</a>
+    <a href="/admin/journal/barcodes-scanned" class="journal-tab">{inject:i18n.get('t.codes-barres-passes')}</a>
+</nav>
+
+<form method="get" action="/admin/journal/barcodes-issued" class="card journal-form">
+    <div class="field-grid">
+        <div class="field">
+            <label class="field-label" for="f-from">{inject:i18n.get('t.du')}</label>
+            <input class="input-control" id="f-from" type="date" name="from" value="{from}">
+        </div>
+        <div class="field">
+            <label class="field-label" for="f-to">{inject:i18n.get('t.au')}</label>
+            <input class="input-control" id="f-to" type="date" name="to" value="{to}">
+        </div>
+    </div>
+    <div class="filter-actions">
+        <button type="submit" class="btn btn-primary">{inject:i18n.get('t.rechercher')}</button>
+    </div>
+</form>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.codes-barres-imprimes-en-caisse')}</h2>
+    <p class="col-muted">{inject:i18n.get('t.les-avoirs-et-cartes-cadeau-imprimes-par')} {inject:i18n.get('t.n19-et-les-acomptes-sur-commande')}</p>
+    {#if rows.isEmpty}
+    <p class="col-muted">{inject:i18n.get('t.aucun-code-barres-imprime-sur-la-periode')}</p>
+    {#else}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>{inject:i18n.get('t.n-tpv')}</th>
+                <th>{inject:i18n.get('t.n-transaction')}</th>
+                <th>{inject:i18n.get('t.nature')}</th>
+                <th>{inject:i18n.get('t.code-barres')}</th>
+                <th>{inject:i18n.get('t.montant-2')}</th>
+                <th>{inject:i18n.get('t.date-d-impression')}</th>
+                <th>{inject:i18n.get('t.date-d-expiration')}</th>
+                <th>{inject:i18n.get('t.solde')}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {#for row in rows}
+            <tr>
+                <td>{row.terminalId}</td>
+                <td>{row.documentNumber}</td>
+                <td>{inject:i18n.text(row.kind)}</td>
+                <td><code>{row.number}</code></td>
+                <td>{row.amount} €</td>
+                <td>{row.issuedAt}</td>
+                <td>{row.validUntil}</td>
+                <td>{#if row.balance}{row.balance} €{#else}—{/if}</td>
+            </tr>
+            {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+{/body}

@@ -80,12 +80,11 @@
     gap: 4px 10px;
 }
 
-.grant-validation-options .toggle {
-    height: auto;
+.grant-validation-options .field-check {
     gap: 4px;
 }
 
-.grant-validation-options .toggle span {
+.grant-validation-options .field-check span {
     font-size: 12px;
 }
 

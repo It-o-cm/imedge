@@ -229,37 +229,53 @@ class RefExportServiceTest {
     }
 
     /**
-     * Covers the FAMILIES switch arm and {@code toDto(ProductFamily)}: the
-     * family fields flow verbatim into the payload.
+     * Covers the FAMILIES switch arm and {@code familyPage}: the family fields
+     * flow verbatim into the payload, and the edges of the whole page are read
+     * in two plain-value queries — the parents and the EANs of every family of
+     * the page at once, each list sorted — instead of one query per family and
+     * the loading of every article; a family with no edge gets empty lists.
      */
     @Test
+    @SuppressWarnings("unchecked")
     void getPageMapsFamilies() {
         RefExportService service = new RefExportService();
         ProductFamily family = mock(ProductFamily.class);
+        family.id = 1L;
         family.code = "F1";
         family.description = "Fruits";
         family.flags = "BIO";
-        com.intermarche.edge.domain.catalog.Product apple = mock(com.intermarche.edge.domain.catalog.Product.class);
-        apple.ean = "3001";
-        family.products = new java.util.HashSet<>(java.util.Set.of(apple));
-        ProductFamily parent = mock(ProductFamily.class);
-        parent.code = "RAYON";
-        PanacheQuery<ProductFamily> query = singlePage(0, 10, List.of(family));
-        PanacheQuery<ProductFamily> parents = mock(PanacheQuery.class);
-        when(parents.list()).thenReturn(List.of(parent));
+        ProductFamily bare = mock(ProductFamily.class);
+        bare.id = 2L;
+        bare.code = "F2";
+        jakarta.persistence.EntityManager session = mock(jakarta.persistence.EntityManager.class);
+        jakarta.persistence.TypedQuery<Object[]> parents = mock(jakarta.persistence.TypedQuery.class);
+        jakarta.persistence.TypedQuery<Object[]> eans = mock(jakarta.persistence.TypedQuery.class);
+        when(session.createQuery(
+                "select c.id, p.code from ProductFamily p join p.productFamilies c where c.id in :ids",
+                Object[].class)).thenReturn(parents);
+        when(session.createQuery(
+                "select f.id, p.ean from ProductFamily f join f.products p where f.id in :ids",
+                Object[].class)).thenReturn(eans);
+        when(parents.setParameter("ids", List.of(1L, 2L))).thenReturn(parents);
+        when(eans.setParameter("ids", List.of(1L, 2L))).thenReturn(eans);
+        when(parents.getResultList()).thenReturn(List.of(new Object[] {1L, "RAYON"}, new Object[] {1L, "PROMO"}));
+        when(eans.getResultList()).thenReturn(List.of(new Object[] {1L, "3002"}, new Object[] {1L, "3001"}));
+        service.entityManager = session;
+        PanacheQuery<ProductFamily> query = singlePage(0, 10, List.of(family, bare));
         try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
             mocked.when(() -> ProductFamily.find("order by code")).thenReturn(query);
-            mocked.when(() -> ProductFamily.find(
-                    "select p from ProductFamily p join p.productFamilies c where c.code = ?1"
-                            + " order by p.code", "F1")).thenReturn(parents);
             List<?> result = service.getPage("FAMILIES", 0, 10);
-            assertEquals(1, result.size());
+            assertEquals(2, result.size());
             RefPayloads.FamilyDto dto = (RefPayloads.FamilyDto) result.get(0);
             assertEquals("F1", dto.code);
             assertEquals("Fruits", dto.description);
             assertEquals("BIO", dto.flags);
-            assertEquals(List.of("RAYON"), dto.parentCodes);
-            assertEquals(List.of("3001"), dto.productEans);
+            assertEquals(List.of("PROMO", "RAYON"), dto.parentCodes);
+            assertEquals(List.of("3001", "3002"), dto.productEans);
+            RefPayloads.FamilyDto empty = (RefPayloads.FamilyDto) result.get(1);
+            assertEquals("F2", empty.code);
+            assertEquals(List.of(), empty.parentCodes);
+            assertEquals(List.of(), empty.productEans);
         }
     }
 
@@ -2919,8 +2935,14 @@ class RefExportServiceTest {
             assertEquals("COMPACT", dto.ticketModel);
             Method canonical = RefExportService.class.getDeclaredMethod("canonical", Object.class);
             canonical.setAccessible(true);
+            assertNull(dto.layout);
             assertEquals("SLS|Libre-service|true|articles;reglement|ABANDON|3|STANDARD|STANDARD|COMPACT",
                     canonical.invoke(service, dto));
+            menu.layout = "{\"tabs\":[]}";
+            RefPayloads.CashMenuDto laid = (RefPayloads.CashMenuDto) service.getPage("CASH_MENUS", 0, 1000).get(0);
+            assertEquals("{\"tabs\":[]}", laid.layout);
+            assertEquals("SLS|Libre-service|true|articles;reglement|ABANDON|3|STANDARD|STANDARD|COMPACT|{\"tabs\":[]}",
+                    canonical.invoke(service, laid));
         }
     }
 

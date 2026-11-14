@@ -121,6 +121,18 @@ public class DashboardResource {
 
         /** The badge of the cashier who answered (BO-06-03-02), or null. */
         public String badge;
+
+        /**
+         * The register's identity of an authorisation request (LS-04-03-13), or
+         * null: the answer carries it back, and a withdrawal names it.
+         */
+        public String requestId;
+
+        /**
+         * The profiles the function requires for its aval (LS-04-03-13,
+         * {@code gesture.function-endorsements}), or null when it names none.
+         */
+        public List<String> profiles;
     }
 
     /**
@@ -296,9 +308,9 @@ public class DashboardResource {
             LOGGER.info("Exiting method refuse: unknown call");
             return Response.status(Response.Status.NOT_FOUND).build();
         }
-        registerCommandService.issue(refused.terminalId,
+        registerCommandService.answer(refused.terminalId,
                 com.intermarche.edge.domain.sync.RegisterCommand.CommandType.SUPERVISOR_REFUSED,
-                currentUser.getFullName(), wording);
+                currentUser.getFullName(), wording, refused.requestId);
         supervisionJournal.handled(refused.terminalId, "REFUS", currentUser.getFullName(),
                 refused.reason + " : " + wording);
         LOGGER.info("Exiting method refuse");
@@ -315,8 +327,16 @@ public class DashboardResource {
      * that performed the gesture itself would be signing, in the register's
      * journal, an action nobody at the lane had confirmed.
      *
+     * <p>LS-04-03-13: the till's rule for the function stands at a distance. A
+     * function whose aval is reserved to named profiles is authorised by an
+     * account holding one of them and nobody else: the refusal is journalled,
+     * the request stays pending for somebody who may grant it, and the screen
+     * says why. The order carries the request it answers, so the register
+     * applies it to that request only.
+     *
      * @param id the registry id of the call
-     * @return 204, or 404 when no call carries that id
+     * @return 204, 403 with the reason when the account may not grant this
+     *     function, or 404 when no call carries that id
      */
     @GET
     @Path("/dashboard/call/{id}/authorise")
@@ -324,6 +344,21 @@ public class DashboardResource {
     @FeatureAccess(value = Feature.SUPERVISION, option = CrudOption.UPDATE)
     public Response authorise(@PathParam("id") long id) {
         LOGGER.info("Entering method authorise with id: " + id);
+        SupervisorCallRegistry.Call asked = supervisorCallRegistry.find(id);
+        if (asked == null) {
+            LOGGER.info("Exiting method authorise: unknown call");
+            return Response.status(Response.Status.NOT_FOUND).build();
+        }
+        if (!holdsRequiredProfile(asked.requiredProfiles)) {
+            String required = String.join(", ", asked.requiredProfiles);
+            supervisionJournal.handled(asked.terminalId, "AUTORISATION_REFUSEE", currentUser.getFullName(),
+                    asked.reason + " : profil exigé " + required);
+            LOGGER.info("Exiting method authorise: profile refused");
+            return Response.status(Response.Status.FORBIDDEN)
+                    .entity(i18n.text("Autorisation impossible : votre profil n'est pas habilité pour cette fonction ("
+                            + required + ")"))
+                    .type("text/plain; charset=UTF-8").build();
+        }
         SupervisorCallRegistry.Call granted = supervisorCallRegistry.settle(id,
                 SupervisorCallRegistry.CallStatus.AUTHORISED, null,
                 posSettingsService.settledCallsKept());
@@ -331,16 +366,61 @@ public class DashboardResource {
             LOGGER.info("Exiting method authorise: unknown call");
             return Response.status(Response.Status.NOT_FOUND).build();
         }
-        registerCommandService.issue(granted.terminalId,
+        registerCommandService.answer(granted.terminalId,
                 com.intermarche.edge.domain.sync.RegisterCommand.CommandType.SUPERVISOR_GRANTED,
                 currentUser.getFullName(),
                 // The register words the grant itself (« Autorisation accordée
                 // par {0} »): it is sent who granted, not a sentence.
-                currentUser.getFullName());
+                currentUser.getFullName(), granted.requestId);
         supervisionJournal.handled(granted.terminalId, "AUTORISATION", currentUser.getFullName(),
                 granted.reason + (granted.message.isBlank() ? "" : " " + granted.message));
         LOGGER.info("Exiting method authorise");
         return Response.noContent().build();
+    }
+
+    /**
+     * Whether the signed-in account holds one of the profiles a function
+     * requires for its aval ({@code LS-04-03-13}), compared without regard to
+     * case, as the till compares them. A function naming no profile is
+     * authorised on the SUPERVISION right alone.
+     *
+     * @param required the profiles the function requires, never null
+     * @return true when the account may grant it
+     */
+    boolean holdsRequiredProfile(List<String> required) {
+        if (required.isEmpty()) {
+            return true;
+        }
+        com.intermarche.edge.domain.people.Employee account =
+                com.intermarche.edge.domain.people.Employee.findLogin(currentUser.getName());
+        if (account == null || account.id == null) {
+            return false;
+        }
+        for (com.intermarche.edge.domain.people.EmployeeProfile binding
+                : com.intermarche.edge.domain.people.EmployeeProfile.forEmployee(account.id)) {
+            com.intermarche.edge.domain.people.Profile profile =
+                    com.intermarche.edge.domain.people.Profile.findById(binding.profileId);
+            if (profile != null && named(profile.name, required)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Whether a profile name is one of the required ones, case aside.
+     *
+     * @param name the profile's name, possibly null
+     * @param required the required names
+     * @return true when it is named
+     */
+    private static boolean named(String name, List<String> required) {
+        for (String wanted : required) {
+            if (wanted.trim().equalsIgnoreCase(name)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -417,6 +497,13 @@ public class DashboardResource {
                     .entity("Jeton invalide").build();
         }
         int removed = supervisorCallRegistry.cancelPendingFor(dto == null ? null : dto.terminalId);
+        // LS-04-03-13: the answers already issued for the withdrawn request go
+        // with it — an authorisation the till has not collected yet must not let
+        // the next gesture through.
+        if (dto != null && dto.terminalId != null && !dto.terminalId.isBlank()) {
+            registerCommandService.withdrawAnswers(dto.terminalId.trim(),
+                    dto.requestId == null || dto.requestId.isBlank() ? null : dto.requestId.trim());
+        }
         LOGGER.infof("%d demande(s) annulée(s) par la caisse %s", removed,
                 dto == null ? "?" : dto.terminalId);
         LOGGER.info("Exiting method receiveCancel");
@@ -702,7 +789,7 @@ public class DashboardResource {
         // the line board as a call waiting for a supervisor.
         if (!"SONDAGE".equalsIgnoreCase(dto.reason)) {
             supervisorCallRegistry.add(dto.terminalId, dto.operator, dto.reason, dto.message,
-                    severityOf(dto.reason));
+                    severityOf(dto.reason), dto.requestId, dto.profiles);
         }
         recordMessageConfirmation(dto);
         LOGGER.info("Exiting method receiveCall");

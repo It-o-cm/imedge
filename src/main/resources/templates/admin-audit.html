@@ -1,0 +1,91 @@
+{!
+ ! Back-office ADMINISTRATION LOG (BO-01-01-01, BO-01-01-03): every modifying
+ ! gesture of every screen and every refusal, written by the access filter,
+ ! with who, when, which screen and option, the record named, the validator
+ ! and the outcome. Read-only, filterable, extractable as CSV.
+!}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.journal-d-administration')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.journal-d-administration')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.chaque-modification-faite-au-back-office-et')}</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-ghost" href="/admin/audit/export?{baseQuery}">{inject:i18n.get('t.extraire-csv')}</a>
+    </div>
+</div>
+
+<div class="card">
+    <form method="get" action="/admin/audit" class="filter-bar">
+        <div class="filter-field">
+            <label class="filter-label" for="au-from">{inject:i18n.get('t.du')}</label>
+            <input class="input-control" id="au-from" type="date" name="from" value="{from}">
+        </div>
+        <div class="filter-field">
+            <label class="filter-label" for="au-to">{inject:i18n.get('t.au')}</label>
+            <input class="input-control" id="au-to" type="date" name="to" value="{to}">
+        </div>
+        <div class="filter-field">
+            <label class="filter-label" for="au-login">{inject:i18n.get('t.identifiant')}</label>
+            <input id="au-login" type="text" name="login" value="{login}">
+        </div>
+        <div class="filter-field">
+            <label class="filter-label" for="au-feature">{inject:i18n.get('t.ecran')}</label>
+            <select id="au-feature" name="feature">
+                <option value="">{inject:i18n.get('t.tous')}</option>
+                {#for f in features}
+                <option value="{f.key}"{#if feature == f.key} selected{/if}>{inject:i18n.text(f.label)}</option>
+                {/for}
+            </select>
+        </div>
+        <div class="filter-actions">
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.afficher')}</button>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    {#if page.rows.isEmpty()}
+    <div class="empty-state">
+        <p>{inject:i18n.get('t.aucune-entree-sur-cette-periode')}</p>
+    </div>
+    {#else}
+    <table class="data-table audit-table">
+        <thead>
+        <tr><th>{inject:i18n.get('t.date')}</th><th>{inject:i18n.get('t.compte')}</th><th>{inject:i18n.get('t.ecran')}</th><th>{inject:i18n.get('t.geste')}</th><th>{inject:i18n.get('t.issue')}</th></tr>
+        </thead>
+        <tbody>
+        {#for row in page.rows}
+        <tr>
+            <td class="col-muted">{row.moment}{#if row.pdv}<div>{inject:i18n.get('t.pdv')} {row.pdv}</div>{/if}</td>
+            <td><span class="mono">{row.loginName}</span><div class="col-muted">{row.fullName}</div></td>
+            <td>{inject:i18n.text(row.feature)}<div class="col-muted">{inject:i18n.text(row.option)}{#if row.target} · {row.target}{/if}</div></td>
+            <td class="col-muted audit-path">{row.path}{#if row.validator}<div>{inject:i18n.get('t.valide-par')} {row.validator}</div>{/if}</td>
+            <td><span class="badge {#if row.done}badge-ok{#else}badge-error{/if}">{inject:i18n.text(row.outcome)}</span>{#if row.detail}<div class="col-muted">{inject:i18n.text(row.detail)}</div>{/if}</td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+    <div class="pager">
+        <span class="pager-status">{inject:i18n.get('t.entrees')} {page.firstIndex} {inject:i18n.get('t.x21-a')} {page.lastIndex} {inject:i18n.get('t.sur')} {page.total}</span>
+        {#if page.pageCount > 1}
+        {#if page.first}
+        <span class="btn btn-small btn-muted is-hidden">{inject:i18n.get('t.precedent')}</span>
+        {#else}
+        <a class="btn btn-small btn-muted" href="/admin/audit?{baseQuery}page={page.previous}">{inject:i18n.get('t.precedent')}</a>
+        {/if}
+        <span class="pager-status">{inject:i18n.get('t.page')} {page.number} / {page.pageCount}</span>
+        {#if page.last}
+        <span class="btn btn-small btn-muted is-hidden">{inject:i18n.get('t.suivant')}</span>
+        {#else}
+        <a class="btn btn-small btn-muted" href="/admin/audit?{baseQuery}page={page.next}">{inject:i18n.get('t.suivant')}</a>
+        {/if}
+        {/if}
+    </div>
+    {/if}
+</div>
+{/body}

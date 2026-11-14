@@ -1,0 +1,53 @@
+{!
+ ! One training-mode sale of the electronic journal (LC-13-05-06): its figures
+ ! and its receipt as the register printed it. `training` is null when the id is
+ ! unknown. Read screen, no POST. Renders inside the admin gabarit.
+!}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.transaction-ecole')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.transaction-ecole')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.vente-faite-en-mode-ecole-lecture-seule')}</p>
+    </div>
+    <a class="btn btn-ghost" href="/admin/journal/training">{inject:i18n.get('t.retour-aux-transactions-ecole')}</a>
+</div>
+
+{#if training}
+<div class="card">
+    <div class="field-grid">
+        <div class="field">
+            <span class="field-label">{inject:i18n.get('t.n-tpv')}</span>
+            <span>{training.terminalId}</span>
+        </div>
+        <div class="field">
+            <span class="field-label">{inject:i18n.get('t.date')}</span>
+            <span>{training.issuedAt}</span>
+        </div>
+        <div class="field">
+            <span class="field-label">{inject:i18n.get('t.caissier')}</span>
+            <span>{training.cashierLogin}</span>
+        </div>
+        <div class="field">
+            <span class="field-label">{inject:i18n.get('t.articles')}</span>
+            <span>{training.itemCount}</span>
+        </div>
+        <div class="field">
+            <span class="field-label">{inject:i18n.get('t.total-ttc')}</span>
+            <span>{training.total} €</span>
+        </div>
+    </div>
+</div>
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.ticket-imprime')}</h2>
+    <pre class="preview-pane">{training.content}</pre>
+</div>
+{#else}
+<div class="card">
+    <p class="col-muted">{inject:i18n.get('t.transaction-ecole-introuvable')}</p>
+</div>
+{/if}
+{/body}

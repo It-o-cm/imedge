@@ -157,9 +157,9 @@
 
     <fieldset class="journal-fieldset">
         <legend>{inject:i18n.get('t.mode-de-reglement')}</legend>
-        <div class="journal-checks">
+        <div class="field-checks">
             {#for key in paymentKeys}
-            <label class="journal-check"><input type="checkbox" name="method" value="{key}" {#if criteria.methods.contains(key)}checked{/if}> {inject:i18n.code('t.s21-pm-', key)}</label>
+            <label class="field-check"><input type="checkbox" name="method" value="{key}" {#if criteria.methods.contains(key)}checked{/if}> <span>{inject:i18n.code('t.s21-pm-', key)}</span></label>
             {/for}
         </div>
     </fieldset>
@@ -211,9 +211,9 @@
 
     <fieldset class="journal-fieldset">
         <legend>{inject:i18n.get('t.evenements')}</legend>
-        <div class="journal-checks">
+        <div class="field-checks">
             {#for flag in ticketFlags}
-            <label class="journal-check"><input type="checkbox" name="flag" value="{flag}" {#if criteria.flags.contains(flag)}checked{/if}> {inject:i18n.code('t.s21-flag-', flag)}</label>
+            <label class="field-check"><input type="checkbox" name="flag" value="{flag}" {#if criteria.flags.contains(flag)}checked{/if}> <span>{inject:i18n.code('t.s21-flag-', flag)}</span></label>
             {/for}
         </div>
     </fieldset>
@@ -302,9 +302,9 @@
 <form method="get" action="/admin/journal/functional" class="card journal-form">
     <fieldset class="journal-fieldset">
         <legend>{inject:i18n.get('t.type-d-evenement')}</legend>
-        <div class="journal-checks">
+        <div class="field-checks">
             {#for type in eventTypes}
-            <label class="journal-check"><input type="checkbox" name="eventType" value="{type}" {#if criteria.eventTypes.contains(type.name)}checked{/if}> {inject:i18n.code('t.s21-ev-', type)}</label>
+            <label class="field-check"><input type="checkbox" name="eventType" value="{type}" {#if criteria.eventTypes.contains(type.name)}checked{/if}> <span>{inject:i18n.code('t.s21-ev-', type)}</span></label>
             {/for}
         </div>
     </fieldset>
@@ -412,9 +412,9 @@
 <form method="get" action="/admin/journal/movements" class="card journal-form">
     <fieldset class="journal-fieldset">
         <legend>{inject:i18n.get('t.type-de-mouvement')}</legend>
-        <div class="journal-checks">
+        <div class="field-checks">
             {#for type in movementTypes}
-            <label class="journal-check"><input type="checkbox" name="movementType" value="{type}" {#if criteria.movementTypes.contains(type)}checked{/if}> {inject:i18n.code('t.s21-mv-', type)}</label>
+            <label class="field-check"><input type="checkbox" name="movementType" value="{type}" {#if criteria.movementTypes.contains(type)}checked{/if}> <span>{inject:i18n.code('t.s21-mv-', type)}</span></label>
             {/for}
         </div>
     </fieldset>

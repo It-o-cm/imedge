@@ -28,6 +28,10 @@ public class CustomerOrderService {
     /** The clock the day of a sale voucher is judged against (BO-10-01-40). */
     java.time.Clock clock = java.time.Clock.systemDefaultZone();
 
+    /** Pushes the status of the e-commerce and mobility orders to the platforms (DG-03-02-04). */
+    @jakarta.inject.Inject
+    com.intermarche.edge.service.sync.TicketStreamService ticketStreamService;
+
     /**
      * Recalls an order by its code, for the till to load at point of sale — but
      * only when it is still recallable (open or partially paid). A code that
@@ -93,7 +97,7 @@ public class CustomerOrderService {
     @Transactional
     public boolean applyDeposit(CustomerOrder order, BigDecimal amount) {
         LOGGER.info("Entering method applyDeposit");
-        if (order == null || !order.isRecallable() || !order.kind.isDepositAllowed()) {
+        if (order == null || !order.isRecallable() || !order.isDepositAllowed()) {
             LOGGER.info("Exiting method applyDeposit: refused (state or kind)");
             return false;
         }
@@ -103,6 +107,7 @@ public class CustomerOrderService {
         }
         order.depositPaid = order.depositPaid.add(amount);
         order.status = order.remaining().signum() == 0 ? OrderStatus.PAID : OrderStatus.PARTIALLY_PAID;
+        notifyStatus(order);
         LOGGER.info("Exiting method applyDeposit: recorded");
         return true;
     }
@@ -121,8 +126,9 @@ public class CustomerOrderService {
             LOGGER.info("Exiting method settleRemaining: refused");
             return false;
         }
-        order.depositPaid = order.totalAmount == null ? BigDecimal.ZERO : order.totalAmount;
+        order.depositPaid = balance(order);
         order.status = OrderStatus.PAID;
+        notifyStatus(order);
         LOGGER.info("Exiting method settleRemaining: settled");
         return true;
     }
@@ -142,6 +148,7 @@ public class CustomerOrderService {
             return false;
         }
         order.status = OrderStatus.COLLECTED;
+        notifyStatus(order);
         LOGGER.info("Exiting method collect: collected");
         return true;
     }
@@ -221,44 +228,69 @@ public class CustomerOrderService {
      *
      * @param order the document, never null
      * @param vatDetail the deposit's per-rate VAT, compact form, possibly null
+     * <p>A document whose kind takes no deposit and which states no deposit
+     * rule of its own — a mobility transaction, a self-scanning basket — is
+     * refused (DG-03-01-05).
+     *
      * @return true when recorded, false when the document can no longer be paid
+     *     or takes no deposit
      */
     @Transactional
     public boolean recordTillDeposit(CustomerOrder order, String vatDetail) {
         LOGGER.info("Entering method recordTillDeposit with order: " + order.code);
-        if (!order.isRecallable()) {
-            LOGGER.info("Exiting method recordTillDeposit: refused (not recallable)");
+        if (!order.isRecallable() || !order.isDepositAllowed()) {
+            LOGGER.info("Exiting method recordTillDeposit: refused (not recallable or no deposit)");
             return false;
         }
         order.depositVatDetail = com.intermarche.edge.domain.payment.DepositVat.merge(
                 order.depositVatDetail, vatDetail);
         order.status = OrderStatus.PARTIALLY_PAID;
+        notifyStatus(order);
         LOGGER.info("Exiting method recordTillDeposit: recorded");
         return true;
     }
 
     /**
-     * Settles an order a REGISTER closed the sale of (LC-06-03-07): the balance
-     * was paid at the till and the goods went with it, so the order becomes
-     * PAID then COLLECTED, and its code can no longer be recalled and paid a
-     * second time.
-     *
-     * <p>IDEMPOTENT BY DESIGN: settling an order already paid or collected —
-     * or a node whose settle push was answered but never acknowledged —
-     * answers true without writing anything. Refused only on an order the
-     * store does not hold or one already cancelled.
+     * Settles an order a REGISTER closed the sale of (LC-06-03-07), the till
+     * not naming its ticket.
      *
      * @param order the order the till settled
      * @return true when the order stands settled, false when refused
      */
     @Transactional
     public boolean settleAtTill(CustomerOrder order) {
-        LOGGER.info("Entering method settleAtTill with order: " + order);
+        return settleAtTill(order, null);
+    }
+
+    /**
+     * Settles an order a REGISTER closed the sale of (LC-06-03-07): the balance
+     * was paid at the till and the goods went with it, so the order becomes
+     * PAID then COLLECTED, and its code can no longer be recalled and paid a
+     * second time. The ticket the till names is kept on the order, so the
+     * e-commerce platform reads which ticket settled it (DG-03-02-01, -03).
+     *
+     * <p>IDEMPOTENT BY DESIGN: settling an order already paid or collected —
+     * or a node whose settle push was answered but never acknowledged —
+     * answers true and only records the ticket an earlier push did not name.
+     * Refused only on an order the store does not hold or one already
+     * cancelled.
+     *
+     * @param order the order the till settled
+     * @param ticketNumber the settling ticket, or null when the till names none
+     * @return true when the order stands settled, false when refused
+     */
+    @Transactional
+    public boolean settleAtTill(CustomerOrder order, String ticketNumber) {
+        LOGGER.info("Entering method settleAtTill with order: " + order + ", ticketNumber: " + ticketNumber);
         if (order == null) {
             LOGGER.info("Exiting method settleAtTill: refused (no order)");
             return false;
         }
+        String ticket = ticketNumber == null || ticketNumber.isBlank() ? null : ticketNumber.trim();
         if (order.status == OrderStatus.PAID || order.status == OrderStatus.COLLECTED) {
+            if (order.settledTicketNumber == null) {
+                order.settledTicketNumber = ticket;
+            }
             LOGGER.info("Exiting method settleAtTill: already settled");
             return true;
         }
@@ -266,10 +298,57 @@ public class CustomerOrderService {
             LOGGER.info("Exiting method settleAtTill: refused (cancelled)");
             return false;
         }
-        order.depositPaid = order.totalAmount == null ? BigDecimal.ZERO : order.totalAmount;
-        order.status = OrderStatus.PAID;
+        order.depositPaid = balance(order);
+        order.settledTicketNumber = ticket;
         order.status = OrderStatus.COLLECTED;
+        notifyStatus(order);
         LOGGER.info("Exiting method settleAtTill: settled");
         return true;
+    }
+
+    /**
+     * The deposit that settles an order in full: its total minus what was
+     * collected before it reached the store, never negative.
+     *
+     * @param order the order
+     * @return the settling deposit
+     */
+    private static BigDecimal balance(CustomerOrder order) {
+        BigDecimal total = order.totalAmount == null ? BigDecimal.ZERO : order.totalAmount;
+        return total.subtract(order.getCollected()).max(BigDecimal.ZERO);
+    }
+
+    /**
+     * Pushes the new status of an e-commerce or mobility order to the
+     * platforms (DG-03-02-04); the other kinds have no platform to tell. An
+     * e-commerce order the platform paid short and the till has now settled
+     * is marked settled on its integration row, with its ticket, so the
+     * back office no longer reads it as waiting (DG-03-01-05).
+     *
+     * @param order the order whose status changed
+     */
+    public void notifyStatus(CustomerOrder order) {
+        if (order.kind != OrderKind.ECOMMERCE && order.kind != OrderKind.MOBILITY) {
+            return;
+        }
+        com.intermarche.edge.domain.sale.EcommerceOrder integration =
+                order.kind == OrderKind.ECOMMERCE && !order.isRecallable() && order.status != OrderStatus.CANCELLED
+                        ? integration(order.code) : null;
+        if (integration != null && integration.isPendingPayment()) {
+            integration.status = com.intermarche.edge.domain.sale.EcommerceOrder.Status.SETTLED;
+            integration.ticketNumber = order.settledTicketNumber;
+            integration.message = "Commande réglée en caisse";
+        }
+        ticketStreamService.onEcommerceOrderStatus(order);
+    }
+
+    /**
+     * The integration row of an e-commerce order.
+     *
+     * @param reference the order's reference
+     * @return the row, or null
+     */
+    com.intermarche.edge.domain.sale.EcommerceOrder integration(String reference) {
+        return com.intermarche.edge.domain.sale.EcommerceOrder.findByReference(reference);
     }
 }

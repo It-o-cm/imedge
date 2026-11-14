@@ -63,20 +63,6 @@
     font-weight: 600;
 }
 
-.journal-checks {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px 18px;
-}
-
-.journal-check {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 14px;
-    color: var(--im-ink);
-}
-
 .journal-count {
     margin: 0 0 12px;
     color: var(--im-ink-soft);

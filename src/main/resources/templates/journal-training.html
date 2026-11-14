@@ -1,0 +1,81 @@
+{!
+ ! Training-mode sales of the electronic journal (LC-13-05-06). A tab of its own,
+ ! read from the dedicated training table: the sales a register made in training
+ ! mode are consulted here, and no revenue report, Z or accounting export reads
+ ! them. GET form, so the period lives in the URL. Read screen, no POST. Renders
+ ! inside the admin gabarit.
+!}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.journal-electronique')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.journal-electronique')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.recherche-multicriteres-sur-les-documents-consol')}</p>
+    </div>
+</div>
+
+<nav class="journal-tabs">
+    <a href="/admin/journal" class="journal-tab">{inject:i18n.get('t.journal-transactionnel')}</a>
+    <a href="/admin/journal/functional" class="journal-tab">{inject:i18n.get('t.journal-fonctionnel')}</a>
+    <a href="/admin/journal/movements" class="journal-tab">{inject:i18n.get('t.mouvements-de-caisse')}</a>
+    <a href="/admin/journal/training" class="journal-tab is-active">{inject:i18n.get('t.transactions-ecole')}</a>
+    <a href="/admin/journal/parked" class="journal-tab">{inject:i18n.get('t.tickets-en-attente')}</a>
+    <a href="/admin/journal/barcodes-issued" class="journal-tab">{inject:i18n.get('t.codes-barres-imprimes')}</a>
+    <a href="/admin/journal/barcodes-scanned" class="journal-tab">{inject:i18n.get('t.codes-barres-passes')}</a>
+</nav>
+
+<form method="get" action="/admin/journal/training" class="card journal-form">
+    <div class="field-grid">
+        <div class="field">
+            <label class="field-label" for="f-from">{inject:i18n.get('t.du')}</label>
+            <input class="input-control" id="f-from" type="date" name="from" value="{from}">
+        </div>
+        <div class="field">
+            <label class="field-label" for="f-to">{inject:i18n.get('t.au')}</label>
+            <input class="input-control" id="f-to" type="date" name="to" value="{to}">
+        </div>
+    </div>
+    <div class="filter-actions">
+        <button type="submit" class="btn btn-primary">{inject:i18n.get('t.rechercher')}</button>
+    </div>
+</form>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.ventes-en-mode-ecole')}</h2>
+    <p class="col-muted">{inject:i18n.get('t.les-ventes-faites-en-mode-ecole-sont')}
+    {rows.size} {inject:i18n.get('t.vente-s')} {total} {inject:i18n.get('t.au-total')}</p>
+    {#if rows.isEmpty}
+    <p class="col-muted">{inject:i18n.get('t.aucune-vente-en-mode-ecole-sur-la')}</p>
+    {#else}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>{inject:i18n.get('t.date')}</th>
+                <th>{inject:i18n.get('t.n-tpv')}</th>
+                <th>{inject:i18n.get('t.caissier')}</th>
+                <th>{inject:i18n.get('t.articles')}</th>
+                <th>{inject:i18n.get('t.total-ttc')}</th>
+                <th>{inject:i18n.get('t.ecole')}</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {#for row in rows}
+            <tr>
+                <td>{row.issuedAt}</td>
+                <td>{row.terminalId}</td>
+                <td>{row.cashierLogin}</td>
+                <td>{row.itemCount}</td>
+                <td>{row.total} €</td>
+                <td>O</td>
+                <td class="col-actions"><a class="btn btn-small" href="/admin/journal/training/{row.id}">{inject:i18n.get('t.ouvrir')}</a></td>
+            </tr>
+            {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+{/body}

@@ -1,0 +1,72 @@
+{!
+ ! Hardware and software inventory (BO-08-04-20): what each register and
+ ! store node reported it is made of — its declared checkout equipment, the
+ ! peripherals installed and their state, its processor and memory, its
+ ! system, its Java runtime and its application version. The chart counts
+ ! the installed peripherals by role, healthy and failed.
+ ! `view` = ConsoleView of InventoryRow.
+!}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.sup-parc-materiel-et-logiciel')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.sup-parc-materiel-et-logiciel')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.sup-inventaire-sous-titre')}</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn" href="/admin/supervision/inventory/export?format=csv&{view.filter.query}">{inject:i18n.get('t.sup-export-csv')}</a>
+        <a class="btn" href="/admin/supervision/inventory/export?format=xlsx&{view.filter.query}">{inject:i18n.get('t.sup-export-xls')}</a>
+    </div>
+</div>
+
+<form method="get" action="/admin/supervision/inventory" class="filter-bar">
+    {#include admin-console-filters filter=view.filter /}
+    <div class="filter-field">
+        <label class="filter-label" for="iv-category">{inject:i18n.get('t.sup-categorie')}</label>
+        <select id="iv-category" name="category">
+            <option value="">{inject:i18n.get('t.sup-toutes')}</option>
+            {#for choice in view.choices}
+            <option value="{choice}"{#if view.filter.category == choice} selected{/if}>{inject:i18n.code('t.code-cat-', choice)}</option>
+            {/for}
+        </select>
+    </div>
+    <div class="filter-actions">
+        <button class="btn btn-primary" type="submit">{inject:i18n.get('t.sup-afficher')}</button>
+    </div>
+</form>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.sup-peripheriques-installes')}</h2>
+    <p class="card-sub"><span class="badge badge-ok">{inject:i18n.get('t.sup-ok')}</span> <span class="badge badge-error">{inject:i18n.get('t.sup-ko')}</span></p>
+    {#if view.chart}
+    <div class="report-chart-box">{view.chart.raw}</div>
+    {#else}
+    <p class="empty-hint">{inject:i18n.get('t.sup-aucune-donnee-a-representer')}</p>
+    {/if}
+</div>
+
+<div class="card">
+    <table class="sync-table">
+        <thead>
+            <tr><th>{inject:i18n.get('t.sup-point-de-vente')}</th><th>{inject:i18n.get('t.sup-noeud')}</th><th>{inject:i18n.get('t.sup-categorie')}</th><th>{inject:i18n.get('t.sup-element')}</th><th>{inject:i18n.get('t.sup-valeur')}</th></tr>
+        </thead>
+        <tbody>
+            {#for row in view.rows}
+            <tr class="{#if !row.ok}row-error{/if}">
+                <td>{row.pdv ?: '—'}</td>
+                <td>{row.nodeId}</td>
+                <td>{inject:i18n.code('t.code-cat-', row.category)}</td>
+                <td>{inject:i18n.text(row.name)}</td>
+                <td>{#if row.category == 'PERIPHERAL'}{inject:i18n.code('t.code-avail-', row.detail)}{#else}{inject:i18n.text(row.detail.or('—'))}{/if}</td>
+            </tr>
+            {/for}
+            {#if view.rows.isEmpty()}
+            <tr><td colspan="5" class="cell-empty">{inject:i18n.get('t.sup-aucun-inventaire')}</td></tr>
+            {/if}
+        </tbody>
+    </table>
+</div>
+{/body}

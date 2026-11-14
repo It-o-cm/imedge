@@ -55,15 +55,17 @@
 <div class="card">
     <h2 class="card-title">{inject:i18n.get('t.nouvelle-campagne')}</h2>
     <form method="post" action="/admin/campaigns/create">
-        <div class="form-row"><label>{inject:i18n.get('t.code')}</label><input class="input-control" name="code" required></div>
-        <div class="form-row"><label>{inject:i18n.get('t.libelle')}</label><input class="input-control" name="label"></div>
-        <div class="form-row"><label>{inject:i18n.get('t.debut-aaaa-mm-jj')}</label><input class="input-control" name="validFrom" type="date"></div>
-        <div class="form-row"><label>{inject:i18n.get('t.fin-exclue-aaaa-mm-jj')}</label><input class="input-control" name="validTo" type="date"></div>
-        <div class="form-row"><label>{inject:i18n.get('t.plafond-montant')}</label><input class="input-control" name="maxAmount"></div>
-        <div class="form-row"><label>{inject:i18n.get('t.plafond-applications')}</label><input class="input-control" name="maxApplications"></div>
-        <div class="form-row"><label>{inject:i18n.get('t.par-pdv')}</label><input type="checkbox" name="perStore"></div>
-        <div class="form-row"><label>{inject:i18n.get('t.notes')}</label><input class="input-control" name="notes"></div>
-        <button class="btn btn-primary" type="submit">{inject:i18n.get('t.creer-2')}</button>
+        <div class="field-grid">
+            <label class="field"><span class="field-label">{inject:i18n.get('t.code')}</span><input class="input-control" name="code" required></label>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.libelle')}</span><input class="input-control" name="label"></label>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.debut-aaaa-mm-jj')}</span><input class="input-control" name="validFrom" type="date"></label>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.fin-exclue-aaaa-mm-jj')}</span><input class="input-control" name="validTo" type="date"></label>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.plafond-montant')}</span><input class="input-control" name="maxAmount"></label>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.plafond-applications')}</span><input class="input-control" name="maxApplications"></label>
+            <div class="field"><label class="field-check"><input type="checkbox" name="perStore"> <span>{inject:i18n.get('t.par-pdv')}</span></label></div>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.notes')}</span><input class="input-control" name="notes"></label>
+        </div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.creer-2')}</button></div>
     </form>
 </div>
 {/body}

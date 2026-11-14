@@ -193,6 +193,17 @@ class EngineFeedRelayResourceTest {
         assertEquals(delegated, resource.importFeed("SAFE_RECEIPTS", null, null, null, null, body));
     }
 
+    /** The lot recall feed forwards the import mode and returns the importer response. */
+    @Test
+    void recallLotsCodeForwardsTheImportMode() {
+        resource.recallLotCsvResource = mock(RecallLotCsvResource.class);
+        InputStream body = stream("EAN|LOT\n1234567890123|LOT-1\n");
+        Response delegated = Response.ok("{\"createdCount\":1}").build();
+        when(resource.recallLotCsvResource.importRecallLots(any(InputStream.class), eq("full")))
+                .thenReturn(delegated);
+        assertEquals(delegated, resource.importFeed(" recall_lots ", "full", null, null, null, body));
+    }
+
     /**
      * A null code is rejected like an unknown one (null arm of the
      * normalization).

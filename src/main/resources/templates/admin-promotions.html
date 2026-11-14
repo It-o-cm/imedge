@@ -1,0 +1,86 @@
+{!
+ ! PROMOTIONS (BO-06-08-01, BO-06-08-02): the number, label, type and upstream
+ ! financing of the promotions the promotional states report on. The number is
+ ! the offer identifier the valuation engine stamps on the sold lines, or the
+ ! rule code of a loyalty advantage.
+!}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.r21v-promotions')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.r21v-promotions')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.r21v-promotions-sous-titre')}</p>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.r21v-decrire-une-promotion')}</h2>
+    <form method="post" action="/admin/promotions/save">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="p-code">{inject:i18n.get('t.r21v-numero-de-la-promotion')}</label>
+                <input class="input-control" id="p-code" type="text" name="code" maxlength="60" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="p-label">{inject:i18n.get('t.r21v-libelle-de-la-promotion')}</label>
+                <input class="input-control" id="p-label" type="text" name="label" maxlength="120" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="p-kind">{inject:i18n.get('t.r21v-type-de-promotion')}</label>
+                <select class="input-control" id="p-kind" name="kind">
+                    <option value="VALUE">{inject:i18n.get('t.r21v-par-valeur')}</option>
+                    <option value="PERCENT">{inject:i18n.get('t.r21v-en-pourcentage')}</option>
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-check"><input id="p-upstream" type="checkbox" name="upstreamFunded" value="on"> <span>{inject:i18n.get('t.r21v-financement-amont')}</span></label>
+            </div>
+        </div>
+        <div class="filter-actions">
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.r21v-enregistrer')}</button>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <div class="report-table-box">
+    <table class="data-table">
+        <thead>
+        <tr>
+            <th>{inject:i18n.get('t.r21v-numero-de-la-promotion')}</th>
+            <th>{inject:i18n.get('t.r21v-libelle-de-la-promotion')}</th>
+            <th>{inject:i18n.get('t.r21v-type-de-promotion')}</th>
+            <th>{inject:i18n.get('t.r21v-financement-amont')}</th>
+            <th class="col-actions"></th>
+        </tr>
+        </thead>
+        <tbody>
+        {#for promotion in promotions}
+        <tr>
+            <td>{promotion.code}</td>
+            <td>{promotion.label}</td>
+            <td>{#if promotion.kind == 'PERCENT'}{inject:i18n.get('t.r21v-en-pourcentage')}{#else}{inject:i18n.get('t.r21v-par-valeur')}{/if}</td>
+            <td>{#if promotion.upstreamFunded}{inject:i18n.get('t.r21v-oui')}{#else}{inject:i18n.get('t.r21v-non')}{/if}</td>
+            <td class="col-actions">
+                <form method="post" action="/admin/promotions/delete">
+                    <input type="hidden" name="code" value="{promotion.code}">
+                    <button class="btn btn-small btn-muted" type="submit">{inject:i18n.get('t.r21v-supprimer')}</button>
+                </form>
+            </td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+    </div>
+    {#if promotions.isEmpty}
+    <div class="empty-state">{inject:i18n.get('t.r21v-aucune-promotion-decrite')}</div>
+    {/if}
+</div>
+{/body}

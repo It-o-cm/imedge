@@ -1,0 +1,160 @@
+{! Register configuration (BO-03-09, BO-03-10, BO-03-12-03): the parameters of
+ ! one point of contact or one island, posed at its own echelon level, and the
+ ! grouped configuration of a set of registers. Every value is an echelon
+ ! parameter: the registers receive it resolved in their SETTINGS. !}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.k19-configuration-des-caisses')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.k19-configuration-des-caisses')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.k19-config-sous-titre')}</p>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
+{/if}
+
+{#if selectedLevel}
+<div class="card">
+    <h2 class="card-title">{#if selectedLevel == 'ISLAND'}{inject:i18n.get('t.k19-parametres-de-l-ilot')}{#else}{inject:i18n.get('t.k19-parametres-de-la-caisse')}{/if} {selectedCode}</h2>
+    <p class="page-sub">{inject:i18n.get('t.k19-vide-herite')}</p>
+    <form method="post" action="/admin/register-config/save" class="field-grid">
+        <input type="hidden" name="level" value="{selectedLevel}">
+        <input type="hidden" name="code" value="{selectedCode}">
+        {#for field in fields}
+        <div class="field">
+            <label class="field-label" for="f-{field.key}">{inject:i18n.text(field.label)}</label>
+            {#if field.list}
+            <select class="input-control" id="f-{field.key}" name="v.{field.key}">
+                {#for choice in field.choices}
+                <option value="{choice.value}" {#if field.value == choice.value}selected{/if}>{inject:i18n.text(choice.label)}</option>
+                {/for}
+            </select>
+            {#else}
+            <input class="input-control" id="f-{field.key}" type="{#if field.kind == 'INT'}number{#else}text{/if}" name="v.{field.key}" maxlength="250" value="{field.value}">
+            {/if}
+            <span class="field-hint">{inject:i18n.text(field.hint)}</span>
+            {#if field.pendingDate}
+            <span class="field-hint f19-programmed">{inject:i18n.get('t.f19-valeur-actuelle')} : {#if field.value}{field.value}{#else}{inject:i18n.get('t.f19-heritee')}{/if} · {inject:i18n.get('t.f19-valeur-programmee-le')} {field.pendingDate} : {#if field.pending}{field.pending}{#else}{inject:i18n.get('t.f19-heritee')}{/if}</span>
+            {/if}
+        </div>
+        {/for}
+        <div class="field">
+            <label class="field-label" for="f-effective">{inject:i18n.get('t.k19-date-d-effet')}</label>
+            <input class="input-control" id="f-effective" type="date" name="effectiveDate">
+        </div>
+        <div class="page-actions">
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer')}</button>
+            <a class="btn btn-ghost" href="/admin/register-config">{inject:i18n.get('t.annuler')}</a>
+        </div>
+    </form>
+</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.k19-configuration-groupee')}</h2>
+    <p class="page-sub">{inject:i18n.get('t.k19-configuration-groupee-aide')}</p>
+    <form method="post" action="/admin/register-config/group" class="field-grid">
+        <div class="field">
+            <label class="field-label" for="g-key">{inject:i18n.get('t.k19-parametre')}</label>
+            <select class="input-control" id="g-key" name="key">
+                {#for entry in keys}
+                <option value="{entry.key}">{inject:i18n.text(entry.value)}</option>
+                {/for}
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-label" for="g-value">{inject:i18n.get('t.k19-valeur')}</label>
+            <input class="input-control" id="g-value" type="text" name="value" maxlength="250">
+        </div>
+        <div class="field">
+            <label class="field-label" for="g-target">{inject:i18n.get('t.k19-cible')}</label>
+            <select class="input-control" id="g-target" name="target">
+                <option value="ISLAND">{inject:i18n.get('t.k19-cible-ilot')}</option>
+                <option value="TYPE">{inject:i18n.get('t.k19-cible-type')}</option>
+                <option value="LIST">{inject:i18n.get('t.k19-cible-liste')}</option>
+                <option value="ALL">{inject:i18n.get('t.k19-cible-toutes')}</option>
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-label" for="g-island">{inject:i18n.get('t.ilot')}</label>
+            <select class="input-control" id="g-island" name="island">
+                <option value="">—</option>
+                {#for island in islands}
+                <option value="{island.code}">{island.code} — {inject:i18n.text(island.label)}</option>
+                {/for}
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-label" for="g-type">{inject:i18n.get('t.type-de-tpv')}</label>
+            <select class="input-control" id="g-type" name="tpvType">
+                <option value="">—</option>
+                {#for type in tpvTypes}
+                <option value="{type}">{inject:i18n.text(type.label)}</option>
+                {/for}
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-label" for="g-terminals">{inject:i18n.get('t.k19-liste-de-caisses')}</label>
+            <input class="input-control" id="g-terminals" type="text" name="terminals" maxlength="500" placeholder="C01;C02">
+        </div>
+        <div class="field">
+            <label class="field-label" for="g-effective">{inject:i18n.get('t.k19-date-d-effet')}</label>
+            <input class="input-control" id="g-effective" type="date" name="effectiveDate">
+        </div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.k19-appliquer')}</button></div>
+    </form>
+</div>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.k19-donnees-de-formation')}</h2>
+    <p class="page-sub">{inject:i18n.get('t.k19-donnees-de-formation-aide')}</p>
+    <form method="post" action="/admin/register-config/training">
+        <button class="btn btn-primary" type="submit">{inject:i18n.get('t.k19-installer-donnees-formation')}</button>
+    </form>
+</div>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.points-de-caisse')}</h2>
+    {#if points.isEmpty()}
+    <p class="page-sub">{inject:i18n.get('t.aucun-point-de-caisse-n-est-administre')}</p>
+    {#else}
+    <table class="data-table">
+        <thead><tr><th>{inject:i18n.get('t.identifiant-terminal')}</th><th>{inject:i18n.get('t.ilot')}</th><th>{inject:i18n.get('t.type-de-tpv')}</th><th class="col-actions">{inject:i18n.get('t.actions')}</th></tr></thead>
+        <tbody>
+        {#for point in points}
+        <tr>
+            <td>{point.terminalId}{#if point.label} — {point.label}{/if}</td>
+            <td>{point.islandCode ?: '—'}</td>
+            <td>{#if point.tpvType}{inject:i18n.text(point.tpvType.label)}{/if}</td>
+            <td class="col-actions"><a class="btn btn-small" href="/admin/register-config?level=CHECKOUT_POINT&code={point.terminalId}">{inject:i18n.get('t.k19-configurer')}</a></td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.ilots-de-caisse')}</h2>
+    {#if islands.isEmpty()}
+    <p class="page-sub">{inject:i18n.get('t.k19-aucun-ilot')}</p>
+    {#else}
+    <table class="data-table">
+        <thead><tr><th>{inject:i18n.get('t.ilot')}</th><th class="col-actions">{inject:i18n.get('t.actions')}</th></tr></thead>
+        <tbody>
+        {#for island in islands}
+        <tr>
+            <td>{island.code} — {inject:i18n.text(island.label)}</td>
+            <td class="col-actions"><a class="btn btn-small" href="/admin/register-config?level=ISLAND&code={island.code}">{inject:i18n.get('t.k19-configurer')}</a></td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+{/body}

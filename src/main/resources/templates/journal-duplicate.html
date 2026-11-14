@@ -1,0 +1,58 @@
+{!
+ ! BO-04-01-53 : la REIMPRESSION depuis le back-office d'une facture ou d'un
+ ! bon de livraison emis en caisse, avec la mention DUPLICATA. Le document
+ ! compte une impression de plus et la reimpression est tracee au journal.
+!}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.s21-duplicata')}{/title}
+
+{#body}
+{#if duplicate}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.text(duplicate.title)} {duplicate.number}</h1>
+        <p class="page-sub" id="duplicate-mention"><b>{inject:i18n.get('t.s21-duplicata')}</b> — {inject:i18n.get('t.impressions')} : {duplicate.printCount}</p>
+    </div>
+    <div class="page-actions">
+        <button class="btn btn-primary" type="button" onclick="window.print()">{inject:i18n.get('t.imprimer')}</button>
+        <a class="btn btn-ghost" href="/admin/journal">{inject:i18n.get('t.retour-au-journal')}</a>
+    </div>
+</div>
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.s21-duplicata')}</h2>
+    <dl class="field-grid">
+        <div class="field"><dt class="field-label">{inject:i18n.get('t.emis-le')}</dt><dd>{duplicate.issuedAt}</dd></div>
+        <div class="field"><dt class="field-label">{inject:i18n.get('t.caisse')}</dt><dd>{duplicate.terminal ?: '—'}</dd></div>
+        <div class="field"><dt class="field-label">{inject:i18n.get('t.ticket')}</dt><dd>{duplicate.ticketNumber ?: '—'}</dd></div>
+        <div class="field"><dt class="field-label">{inject:i18n.get('t.nom')}</dt><dd>{duplicate.customerName ?: '—'}</dd></div>
+        <div class="field"><dt class="field-label">{inject:i18n.get('t.compte')}</dt><dd>{duplicate.customerAccount ?: '—'}</dd></div>
+        <div class="field"><dt class="field-label">{inject:i18n.get('t.s21-adresse')}</dt><dd>{duplicate.customerAddress ?: '—'}</dd></div>
+        <div class="field"><dt class="field-label">SIRET</dt><dd>{duplicate.customerSiret ?: '—'}</dd></div>
+        <div class="field"><dt class="field-label">{inject:i18n.get('t.s21-tva-intracommunautaire')}</dt><dd>{duplicate.customerVatNumber ?: '—'}</dd></div>
+    </dl>
+</div>
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.lignes')}</h2>
+    <table class="data-table">
+        <thead><tr><th>{inject:i18n.get('t.libelle')}</th><th>{inject:i18n.get('t.quantite')}</th><th>{inject:i18n.get('t.total-ttc')}</th></tr></thead>
+        <tbody>
+            {#for line in duplicate.lines}
+            <tr><td>{line.label}</td><td>{line.quantity}</td><td>{line.total}</td></tr>
+            {/for}
+        </tbody>
+    </table>
+    <table class="data-table">
+        <thead><tr><th>{inject:i18n.get('t.taux-de-tva')}</th><th>{inject:i18n.get('t.total-ht')}</th><th>{inject:i18n.get('t.total-tva')}</th><th>{inject:i18n.get('t.total-ttc')}</th></tr></thead>
+        <tbody>
+            {#for vat in duplicate.vatRows}
+            <tr><td>{vat.rate} %</td><td>{vat.base}</td><td>{vat.tax}</td><td>{vat.total}</td></tr>
+            {/for}
+            <tr><th>{inject:i18n.get('t.total')}</th><th>{duplicate.totalExcludingTax}</th><th>{duplicate.totalVat}</th><th id="duplicate-total">{duplicate.totalIncludingTax}</th></tr>
+        </tbody>
+    </table>
+</div>
+{#else}
+<div class="card"><p class="col-muted">{inject:i18n.get('t.q-document-introuvable')}</p></div>
+{/if}
+{/body}

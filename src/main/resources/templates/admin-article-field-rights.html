@@ -1,0 +1,65 @@
+{!
+ ! Back-office ARTICLE FIELD RIGHTS (BO-02-03-33): which profile may change
+ ! which datum of the article fiche. A row without a tick is open to every
+ ! account allowed to save the fiche; ticking reserves the datum to the ticked
+ ! profiles. The administrator changes everything. POST -> 303 -> notice.
+!}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.p20-droits-de-la-fiche-article')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.p20-droits-de-la-fiche-article')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.p20-chaque-donnee-de-la-fiche-reservee')}</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-ghost" href="/admin/articles">{inject:i18n.get('t.retour-aux-articles')}</a>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
+{/if}
+
+<div class="card">
+    {#if profiles.isEmpty()}
+    <div class="empty-state">
+        <p>{inject:i18n.get('t.p20-aucun-profil-administre')}</p>
+    </div>
+    {#else}
+    <form method="post" action="/admin/article-field-rights">
+        <div style="overflow-x: auto;">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>{inject:i18n.get('t.p20-donnee-de-la-fiche')}</th>
+                    {#for profile in profiles}
+                    <th>{profile.name}</th>
+                    {/for}
+                    <th>{inject:i18n.get('t.p20-acces')}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {#for row in rows}
+                <tr>
+                    <td>{inject:i18n.text(row.field.label)}</td>
+                    {#for profile in profiles}
+                    <td><input type="checkbox" name="right" value="{row.field.code}:{profile.id}" aria-label="{profile.name}" {#if row.profileIds.contains(profile.id)}checked{/if}></td>
+                    {/for}
+                    <td>{#if row.restricted}<span class="badge badge-off">{inject:i18n.get('t.p20-reserve')}</span>{#else}<span class="badge badge-ok">{inject:i18n.get('t.p20-ouvert')}</span>{/if}</td>
+                </tr>
+                {/for}
+            </tbody>
+        </table>
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer')}</button>
+        </div>
+    </form>
+    {/if}
+</div>
+{/body}
+
+{#footer}{inject:i18n.get('t.p20-l-administrateur-modifie-toujours-toutes')}{/footer}

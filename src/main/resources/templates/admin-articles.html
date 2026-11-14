@@ -69,7 +69,7 @@
         {! The TOTAL and not the page: the bulk applies to the whole perimeter, and a
          ! bar announcing 100 articles while writing 109 204 is a trap. !}
         <span class="bulk-code-label">{inject:i18n.get('t.code-article-a-l-ecran-sur-les')} {page.total} {inject:i18n.get('t.article-s-filtre-s')}</span>
-        <label class="bulk-code-toggle"><input type="checkbox" name="value"> {inject:i18n.get('t.activer')}</label>
+        <label class="field-check"><input type="checkbox" name="value"> <span>{inject:i18n.get('t.activer')}</span></label>
         <button class="btn btn-small btn-ghost" type="submit">{inject:i18n.get('t.appliquer-en-masse')}</button>
     </form>
     <div class="bulk-code-bar">

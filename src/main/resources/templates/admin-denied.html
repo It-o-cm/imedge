@@ -1,0 +1,26 @@
+{!
+ ! Back-office REFUSAL page (BO-01-04-01): the access filter answers 403 with
+ ! this page when the signed-in account's profiles do not grant the feature
+ ! under the option the gesture exercises, on this point of sale.
+!}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.droit-refuse')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.droit-refuse')}</h1>
+        <p class="page-sub">{feature} — {option}</p>
+    </div>
+</div>
+
+<div class="alert alert-error" role="alert">{reason}</div>
+
+<div class="card">
+    <p class="card-sub">{inject:i18n.get('t.demandez-a-un-administrateur-de-vous-attribuer')}</p>
+    <div class="page-actions">
+        <a class="btn" href="/admin">{inject:i18n.get('t.retour-a-l-accueil')}</a>
+    </div>
+</div>
+{/body}

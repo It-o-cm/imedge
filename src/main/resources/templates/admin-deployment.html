@@ -1,0 +1,190 @@
+{!
+ ! Deployment console (BO-08-03-06, with BO-08-03-02/04/05/09/10): the
+ ! targets of every lot, OK (the version runs), KO (failed or rolled back) or
+ ! waiting, global or by echelon, with the chart per group, the chart of the
+ ! versions in service and the export; then the lots, the releases, and the
+ ! two creation forms. `data` = DeploymentConsoleService.ConsoleData.
+!}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.dep-deploiement')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.dep-deploiement')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.dep-sous-titre')}</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn" href="/admin/deployment/export?format=csv&{data.filter.query}">{inject:i18n.get('t.sup-export-csv')}</a>
+        <a class="btn" href="/admin/deployment/export?format=xlsx&{data.filter.query}">{inject:i18n.get('t.sup-export-xls')}</a>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
+{/if}
+
+<form method="get" action="/admin/deployment" class="filter-bar">
+    {#include admin-console-filters filter=data.filter /}
+    <div class="filter-field">
+        <label class="filter-label" for="dp-product">{inject:i18n.get('t.dep-produit')}</label>
+        <select id="dp-product" name="product">
+            <option value="">{inject:i18n.get('t.sup-tous')}</option>
+            <option value="IMEDGE"{#if data.filter.product == 'IMEDGE'} selected{/if}>{inject:i18n.get('t.dep-imedge')}</option>
+            <option value="IMPOS"{#if data.filter.product == 'IMPOS'} selected{/if}>{inject:i18n.get('t.dep-impos')}</option>
+        </select>
+    </div>
+    <div class="filter-field">
+        <label class="filter-label" for="dp-lot">{inject:i18n.get('t.dep-lot')}</label>
+        <select id="dp-lot" name="lot">
+            <option value="">{inject:i18n.get('t.sup-tous')}</option>
+            {#for lot in data.lots}
+            <option value="{lot.code}"{#if data.filter.lot == lot.code} selected{/if}>{lot.code}</option>
+            {/for}
+        </select>
+    </div>
+    <div class="filter-actions">
+        <button class="btn btn-primary" type="submit">{inject:i18n.get('t.sup-afficher')}</button>
+    </div>
+</form>
+
+<div class="card">
+    <div class="kpi-grid">
+        <div class="kpi"><span class="kpi-label">{inject:i18n.get('t.dep-a-jour')}</span><span class="kpi-value">{data.okCount}</span></div>
+        <div class="kpi"><span class="kpi-label">{inject:i18n.get('t.dep-en-echec')}</span><span class="kpi-value is-warn">{data.koCount}</span></div>
+        <div class="kpi"><span class="kpi-label">{inject:i18n.get('t.dep-en-attente')}</span><span class="kpi-value">{data.pendingCount}</span></div>
+    </div>
+    <p class="card-sub"><span class="badge badge-ok">{inject:i18n.get('t.sup-ok')}</span> <span class="badge badge-error">{inject:i18n.get('t.dep-ko-ou-en-attente')}</span></p>
+    {#if data.chart}
+    <div class="report-chart-box">{data.chart.raw}</div>
+    {#else}
+    <p class="empty-hint">{inject:i18n.get('t.sup-aucune-donnee-a-representer')}</p>
+    {/if}
+</div>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.dep-versions-en-service')}</h2>
+    {#if data.versionChart}
+    <div class="report-chart-box">{data.versionChart.raw}</div>
+    {/if}
+    <table class="sync-table">
+        <thead><tr><th>{inject:i18n.get('t.dep-produit')}</th><th>{inject:i18n.get('t.sup-version')}</th><th>{inject:i18n.get('t.sup-noeuds')}</th></tr></thead>
+        <tbody>
+            {#for version in data.versions}
+            <tr><td>{version.product}</td><td class="mono">{version.version}</td><td>{version.count}</td></tr>
+            {/for}
+            {#if data.versions.isEmpty()}
+            <tr><td colspan="3" class="cell-empty">{inject:i18n.get('t.sup-aucun-noeud')}</td></tr>
+            {/if}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.dep-cibles')}</h2>
+    <table class="sync-table">
+        <thead>
+            <tr><th>{inject:i18n.get('t.dep-lot')}</th><th>{inject:i18n.get('t.sup-point-de-vente')}</th><th>{inject:i18n.get('t.sup-echelon')}</th><th>{inject:i18n.get('t.sup-noeud')}</th><th>{inject:i18n.get('t.dep-version-cible')}</th><th>{inject:i18n.get('t.dep-version-en-service')}</th><th>{inject:i18n.get('t.sup-etat')}</th><th>{inject:i18n.get('t.sup-detail')}</th></tr>
+        </thead>
+        <tbody>
+            {#for row in data.rows}
+            <tr class="{#if row.ko}row-error{/if}">
+                <td><a href="/admin/deployment/lot/{row.lotCode}">{row.lotCode}</a></td>
+                <td>{row.pdv ?: '—'}</td>
+                <td>{row.country ?: '—'} / {row.enseigne ?: '—'}</td>
+                <td>{inject:i18n.code('t.code-kind-', row.kind)} {row.nodeId}</td>
+                <td class="mono">{row.product} {row.lotVersion}</td>
+                <td class="mono">{row.currentVersion ?: '—'}</td>
+                <td>{#if row.ok}<span class="badge badge-ok">{inject:i18n.code('t.code-target-', row.state)}</span>{#else if row.ko}<span class="badge badge-error">{inject:i18n.code('t.code-target-', row.state)}</span>{#else}<span class="badge badge-off">{inject:i18n.code('t.code-target-', row.state)}</span>{/if}</td>
+                <td class="cell-error cell-long">{inject:i18n.text(row.message.or('—'))}</td>
+            </tr>
+            {/for}
+            {#if data.rows.isEmpty()}
+            <tr><td colspan="8" class="cell-empty">{inject:i18n.get('t.dep-aucune-cible')}</td></tr>
+            {/if}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.dep-lots')}</h2>
+    <table class="sync-table">
+        <thead>
+            <tr><th>{inject:i18n.get('t.dep-lot')}</th><th>{inject:i18n.get('t.dep-produit')}</th><th>{inject:i18n.get('t.sup-version')}</th><th>{inject:i18n.get('t.dep-pilote')}</th><th>{inject:i18n.get('t.dep-periode')}</th><th>{inject:i18n.get('t.sup-etat')}</th></tr>
+        </thead>
+        <tbody>
+            {#for lot in data.lots}
+            <tr>
+                <td><a href="/admin/deployment/lot/{lot.code}">{lot.code}</a> {lot.label ?: ''}</td>
+                <td>{lot.product}</td>
+                <td class="mono">{lot.version}</td>
+                <td>{#if lot.pilot}{inject:i18n.get('t.dep-oui')}{#else}{inject:i18n.get('t.dep-non')}{/if}</td>
+                <td>{lot.windowStart.format('dd/MM/yyyy HH:mm')} → {lot.windowEnd.format('dd/MM/yyyy HH:mm')}</td>
+                <td>{inject:i18n.code('t.code-lot-', lot.status)}</td>
+            </tr>
+            {/for}
+            {#if data.lots.isEmpty()}
+            <tr><td colspan="6" class="cell-empty">{inject:i18n.get('t.dep-aucun-lot')}</td></tr>
+            {/if}
+        </tbody>
+    </table>
+    <h3 class="card-title">{inject:i18n.get('t.dep-nouveau-lot')}</h3>
+    <form method="post" action="/admin/deployment/lot" class="field-grid">
+        <div class="field"><label class="field-label" for="lt-code">{inject:i18n.get('t.dep-code')}</label><input class="input-control" id="lt-code" type="text" name="code" maxlength="40" required></div>
+        <div class="field"><label class="field-label" for="lt-label">{inject:i18n.get('t.dep-libelle')}</label><input class="input-control" id="lt-label" type="text" name="label" maxlength="120"></div>
+        <div class="field"><label class="field-label" for="lt-product">{inject:i18n.get('t.dep-produit')}</label>
+            <select class="input-control" id="lt-product" name="product">
+                <option value="IMPOS">{inject:i18n.get('t.dep-impos')}</option>
+                <option value="IMEDGE">{inject:i18n.get('t.dep-imedge')}</option>
+            </select></div>
+        <div class="field"><label class="field-label" for="lt-version">{inject:i18n.get('t.sup-version')}</label><input class="input-control" id="lt-version" type="text" name="version" maxlength="40" required></div>
+        <div class="field"><label class="field-label" for="lt-min">{inject:i18n.get('t.dep-version-minimale')}</label><input class="input-control" id="lt-min" type="text" name="minVersion" maxlength="40"></div>
+        <div class="field"><label class="field-label" for="lt-start">{inject:i18n.get('t.dep-debut')}</label><input class="input-control" id="lt-start" type="text" name="windowStart" placeholder="jj/mm/aaaa hh:mn" required></div>
+        <div class="field"><label class="field-label" for="lt-end">{inject:i18n.get('t.dep-fin')}</label><input class="input-control" id="lt-end" type="text" name="windowEnd" placeholder="jj/mm/aaaa hh:mn" required></div>
+        <div class="field"><label class="field-check"><input id="lt-pilot" type="checkbox" name="pilot" value="true"> <span>{inject:i18n.get('t.dep-phase-pilote')}</span></label></div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.dep-creer-le-lot')}</button></div>
+    </form>
+</div>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.dep-versions-publiees')}</h2>
+    <table class="sync-table">
+        <thead>
+            <tr><th>{inject:i18n.get('t.dep-produit')}</th><th>{inject:i18n.get('t.sup-version')}</th><th>{inject:i18n.get('t.dep-nature')}</th><th>{inject:i18n.get('t.dep-notes')}</th><th>{inject:i18n.get('t.dep-autotest')}</th></tr>
+        </thead>
+        <tbody>
+            {#for release in data.releases}
+            <tr class="{#if release.defective}row-error{/if}">
+                <td>{release.product}</td>
+                <td class="mono">{release.version}</td>
+                <td>{inject:i18n.code('t.code-release-', release.releaseKind)}</td>
+                <td>{release.notes ?: '—'}</td>
+                <td>{#if release.defective}{inject:i18n.get('t.dep-autotest-en-echec')}{#else}{inject:i18n.get('t.sup-ok')}{/if}</td>
+            </tr>
+            {/for}
+            {#if data.releases.isEmpty()}
+            <tr><td colspan="5" class="cell-empty">{inject:i18n.get('t.dep-aucune-version')}</td></tr>
+            {/if}
+        </tbody>
+    </table>
+    <h3 class="card-title">{inject:i18n.get('t.dep-publier-une-version')}</h3>
+    <form method="post" action="/admin/deployment/release" class="field-grid">
+        <div class="field"><label class="field-label" for="rl-product">{inject:i18n.get('t.dep-produit')}</label>
+            <select class="input-control" id="rl-product" name="product">
+                <option value="IMPOS">{inject:i18n.get('t.dep-impos')}</option>
+                <option value="IMEDGE">{inject:i18n.get('t.dep-imedge')}</option>
+            </select></div>
+        <div class="field"><label class="field-label" for="rl-version">{inject:i18n.get('t.sup-version')}</label><input class="input-control" id="rl-version" type="text" name="version" maxlength="40" required></div>
+        <div class="field"><label class="field-label" for="rl-kind">{inject:i18n.get('t.dep-nature')}</label>
+            <select class="input-control" id="rl-kind" name="kind">
+                <option value="MAJOR">{inject:i18n.get('t.dep-majeure')}</option>
+                <option value="MINOR" selected>{inject:i18n.get('t.dep-mineure')}</option>
+                <option value="PATCH">{inject:i18n.get('t.dep-corrective')}</option>
+            </select></div>
+        <div class="field"><label class="field-label" for="rl-notes">{inject:i18n.get('t.dep-notes')}</label><input class="input-control" id="rl-notes" type="text" name="notes" maxlength="300"></div>
+        <div class="field"><label class="field-check"><input id="rl-defective" type="checkbox" name="defective" value="true"> <span>{inject:i18n.get('t.dep-paquet-defectueux')}</span></label></div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.dep-publier')}</button></div>
+    </form>
+</div>
+{/body}

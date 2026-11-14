@@ -1,0 +1,114 @@
+{! E-commerce orders deposited by the platform (BO-10-01-03, -11): outcome,
+ ! booked ticket, unknown and forbidden articles, integration report and the
+ ! archived original order. Read-only. !}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.commandes-e-commerce')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.commandes-e-commerce')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.commandes-e-commerce-sous-titre')}</p>
+    </div>
+</div>
+
+{! BO-07-01-02 : le CA du jour par canal, le e-commerce distingue dans le CA du PDV. !}
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.r20-ca-du-jour-par-canal')}</h2>
+    {#if revenue.isEmpty()}
+    <p class="page-sub">{inject:i18n.get('t.r20-aucune-vente-aujourd-hui')}</p>
+    {#else}
+    <div style="overflow-x: auto;">
+    <table class="data-table">
+        <thead><tr><th>{inject:i18n.get('t.r20-canal-de-vente')}</th><th>{inject:i18n.get('t.r20-nb-de-tickets')}</th><th>{inject:i18n.get('t.k19-ca-ttc')}</th><th>{inject:i18n.get('t.r20-ca-ht')}</th><th>{inject:i18n.get('t.tva')}</th></tr></thead>
+        <tbody>
+            {#for row in revenue}
+            <tr><td>{inject:i18n.text(row.get(0))}</td><td>{row.get(1)}</td><td class="mono">{inject:i18n.money(row.get(2))}</td><td class="mono">{inject:i18n.money(row.get(3))}</td><td class="mono">{inject:i18n.money(row.get(4))}</td></tr>
+            {/for}
+        </tbody>
+    </table>
+    </div>
+    {/if}
+</div>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.commandes')}</h2>
+    {#if orders.isEmpty()}
+    <p class="page-sub">{inject:i18n.get('t.aucune-commande-e-commerce')}</p>
+    {#else}
+    <div style="overflow-x: auto;">
+    <table class="data-table">
+        <thead>
+            <tr><th>{inject:i18n.get('t.reference')}</th><th>{inject:i18n.get('t.recue-le')}</th><th>{inject:i18n.get('t.statut')}</th><th>{inject:i18n.get('t.ticket')}</th><th>{inject:i18n.get('t.total')}</th><th>{inject:i18n.get('t.articles-inconnus')}</th><th>{inject:i18n.get('t.articles-interdits')}</th><th>{inject:i18n.get('t.r20-canal-systeme')}</th><th>{inject:i18n.get('t.point-de-vente')}</th><th>{inject:i18n.get('t.r20-nif-client')}</th><th>{inject:i18n.get('t.r20-document-fiscal')}</th><th>{inject:i18n.get('t.r20-cagnottage')}</th><th>{inject:i18n.get('t.compte-rendu')}</th></tr>
+        </thead>
+        <tbody>
+            {#for order in orders}
+            <tr>
+                <td>{order.reference}</td>
+                <td>{#if order.receivedAt}{order.receivedAt.format('dd/MM/yyyy HH:mm')}{#else}—{/if}</td>
+                <td>{#if order.integrated}{inject:i18n.get('t.integree')}{#else if order.pendingPayment}{inject:i18n.get('t.dgc-en-attente-de-reglement')}{#else if order.settled}{inject:i18n.get('t.dgc-reglee-en-caisse')}{#else}{inject:i18n.get('t.rejetee')}{/if}</td>
+                <td>{order.ticketNumber ?: '—'}</td>
+                <td>{#if order.totalAmount != null}{inject:i18n.money(order.totalAmount)}{#else}—{/if}</td>
+                <td>{order.unknownLines}</td>
+                <td>{order.forbiddenLines}</td>
+                <td>{#if order.channel}{inject:i18n.text(order.channel.label)}{#else}&mdash;{/if}{#if order.systemCode} / {order.systemCode}{/if}</td>
+                <td>{order.pdvNumber ?: '—'}</td>
+                <td class="mono">{order.customerTaxId ?: '—'}</td>
+                <td class="mono">{order.fiscalDocument ?: '—'}</td>
+                <td>{#if order.fidelityQueued}{inject:i18n.get('t.r20-cagnotte')}{#else}&mdash;{/if}</td>
+                <td>
+                    {inject:i18n.text(order.message)}
+                    <details>
+                        <summary>{inject:i18n.get('t.detail')}</summary>
+                        <pre class="preview-pane" style="white-space: pre-wrap; word-break: break-all; max-width: 40rem;">{order.report ?: ''}</pre>
+                        {#if order.originalPayload}
+                        <p class="field-label">{inject:i18n.get('t.commande-d-origine')}</p>
+                        <pre class="preview-pane" style="white-space: pre-wrap; word-break: break-all; max-width: 40rem;">{order.originalPayload}</pre>
+                        {/if}
+                    </details>
+                </td>
+            </tr>
+            {/for}
+        </tbody>
+    </table>
+    </div>
+    {/if}
+</div>
+{! DG-01-03 : les retours e-commerce enregistres au PDV (motif, type, remboursement). !}
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.dgc-retours-e-commerce')}</h2>
+    {#if returns.isEmpty()}
+    <p class="page-sub">{inject:i18n.get('t.dgc-aucun-retour-e-commerce')}</p>
+    {#else}
+    <div style="overflow-x: auto;">
+    <table class="data-table">
+        <thead>
+            <tr><th>{inject:i18n.get('t.reference')}</th><th>{inject:i18n.get('t.recue-le')}</th><th>{inject:i18n.get('t.dgc-commande')}</th><th>{inject:i18n.get('t.ticket')}</th><th>{inject:i18n.get('t.dgc-remboursement')}</th><th>{inject:i18n.get('t.total')}</th><th>{inject:i18n.get('t.dgc-motif')}</th><th>{inject:i18n.get('t.dgc-type-de-retour')}</th><th>{inject:i18n.get('t.compte-rendu')}</th></tr>
+        </thead>
+        <tbody>
+            {#for ret in returns}
+            <tr>
+                <td>{ret.reference}</td>
+                <td>{#if ret.receivedAt}{ret.receivedAt.format('dd/MM/yyyy HH:mm')}{#else}—{/if}</td>
+                <td>{ret.orderReference ?: '—'}</td>
+                <td>{ret.originalTicketNumber ?: '—'}</td>
+                <td class="mono">{ret.refundNumber ?: '—'}</td>
+                <td>{#if ret.totalAmount != null}{inject:i18n.money(ret.totalAmount)}{#else}—{/if}</td>
+                <td>{ret.reasonLabel ?: '—'}</td>
+                <td>{ret.returnType ?: '—'}</td>
+                <td>
+                    {inject:i18n.text(ret.message)}
+                    <details>
+                        <summary>{inject:i18n.get('t.detail')}</summary>
+                        <pre class="preview-pane" style="white-space: pre-wrap; word-break: break-all; max-width: 40rem;">{ret.report ?: ''}</pre>
+                    </details>
+                </td>
+            </tr>
+            {/for}
+        </tbody>
+    </table>
+    </div>
+    {/if}
+</div>
+{/body}

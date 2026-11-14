@@ -1,0 +1,40 @@
+{!
+ ! Back-office VALIDATION pop-up (BO-01-04-03, BO-01-04-05): a gesture whose
+ ! grant is submitted to validation is held here. The panel re-posts every
+ ! field of the gesture to the same address with the confirmation: the
+ ! actor's own password, or the login and password of an account holding the
+ ! validating profile (`thirdParty`). Nothing is carried out before.
+!}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.validation-requise')}{/title}
+
+{#body}
+<div class="validation-overlay" role="dialog" aria-modal="true" aria-labelledby="validation-title">
+    <form class="validation-panel card" method="post" action="{action}">
+        <h1 class="card-title" id="validation-title">{inject:i18n.get('t.validation-requise')}</h1>
+        <p class="card-sub">{feature} — {option}.
+            {#if thirdParty}{inject:i18n.get('t.ce-geste-doit-etre-valide-par-un')} {validatorProfile ?: 'valideur'} ».{#else}{inject:i18n.get('t.confirmez-ce-geste-avec-votre-mot-de')}{/if}</p>
+        {#if error}
+        <div class="alert alert-error" role="alert">{inject:i18n.text(error)}</div>
+        {/if}
+        {#for field in fields}
+        <input type="hidden" name="{field.name}" value="{field.value}">
+        {/for}
+        {#if thirdParty}
+        <label class="field">
+            <span class="field-label">{inject:i18n.get('t.identifiant-du-valideur')}</span>
+            <input class="input-control" type="text" name="_validation_login" autocomplete="off" required autofocus>
+        </label>
+        {/if}
+        <label class="field">
+            <span class="field-label">{#if thirdParty}{inject:i18n.get('t.mot-de-passe-du-valideur')}{#else}{inject:i18n.get('t.votre-mot-de-passe')}{/if}</span>
+            <input class="input-control" type="password" name="_validation_password" autocomplete="off" required{#if !thirdParty} autofocus{/if}>
+        </label>
+        <div class="page-actions">
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.valider')}</button>
+            <a class="btn btn-ghost" href="{back}">{inject:i18n.get('t.annuler')}</a>
+        </div>
+    </form>
+</div>
+{/body}

@@ -114,8 +114,7 @@
                 <input class="input-control" id="gp-{preview.template.code}" type="number" name="priority" value="{preview.template.priority}">
             </div>
             <div class="field">
-                <label class="field-label" for="ga-{preview.template.code}">{inject:i18n.get('t.actif')}</label>
-                <input id="ga-{preview.template.code}" type="checkbox" name="active" {#if preview.template.active}checked{/if}>
+                <label class="field-check"><input id="ga-{preview.template.code}" type="checkbox" name="active" {#if preview.template.active}checked{/if}> <span>{inject:i18n.get('t.actif')}</span></label>
             </div>
         </div>
         {! BO-03-05-05 et -06 : une banniere s'edite LIGNE A LIGNE. Une seule
@@ -260,8 +259,7 @@
                 <input class="input-control" id="new-gpriority" type="number" name="priority" value="100">
             </div>
             <div class="field">
-                <label class="field-label" for="new-gactive">{inject:i18n.get('t.actif')}</label>
-                <input id="new-gactive" type="checkbox" name="active" checked>
+                <label class="field-check"><input id="new-gactive" type="checkbox" name="active" checked> <span>{inject:i18n.get('t.actif')}</span></label>
             </div>
         </div>
         <div class="field">

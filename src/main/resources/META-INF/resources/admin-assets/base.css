@@ -372,8 +372,64 @@ body {
 .input-unit .input-control[type="text"] { padding-right: 40px; }
 .input-unit .input-control[type="text"] ~ .input-suffix { right: 11px; }
 
-.toggle { display: flex; align-items: center; height: 36px; }
-.toggle input { width: 18px; height: 18px; accent-color: var(--im-red); }
+/* ---------- Checkbox: ONE rule for the whole back office ----------
+   A checkbox reads « [x] Libellé »: the box FIRST, its label right after it
+   on the same line, and the whole label clickable because the input sits
+   inside the <label>. It is never stacked under its label like a text input.
+   In a form it occupies a cell of the grid like any other field
+   (<div class="field"><label class="field-check">…</label></div>): its box
+   lines up with the left edge of the inputs and, in a .field-grid, sits on
+   the row of the inputs rather than on the row of their captions; the hint,
+   if any, sits under the label text. A list of choices (days, events,
+   reports) is a run of these lines, stacked under a caption or wrapped in a
+   .field-checks row; a table cell holds one like any other content. */
+.field-check {
+    display: inline-flex;
+    align-items: flex-start;
+    align-self: flex-start;
+    gap: 8px;
+    max-width: 100%;
+    font-size: 14px;
+    line-height: 21px;
+    color: var(--im-ink);
+    cursor: pointer;
+}
+
+.field-check input[type="checkbox"] {
+    flex: 0 0 auto;
+    width: 16px;
+    height: 16px;
+    margin: 2.5px 0 0;
+    accent-color: var(--im-accent);
+    cursor: pointer;
+}
+
+.field-check > span { min-width: 0; overflow-wrap: anywhere; }
+
+.field-check input:disabled { cursor: default; }
+.field-check input:disabled + span { color: var(--im-ink-soft); }
+
+/* In a grid that also holds inputs, the line sits on the row of the inputs:
+   a caption line (13px x 1.5) and the field gap, then half the difference
+   between an input (39px) and a text line (21px). A grid made of checkboxes
+   only keeps its lines packed at the top of their cells. */
+.field-grid:has(> .field :is(.input-control, select, textarea, input:not([type="checkbox"]):not([type="hidden"]))) > .field > .field-check:first-child {
+    margin-top: calc(13px * 1.5 + 6px + 9px);
+}
+
+.field-grid:has(> .field :is(.input-control, select, textarea, input:not([type="checkbox"]):not([type="hidden"]))) > .field > .field-label + .field-check {
+    margin-top: 9px;
+}
+
+/* The hint of a lone checkbox reads under its label text, not under the box. */
+.field > .field-check:first-child ~ .field-hint { padding-left: 24px; }
+
+/* A row of choices that wraps (days of the week, journal criteria, reports). */
+.field-checks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+}
 
 .form-actions { display: flex; gap: 10px; margin-top: 22px; }
 

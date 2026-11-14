@@ -582,6 +582,7 @@ class SyncIngestServiceTest {
         dto.totalIncludingTax = new BigDecimal("0.00");
         dto.totalVat = new BigDecimal("0.00");
         dto.valuationStatus = "DEGRADED";
+        dto.recalledOrderCodes = java.util.List.of("W4", "EC-1");
         Ticket existing = mock(Ticket.class);
         existing.lines = new ArrayList<>();
         existing.payments = new ArrayList<>();
@@ -601,13 +602,15 @@ class SyncIngestServiceTest {
             assertSame(cashier, existing.cashier);
             assertNull(existing.session);
             assertEquals(Ticket.ValuationStatus.DEGRADED, existing.valuationStatus);
+            assertEquals("W4;EC-1", existing.recalledOrderCode);
             verify(existing, times(1)).persist();
         }
     }
 
     /**
      * A payload naming no valuation status reads as a ticket never valued,
-     * rather than failing the ingestion.
+     * rather than failing the ingestion; one naming no recalled order
+     * (DG-03-02-01) links the ticket to none.
      */
     @Test
     void ingestTicketWithoutValuationStatusReadsNotValued() {
@@ -619,10 +622,12 @@ class SyncIngestServiceTest {
         dto.creationDate = "2026-02-02T11:00:00";
         dto.cashierLogin = "bob";
         dto.totalIncludingTax = BigDecimal.ONE;
+        dto.recalledOrderCodes = null;
         Ticket existing = mock(Ticket.class);
         existing.lines = new ArrayList<>();
         existing.payments = new ArrayList<>();
         existing.valuationStatus = Ticket.ValuationStatus.DEGRADED;
+        existing.recalledOrderCode = "OLD";
         PanacheQuery<Ticket> ticketQuery = queryReturning(existing);
         PanacheQuery<Store> storeQuery = queryReturning(mock(Store.class));
         PanacheQuery<Employee> cashierQuery = queryReturning(mock(Employee.class));
@@ -632,6 +637,7 @@ class SyncIngestServiceTest {
             mocked.when(() -> Employee.find("loginName", "bob")).thenReturn(cashierQuery);
             service.ingestTicket(dto);
             assertEquals(Ticket.ValuationStatus.NOT_VALUATED, existing.valuationStatus);
+            assertNull(existing.recalledOrderCode);
         }
     }
 

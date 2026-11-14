@@ -1,0 +1,126 @@
+{! Types of prepaid card (BO-03-02-37): protocol, provider, ranges and the
+ ! gestures each allows, descended by the PREPAID_CARD_TYPES pull. Each type is
+ ! a save form (code fixed) whose two other buttons toggle and delete through
+ ! formaction; field grids only, so nothing overflows at 800 x 600. !}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.types-de-cartes-prepayees')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.types-de-cartes-prepayees')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.le-type-d-une-carte-prepayee-dit')}</p>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.types-de-cartes-prepayees')}</h2>
+    {#if types.isEmpty()}
+    <p class="card-sub">{inject:i18n.get('t.aucun-type-de-carte-prepayee')}</p>
+    {#else}
+    {#for type in types}
+    <form method="post" action="/admin/prepaid-cards/save" class="field-grid">
+        <input type="hidden" name="code" value="{type.code}">
+        <div class="field">
+            <span class="field-label">{type.code}{#if !type.active} {inject:i18n.get('t.inactive')}{/if}</span>
+        </div>
+        <div class="field">
+            <label class="field-label" for="pl-{type.code}">{inject:i18n.get('t.libelle')}</label>
+            <input class="input-control" id="pl-{type.code}" type="text" name="label" maxlength="80" value="{type.label}" required>
+        </div>
+        <div class="field">
+            <label class="field-label" for="pp-{type.code}">{inject:i18n.get('t.protocole')}</label>
+            <select class="input-control" id="pp-{type.code}" name="protocol">
+                {#for protocol in protocols}
+                <option value="{protocol}" {#if type.protocol == protocol}selected{/if}>{protocol}</option>
+                {/for}
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-label" for="pf-{type.code}">{inject:i18n.get('t.fournisseur')}</label>
+            <input class="input-control" id="pf-{type.code}" type="text" name="provider" maxlength="40" value="{type.provider ?: ''}">
+        </div>
+        <div class="field">
+            <label class="field-label" for="pr-{type.code}">{inject:i18n.get('t.plages-de-cartes')}</label>
+            <input class="input-control" id="pr-{type.code}" type="text" name="ranges" maxlength="500" value="{type.ranges}" required>
+            <span class="field-hint">{inject:i18n.get('t.plages-de-cartes-aide')}</span>
+        </div>
+        <div class="field">
+            <label class="field-label" for="po-{type.code}">{inject:i18n.get('t.ordre')}</label>
+            <input class="input-control" id="po-{type.code}" type="number" name="displayOrder" min="0" value="{type.displayOrder}">
+        </div>
+        <div class="field">
+            <label class="field-check"><input type="checkbox" name="paymentAllowed" {#if type.paymentAllowed}checked{/if}> <span>{inject:i18n.get('t.paiement-autorise')}</span></label>
+        </div>
+        <div class="field">
+            <label class="field-check"><input type="checkbox" name="balanceAllowed" {#if type.balanceAllowed}checked{/if}> <span>{inject:i18n.get('t.consultation-du-solde')}</span></label>
+        </div>
+        <div class="field">
+            <label class="field-check"><input type="checkbox" name="activationAllowed" {#if type.activationAllowed}checked{/if}> <span>{inject:i18n.get('t.activation-a-la-vente')}</span></label>
+        </div>
+        <div class="field">
+            <label class="field-check"><input type="checkbox" name="active" {#if type.active}checked{/if}> <span>{inject:i18n.get('t.actif')}</span></label>
+        </div>
+        <div class="page-actions">
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer')}</button>
+            <button class="btn" type="submit" formaction="/admin/prepaid-cards/toggle">{#if type.active}{inject:i18n.get('t.desactiver')}{#else}{inject:i18n.get('t.activer')}{/if}</button>
+            <button class="btn btn-danger" type="submit" formaction="/admin/prepaid-cards/delete">{inject:i18n.get('t.supprimer')}</button>
+        </div>
+    </form>
+    {/for}
+    {/if}
+</div>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.nouveau-type-de-carte-prepayee')}</h2>
+    <form method="post" action="/admin/prepaid-cards/save" class="field-grid">
+        <div class="field">
+            <label class="field-label" for="new-code">{inject:i18n.get('t.code')}</label>
+            <input class="input-control" id="new-code" type="text" name="code" maxlength="40" required>
+        </div>
+        <div class="field">
+            <label class="field-label" for="new-label">{inject:i18n.get('t.libelle')}</label>
+            <input class="input-control" id="new-label" type="text" name="label" maxlength="80" required>
+        </div>
+        <div class="field">
+            <label class="field-label" for="new-protocol">{inject:i18n.get('t.protocole')}</label>
+            <select class="input-control" id="new-protocol" name="protocol">
+                {#for protocol in protocols}
+                <option value="{protocol}">{protocol}</option>
+                {/for}
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-label" for="new-provider">{inject:i18n.get('t.fournisseur')}</label>
+            <input class="input-control" id="new-provider" type="text" name="provider" maxlength="40">
+        </div>
+        <div class="field">
+            <label class="field-label" for="new-ranges">{inject:i18n.get('t.plages-de-cartes')}</label>
+            <input class="input-control" id="new-ranges" type="text" name="ranges" maxlength="500" placeholder="6299;296:13" required>
+            <span class="field-hint">{inject:i18n.get('t.plages-de-cartes-aide')}</span>
+        </div>
+        <div class="field">
+            <label class="field-label" for="new-order">{inject:i18n.get('t.ordre')}</label>
+            <input class="input-control" id="new-order" type="number" name="displayOrder" min="0" value="0">
+        </div>
+        <div class="field">
+            <label class="field-check"><input type="checkbox" name="paymentAllowed" checked> <span>{inject:i18n.get('t.paiement-autorise')}</span></label>
+        </div>
+        <div class="field">
+            <label class="field-check"><input type="checkbox" name="balanceAllowed" checked> <span>{inject:i18n.get('t.consultation-du-solde')}</span></label>
+        </div>
+        <div class="field">
+            <label class="field-check"><input type="checkbox" name="activationAllowed" checked> <span>{inject:i18n.get('t.activation-a-la-vente')}</span></label>
+        </div>
+        <div class="field">
+            <label class="field-check"><input type="checkbox" name="active" checked> <span>{inject:i18n.get('t.actif')}</span></label>
+        </div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.creer-le-type-de-carte')}</button></div>
+    </form>
+</div>
+{/body}

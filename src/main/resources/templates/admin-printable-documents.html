@@ -1,0 +1,109 @@
+{!
+ ! Back-office PRINTABLE DOCUMENTS (BO-03-04-06, -09, -10 et -14) : les
+ ! documents que les caisses proposent sur un ticket clôturé — leur nom
+ ! imprimé, leur nature (facture ou bon de livraison, qui décide de la
+ ! séquence de numérotation), le gabarit qui assemble leurs zones et
+ ! l'imprimante de sortie. Activer un document le rend disponible en caisse au
+ ! prochain tirage du référentiel ; un document déjà imprimé en caisse est
+ ! désactivé plutôt que supprimé. POST -> 303 -> notice, comme les autres pages.
+!}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.documents-imprimables-en-caisse')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.documents-imprimables-en-caisse')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.les-documents-proposes-en-caisse-sur-un-ticket')}</p>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.creer-ou-modifier-un-document')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.le-code-identifie-le-document-le-reutiliser')}</p>
+    <form method="post" action="/admin/printable-documents/save">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="pd-code">{inject:i18n.get('t.code')}</label>
+                <input class="input-control" id="pd-code" type="text" name="code" maxlength="30" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="pd-label">{inject:i18n.get('t.nom-imprime')}</label>
+                <input class="input-control" id="pd-label" type="text" name="label" maxlength="60" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="pd-kind">{inject:i18n.get('t.nature')}</label>
+                <select class="input-control" id="pd-kind" name="kind">
+                    {#for kind in kinds}
+                    <option value="{kind.name}">{inject:i18n.text(kind.title)}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="pd-template">{inject:i18n.get('t.gabarit')}</label>
+                <select class="input-control" id="pd-template" name="templateCode">
+                    <option value="">{inject:i18n.get('t.mise-en-page-de-la-caisse')}</option>
+                    {#for template in templates}
+                    <option value="{template.code}">{template.code} — {inject:i18n.text(template.label)}</option>
+                    {/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="pd-output">{inject:i18n.get('t.sortie-d-impression')}</label>
+                <select class="input-control" id="pd-output" name="output">
+                    <option value="">{inject:i18n.get('t.selon-le-parametre-de-la-caisse')}</option>
+                    <option value="TICKET">{inject:i18n.get('t.sortie-ticket')}</option>
+                    <option value="FACTURETTE">{inject:i18n.get('t.sortie-facturette')}</option>
+                    <option value="A4">{inject:i18n.get('t.sortie-a4')}</option>
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="pd-priority">{inject:i18n.get('t.priorite')}</label>
+                <input class="input-control" id="pd-priority" type="number" name="priority" value="100" min="0">
+            </div>
+            <div class="field">
+                <label class="field-check"><input id="pd-active" type="checkbox" name="active" checked> <span>{inject:i18n.get('t.actif')}</span></label>
+            </div>
+        </div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer')}</button></div>
+    </form>
+</div>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.documents-crees')}</h2>
+    {#if documents.size() > 0}
+    <div style="overflow-x: auto;">
+    <table class="data-table">
+        <tr><th>{inject:i18n.get('t.code')}</th><th>{inject:i18n.get('t.nom-imprime')}</th><th>{inject:i18n.get('t.nature')}</th><th>{inject:i18n.get('t.gabarit')}</th><th>{inject:i18n.get('t.sortie-d-impression')}</th><th>{inject:i18n.get('t.actif')}</th><th></th></tr>
+        {#for document in documents}
+        <tr>
+            <td>{document.code}</td>
+            <td>{document.label}</td>
+            <td>{inject:i18n.text(document.kind.title)}</td>
+            <td>{#if document.templateCode}{document.templateCode}{#else}{inject:i18n.get('t.mise-en-page-de-la-caisse')}{/if}</td>
+            <td>{#if document.output == 'TICKET'}{inject:i18n.get('t.sortie-ticket')}{#else if document.output == 'FACTURETTE'}{inject:i18n.get('t.sortie-facturette')}{#else if document.output == 'A4'}{inject:i18n.get('t.sortie-a4')}{#else}{inject:i18n.get('t.selon-le-parametre-de-la-caisse')}{/if}</td>
+            <td>{#if document.active}{inject:i18n.get('t.oui')}{#else}{inject:i18n.get('t.non')}{/if}</td>
+            <td>
+                <form method="post" action="/admin/printable-documents/toggle" style="display:inline">
+                    <input type="hidden" name="code" value="{document.code}">
+                    <button class="btn btn-ghost" type="submit">{#if document.active}{inject:i18n.get('t.desactiver')}{#else}{inject:i18n.get('t.activer')}{/if}</button>
+                </form>
+                <form method="post" action="/admin/printable-documents/delete" style="display:inline">
+                    <input type="hidden" name="code" value="{document.code}">
+                    <button class="btn btn-danger" type="submit">{inject:i18n.get('t.supprimer')}</button>
+                </form>
+            </td>
+        </tr>
+        {/for}
+    </table>
+    </div>
+    {#else}
+    <p class="card-sub">{inject:i18n.get('t.aucun-document-cree-les-caisses-proposent')}</p>
+    {/if}
+</div>
+{/body}

@@ -79,7 +79,8 @@ public class RegisterCommandResource {
                     .put("uid", command.commandUid)
                     .put("type", String.valueOf(command.commandType))
                     .put("issuedBy", command.issuedBy)
-                    .put("reason", command.reason);
+                    .put("reason", command.reason)
+                    .put("ref", command.requestRef);
         }
         LOGGER.info("Exiting method pending");
         return Response.ok(orders.toString()).build();

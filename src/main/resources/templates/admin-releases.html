@@ -1,0 +1,171 @@
+{! Programmed deployments (BO-03-12-03, BO-03-12-04): the date of effect of
+ ! the back-office changes, the domains held until their date, their advance,
+ ! their move and their cancellation, and the dated parameters. !}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.k2-deploiements-programmes')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.k2-deploiements-programmes')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.k2-sous-titre')}</p>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
+{/if}
+
+{#if !enabled}
+<div class="alert alert-error" role="status">{inject:i18n.get('t.k2-noeud-non-magasin')}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.k2-partiel-titre')}</h2>
+    <p class="page-sub">{inject:i18n.get('t.k2-partiel-aide')}</p>
+    {#if armedAt}
+    <p><strong>{inject:i18n.get('t.k2-banniere-armee')} {armedAt}.</strong></p>
+    <form method="post" action="/admin/releases/disarm">
+        <button class="btn" type="submit">{inject:i18n.get('t.k2-desarmer')}</button>
+    </form>
+    {#else}
+    <p>{inject:i18n.get('t.k2-immediat')}</p>
+    {/if}
+    <form method="post" action="/admin/releases/arm" class="field-grid">
+        <div class="field">
+            <label class="field-label" for="r-arm">{inject:i18n.get('t.k2-date-effet')}</label>
+            <input class="input-control" id="r-arm" type="datetime-local" name="at" required>
+        </div>
+        <div class="field">
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.k2-armer')}</button>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.k2-complet-titre')}</h2>
+    <p class="page-sub">{inject:i18n.get('t.k2-complet-aide')}</p>
+    <form method="post" action="/admin/releases/complete" class="field-grid">
+        <div class="field">
+            <label class="field-label" for="r-complete">{inject:i18n.get('t.k2-date-effet')}</label>
+            <input class="input-control" id="r-complete" type="datetime-local" name="at" required>
+        </div>
+        <div class="field">
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.k2-programmer-complet')}</button>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.k2-retenus-titre')} ({pending.size()})</h2>
+    {#if pending.isEmpty()}
+    <p class="page-sub">{inject:i18n.get('t.k2-aucun-retenu')}</p>
+    {#else}
+    <div style="overflow-x: auto;">
+    <table class="data-table">
+        <thead><tr><th>{inject:i18n.get('t.k2-domaine')}</th><th>{inject:i18n.get('t.k2-date-effet')}</th><th>{inject:i18n.get('t.k2-programme-le')}</th><th>{inject:i18n.get('t.k2-par')}</th><th>{inject:i18n.get('t.k2-origine')}</th><th>{inject:i18n.get('t.k2-ecart')}</th><th class="col-actions">{inject:i18n.get('t.actions')}</th></tr></thead>
+        <tbody>
+        {#for row in pending}
+        <tr>
+            <td>{inject:i18n.code('t.k2-dom-', row.domain)}</td>
+            <td>{row.effective}</td>
+            <td>{row.programmed}</td>
+            <td>{row.programmedBy ?: ''}</td>
+            <td style="overflow-wrap: anywhere;">{#if row.complete}{inject:i18n.get('t.k2-complet')}{#else}{inject:i18n.get('t.k2-partiel')} {row.origin ?: ''}{/if}</td>
+            <td>{#if row.divergent}{inject:i18n.get('t.k2-ecart-oui')}{#else}{inject:i18n.get('t.k2-ecart-non')}{/if}</td>
+            <td class="col-actions">
+                <form method="post" action="/admin/releases/advance" style="display:inline;">
+                    <input type="hidden" name="id" value="{row.id}">
+                    <button class="btn btn-small" type="submit">{inject:i18n.get('t.k2-avancer')}</button>
+                </form>
+                <form method="post" action="/admin/releases/cancel" style="display:inline;">
+                    <input type="hidden" name="id" value="{row.id}">
+                    <button class="btn btn-small btn-danger" type="submit">{inject:i18n.get('t.k2-annuler')}</button>
+                </form>
+            </td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+    </div>
+    <form method="post" action="/admin/releases/reschedule" class="field-grid">
+        <div class="field">
+            <label class="field-label" for="r-move">{inject:i18n.get('t.k2-domaine')}</label>
+            <select class="input-control" id="r-move" name="id">
+                {#for row in pending}
+                <option value="{row.id}">{inject:i18n.code('t.k2-dom-', row.domain)} ({row.effective})</option>
+                {/for}
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-label" for="r-move-at">{inject:i18n.get('t.k2-nouvelle-date')}</label>
+            <input class="input-control" id="r-move-at" type="datetime-local" name="at" required>
+        </div>
+        <div class="field">
+            <button class="btn" type="submit">{inject:i18n.get('t.k2-reprogrammer')}</button>
+        </div>
+    </form>
+    {/if}
+</div>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.k2-dates-titre')} ({dated.size()})</h2>
+    <p class="page-sub">{inject:i18n.get('t.k2-dates-aide')}</p>
+    {#if dated.isEmpty()}
+    <p class="page-sub">{inject:i18n.get('t.k2-aucun-date')}</p>
+    {#else}
+    <div style="overflow-x: auto;">
+    <table class="data-table">
+        <thead><tr><th>{inject:i18n.get('t.k2-echelon')}</th><th>{inject:i18n.get('t.code')}</th><th>{inject:i18n.get('t.k2-cle')}</th><th>{inject:i18n.get('t.f19-valeur-actuelle')}</th><th>{inject:i18n.get('t.f19-valeur-programmee')}</th><th>{inject:i18n.get('t.k2-date-effet')}</th><th class="col-actions">{inject:i18n.get('t.actions')}</th></tr></thead>
+        <tbody>
+        {#for setting in dated}
+        <tr>
+            <td>{inject:i18n.code('t.k2-niveau-', setting.level)}</td>
+            <td>{setting.echelonCode}</td>
+            <td>{setting.settingKey}</td>
+            <td>{#if setting.settingValue != null}{setting.settingValue}{#else}{inject:i18n.get('t.f19-heritee')}{/if}</td>
+            <td>{#if setting.pendingValue != null}{setting.pendingValue}{#else}{inject:i18n.get('t.f19-heritee')}{/if}</td>
+            <td>{setting.effectiveDate}</td>
+            <td class="col-actions">
+                <form method="post" action="/admin/releases/settings/advance" style="display:inline;">
+                    <input type="hidden" name="id" value="{setting.id}">
+                    <button class="btn btn-small" type="submit">{inject:i18n.get('t.k2-avancer')}</button>
+                </form>
+                <form method="post" action="/admin/releases/settings/cancel" style="display:inline;">
+                    <input type="hidden" name="id" value="{setting.id}">
+                    <button class="btn btn-small btn-danger" type="submit">{inject:i18n.get('t.k2-annuler')}</button>
+                </form>
+            </td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+    </div>
+    {/if}
+</div>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.k2-historique')}</h2>
+    {#if history.isEmpty()}
+    <p class="page-sub">{inject:i18n.get('t.k2-aucun-historique')}</p>
+    {#else}
+    <div style="overflow-x: auto;">
+    <table class="data-table">
+        <thead><tr><th>{inject:i18n.get('t.k2-domaine')}</th><th>{inject:i18n.get('t.k2-date-effet')}</th><th>{inject:i18n.get('t.k2-etat')}</th><th>{inject:i18n.get('t.k2-cloture-le')}</th><th>{inject:i18n.get('t.k2-par')}</th></tr></thead>
+        <tbody>
+        {#for row in history}
+        <tr>
+            <td>{inject:i18n.code('t.k2-dom-', row.domain)}</td>
+            <td>{row.effective}</td>
+            <td>{inject:i18n.code('t.k2-statut-', row.status)}</td>
+            <td>{row.closed}</td>
+            <td>{row.closedBy}</td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+    </div>
+    {/if}
+</div>
+{/body}

@@ -1,0 +1,154 @@
+{!
+ ! Back-office TRANSACTIONS EXPORT (BO-05-01-06): every ticket and invoice of
+ ! the point of sale over the years kept online, filtered by NIF, dates,
+ ! document type (FS, FT, NC, RC), customer number or name, ticket number and
+ ! totals with and without VAT; the total of each document and of every
+ ! customer; the extraction in CSV, spreadsheet and PDF (the PDF is printed).
+!}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.u-export-des-transactions')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.u-export-des-transactions')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.u-export-des-transactions-aide')} {years} {inject:i18n.get('t.u-ans')} ({inject:i18n.get('t.u-depuis-le')} {oldest}).</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-ghost" href="/admin/fiscal/transactions/export?format=csv&{query}">CSV</a>
+        <a class="btn btn-ghost" href="/admin/fiscal/transactions/export?format=xlsx&{query}">Excel</a>
+        <a class="btn btn-ghost" href="/admin/fiscal/transactions/export?format=pdf&{query}">{inject:i18n.get('t.u-pdf-imprimer')}</a>
+    </div>
+</div>
+
+{#if invalidAmount}
+<div class="alert alert-error" role="status">{inject:i18n.get('t.u-montant-filtre-invalide')}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.recherche')}</h2>
+    <form method="get" action="/admin/fiscal/transactions">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="x-from">{inject:i18n.get('t.du')}</label>
+                <input class="input-control" id="x-from" type="date" name="from" value="{criteria.from}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="x-to">{inject:i18n.get('t.au')}</label>
+                <input class="input-control" id="x-to" type="date" name="to" value="{criteria.to}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="x-type">{inject:i18n.get('t.u-type-de-document')}</label>
+                <select class="input-control" id="x-type" name="type">
+                    <option value="">{inject:i18n.get('t.u-tous')}</option>
+                    {#for t in types}<option value="{t}" {#if criteria.type == t}selected{/if}>{t} — {inject:i18n.code('t.u-doc-', t)}</option>{/for}
+                </select>
+            </div>
+            <div class="field">
+                <label class="field-label" for="x-nif">{inject:i18n.get('t.u-nif-client')}</label>
+                <input class="input-control" id="x-nif" type="text" name="nif" value="{criteria.nif ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="x-number">{inject:i18n.get('t.u-n-de-client')}</label>
+                <input class="input-control" id="x-number" type="text" name="customerNumber" value="{criteria.customerNumber ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="x-name">{inject:i18n.get('t.u-nom-du-client')}</label>
+                <input class="input-control" id="x-name" type="text" name="customerName" value="{criteria.customerName ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="x-ticket">{inject:i18n.get('t.u-n-de-ticket')}</label>
+                <input class="input-control" id="x-ticket" type="text" name="ticketNumber" value="{criteria.ticketNumber ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="x-htmin">{inject:i18n.get('t.u-total-ht-mini')}</label>
+                <input class="input-control" id="x-htmin" type="text" inputmode="decimal" name="htMin" value="{htMin ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="x-htmax">{inject:i18n.get('t.u-total-ht-maxi')}</label>
+                <input class="input-control" id="x-htmax" type="text" inputmode="decimal" name="htMax" value="{htMax ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="x-ttcmin">{inject:i18n.get('t.u-total-ttc-mini')}</label>
+                <input class="input-control" id="x-ttcmin" type="text" inputmode="decimal" name="ttcMin" value="{ttcMin ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="x-ttcmax">{inject:i18n.get('t.u-total-ttc-maxi')}</label>
+                <input class="input-control" id="x-ttcmax" type="text" inputmode="decimal" name="ttcMax" value="{ttcMax ?: ''}">
+            </div>
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.rechercher')}</button>
+            <a class="btn btn-ghost" href="/admin/fiscal/transactions">{inject:i18n.get('t.reinitialiser-2')}</a>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.u-total-de-toutes-les-transactions')}</h2>
+    <p class="card-sub">{result.rows.size} {#if result.rows.size == 1}{inject:i18n.get('t.rt21-document')}{#else}{inject:i18n.get('t.u-documents')}{/if} — {inject:i18n.get('t.u-ht')} <strong>{inject:i18n.money(result.totalExcludingTax)} €</strong> — {inject:i18n.get('t.u-tva')} <strong>{inject:i18n.money(result.totalVat)} €</strong> — {inject:i18n.get('t.u-ttc')} <strong>{inject:i18n.money(result.totalIncludingTax)} €</strong></p>
+    {#if result.truncated}
+    <div class="alert alert-error" role="status">{inject:i18n.get('t.u-resultat-tronque')}</div>
+    {/if}
+</div>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.u-total-par-client')}</h2>
+    {#if result.customers.isEmpty()}
+    <div class="empty-state"><p>{inject:i18n.get('t.u-aucun-client-identifie')}</p></div>
+    {#else}
+    <div class="table-scroll">
+    <table class="data-table">
+        <thead>
+        <tr><th>{inject:i18n.get('t.u-client')}</th><th>{inject:i18n.get('t.u-nom-du-client')}</th><th>{inject:i18n.get('t.u-documents')}</th><th>{inject:i18n.get('t.u-ht')}</th><th>{inject:i18n.get('t.u-tva')}</th><th>{inject:i18n.get('t.u-ttc')}</th></tr>
+        </thead>
+        <tbody>
+        {#for total in result.customers}
+        <tr>
+            <td class="cell-keep">{total.customer}</td>
+            <td>{total.name ?: '—'}</td>
+            <td class="cell-keep">{total.count}</td>
+            <td class="sup-amount">{inject:i18n.money(total.totalExcludingTax)}</td>
+            <td class="sup-amount">{inject:i18n.money(total.totalVat)}</td>
+            <td class="sup-amount">{inject:i18n.money(total.totalIncludingTax)}</td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+    </div>
+    {/if}
+</div>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.u-documents-emis')}</h2>
+    {#if rows.isEmpty()}
+    <div class="empty-state"><p>{inject:i18n.get('t.u-aucun-document-sur-la-periode')}</p></div>
+    {#else}
+    <p class="card-sub">{shown} / {result.rows.size} — {inject:i18n.get('t.u-extraction-complete')}</p>
+    <div class="table-scroll">
+    <table class="data-table">
+        <thead>
+        <tr><th>{inject:i18n.get('t.type')}</th><th>{inject:i18n.get('t.n-document')}</th><th>{inject:i18n.get('t.date')}</th><th>{inject:i18n.get('t.caisse')}</th><th>{inject:i18n.get('t.u-n-de-ticket')}</th><th>{inject:i18n.get('t.u-client')}</th><th>NIF</th><th>{inject:i18n.get('t.u-ht')}</th><th>{inject:i18n.get('t.u-tva')}</th><th>{inject:i18n.get('t.u-ttc')}</th></tr>
+        </thead>
+        <tbody>
+        {#for row in rows}
+        <tr>
+            <td class="cell-keep">{row.type}</td>
+            <td class="link-strong cell-keep">{row.number}</td>
+            <td class="col-muted cell-keep">{row.issuedAt.format('dd/MM/yyyy HH:mm') ?: ''}</td>
+            <td class="col-muted cell-keep">{row.terminalId ?: ''}</td>
+            <td class="col-muted cell-keep">{row.ticketNumber ?: ''}</td>
+            <td>{row.customerNumber ?: ''}{#if row.customerName} {row.customerName}{/if}</td>
+            <td class="col-muted cell-keep">{row.nif ?: ''}</td>
+            <td class="sup-amount">{inject:i18n.money(row.totalExcludingTax)}</td>
+            <td class="sup-amount">{inject:i18n.money(row.totalVat)}</td>
+            <td class="sup-amount">{inject:i18n.money(row.totalIncludingTax)}</td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+    </div>
+    {/if}
+</div>
+{/body}

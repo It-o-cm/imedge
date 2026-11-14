@@ -100,6 +100,10 @@ public class RefExportService {
     @Inject
     PosSettingsService posSettingsService;
 
+    /** Reads the edges of a page of families as plain values. */
+    @Inject
+    jakarta.persistence.EntityManager entityManager;
+
     /** Resolves the images this store publishes: logo and advantage visuals. */
     @Inject
     com.intermarche.edge.service.StoreImageService storeImageService;
@@ -339,8 +343,8 @@ public class RefExportService {
                 + ", size: " + size + ", terminalId: " + terminalId);
         LOGGER.info("Exiting method livePage");
         return switch (domain) {
-            case "FAMILIES" -> ProductFamily.<ProductFamily>find("order by code")
-                    .page(page, size).list().stream().map(this::toDto).toList();
+            case "FAMILIES" -> familyPage(ProductFamily.<ProductFamily>find("order by code")
+                    .page(page, size).list());
             case "TOUCH_GROUPS" -> TouchGroupSetting.<TouchGroupSetting>find("order by familyCode")
                     .page(page, size).list().stream().map(this::toDto).toList();
             case "PRODUCTS" -> Product.<Product>find("order by ean")
@@ -1074,9 +1078,12 @@ public class RefExportService {
             return String.join("|", n(p.code), n(p.place), n(p.country));
         }
         if (row instanceof RefPayloads.CashMenuDto m) {
-            return String.join("|", n(m.code), n(m.label), String.valueOf(m.active), n(m.menuKeys),
+            // The layout joins the fingerprint only when there is one: a model
+            // without layout keeps the fingerprint it had before layouts existed.
+            String fingerprint = String.join("|", n(m.code), n(m.label), String.valueOf(m.active), n(m.menuKeys),
                     n(m.hiddenFunctions), String.valueOf(m.keyColumns), n(m.cashierScreen),
                     n(m.customerScreen), n(m.ticketModel));
+            return m.layout == null ? fingerprint : fingerprint + "|" + m.layout;
         }
         if (row instanceof RefPayloads.StoreDto s) {
             return String.join("|", n(s.code), n(s.name), n(s.streetLine1), n(s.streetLine2),
@@ -1191,23 +1198,48 @@ public class RefExportService {
     }
 
     /**
-     * Maps a product family to its payload.
+     * Maps one page of product families to their payloads, the edges of the
+     * whole page read in two queries.
      *
-     * @param family the family entity
-     * @return the payload
+     * <p>Not one query per family: reading each family's parents with a query
+     * of its own, and its articles through its collection, cost one query per
+     * family plus the loading of every article it holds with its attributes
+     * and sale codes, the session growing with each one — a page of a thousand
+     * families of a real store took more than three minutes, and the
+     * fingerprint of the domain pages through all of them. The parents and the
+     * EANs are read as plain values, keyed by family, and sorted as before.
+     *
+     * @param families the page of families, in canonical order
+     * @return the payloads, in the same order
      */
-    private RefPayloads.FamilyDto toDto(ProductFamily family) {
-        RefPayloads.FamilyDto dto = new RefPayloads.FamilyDto();
-        dto.code = family.code;
-        dto.description = family.description;
-        dto.flags = family.flags;
-        dto.parentCodes = ProductFamily.<ProductFamily>find(
-                "select p from ProductFamily p join p.productFamilies c where c.code = ?1"
-                        + " order by p.code", family.code)
-                .list().stream().map(p -> p.code).toList();
-        dto.productEans = family.products.stream()
-                .map(product -> product.ean).sorted().toList();
-        return dto;
+    private List<RefPayloads.FamilyDto> familyPage(List<ProductFamily> families) {
+        if (families.isEmpty()) {
+            return List.of();
+        }
+        List<Long> ids = families.stream().map(family -> family.id).toList();
+        Map<Long, List<String>> parents = new HashMap<>();
+        for (Object[] row : entityManager.createQuery(
+                "select c.id, p.code from ProductFamily p join p.productFamilies c where c.id in :ids",
+                Object[].class).setParameter("ids", ids).getResultList()) {
+            parents.computeIfAbsent((Long) row[0], id -> new ArrayList<>()).add((String) row[1]);
+        }
+        Map<Long, List<String>> eans = new HashMap<>();
+        for (Object[] row : entityManager.createQuery(
+                "select f.id, p.ean from ProductFamily f join f.products p where f.id in :ids",
+                Object[].class).setParameter("ids", ids).getResultList()) {
+            eans.computeIfAbsent((Long) row[0], id -> new ArrayList<>()).add((String) row[1]);
+        }
+        List<RefPayloads.FamilyDto> page = new ArrayList<>();
+        for (ProductFamily family : families) {
+            RefPayloads.FamilyDto dto = new RefPayloads.FamilyDto();
+            dto.code = family.code;
+            dto.description = family.description;
+            dto.flags = family.flags;
+            dto.parentCodes = parents.getOrDefault(family.id, List.of()).stream().sorted().toList();
+            dto.productEans = eans.getOrDefault(family.id, List.of()).stream().sorted().toList();
+            page.add(dto);
+        }
+        return page;
     }
 
     /**
@@ -1675,6 +1707,7 @@ public class RefExportService {
         dto.cashierScreen = menu.cashierScreen;
         dto.customerScreen = menu.customerScreen;
         dto.ticketModel = menu.ticketModel;
+        dto.layout = menu.layout;
         return dto;
     }
 

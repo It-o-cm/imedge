@@ -1,0 +1,98 @@
+{!
+ ! Tickets on hold of the electronic journal (LC-04-01-03, article 88). Every
+ ! putting on hold, resumption and purge at the Z closing is a signed record,
+ ! chained per register; the chain of each register is checked over all its
+ ! records. GET form, so the period lives in the URL. Read screen, no POST.
+ ! Renders inside the admin gabarit.
+!}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.journal-electronique')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.journal-electronique')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.recherche-multicriteres-sur-les-documents-consol')}</p>
+    </div>
+</div>
+
+<nav class="journal-tabs">
+    <a href="/admin/journal" class="journal-tab">{inject:i18n.get('t.journal-transactionnel')}</a>
+    <a href="/admin/journal/functional" class="journal-tab">{inject:i18n.get('t.journal-fonctionnel')}</a>
+    <a href="/admin/journal/movements" class="journal-tab">{inject:i18n.get('t.mouvements-de-caisse')}</a>
+    <a href="/admin/journal/training" class="journal-tab">{inject:i18n.get('t.transactions-ecole')}</a>
+    <a href="/admin/journal/parked" class="journal-tab is-active">{inject:i18n.get('t.tickets-en-attente')}</a>
+    <a href="/admin/journal/barcodes-issued" class="journal-tab">{inject:i18n.get('t.codes-barres-imprimes')}</a>
+    <a href="/admin/journal/barcodes-scanned" class="journal-tab">{inject:i18n.get('t.codes-barres-passes')}</a>
+</nav>
+
+<form method="get" action="/admin/journal/parked" class="card journal-form">
+    <div class="field-grid">
+        <div class="field">
+            <label class="field-label" for="f-from">{inject:i18n.get('t.du')}</label>
+            <input class="input-control" id="f-from" type="date" name="from" value="{from}">
+        </div>
+        <div class="field">
+            <label class="field-label" for="f-to">{inject:i18n.get('t.au')}</label>
+            <input class="input-control" id="f-to" type="date" name="to" value="{to}">
+        </div>
+    </div>
+    <div class="filter-actions">
+        <button type="submit" class="btn btn-primary">{inject:i18n.get('t.rechercher')}</button>
+    </div>
+</form>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.tracabilite-des-tickets-en-attente')}</h2>
+    <p class="col-muted">{inject:i18n.get('t.chaque-mise-en-attente-chaque-reprise-et')}</p>
+    {#if chains.isEmpty}
+    <p class="col-muted">{inject:i18n.get('t.aucun-ticket-mis-en-attente-sur-la')}</p>
+    {#else}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>{inject:i18n.get('t.n-tpv')}</th>
+                <th>{inject:i18n.get('t.chaine-de-signatures')}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {#for chain in chains}
+            <tr>
+                <td>{chain.terminalId}</td>
+                <td>{#if chain.intact == 'true'}<span class="badge badge-ok">{chain.state}</span>{#else}<span class="badge badge-error">{chain.state}</span>{/if}</td>
+            </tr>
+            {/for}
+        </tbody>
+    </table>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>{inject:i18n.get('t.date')}</th>
+                <th>{inject:i18n.get('t.n-tpv')}</th>
+                <th>{inject:i18n.get('t.ticket')}</th>
+                <th>{inject:i18n.get('t.evenement')}</th>
+                <th>{inject:i18n.get('t.operateur-2')}</th>
+                <th>{inject:i18n.get('t.articles')}</th>
+                <th>{inject:i18n.get('t.total-ttc')}</th>
+                <th>{inject:i18n.get('t.signature')}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {#for row in rows}
+            <tr>
+                <td>{row.eventDate}</td>
+                <td>{row.terminalId}</td>
+                <td>{row.ticketNumber}</td>
+                <td>{row.event}</td>
+                <td>{row.operator}</td>
+                <td>{row.itemCount}</td>
+                <td>{row.total} €</td>
+                <td><code title="{row.content}">{row.signature}…</code></td>
+            </tr>
+            {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+{/body}

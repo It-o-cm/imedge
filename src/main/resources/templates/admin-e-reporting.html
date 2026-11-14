@@ -1,0 +1,73 @@
+{!
+ ! Back-office E-REPORTING (BO-05-01-03): the periods of transaction data —
+ ! consumer sales aggregated by day and VAT rate, international sales invoice
+ ! by invoice — transmitted through the dematerialisation platform, and their
+ ! acknowledgement. A period not accepted is extracted again from here.
+!}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.u-e-reporting')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.u-e-reporting')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.u-e-reporting-aide')}</p>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.u-extraire-une-periode')}</h2>
+    <p class="card-sub">{#if enabled}{inject:i18n.get('t.u-ereporting-actif')}{#else}{inject:i18n.get('t.u-ereporting-inactif')}{/if} — {inject:i18n.get('t.u-periodicite')} : {inject:i18n.code('t.u-periode-', periodicity)}</p>
+    <form method="post" action="/admin/fiscal/e-reporting/extract">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="r-start">{inject:i18n.get('t.du')}</label>
+                <input class="input-control" id="r-start" type="date" name="start" value="{start}" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="r-end">{inject:i18n.get('t.au')}</label>
+                <input class="input-control" id="r-end" type="date" name="end" value="{end}" required>
+            </div>
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.u-extraire')}</button>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    {#if reports.isEmpty()}
+    <div class="empty-state"><p>{inject:i18n.get('t.u-aucune-periode')}</p></div>
+    {#else}
+    <table class="data-table">
+        <thead>
+        <tr><th>{inject:i18n.get('t.u-periode-couverte')}</th><th>{inject:i18n.get('t.u-transactions')}</th><th>{inject:i18n.get('t.u-ht')}</th><th>{inject:i18n.get('t.u-tva')}</th><th>{inject:i18n.get('t.u-ttc')}</th><th>{inject:i18n.get('t.u-statut')}</th><th>{inject:i18n.get('t.u-detail')}</th><th></th></tr>
+        </thead>
+        <tbody>
+        {#for report in reports}
+        <tr>
+            <td class="link-strong">{report.periodStart.format('dd/MM/yyyy')} → {report.periodEnd.format('dd/MM/yyyy')}</td>
+            <td>{report.transactionCount}</td>
+            <td class="sup-amount">{inject:i18n.money(report.totalExcludingTax)}</td>
+            <td class="sup-amount">{inject:i18n.money(report.totalVat)}</td>
+            <td class="sup-amount">{inject:i18n.money(report.totalIncludingTax)}</td>
+            <td>{inject:i18n.code('t.u-er-', report.status.name)}</td>
+            <td class="col-muted cell-wrap">{#if report.message}{inject:i18n.text(report.message)}{/if}{#if report.ackId} ({report.ackId}){/if}</td>
+            <td class="col-actions">
+                <a class="btn btn-small btn-ghost" href="/admin/fiscal/e-reporting/document?id={report.id}">XML</a>
+                {#if !report.status.last}
+                <form method="post" action="/admin/fiscal/e-reporting/transmit"><input type="hidden" name="id" value="{report.id}"><button class="btn btn-small btn-primary" type="submit">{inject:i18n.get('t.u-transmettre')}</button></form>
+                {/if}
+            </td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+    {/if}
+</div>
+{/body}

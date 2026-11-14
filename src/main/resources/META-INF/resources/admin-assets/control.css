@@ -1,0 +1,128 @@
+/*
+ * Control and responsiveness of the back office (BO-04-02-12, BO-04-03-01,
+ * BO-04-03-02): the control indicators bar and the registers' alert shown on
+ * every screen, and the breakpoints that make the screens usable on a tablet
+ * and a smartphone — the navigation wraps and its menus open in place, forms
+ * fall to one column, tables scroll inside their card rather than widening
+ * the page, the tiles go two then one by row.
+ *
+ * Loaded LAST by admin-layout.html, after narrow.css; uses the --im-* tokens.
+ */
+
+.control-bar {
+    margin: 0 0 14px;
+    padding: 8px 14px;
+    border: 1px solid var(--im-line);
+    border-radius: var(--radius, 8px);
+    background: var(--im-surface);
+    color: var(--im-ink-soft);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+}
+
+.global-alert {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    margin: 0 0 14px;
+}
+
+.global-alert-toggle { width: 100%; text-align: left; }
+
+.global-alert-panel {
+    margin-top: 6px;
+    padding: 10px;
+    border: 1px solid #f0d2d6;
+    border-radius: var(--radius, 8px);
+    background: #fdf1f2;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.global-alert-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    overflow-wrap: anywhere;
+}
+
+.global-alert-row > span { flex: 1 1 260px; }
+
+.table-scroll { overflow-x: auto; }
+
+.journal-vat { font-size: 12px; }
+
+@media (max-width: 760px) {
+    .app-header {
+        flex-wrap: wrap;
+        height: auto;
+        padding: 8px 12px;
+        gap: 8px 16px;
+    }
+
+    .app-nav {
+        flex-wrap: wrap;
+        gap: 6px 16px;
+        width: 100%;
+    }
+
+    .app-menu-panel {
+        position: static;
+        box-shadow: none;
+        min-width: 0;
+    }
+
+    .app-identity { flex-wrap: wrap; gap: 8px; }
+
+    .app-main { padding: 16px 12px 40px; }
+
+    .app-footer { padding: 0 12px 24px; }
+
+    /* A register's call keeps its buttons on the screen: they go under the subject. */
+    .call-banner { flex-wrap: wrap; justify-content: flex-start; gap: 8px; }
+    .call-subject { flex-basis: 100%; }
+
+    .page-head {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+    }
+
+    .field-grid { grid-template-columns: 1fr; }
+
+    .filter-bar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .card { overflow-x: auto; }
+
+    .data-table {
+        display: block;
+        overflow-x: auto;
+        max-width: 100%;
+    }
+
+    .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+    .sup-columns { grid-template-columns: 1fr; }
+
+    .col-actions { white-space: normal; }
+}
+
+@media (max-width: 420px) {
+    .kpi-grid { grid-template-columns: 1fr; }
+
+    .kpi-value { font-size: 18px; }
+
+    .btn { white-space: normal; }
+
+    .journal-range { flex-direction: column; }
+}
+
+/* BO-04-03-07: a time, a ticket number or an amount is read on one line. */
+#live-table th,
+#live-table td.nowrap { white-space: nowrap; }

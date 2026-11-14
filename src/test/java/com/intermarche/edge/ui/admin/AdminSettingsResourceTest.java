@@ -237,6 +237,8 @@ class AdminSettingsResourceTest {
             {"fiscal.at-subuser", "FISCAL", "", ""},
             {"fiscal.at-password", "FISCAL", "", ""},
             {"fiscal.at-public-certificate", "FISCAL", "", ""},
+            // DG: C
+            {"channel.ecommerce.partial-payment", "CANAUX EXTERNES", "", ""},
             // lot 20: P
             {"article.complementary-suggestions", "RÉFÉRENTIEL ARTICLES", "b", ""},
             {"article.complementary-max", "RÉFÉRENTIEL ARTICLES", "", "i"},
@@ -427,6 +429,7 @@ class AdminSettingsResourceTest {
             {"customer.default-tax-id",             "CLIENT EN CAISSE",           "",  ""},
             {"customer.tax-id-required",            "CLIENT EN CAISSE",           "b", ""},
             {"customer.tax-id-pt-check",            "CLIENT EN CAISSE",           "b", ""},
+            {"customer.tax-id-key",                 "CLIENT EN CAISSE",           "b", ""},
             {"customer.tax-id-scan-pattern",        "CLIENT EN CAISSE",           "",  ""},
             {"customer.default-tax-id-label",       "CLIENT EN CAISSE",           "",  ""},
             {"customer.foreign-tax-id-countries",   "CLIENT EN CAISSE",           "",  ""},

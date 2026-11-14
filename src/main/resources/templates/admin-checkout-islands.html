@@ -51,12 +51,10 @@
             </select>
         </div>
         <div class="field">
-            <label class="field-label" for="ig-{island.code}">{inject:i18n.get('t.rendu-monnaie')}</label>
-            <input id="ig-{island.code}" type="checkbox" name="changeGivingAllowed" {#if island.changeGivingAllowed}checked{/if}>
+            <label class="field-check"><input id="ig-{island.code}" type="checkbox" name="changeGivingAllowed" {#if island.changeGivingAllowed}checked{/if}> <span>{inject:i18n.get('t.rendu-monnaie')}</span></label>
         </div>
         <div class="field">
-            <label class="field-label" for="iac-{island.code}">{inject:i18n.get('t.declaration-auto-fin-de-periode')}</label>
-            <input id="iac-{island.code}" type="checkbox" name="autoPeriodCloseDeclaration" {#if island.autoPeriodCloseDeclaration}checked{/if}>
+            <label class="field-check"><input id="iac-{island.code}" type="checkbox" name="autoPeriodCloseDeclaration" {#if island.autoPeriodCloseDeclaration}checked{/if}> <span>{inject:i18n.get('t.declaration-auto-fin-de-periode')}</span></label>
         </div>
         <div class="field">
             <label class="field-label" for="ih-{island.code}">{inject:i18n.get('t.r20-hotes-rattaches')}</label>
@@ -64,12 +62,10 @@
             <span class="field-hint">{inject:i18n.get('t.r20-hotes-rattaches-aide')}</span>
         </div>
         <div class="field">
-            <label class="field-label" for="ipx-{island.code}">{inject:i18n.get('t.k19-exclu-du-flux-planexa')}</label>
-            <input id="ipx-{island.code}" type="checkbox" name="planexaExcluded" {#if island.planexaExcluded}checked{/if}>
+            <label class="field-check"><input id="ipx-{island.code}" type="checkbox" name="planexaExcluded" {#if island.planexaExcluded}checked{/if}> <span>{inject:i18n.get('t.k19-exclu-du-flux-planexa')}</span></label>
         </div>
         <div class="field">
-            <label class="field-label" for="ia-{island.code}">{inject:i18n.get('t.actif')}</label>
-            <input id="ia-{island.code}" type="checkbox" name="active" {#if island.active}checked{/if}>
+            <label class="field-check"><input id="ia-{island.code}" type="checkbox" name="active" {#if island.active}checked{/if}> <span>{inject:i18n.get('t.actif')}</span></label>
         </div>
         <div class="page-actions">
             <button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer')}</button>
@@ -110,12 +106,10 @@
             </select>
         </div>
         <div class="field">
-            <label class="field-label" for="new-change">{inject:i18n.get('t.rendu-monnaie')}</label>
-            <input id="new-change" type="checkbox" name="changeGivingAllowed" checked>
+            <label class="field-check"><input id="new-change" type="checkbox" name="changeGivingAllowed" checked> <span>{inject:i18n.get('t.rendu-monnaie')}</span></label>
         </div>
         <div class="field">
-            <label class="field-label" for="new-active">{inject:i18n.get('t.actif')}</label>
-            <input id="new-active" type="checkbox" name="active" checked>
+            <label class="field-check"><input id="new-active" type="checkbox" name="active" checked> <span>{inject:i18n.get('t.actif')}</span></label>
         </div>
         <div class="page-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.creer-l-ilot')}</button></div>
     </form>

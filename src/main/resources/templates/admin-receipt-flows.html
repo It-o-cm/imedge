@@ -1,0 +1,106 @@
+{!
+ ! Back-office RECEIPT FLOWS (BO-05-02-03): the existing feeds of takings
+ ! collected outside the registers (fuel stations, gas suppliers), how each
+ ! one's file is read, what its last integration answered, and the integration
+ ! of a file by hand. The automatic door is POST /feeds/import/SAFE_RECEIPTS
+ ! ?mode=CODE. POST -> 303 -> notice.
+!}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.u-flux-de-recettes')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.u-flux-de-recettes')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.u-flux-de-recettes-aide')}</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn btn-ghost" href="/admin/safe/movements">{inject:i18n.get('t.mouvements-du-coffre')}</a>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
+{/if}
+
+{#for flow in flows}
+<div class="card">
+    <h2 class="card-title">{flow.code} — {flow.label}</h2>
+    <p class="card-sub">{inject:i18n.get('t.u-derniere-integration')} {#if flow.lastImportAt}{flow.lastImportAt.format('dd/MM/yyyy HH:mm')} — {#if flow.lastResult}{inject:i18n.text(flow.lastResult)}{/if}{#else}{inject:i18n.get('t.u-jamais')}{/if}</p>
+    <form method="post" action="/admin/safe/receipt-flows">
+        <input type="hidden" name="id" value="{flow.id}">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="f-label-{flow.id}">{inject:i18n.get('t.libelle')}</label>
+                <input class="input-control" id="f-label-{flow.id}" type="text" name="label" maxlength="120" value="{flow.label}" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-sep-{flow.id}">{inject:i18n.get('t.u-separateur')}</label>
+                <input class="input-control" id="f-sep-{flow.id}" type="text" name="separator" maxlength="1" value="{flow.separator}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="f-date-{flow.id}">{inject:i18n.get('t.u-format-des-dates')}</label>
+                <input class="input-control" id="f-date-{flow.id}" type="text" name="datePattern" maxlength="30" value="{flow.datePattern ?: ''}">
+            </div>
+            <div class="field">
+                <label class="field-check"><input id="f-active-{flow.id}" type="checkbox" name="active" {#if flow.active}checked{/if}> <span>{inject:i18n.get('t.actif')}</span></label>
+            </div>
+        </div>
+        <div class="field">
+            <label class="field-label" for="f-map-{flow.id}">{inject:i18n.get('t.u-correspondance-des-colonnes')}</label>
+            <textarea class="input-control" id="f-map-{flow.id}" name="mapping" rows="3">{flow.mapping}</textarea>
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer')}</button>
+        </div>
+    </form>
+    <form method="post" action="/admin/safe/receipt-flows/import">
+        <input type="hidden" name="code" value="{flow.code}">
+        <div class="field">
+            <label class="field-label" for="f-content-{flow.id}">{inject:i18n.get('t.u-fichier-a-integrer')}</label>
+            <textarea class="input-control" id="f-content-{flow.id}" name="content" rows="4"></textarea>
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-ghost" type="submit">{inject:i18n.get('t.u-integrer-le-fichier')}</button>
+        </div>
+    </form>
+</div>
+{/for}
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.u-nouveau-flux')}</h2>
+    <form method="post" action="/admin/safe/receipt-flows">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="n-code">{inject:i18n.get('t.code')}</label>
+                <input class="input-control" id="n-code" type="text" name="code" maxlength="30" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="n-label">{inject:i18n.get('t.libelle')}</label>
+                <input class="input-control" id="n-label" type="text" name="label" maxlength="120" required>
+            </div>
+            <div class="field">
+                <label class="field-label" for="n-sep">{inject:i18n.get('t.u-separateur')}</label>
+                <input class="input-control" id="n-sep" type="text" name="separator" maxlength="1" value=";">
+            </div>
+            <div class="field">
+                <label class="field-label" for="n-date">{inject:i18n.get('t.u-format-des-dates')}</label>
+                <input class="input-control" id="n-date" type="text" name="datePattern" maxlength="30" value="dd/MM/yyyy">
+            </div>
+            <div class="field">
+                <label class="field-check"><input id="n-active" type="checkbox" name="active" checked> <span>{inject:i18n.get('t.actif')}</span></label>
+            </div>
+        </div>
+        <div class="field">
+            <label class="field-label" for="n-map">{inject:i18n.get('t.u-correspondance-des-colonnes')}</label>
+            <textarea class="input-control" id="n-map" name="mapping" rows="3">REFERENCE=;AMOUNT=;DATE=;LABEL=</textarea>
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.u-creer-le-flux')}</button>
+        </div>
+    </form>
+</div>
+{/body}
+
+{#footer}{inject:i18n.get('t.u-flux-de-recettes-pied')}{/footer}

@@ -64,13 +64,19 @@ import static org.mockito.Mockito.when;
  * and listed entities are plain Mockito mocks (fields read/written directly,
  * {@code persist()} inert). No database and no Quarkus context is booted.
  * <p>
- * Every branch is covered: {@code applyFamilies} (insert / update arms),
- * {@code applyProducts} (insert / update, the {@code productType} ternary
- * both arms, and the three deactivation arms — seen, absent-active,
- * absent-inactive), {@code applyPrices} (the {@code productEan} ternary both
- * arms, product-not-found via null-EAN and via a missing row, the
- * {@code priority} ternary both arms, and both arms of the shared
- * {@code parse} helper via start/end timestamps), {@code applyEmployees}
+ * The three big referentials (families, products, prices) work by chunk
+ * through the session ({@code entityManager}, a mock here): their tests stub
+ * the one-query-per-chunk reads, the plain-value reads, and check the
+ * flush-and-clear count, runs spanning several chunks included.
+ * <p>
+ * Every branch is covered: {@code applyFamilies} (insert / update arms, the
+ * tree and the memberships applied in place, unchanged ones untouched, groups
+ * by chunk), {@code applyProducts} (insert / update, the {@code productType}
+ * ternary both arms, the collections in place both arms, a repeated EAN, and
+ * the deactivation of the absent, by chunk), {@code applyPrices} (the
+ * {@code productEan} ternary both arms, product-not-found via null-EAN and via
+ * a missing row, the {@code priority} ternary both arms, and both arms of the
+ * shared {@code parse} helper via start/end timestamps), {@code applyEmployees}
  * (insert / update, the {@code theme == null} guard both arms, and the three
  * deactivation arms), {@code applyCouponTypes} (insert / update and the three
  * deactivation arms), {@code recordApplied} (insert / update) and
@@ -99,14 +105,87 @@ class RefApplyServiceTest {
     // --------------------------------------------------
 
     /**
-     * Covers both arms of {@code applyFamilies}: the first row has no existing
-     * family (insert path, constructed instance gets its code) while the second
-     * matches an existing family (update path), and both are populated and
-     * persisted.
+     * Builds a typed query answering the given rows, for the plain-value reads
+     * the big referentials go through.
+     *
+     * @param rows the rows the query must answer
+     * @return the configured mocked query
+     */
+    @SuppressWarnings("unchecked")
+    private jakarta.persistence.TypedQuery<Object[]> rowsQuery(List<Object[]> rows) {
+        jakarta.persistence.TypedQuery<Object[]> query = mock(jakarta.persistence.TypedQuery.class);
+        when(query.getResultList()).thenReturn(rows);
+        return query;
+    }
+
+    /**
+     * Builds a session mock whose two membership reads answer the given rows.
+     *
+     * @param productRows the EAN and identifier of every article
+     * @param memberRows the family and article identifiers of every held membership
+     * @return the configured mocked session
+     */
+    private jakarta.persistence.EntityManager membershipSession(List<Object[]> productRows,
+            List<Object[]> memberRows) {
+        jakarta.persistence.EntityManager session = mock(jakarta.persistence.EntityManager.class);
+        jakarta.persistence.TypedQuery<Object[]> products = rowsQuery(productRows);
+        jakarta.persistence.TypedQuery<Object[]> members = rowsQuery(memberRows);
+        when(session.createQuery("select p.ean, p.id from Product p", Object[].class)).thenReturn(products);
+        when(session.createQuery("select f.id, p.id from ProductFamily f join f.products p", Object[].class))
+                .thenReturn(members);
+        return session;
+    }
+
+    /** The single query reading every family of the node with its children. */
+    private static final String FAMILIES_WITH_CHILDREN =
+            "select distinct f from ProductFamily f left join fetch f.productFamilies";
+
+    /** The query reading a group of families with their held articles. */
+    private static final String FAMILIES_WITH_PRODUCTS =
+            "select distinct f from ProductFamily f left join fetch f.products where f.id in ?1";
+
+    /**
+     * Builds a family mock with empty edge collections.
+     *
+     * @param code the family code
+     * @param id the family identifier
+     * @return the family
+     */
+    private ProductFamily family(String code, Long id) {
+        ProductFamily family = mock(ProductFamily.class);
+        family.code = code;
+        family.id = id;
+        family.productFamilies = new java.util.HashSet<>();
+        family.products = new java.util.HashSet<>();
+        return family;
+    }
+
+    /**
+     * Builds a real article with an identifier and an EAN.
+     *
+     * @param id the identifier
+     * @param ean the EAN
+     * @return the article
+     */
+    private static Product article(long id, String ean) {
+        Product product = new Product();
+        product.id = id;
+        product.ean = ean;
+        return product;
+    }
+
+    /**
+     * Covers both arms of the upsert of {@code applyFamilies}: every family of
+     * the node is read in ONE query, the first row has no family yet (insert
+     * path, the constructed instance gets its code and is persisted) while the
+     * second matches the family read (update path). Nothing wants any article
+     * and nothing holds any, so no membership is touched and no article is
+     * read; the session is flushed and cleared once, before the memberships.
      */
     @Test
     void applyFamiliesInsertsAndUpdates() {
         RefApplyService service = new RefApplyService();
+        service.entityManager = membershipSession(List.of(), List.of());
         RefPayloads.FamilyDto insert = new RefPayloads.FamilyDto();
         insert.code = "F1";
         insert.description = "Fruits";
@@ -115,19 +194,14 @@ class RefApplyServiceTest {
         update.code = "F2";
         update.description = "Légumes";
         update.flags = "LOCAL";
-        ProductFamily existing = mock(ProductFamily.class);
-        existing.productFamilies = new java.util.HashSet<>();
-        existing.products = new java.util.HashSet<>();
-        PanacheQuery<ProductFamily> absentQuery = queryReturning(null);
-        PanacheQuery<ProductFamily> existingQuery = queryReturning(existing);
+        ProductFamily existing = family("F2", 2L);
         try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class);
                 MockedConstruction<ProductFamily> created = mockConstruction(ProductFamily.class,
                         (family, ctx) -> {
                             family.productFamilies = new java.util.HashSet<>();
                             family.products = new java.util.HashSet<>();
                         })) {
-            mocked.when(() -> ProductFamily.find("code", "F1")).thenReturn(absentQuery);
-            mocked.when(() -> ProductFamily.find("code", "F2")).thenReturn(existingQuery);
+            mocked.when(() -> ProductFamily.list(FAMILIES_WITH_CHILDREN)).thenReturn(List.of(existing));
             service.applyFamilies(List.of(insert, update));
             ProductFamily inserted = created.constructed().get(0);
             assertEquals("F1", inserted.code);
@@ -135,9 +209,168 @@ class RefApplyServiceTest {
             assertEquals("BIO", inserted.flags);
             assertEquals("Légumes", existing.description);
             assertEquals("LOCAL", existing.flags);
-            // Persisted twice: once for the row, once for its (empty) edges.
-            verify(inserted, times(2)).persist();
-            verify(existing, times(2)).persist();
+            verify(inserted, times(1)).persist();
+            verify(existing, times(1)).persist();
+            mocked.verify(() -> Product.list(org.mockito.ArgumentMatchers.eq("id in ?1"),
+                    org.mockito.ArgumentMatchers.<Object>any()), never());
+            verify(service.entityManager, times(1)).flush();
+            verify(service.entityManager, times(1)).clear();
+        }
+    }
+
+    /**
+     * The group TREE of the snapshot is applied in place: a child declaring its
+     * parent lands in that parent's collection even when the parent comes later
+     * in the snapshot, a stale child the parent held leaves it, a child naming
+     * a parent the snapshot does not carry is wired nowhere, and a family
+     * listed twice is upserted once, its edges united. Without this the
+     * register would receive flat groups.
+     */
+    @Test
+    void applyFamiliesAppliesTheTreeInPlace() {
+        RefApplyService service = new RefApplyService();
+        service.entityManager = membershipSession(List.of(), List.of());
+        RefPayloads.FamilyDto child = new RefPayloads.FamilyDto();
+        child.code = "CHILD";
+        child.parentCodes = List.of("PARENT", "GHOST");
+        RefPayloads.FamilyDto parent = new RefPayloads.FamilyDto();
+        parent.code = "PARENT";
+        RefPayloads.FamilyDto again = new RefPayloads.FamilyDto();
+        again.code = "CHILD";
+        again.parentCodes = List.of("PARENT");
+        ProductFamily childRow = family("CHILD", 1L);
+        ProductFamily parentRow = family("PARENT", 2L);
+        ProductFamily stale = family("STALE", 3L);
+        java.util.Set<ProductFamily> parentEdges = parentRow.productFamilies;
+        parentEdges.add(stale);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> ProductFamily.list(FAMILIES_WITH_CHILDREN))
+                    .thenReturn(List.of(childRow, parentRow, stale));
+            service.applyFamilies(List.of(child, parent, again));
+            assertSame(parentEdges, parentRow.productFamilies);
+            assertEquals(java.util.Set.of(childRow), parentRow.productFamilies);
+            assertTrue(childRow.productFamilies.isEmpty());
+            verify(childRow, times(2)).persist();
+            verify(stale, never()).persist();
+        }
+    }
+
+    /**
+     * {@code replaceInPlace} leaves a collection that already holds the wanted
+     * elements untouched — an unmodifiable set would throw at the first write —
+     * and brings a differing one to the wanted elements while keeping the very
+     * instance Hibernate manages.
+     */
+    @Test
+    void replaceInPlaceWritesOnlyWhenTheElementsDiffer() {
+        java.util.Set<String> unchanged = java.util.Set.of("A", "B");
+        RefApplyService.replaceInPlace(unchanged, new java.util.HashSet<>(List.of("B", "A")));
+        java.util.Set<String> changed = new java.util.HashSet<>(List.of("A", "B"));
+        RefApplyService.replaceInPlace(changed, java.util.Set.of("B", "C"));
+        assertEquals(java.util.Set.of("B", "C"), changed);
+    }
+
+    /**
+     * The memberships are compared by identifier and only the families whose
+     * members moved are loaded: A held article 1 and wants article 3 instead
+     * (rewired, article 1 removed, article 3 added, the same set instance kept);
+     * B already holds exactly what it wants (never loaded); C wants an EAN this
+     * register does not know (ignored, so it wants nothing and holds nothing:
+     * never loaded either).
+     */
+    @Test
+    void applyFamiliesRewiresOnlyTheMembershipsThatMoved() {
+        RefApplyService service = new RefApplyService();
+        List<Object[]> productRows = List.of(new Object[] {"3001", 1L}, new Object[] {"3002", 2L},
+                new Object[] {"3003", 3L});
+        List<Object[]> memberRows = List.of(new Object[] {10L, 1L}, new Object[] {20L, 2L});
+        service.entityManager = membershipSession(productRows, memberRows);
+        RefPayloads.FamilyDto a = new RefPayloads.FamilyDto();
+        a.code = "A";
+        a.productEans = List.of("3003");
+        RefPayloads.FamilyDto b = new RefPayloads.FamilyDto();
+        b.code = "B";
+        b.productEans = List.of("3002");
+        RefPayloads.FamilyDto c = new RefPayloads.FamilyDto();
+        c.code = "C";
+        c.productEans = List.of("9999");
+        ProductFamily rowA = family("A", 10L);
+        ProductFamily rowB = family("B", 20L);
+        ProductFamily rowC = family("C", 30L);
+        Product one = article(1L, "3001");
+        Product three = article(3L, "3003");
+        ProductFamily loadedA = family("A", 10L);
+        java.util.Set<Product> members = loadedA.products;
+        members.add(one);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> ProductFamily.list(FAMILIES_WITH_CHILDREN)).thenReturn(List.of(rowA, rowB, rowC));
+            mocked.when(() -> Product.list("id in ?1", List.of(3L))).thenReturn(List.of(three));
+            mocked.when(() -> ProductFamily.list(FAMILIES_WITH_PRODUCTS, List.of(10L))).thenReturn(List.of(loadedA));
+            service.applyFamilies(List.of(a, b, c));
+            assertSame(members, loadedA.products);
+            assertEquals(java.util.Set.of(three), loadedA.products);
+            mocked.verify(() -> ProductFamily.list(org.mockito.ArgumentMatchers.eq(FAMILIES_WITH_PRODUCTS),
+                    org.mockito.ArgumentMatchers.<Object>any()), times(1));
+            verify(service.entityManager, times(2)).flush();
+            verify(service.entityManager, times(2)).clear();
+        }
+    }
+
+    /**
+     * A run spanning several chunks: X wants 1001 articles — the group is
+     * rewired as soon as its wanted articles reach a chunk, the articles read
+     * in two queries (1000 then 1) — and Y, wanting one article, is rewired in
+     * the remainder group; the session is flushed and cleared after the rows
+     * and after each group.
+     */
+    @Test
+    void applyFamiliesRewiresTheMembershipsByChunk() {
+        RefApplyService service = new RefApplyService();
+        List<Object[]> productRows = new ArrayList<>();
+        List<String> eansOfX = new ArrayList<>();
+        List<Long> idsOfX = new ArrayList<>();
+        List<Product> articlesOfX = new ArrayList<>();
+        for (long id = 1; id <= 1001; id++) {
+            productRows.add(new Object[] {"E" + id, id});
+            eansOfX.add("E" + id);
+            idsOfX.add(id);
+            articlesOfX.add(article(id, "E" + id));
+        }
+        productRows.add(new Object[] {"EY", 5000L});
+        service.entityManager = membershipSession(productRows, List.of());
+        RefPayloads.FamilyDto x = new RefPayloads.FamilyDto();
+        x.code = "X";
+        x.productEans = eansOfX;
+        RefPayloads.FamilyDto y = new RefPayloads.FamilyDto();
+        y.code = "Y";
+        y.productEans = List.of("EY");
+        ProductFamily rowX = family("X", 1L);
+        ProductFamily rowY = family("Y", 2L);
+        ProductFamily loadedX = family("X", 1L);
+        ProductFamily loadedY = family("Y", 2L);
+        Product articleY = article(5000L, "EY");
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> ProductFamily.list(FAMILIES_WITH_CHILDREN)).thenReturn(List.of(rowX, rowY));
+            mocked.when(() -> Product.list(org.mockito.ArgumentMatchers.eq("id in ?1"),
+                    org.mockito.ArgumentMatchers.<Object>any())).thenAnswer(call -> {
+                        @SuppressWarnings("unchecked")
+                        List<Long> ids = (List<Long>) call.getArgument(1);
+                        List<Product> found = new ArrayList<>();
+                        for (Long id : ids) {
+                            found.add(id == 5000L ? articleY : articlesOfX.get((int) (id - 1)));
+                        }
+                        return found;
+                    });
+            mocked.when(() -> ProductFamily.list(FAMILIES_WITH_PRODUCTS, List.of(1L))).thenReturn(List.of(loadedX));
+            mocked.when(() -> ProductFamily.list(FAMILIES_WITH_PRODUCTS, List.of(2L))).thenReturn(List.of(loadedY));
+            service.applyFamilies(List.of(x, y));
+            assertEquals(1001, loadedX.products.size());
+            assertTrue(loadedX.products.containsAll(articlesOfX));
+            assertEquals(java.util.Set.of(articleY), loadedY.products);
+            mocked.verify(() -> Product.list(org.mockito.ArgumentMatchers.eq("id in ?1"),
+                    org.mockito.ArgumentMatchers.<Object>any()), times(3));
+            verify(service.entityManager, times(3)).flush();
+            verify(service.entityManager, times(3)).clear();
         }
     }
 
@@ -207,117 +440,38 @@ class RefApplyServiceTest {
         }
     }
 
-    /**
-     * The group TREE and the article memberships of the snapshot are rebuilt:
-     * a child declaring its parent lands in that parent's collection even when
-     * the parent comes later in the snapshot, and an article is attached by
-     * EAN. Without this the register would receive flat, empty groups.
-     */
-    @Test
-    void applyFamiliesRebuildsTheTreeAndTheMemberships() {
-        RefApplyService service = new RefApplyService();
-        RefPayloads.FamilyDto child = new RefPayloads.FamilyDto();
-        child.code = "CHILD";
-        child.parentCodes = List.of("PARENT");
-        child.productEans = List.of("3001", "9999");
-        RefPayloads.FamilyDto parent = new RefPayloads.FamilyDto();
-        parent.code = "PARENT";
-        ProductFamily childRow = mock(ProductFamily.class);
-        childRow.productFamilies = new java.util.HashSet<>();
-        childRow.products = new java.util.HashSet<>();
-        ProductFamily parentRow = mock(ProductFamily.class);
-        parentRow.productFamilies = new java.util.HashSet<>();
-        parentRow.products = new java.util.HashSet<>();
-        Product apple = mock(Product.class);
-        // Every query mock is built BEFORE the static stubbing: calling a
-        // helper that stubs, inside a when(...) that is not finished, is
-        // nested stubbing and Mockito rejects it.
-        PanacheQuery<ProductFamily> childQuery = queryReturning(childRow);
-        PanacheQuery<ProductFamily> parentQuery = queryReturning(parentRow);
-        PanacheQuery<Product> appleQuery = queryReturning(apple);
-        PanacheQuery<Product> unknownQuery = queryReturning(null);
-        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
-            mocked.when(() -> ProductFamily.find("code", "CHILD")).thenReturn(childQuery);
-            mocked.when(() -> ProductFamily.find("code", "PARENT")).thenReturn(parentQuery);
-            mocked.when(() -> Product.find("ean", "3001")).thenReturn(appleQuery);
-            mocked.when(() -> Product.find("ean", "9999")).thenReturn(unknownQuery);
-            service.applyFamilies(List.of(child, parent));
-            assertTrue(parentRow.productFamilies.contains(childRow));
-            assertTrue(childRow.products.contains(apple));
-            assertEquals(1, childRow.products.size());
-            assertTrue(childRow.productFamilies.isEmpty());
-        }
-    }
-
-    /**
-     * The edge collections are emptied before any wiring: a family whose row
-     * comes AFTER a child that just joined it does not lose that child.
-     */
-    @Test
-    void applyFamiliesClearsEveryEdgeBeforeWiringAny() {
-        RefApplyService service = new RefApplyService();
-        RefPayloads.FamilyDto child = new RefPayloads.FamilyDto();
-        child.code = "CHILD";
-        child.parentCodes = List.of("PARENT");
-        RefPayloads.FamilyDto parent = new RefPayloads.FamilyDto();
-        parent.code = "PARENT";
-        ProductFamily childRow = mock(ProductFamily.class);
-        childRow.productFamilies = new java.util.HashSet<>();
-        childRow.products = new java.util.HashSet<>();
-        ProductFamily parentRow = mock(ProductFamily.class);
-        ProductFamily stale = mock(ProductFamily.class);
-        parentRow.productFamilies = new java.util.HashSet<>(java.util.Set.of(stale));
-        parentRow.products = new java.util.HashSet<>();
-        PanacheQuery<ProductFamily> childQuery = queryReturning(childRow);
-        PanacheQuery<ProductFamily> parentQuery = queryReturning(parentRow);
-        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
-            mocked.when(() -> ProductFamily.find("code", "CHILD")).thenReturn(childQuery);
-            mocked.when(() -> ProductFamily.find("code", "PARENT")).thenReturn(parentQuery);
-            service.applyFamilies(List.of(child, parent));
-            assertTrue(parentRow.productFamilies.contains(childRow));
-            assertFalse(parentRow.productFamilies.contains(stale));
-        }
-    }
-
-    /**
-     * Covers the missed {@code parent == null} arm of {@code applyFamilies}
-     * (line 102): a child declares a parent code that is not part of the
-     * snapshot, so {@code byCode.get(parentCode)} resolves to null and the row
-     * is simply not wired into any parent — no NullPointerException, no edge.
-     */
-    @Test
-    void applyFamiliesSkipsWiringWhenParentIsUnknown() {
-        RefApplyService service = new RefApplyService();
-        RefPayloads.FamilyDto child = new RefPayloads.FamilyDto();
-        child.code = "CHILD";
-        child.parentCodes = List.of("GHOST");
-        ProductFamily childRow = mock(ProductFamily.class);
-        childRow.productFamilies = new java.util.HashSet<>();
-        childRow.products = new java.util.HashSet<>();
-        PanacheQuery<ProductFamily> childQuery = queryReturning(childRow);
-        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
-            mocked.when(() -> ProductFamily.find("code", "CHILD")).thenReturn(childQuery);
-            service.applyFamilies(List.of(child));
-            assertTrue(childRow.productFamilies.isEmpty());
-            assertTrue(childRow.products.isEmpty());
-            verify(childRow, times(2)).persist();
-        }
-    }
-
     // --------------------------------------------------
     // applyProducts
     // --------------------------------------------------
 
     /**
-     * Covers every arm of {@code applyProducts}: an inserted row with a
-     * non-null {@code productType} (ternary true arm), an updated row with a
-     * null {@code productType} (ternary false arm), then the three
-     * deactivation arms — a seen product left untouched, an absent active
-     * product deactivated, and an absent inactive product left untouched.
+     * Builds a session mock whose read of the active articles answers the
+     * given identifier and EAN rows.
+     *
+     * @param activeRows the identifier and EAN of every active article
+     * @return the configured mocked session
+     */
+    private jakarta.persistence.EntityManager activeSession(List<Object[]> activeRows) {
+        jakarta.persistence.EntityManager session = mock(jakarta.persistence.EntityManager.class);
+        jakarta.persistence.TypedQuery<Object[]> active = rowsQuery(activeRows);
+        when(session.createQuery("select p.id, p.ean from Product p where p.active = true", Object[].class))
+                .thenReturn(active);
+        return session;
+    }
+
+    /**
+     * Covers the upsert of {@code applyProducts}: the chunk's articles are read
+     * in ONE query keyed by EAN; an inserted row with a non-null
+     * {@code productType} (ternary true arm), an updated row with a null
+     * {@code productType} (ternary false arm) whose article never had its
+     * collections initialised (null arms of both in-place helpers); then the
+     * deactivation: of the active articles only Z1 is absent from the snapshot,
+     * it alone is read back and deactivated.
      */
     @Test
     void applyProductsInsertsUpdatesAndDeactivates() {
         RefApplyService service = new RefApplyService();
+        service.entityManager = activeSession(List.of(new Object[] {1L, "E1"}, new Object[] {7L, "Z1"}));
         RefPayloads.ProductDto insert = new RefPayloads.ProductDto();
         insert.ean = "E1";
         insert.plu = "100";
@@ -342,27 +496,19 @@ class RefApplyServiceTest {
         update.ean = "E2";
         update.productType = null;
         update.active = true;
-        // Null attributes on the update DTO covers the null-map arm of applyProducts.
         update.attributes = null;
         update.saleCodes = null;
         Product existing = mock(Product.class);
-        Product seen = mock(Product.class);
-        seen.ean = "E1";
-        seen.active = true;
+        existing.ean = "E2";
         Product absentActive = mock(Product.class);
         absentActive.ean = "Z1";
         absentActive.active = true;
-        Product absentInactive = mock(Product.class);
-        absentInactive.ean = "Z2";
-        absentInactive.active = false;
-        PanacheQuery<Product> absentQuery = queryReturning(null);
-        PanacheQuery<Product> existingQuery = queryReturning(existing);
         try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class);
                 MockedConstruction<Product> created = mockConstruction(Product.class)) {
-            mocked.when(() -> Product.find("ean", "E1")).thenReturn(absentQuery);
-            mocked.when(() -> Product.find("ean", "E2")).thenReturn(existingQuery);
-            mocked.when(Product::listAll).thenReturn(List.of(seen, absentActive, absentInactive));
+            mocked.when(() -> Product.list("ean in ?1", List.of("E1", "E2"))).thenReturn(List.of(existing));
+            mocked.when(() -> Product.list("id in ?1", List.of(7L))).thenReturn(List.of(absentActive));
             service.applyProducts(List.of(insert, update));
+            assertEquals(1, created.constructed().size());
             Product inserted = created.constructed().get(0);
             assertEquals("E1", inserted.ean);
             assertEquals(ProductType.WEIGHT, inserted.productType);
@@ -371,7 +517,7 @@ class RefApplyServiceTest {
             assertEquals("POMME", inserted.checkoutLabel);
             assertEquals("INT-1", inserted.internalCode);
             assertTrue(inserted.variableWeight);
-            assertEquals("true", inserted.attributes.get("VAT_EXEMPT"));
+            assertEquals(java.util.Map.of("VAT_EXEMPT", "true"), inserted.attributes);
             assertEquals(125L, inserted.salesVolume);
             assertEquals(java.util.Set.of("S1", "S2"), inserted.saleCodes);
             verify(inserted, times(1)).persist();
@@ -379,12 +525,135 @@ class RefApplyServiceTest {
             assertTrue(existing.attributes.isEmpty());
             assertTrue(existing.saleCodes.isEmpty());
             verify(existing, times(1)).persist();
-            assertTrue(seen.active);
-            verify(seen, never()).persist();
             assertFalse(absentActive.active);
             verify(absentActive, times(1)).persist();
-            assertFalse(absentInactive.active);
-            verify(absentInactive, never()).persist();
+            verify(service.entityManager, times(2)).flush();
+            verify(service.entityManager, times(2)).clear();
+        }
+    }
+
+    /**
+     * The attributes and the sale codes of an article are updated IN PLACE:
+     * the very collections the article holds are kept, an attribute or a code
+     * that left upstream is removed, a new one added, a changed value replaced;
+     * an unchanged collection is not written at all — an unmodifiable one would
+     * throw at the first write — and a snapshot carrying none empties them.
+     */
+    @Test
+    void applyProductsUpdatesTheCollectionsInPlaceOnlyWhenTheyDiffer() {
+        RefApplyService service = new RefApplyService();
+        service.entityManager = activeSession(List.of());
+        RefPayloads.ProductDto changed = new RefPayloads.ProductDto();
+        changed.ean = "E1";
+        changed.attributes = new java.util.TreeMap<>(java.util.Map.of("A", "1", "C", "9"));
+        changed.saleCodes = List.of("S3", "S2");
+        RefPayloads.ProductDto unchanged = new RefPayloads.ProductDto();
+        unchanged.ean = "E2";
+        unchanged.attributes = new java.util.TreeMap<>(java.util.Map.of("A", "1"));
+        unchanged.saleCodes = List.of("S9");
+        RefPayloads.ProductDto emptied = new RefPayloads.ProductDto();
+        emptied.ean = "E3";
+        emptied.attributes = null;
+        emptied.saleCodes = null;
+        Product first = mock(Product.class);
+        first.ean = "E1";
+        java.util.Map<String, String> firstAttributes = new java.util.HashMap<>(java.util.Map.of("A", "1", "B", "2", "C", "3"));
+        java.util.Set<String> firstCodes = new java.util.TreeSet<>(List.of("S1", "S2"));
+        first.attributes = firstAttributes;
+        first.saleCodes = firstCodes;
+        Product second = mock(Product.class);
+        second.ean = "E2";
+        java.util.Map<String, String> secondAttributes = java.util.Map.of("A", "1");
+        java.util.Set<String> secondCodes = java.util.Set.of("S9");
+        second.attributes = secondAttributes;
+        second.saleCodes = secondCodes;
+        Product third = mock(Product.class);
+        third.ean = "E3";
+        java.util.Map<String, String> thirdAttributes = new java.util.HashMap<>(java.util.Map.of("X", "1"));
+        java.util.Set<String> thirdCodes = new java.util.TreeSet<>(List.of("S7"));
+        third.attributes = thirdAttributes;
+        third.saleCodes = thirdCodes;
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> Product.list("ean in ?1", List.of("E1", "E2", "E3")))
+                    .thenReturn(List.of(first, second, third));
+            service.applyProducts(List.of(changed, unchanged, emptied));
+            assertSame(firstAttributes, first.attributes);
+            assertEquals(java.util.Map.of("A", "1", "C", "9"), first.attributes);
+            assertSame(firstCodes, first.saleCodes);
+            assertEquals(java.util.Set.of("S2", "S3"), first.saleCodes);
+            assertSame(secondAttributes, second.attributes);
+            assertSame(secondCodes, second.saleCodes);
+            assertSame(thirdAttributes, third.attributes);
+            assertTrue(third.attributes.isEmpty());
+            assertSame(thirdCodes, third.saleCodes);
+            assertTrue(third.saleCodes.isEmpty());
+        }
+    }
+
+    /**
+     * An EAN listed twice in one chunk is created once and updated by its
+     * second row, exactly as the row-by-row upsert did: two new articles under
+     * one EAN would break the unique column.
+     */
+    @Test
+    void applyProductsCreatesAnEanListedTwiceOnce() {
+        RefApplyService service = new RefApplyService();
+        service.entityManager = activeSession(List.of());
+        RefPayloads.ProductDto first = new RefPayloads.ProductDto();
+        first.ean = "E1";
+        first.name = "Avant";
+        RefPayloads.ProductDto second = new RefPayloads.ProductDto();
+        second.ean = "E1";
+        second.name = "Après";
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class);
+                MockedConstruction<Product> created = mockConstruction(Product.class)) {
+            service.applyProducts(List.of(first, second));
+            assertEquals(1, created.constructed().size());
+            assertEquals("Après", created.constructed().get(0).name);
+            verify(created.constructed().get(0), times(2)).persist();
+        }
+    }
+
+    /**
+     * A snapshot spanning two chunks: the 1001 rows are read in two queries
+     * (1000 EANs, then 1) and the session is flushed and cleared after each
+     * chunk; 1001 absent active articles are likewise deactivated in two reads
+     * and two flushes, and the count is theirs.
+     */
+    @Test
+    void applyProductsWorksByChunk() {
+        RefApplyService service = new RefApplyService();
+        List<RefPayloads.ProductDto> dtos = new ArrayList<>();
+        List<String> firstEans = new ArrayList<>();
+        List<Object[]> activeRows = new ArrayList<>();
+        List<Long> firstAbsent = new ArrayList<>();
+        for (int i = 0; i < 1001; i++) {
+            RefPayloads.ProductDto dto = new RefPayloads.ProductDto();
+            dto.ean = "N" + i;
+            dtos.add(dto);
+            if (i < 1000) {
+                firstEans.add(dto.ean);
+                firstAbsent.add((long) i);
+            }
+            activeRows.add(new Object[] {(long) i, "OLD" + i});
+        }
+        service.entityManager = activeSession(activeRows);
+        Product oldFirst = mock(Product.class);
+        oldFirst.active = true;
+        Product oldLast = mock(Product.class);
+        oldLast.active = true;
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class);
+                MockedConstruction<Product> created = mockConstruction(Product.class)) {
+            mocked.when(() -> Product.list("id in ?1", firstAbsent)).thenReturn(List.of(oldFirst));
+            mocked.when(() -> Product.list("id in ?1", List.of(1000L))).thenReturn(List.of(oldLast));
+            service.applyProducts(dtos);
+            assertEquals(1001, created.constructed().size());
+            mocked.verify(() -> Product.list("ean in ?1", firstEans), times(1));
+            mocked.verify(() -> Product.list("ean in ?1", List.of("N1000")), times(1));
+            assertFalse(oldFirst.active);
+            assertFalse(oldLast.active);
+            verify(service.entityManager, times(4)).flush();
+            verify(service.entityManager, times(4)).clear();
         }
     }
 
@@ -396,16 +665,16 @@ class RefApplyServiceTest {
     void applyProductsKeepsTheStoresSalesVolumeOnAStoreNode() {
         RefApplyService service = new RefApplyService();
         service.role = "store";
+        service.entityManager = activeSession(List.of());
         RefPayloads.ProductDto update = new RefPayloads.ProductDto();
         update.ean = "E2";
         update.active = true;
         update.salesVolume = 0L;
         Product existing = mock(Product.class);
+        existing.ean = "E2";
         existing.salesVolume = 42L;
-        PanacheQuery<Product> existingQuery = queryReturning(existing);
         try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
-            mocked.when(() -> Product.find("ean", "E2")).thenReturn(existingQuery);
-            mocked.when(Product::listAll).thenReturn(List.of());
+            mocked.when(() -> Product.list("ean in ?1", List.of("E2"))).thenReturn(List.of(existing));
             service.applyProducts(List.of(update));
             assertEquals(42L, existing.salesVolume);
             verify(existing, times(1)).persist();
@@ -502,16 +771,19 @@ class RefApplyServiceTest {
     // --------------------------------------------------
 
     /**
-     * Covers every arm of {@code applyPrices}: the whole table is cleared, one
-     * row references an existing product with a non-null priority and a
+     * Covers every arm of {@code applyPrices}: the whole table is cleared; the
+     * chunk's articles are read in ONE query (the null EAN left out of it) and
+     * the regimes in another, the first of two rows sharing a number winning;
+     * one row references an existing product with a non-null priority and a
      * non-null start / null end (parse both arms), one row references an
      * existing product with a null priority (defaulted to zero) and a null
-     * start / non-null end, one row carries a null EAN (ternary false arm,
-     * skipped) and one row references a missing product (skipped).
+     * start / non-null end and no regime, one row carries a null EAN (ternary
+     * false arm, skipped) and one row references a missing product (skipped).
      */
     @Test
     void applyPricesReplacesAndSkipsOrphans() {
         RefApplyService service = new RefApplyService();
+        service.entityManager = mock(jakarta.persistence.EntityManager.class);
         RefPayloads.PriceDto priced = new RefPayloads.PriceDto();
         priced.productEan = "E1";
         priced.priceExcludingTax = new BigDecimal("1.00");
@@ -533,20 +805,19 @@ class RefApplyServiceTest {
         RefPayloads.PriceDto orphan = new RefPayloads.PriceDto();
         orphan.productEan = "E9";
         Product p1 = mock(Product.class);
+        p1.ean = "E1";
         Product p2 = mock(Product.class);
-        PanacheQuery<Product> q1 = queryReturning(p1);
-        PanacheQuery<Product> q2 = queryReturning(p2);
-        PanacheQuery<Product> qOrphan = queryReturning(null);
+        p2.ean = "E2";
         VatRate regime = new VatRate();
         regime.number = 1;
         regime.rate = new BigDecimal("0.2000");
-        PanacheQuery<VatRate> qRegime = queryReturning(regime);
+        VatRate shadow = new VatRate();
+        shadow.number = 1;
+        shadow.rate = new BigDecimal("0.0550");
         try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class);
                 MockedConstruction<Price> created = mockConstruction(Price.class)) {
-            mocked.when(() -> Product.find("ean", "E1")).thenReturn(q1);
-            mocked.when(() -> Product.find("ean", "E2")).thenReturn(q2);
-            mocked.when(() -> Product.find("ean", "E9")).thenReturn(qOrphan);
-            mocked.when(() -> VatRate.find("number", 1)).thenReturn(qRegime);
+            mocked.when(() -> Product.list("ean in ?1", List.of("E1", "E2", "E9"))).thenReturn(List.of(p1, p2));
+            mocked.when(PanacheEntityBase::listAll).thenReturn(List.of(regime, shadow));
             service.applyPrices(List.of(priced, defaulted, nullEan, orphan));
             mocked.verify(Price::deleteAll, times(1));
             assertEquals(2, created.constructed().size());
@@ -564,6 +835,44 @@ class RefApplyServiceTest {
             assertNull(second.startDateTime);
             assertEquals(LocalDateTime.of(2026, 12, 31, 23, 59, 59), second.endDateTime);
             verify(second, times(1)).persist();
+            verify(service.entityManager, times(1)).flush();
+            verify(service.entityManager, times(1)).clear();
+        }
+    }
+
+    /**
+     * A price snapshot spanning two chunks: the articles and the regimes are
+     * read once per chunk (1000 rows, then 1), the session flushed and cleared
+     * after each; a chunk whose rows name no EAN at all reads no article.
+     */
+    @Test
+    void applyPricesWorksByChunk() {
+        RefApplyService service = new RefApplyService();
+        service.entityManager = mock(jakarta.persistence.EntityManager.class);
+        List<RefPayloads.PriceDto> dtos = new ArrayList<>();
+        List<String> firstEans = new ArrayList<>();
+        for (int i = 0; i < 1000; i++) {
+            RefPayloads.PriceDto dto = new RefPayloads.PriceDto();
+            dto.productEan = "E1";
+            dtos.add(dto);
+            firstEans.add("E1");
+        }
+        RefPayloads.PriceDto noEan = new RefPayloads.PriceDto();
+        noEan.productEan = null;
+        dtos.add(noEan);
+        Product p1 = mock(Product.class);
+        p1.ean = "E1";
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class);
+                MockedConstruction<Price> created = mockConstruction(Price.class)) {
+            mocked.when(() -> Product.list("ean in ?1", firstEans)).thenReturn(List.of(p1));
+            mocked.when(PanacheEntityBase::listAll).thenReturn(List.of());
+            service.applyPrices(dtos);
+            assertEquals(1000, created.constructed().size());
+            mocked.verify(() -> Product.list(org.mockito.ArgumentMatchers.eq("ean in ?1"),
+                    org.mockito.ArgumentMatchers.<Object>any()), times(1));
+            mocked.verify(PanacheEntityBase::listAll, times(2));
+            verify(service.entityManager, times(2)).flush();
+            verify(service.entityManager, times(2)).clear();
         }
     }
 
@@ -3738,6 +4047,7 @@ class RefApplyServiceTest {
         fresh.cashierScreen = "LARGE";
         fresh.customerScreen = "TOTAL_ONLY";
         fresh.ticketModel = "COMPACT";
+        fresh.layout = "{\"tabs\":[]}";
         RefPayloads.CashMenuDto known = new RefPayloads.CashMenuDto();
         known.code = "LIGNE";
         known.label = "Ligne de caisse";
@@ -3771,6 +4081,7 @@ class RefApplyServiceTest {
             assertEquals("LARGE", inserted.cashierScreen);
             assertEquals("TOTAL_ONLY", inserted.customerScreen);
             assertEquals("COMPACT", inserted.ticketModel);
+            assertEquals("{\"tabs\":[]}", inserted.layout);
             verify(inserted).persist();
             assertEquals("Ligne de caisse", existing.label);
             verify(existing).persist();

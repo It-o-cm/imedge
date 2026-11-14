@@ -152,8 +152,8 @@ class RegisterCommandResourceTest {
         when(service.pending("POS07")).thenReturn(List.of(command("u-1", null, null)));
         Response response = resource("store", Optional.empty(), service).pending("POS07", null);
         assertEquals(200, response.getStatus());
-        assertEquals("[{\"uid\":\"u-1\",\"type\":\"CLOSE_SESSION\",\"issuedBy\":null,\"reason\":null}]",
-                response.getEntity());
+        assertEquals("[{\"uid\":\"u-1\",\"type\":\"CLOSE_SESSION\",\"issuedBy\":null,\"reason\":null,"
+                + "\"ref\":null}]", response.getEntity());
     }
 
     /**
@@ -166,15 +166,16 @@ class RegisterCommandResourceTest {
     @Test
     void pendingSeparatesAndEscapesEveryOrder() throws Exception {
         RegisterCommandService service = mock(RegisterCommandService.class);
+        RegisterCommand answer = command("u-2", "C:\\poste", "dit \"maintenant\"");
+        answer.requestRef = "req-1";
         when(service.pending("POS07")).thenReturn(List.of(
-                command("u-1", "Marie Curie", "fin de service"),
-                command("u-2", "C:\\poste", "dit \"maintenant\"")));
+                command("u-1", "Marie Curie", "fin de service"), answer));
         Response response = resource("store", Optional.of("secret"), service).pending("POS07", "secret");
         assertEquals(200, response.getStatus());
         assertEquals("[{\"uid\":\"u-1\",\"type\":\"CLOSE_SESSION\",\"issuedBy\":\"Marie Curie\","
-                        + "\"reason\":\"fin de service\"},"
+                        + "\"reason\":\"fin de service\",\"ref\":null},"
                         + "{\"uid\":\"u-2\",\"type\":\"CLOSE_SESSION\",\"issuedBy\":\"C:\\\\poste\","
-                        + "\"reason\":\"dit \\\"maintenant\\\"\"}]",
+                        + "\"reason\":\"dit \\\"maintenant\\\"\",\"ref\":\"req-1\"}]",
                 response.getEntity());
         com.fasterxml.jackson.databind.JsonNode orders = new com.fasterxml.jackson.databind.ObjectMapper()
                 .readTree((String) response.getEntity());

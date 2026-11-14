@@ -83,19 +83,19 @@
                             <fieldset class="field">
                                 <legend class="field-label">{inject:i18n.get('t.ilots')}</legend>
                                 {#for island in islands}
-                                <label><input type="checkbox" name="islandCodes" value="{island.code}"{#if g.hasIsland(island.code)} checked{/if}> {island.code}</label>
+                                <label class="field-check"><input type="checkbox" name="islandCodes" value="{island.code}"{#if g.hasIsland(island.code)} checked{/if}> <span>{island.code}</span></label>
                                 {/for}
                             </fieldset>
                             <fieldset class="field">
                                 <legend class="field-label">{inject:i18n.get('t.caisses')}</legend>
                                 {#for point in points}
-                                <label><input type="checkbox" name="terminalIds" value="{point.terminalId}"{#if g.hasTerminal(point.terminalId)} checked{/if}> {point.terminalId}</label>
+                                <label class="field-check"><input type="checkbox" name="terminalIds" value="{point.terminalId}"{#if g.hasTerminal(point.terminalId)} checked{/if}> <span>{point.terminalId}</span></label>
                                 {/for}
                             </fieldset>
                             <fieldset class="field">
                                 <legend class="field-label">{inject:i18n.get('t.types-de-point-de-contact')}</legend>
                                 {#for type in tpvTypes}
-                                <label><input type="checkbox" name="tpvTypes" value="{type}"{#if g.hasTpvType(type.name)} checked{/if}> {inject:i18n.text(type.label)}</label>
+                                <label class="field-check"><input type="checkbox" name="tpvTypes" value="{type}"{#if g.hasTpvType(type.name)} checked{/if}> <span>{inject:i18n.text(type.label)}</span></label>
                                 {/for}
                             </fieldset>
                             <div class="field">

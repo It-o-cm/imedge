@@ -1,0 +1,90 @@
+{!
+ ! Activity console (BO-08-04-15) and register health (BO-08-04-16): every
+ ! node this node received a report from, OK or KO on four counts — the
+ ! report itself (server ping), the application, the peripherals, the
+ ! synchronization — with the last ticket (the ticket heartbeat). Filtered on
+ ! the registers in anomaly it is the register-health board of a point of
+ ! sale. `view` = SupervisionConsoleService.ConsoleView of NodeRow.
+!}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.sup-console-d-activite')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.sup-console-d-activite')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.sup-activite-sous-titre')}</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn" href="/admin/supervision/activity/export?format=csv&{view.filter.query}">{inject:i18n.get('t.sup-export-csv')}</a>
+        <a class="btn" href="/admin/supervision/activity/export?format=xlsx&{view.filter.query}">{inject:i18n.get('t.sup-export-xls')}</a>
+    </div>
+</div>
+
+<form method="get" action="/admin/supervision/activity" class="filter-bar">
+    {#include admin-console-filters filter=view.filter /}
+    <div class="filter-field">
+        <label class="filter-label" for="ac-kind">{inject:i18n.get('t.sup-type-de-noeud')}</label>
+        <select id="ac-kind" name="kind">
+            <option value="">{inject:i18n.get('t.sup-tous')}</option>
+            <option value="REGISTER"{#if view.filter.kind == 'REGISTER'} selected{/if}>{inject:i18n.get('t.sup-caisses')}</option>
+            <option value="STORE"{#if view.filter.kind == 'STORE'} selected{/if}>{inject:i18n.get('t.sup-magasins')}</option>
+            <option value="CENTRAL"{#if view.filter.kind == 'CENTRAL'} selected{/if}>{inject:i18n.get('t.sup-central')}</option>
+        </select>
+    </div>
+    <div class="filter-field">
+        <label class="filter-label" for="ac-anomaly">{inject:i18n.get('t.sup-anomalie')}</label>
+        <select id="ac-anomaly" name="anomaly">
+            <option value="">{inject:i18n.get('t.sup-toutes')}</option>
+            <option value="OFFLINE"{#if view.filter.anomaly == 'OFFLINE'} selected{/if}>{inject:i18n.get('t.sup-hors-ligne')}</option>
+            <option value="APP"{#if view.filter.anomaly == 'APP'} selected{/if}>{inject:i18n.get('t.sup-applicatif')}</option>
+            <option value="PERIPHERAL"{#if view.filter.anomaly == 'PERIPHERAL'} selected{/if}>{inject:i18n.get('t.sup-peripherique')}</option>
+            <option value="SYNC"{#if view.filter.anomaly == 'SYNC'} selected{/if}>{inject:i18n.get('t.sup-synchronisation')}</option>
+        </select>
+    </div>
+    <div class="filter-actions">
+        <button class="btn btn-primary" type="submit">{inject:i18n.get('t.sup-afficher')}</button>
+        <a class="btn btn-ghost" href="/admin/supervision/activity?kind=REGISTER&status=KO">{inject:i18n.get('t.sup-caisses-en-anomalie')}</a>
+    </div>
+</form>
+
+<div class="card">
+    <div class="kpi-grid">
+        <div class="kpi"><span class="kpi-label">{inject:i18n.get('t.sup-noeuds-ok')}</span><span class="kpi-value">{view.okCount}</span></div>
+        <div class="kpi"><span class="kpi-label">{inject:i18n.get('t.sup-noeuds-ko')}</span><span class="kpi-value is-warn">{view.koCount}</span></div>
+    </div>
+    <p class="card-sub"><span class="badge badge-ok">{inject:i18n.get('t.sup-ok')}</span> <span class="badge badge-error">{inject:i18n.get('t.sup-ko')}</span></p>
+    {#if view.chart}
+    <div class="report-chart-box">{view.chart.raw}</div>
+    {#else}
+    <p class="empty-hint">{inject:i18n.get('t.sup-aucune-donnee-a-representer')}</p>
+    {/if}
+</div>
+
+<div class="card">
+    <table class="sync-table">
+        <thead>
+            <tr><th>{inject:i18n.get('t.sup-point-de-vente')}</th><th>{inject:i18n.get('t.sup-echelon')}</th><th>{inject:i18n.get('t.sup-noeud')}</th><th>{inject:i18n.get('t.sup-version')}</th><th>{inject:i18n.get('t.sup-statut')}</th><th>{inject:i18n.get('t.sup-anomalies')}</th><th>{inject:i18n.get('t.sup-peripheriques')}</th><th>{inject:i18n.get('t.sup-dernier-rapport')}</th><th>{inject:i18n.get('t.sup-dernier-ticket')}</th></tr>
+        </thead>
+        <tbody>
+            {#for row in view.rows}
+            <tr class="{#if !row.ok}row-error{/if}">
+                <td>{row.pdv ?: '—'}</td>
+                <td>{row.country ?: '—'} / {row.enseigne ?: '—'}</td>
+                <td>{inject:i18n.code('t.code-kind-', row.kind)} {row.nodeId}</td>
+                <td class="mono">{row.version ?: '—'} {#if row.updateState}({inject:i18n.code('t.code-upd-', row.updateState)}){/if}</td>
+                <td>{#if row.ok}<span class="badge badge-ok">{inject:i18n.get('t.sup-ok')}</span>{#else}<span class="badge badge-error">{inject:i18n.get('t.sup-ko')}</span>{/if}</td>
+                <td class="cell-error">{#for label in row.anomalyLabels}{inject:i18n.text(label)}{#if label_hasNext}, {/if}{/for}{#if row.detail} — {inject:i18n.text(row.detail)}{/if}</td>
+                <td>{#for device in row.peripheralStates}<span class="console-pair">{inject:i18n.text(device.role)} : {inject:i18n.code('t.code-avail-', device.state)}</span>{#if device_hasNext}<br>{/if}{/for}{#if row.peripheralStates.isEmpty()}—{/if}</td>
+                <td>{row.reportedAt ?: '—'}</td>
+                <td>{row.lastTicketAt ?: '—'}</td>
+            </tr>
+            {/for}
+            {#if view.rows.isEmpty()}
+            <tr><td colspan="9" class="cell-empty">{inject:i18n.get('t.sup-aucun-noeud')}</td></tr>
+            {/if}
+        </tbody>
+    </table>
+</div>
+{/body}

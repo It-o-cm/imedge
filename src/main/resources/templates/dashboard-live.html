@@ -1,0 +1,64 @@
+{!
+ ! BO-04-03-07 : la surveillance des caisses en temps reel. La page interroge
+ ! /dashboard/live-data toutes les deux secondes et ajoute en tete chaque
+ ! operation que les caisses ont poussee depuis la derniere : ventes,
+ ! annulations, ouvertures de tiroir, remises, reglements annules, avals,
+ ! alertes. Les types suivis sont administres (supervision.live-event-types).
+!}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.s21-surveillance-des-caisses')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.s21-surveillance-des-caisses')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.s21-surveillance-sous-titre')}</p>
+    </div>
+    <div class="filter-field">
+        <label class="filter-label" for="live-terminal">{inject:i18n.get('t.n-tpv')}</label>
+        <input class="input-control" id="live-terminal" type="text" maxlength="20">
+    </div>
+</div>
+<div class="card table-scroll">
+    <table class="data-table" id="live-table">
+        <thead><tr><th>{inject:i18n.get('t.heure')}</th><th>{inject:i18n.get('t.n-tpv')}</th><th>{inject:i18n.get('t.n-caissiere')}</th><th>{inject:i18n.get('t.type')}</th><th>{inject:i18n.get('t.ticket')}</th><th>{inject:i18n.get('t.montant-2')}</th><th>{inject:i18n.get('t.detail')}</th></tr></thead>
+        <tbody id="live-rows"></tbody>
+    </table>
+    <p class="col-muted" id="live-empty">{inject:i18n.get('t.s21-aucune-operation')}</p>
+</div>
+{|
+<script>
+(function () {
+    var last = 0;
+    var body = document.getElementById('live-rows');
+    var empty = document.getElementById('live-empty');
+    var terminal = document.getElementById('live-terminal');
+    function cell(row, text, nowrap) {
+        var td = document.createElement('td');
+        td.textContent = text;
+        if (nowrap) { td.className = 'nowrap'; }
+        row.appendChild(td);
+    }
+    function poll() {
+        var url = '/dashboard/live-data?after=' + last + '&terminal=' + encodeURIComponent(terminal.value || '');
+        fetch(url).then(function (r) { return r.json(); }).then(function (rows) {
+            rows.slice().reverse().forEach(function (op) {
+                var tr = document.createElement('tr');
+                tr.className = 'live-' + op.type.toLowerCase();
+                cell(tr, op.time, true); cell(tr, op.terminal, true); cell(tr, op.operator); cell(tr, op.label);
+                cell(tr, op.ticket, true); cell(tr, op.amount, true); cell(tr, op.detail);
+                body.insertBefore(tr, body.firstChild);
+                if (op.id > last) { last = op.id; }
+            });
+            while (body.children.length > 200) { body.removeChild(body.lastChild); }
+            empty.hidden = body.children.length > 0;
+        }).catch(function () {});
+    }
+    terminal.addEventListener('change', function () { last = 0; body.innerHTML = ''; poll(); });
+    setInterval(poll, 2000);
+    poll();
+})();
+</script>
+|}
+{/body}

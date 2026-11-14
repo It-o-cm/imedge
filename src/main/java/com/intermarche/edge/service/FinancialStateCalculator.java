@@ -161,10 +161,10 @@ public class FinancialStateCalculator {
                 if (line.quantity != null && line.quantity.signum() > 0) {
                     grossTurnover = grossTurnover.add(grossLine(line));
                     netSaleLines = netSaleLines.add(total);
-                    itemCount += itemUnits(line.quantity);
+                    itemCount += line.articleUnits();
                 } else {
                     refundWithTicket = refundWithTicket.add(total.negate());
-                    itemCount -= itemUnits(line.quantity);
+                    itemCount -= line.articleUnits();
                 }
             }
             accumulateSettlements(settlements, ticket);

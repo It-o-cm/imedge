@@ -535,6 +535,30 @@ class PosSettingsServiceTest {
     }
 
     /**
+     * LC-08-06-02: the NIF CLIENT key is hidden by default, shown on a
+     * Portuguese register whatever the key setting, and shown elsewhere when
+     * the store asks for it.
+     */
+    @Test
+    void saleTaxIdKeyFollowsPortugalOrItsSetting() {
+        PosSettingsService service = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of());
+            assertFalse(service.saleTaxIdKey());
+        }
+        PosSettingsService portuguese = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of(row("fiscal.pt-documents", "true")));
+            assertTrue(portuguese.saleTaxIdKey());
+        }
+        PosSettingsService asked = new PosSettingsService();
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of(row("customer.tax-id-key", "true")));
+            assertTrue(asked.saleTaxIdKey());
+        }
+    }
+
+    /**
      * LC-14-03-01: the three metrology items are empty by default and read
      * their administered rows, trimmed.
      */
@@ -6056,4 +6080,21 @@ class PosSettingsServiceTest {
         }
     }
 
+    // ---- DG: C ----
+
+    /**
+     * The fate of an e-commerce order paid short (DG-03-01-05): RECALL by
+     * default, the administered word read trimmed and upper-cased.
+     */
+    @Test
+    void dgCPartialPaymentGetter() {
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of());
+            assertEquals("RECALL", new PosSettingsService().ecommercePartialPayment());
+        }
+        try (MockedStatic<PanacheEntityBase> ms = mockStatic(PanacheEntityBase.class)) {
+            ms.when(PanacheEntityBase::listAll).thenReturn(List.of(row("channel.ecommerce.partial-payment", " reject ")));
+            assertEquals("REJECT", new PosSettingsService().ecommercePartialPayment());
+        }
+    }
 }

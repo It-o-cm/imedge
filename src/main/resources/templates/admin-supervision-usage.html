@@ -1,0 +1,85 @@
+{!
+ ! Function-usage statistics (BO-08-02-02): how often each register function
+ ! and each back-office gesture was used over the last days, filtered by
+ ! point of sale, enseigne or country, the most used first.
+ ! `view` = ConsoleView of UsageRow, `view.okCount` the total of the uses.
+!}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.sup-usage-des-fonctions')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.sup-usage-des-fonctions')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.sup-usage-sous-titre')}</p>
+    </div>
+    <div class="page-actions">
+        <a class="btn" href="/admin/supervision/usage/export?format=csv&{view.filter.query}">{inject:i18n.get('t.sup-export-csv')}</a>
+        <a class="btn" href="/admin/supervision/usage/export?format=xlsx&{view.filter.query}">{inject:i18n.get('t.sup-export-xls')}</a>
+    </div>
+</div>
+
+<form method="get" action="/admin/supervision/usage" class="filter-bar">
+    <div class="filter-field">
+        <label class="filter-label" for="us-country">{inject:i18n.get('t.sup-pays')}</label>
+        <input id="us-country" type="text" name="country" value="{view.filter.country ?: ''}" size="6">
+    </div>
+    <div class="filter-field">
+        <label class="filter-label" for="us-enseigne">{inject:i18n.get('t.sup-enseigne')}</label>
+        <input id="us-enseigne" type="text" name="enseigne" value="{view.filter.enseigne ?: ''}" size="6">
+    </div>
+    <div class="filter-field">
+        <label class="filter-label" for="us-pdv">{inject:i18n.get('t.sup-point-de-vente')}</label>
+        <input id="us-pdv" type="text" name="pdv" value="{view.filter.pdv ?: ''}" size="6">
+    </div>
+    <div class="filter-field">
+        <label class="filter-label" for="us-channel">{inject:i18n.get('t.sup-canal')}</label>
+        <select id="us-channel" name="channel">
+            <option value="">{inject:i18n.get('t.sup-tous')}</option>
+            <option value="CAISSE"{#if view.filter.channel == 'CAISSE'} selected{/if}>{inject:i18n.get('t.sup-caisse')}</option>
+            <option value="BACKOFFICE"{#if view.filter.channel == 'BACKOFFICE'} selected{/if}>{inject:i18n.get('t.sup-back-office')}</option>
+        </select>
+    </div>
+    <div class="filter-field">
+        <label class="filter-label" for="us-days">{inject:i18n.get('t.sup-jours')}</label>
+        <input id="us-days" type="number" min="0" max="365" name="days" value="{view.filter.days}">
+    </div>
+    <div class="filter-actions">
+        <button class="btn btn-primary" type="submit">{inject:i18n.get('t.sup-afficher')}</button>
+    </div>
+</form>
+
+<div class="card">
+    <div class="kpi-grid">
+        <div class="kpi"><span class="kpi-label">{inject:i18n.get('t.sup-utilisations')}</span><span class="kpi-value">{view.okCount}</span></div>
+        <div class="kpi"><span class="kpi-label">{inject:i18n.get('t.sup-fonctions')}</span><span class="kpi-value">{view.rows.size}</span></div>
+    </div>
+    {#if view.chart}
+    <div class="report-chart-box">{view.chart.raw}</div>
+    {#else}
+    <p class="empty-hint">{inject:i18n.get('t.sup-aucune-donnee-a-representer')}</p>
+    {/if}
+</div>
+
+<div class="card">
+    <table class="sync-table">
+        <thead>
+            <tr><th>{inject:i18n.get('t.sup-canal')}</th><th>{inject:i18n.get('t.sup-fonction')}</th><th>{inject:i18n.get('t.sup-utilisations')}</th><th>{inject:i18n.get('t.sup-noeuds')}</th></tr>
+        </thead>
+        <tbody>
+            {#for row in view.rows}
+            <tr>
+                <td>{inject:i18n.code('t.code-channel-', row.channel)}</td>
+                <td class="mono">{row.function}</td>
+                <td>{row.count}</td>
+                <td>{row.nodes}</td>
+            </tr>
+            {/for}
+            {#if view.rows.isEmpty()}
+            <tr><td colspan="4" class="cell-empty">{inject:i18n.get('t.sup-aucune-utilisation')}</td></tr>
+            {/if}
+        </tbody>
+    </table>
+</div>
+{/body}

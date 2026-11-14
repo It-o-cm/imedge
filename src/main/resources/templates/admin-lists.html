@@ -31,18 +31,18 @@
     <h2 class="card-title">{inject:i18n.get('t.creer-une-liste')}</h2>
     <p class="card-sub">{inject:i18n.get('t.le-code-identifie-la-liste-pour-la')}</p>
     <form method="post" action="/admin/lists/save">
-        <div class="form-grid">
-            <label>{inject:i18n.get('t.code')}<input type="text" name="code" maxlength="40" required></label>
-            <label>{inject:i18n.get('t.libelle-2')}<input type="text" name="label" maxlength="80" required></label>
-            <label>{inject:i18n.get('t.genre')}
-                <select name="kind">
+        <div class="field-grid">
+            <label class="field"><span class="field-label">{inject:i18n.get('t.code')}</span><input class="input-control" type="text" name="code" maxlength="40" required></label>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.libelle-2')}</span><input class="input-control" type="text" name="label" maxlength="80" required></label>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.genre')}</span>
+                <select class="input-control" name="kind">
                     {#for kind in kinds}<option value="{kind}">{inject:i18n.text(kind.label)}</option>{/for}
                 </select>
             </label>
-            <label>{inject:i18n.get('t.fonctions-servies')}<input type="text" name="functions" maxlength="200" placeholder="{inject:i18n.get('t.expense-withdrawal')}"></label>
-            <label class="check"><input type="checkbox" name="active" checked> {inject:i18n.get('t.active')}</label>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.fonctions-servies')}</span><input class="input-control" type="text" name="functions" maxlength="200" placeholder="{inject:i18n.get('t.expense-withdrawal')}"></label>
+            <div class="field"><label class="field-check"><input type="checkbox" name="active" checked> <span>{inject:i18n.get('t.active')}</span></label></div>
         </div>
-        <button class="btn btn-primary" type="submit">{inject:i18n.get('t.creer')}</button>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.creer')}</button></div>
     </form>
 </div>
 
@@ -50,18 +50,20 @@
 <div class="card">
     <h2 class="card-title">{inject:i18n.text(posList.label)} <span class="mono">({posList.code})</span></h2>
     <p class="card-sub">{inject:i18n.text(posList.kindLabel)}{#if posList.functions} {inject:i18n.get('t.fonctions')} {posList.functions}{/if}{#if !posList.active} {inject:i18n.get('t.inactive')}{/if}</p>
-    <form method="post" action="/admin/lists/save" class="filter-row">
+    <form method="post" action="/admin/lists/save">
         <input type="hidden" name="id" value="{posList.id}">
         <input type="hidden" name="code" value="{posList.code}">
-        <label>{inject:i18n.get('t.libelle-2')}<input type="text" name="label" value="{posList.label}" maxlength="80" required></label>
-        <label>{inject:i18n.get('t.genre')}
-            <select name="kind">
-                {#for kind in kinds}<option value="{kind}" {#if kind.name() == posList.kind}selected{/if}>{inject:i18n.text(kind.label)}</option>{/for}
-            </select>
-        </label>
-        <label>{inject:i18n.get('t.fonctions-2')}<input type="text" name="functions" value="{posList.functions}" maxlength="200"></label>
-        <label class="check"><input type="checkbox" name="active" {#if posList.active}checked{/if}> {inject:i18n.get('t.active')}</label>
-        <button class="btn" type="submit">{inject:i18n.get('t.enregistrer')}</button>
+        <div class="field-grid">
+            <label class="field"><span class="field-label">{inject:i18n.get('t.libelle-2')}</span><input class="input-control" type="text" name="label" value="{posList.label}" maxlength="80" required></label>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.genre')}</span>
+                <select class="input-control" name="kind">
+                    {#for kind in kinds}<option value="{kind}" {#if kind.name() == posList.kind}selected{/if}>{inject:i18n.text(kind.label)}</option>{/for}
+                </select>
+            </label>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.fonctions-2')}</span><input class="input-control" type="text" name="functions" value="{posList.functions}" maxlength="200"></label>
+            <div class="field"><label class="field-check"><input type="checkbox" name="active" {#if posList.active}checked{/if}> <span>{inject:i18n.get('t.active')}</span></label></div>
+        </div>
+        <div class="form-actions"><button class="btn" type="submit">{inject:i18n.get('t.enregistrer')}</button></div>
     </form>
     <table class="data-table">
         <thead>
@@ -95,17 +97,19 @@
                 <td colspan="8">
                     <details>
                         <summary>{inject:i18n.get('t.modifier')} {item.code}</summary>
-                        <form method="post" action="/admin/lists/item/save" class="filter-row">
+                        <form method="post" action="/admin/lists/item/save">
                             <input type="hidden" name="id" value="{item.id}">
                             <input type="hidden" name="listId" value="{posList.id}">
                             <input type="hidden" name="code" value="{item.code}">
-                            <label>{inject:i18n.get('t.libelle-2')}<input type="text" name="label" value="{item.label}" maxlength="80" required></label>
-                            <label>{inject:i18n.get('t.rang')}<input type="number" name="displayOrder" value="{item.displayOrder}"></label>
-                            {#if posList.usesSeverity}<label>{inject:i18n.get('t.severite')}<input type="number" name="severity" min="0" value="{item.severity}"></label>{/if}
-                            {#if posList.usesWeight}<label>{inject:i18n.get(posList.valueLabelKey)}<input type="text" name="numericValue" value="{item.numericValue}"></label>{/if}
-                            {#if posList.usesOptions}<label>{inject:i18n.get('t.options')}<input type="text" name="options" maxlength="120" value="{item.options}" placeholder="{inject:i18n.get(posList.optionsHintKey)}"></label>{/if}
-                            <label class="check"><input type="checkbox" name="active" {#if item.active}checked{/if}> {inject:i18n.get('t.active')}</label>
-                            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer')}</button>
+                            <div class="field-grid">
+                                <label class="field"><span class="field-label">{inject:i18n.get('t.libelle-2')}</span><input class="input-control" type="text" name="label" value="{item.label}" maxlength="80" required></label>
+                                <label class="field"><span class="field-label">{inject:i18n.get('t.rang')}</span><input class="input-control" type="number" name="displayOrder" value="{item.displayOrder}"></label>
+                                {#if posList.usesSeverity}<label class="field"><span class="field-label">{inject:i18n.get('t.severite')}</span><input class="input-control" type="number" name="severity" min="0" value="{item.severity}"></label>{/if}
+                                {#if posList.usesWeight}<label class="field"><span class="field-label">{inject:i18n.get(posList.valueLabelKey)}</span><input class="input-control" type="text" name="numericValue" value="{item.numericValue}"></label>{/if}
+                                {#if posList.usesOptions}<label class="field"><span class="field-label">{inject:i18n.get('t.options')}</span><input class="input-control" type="text" name="options" maxlength="120" value="{item.options}" placeholder="{inject:i18n.get(posList.optionsHintKey)}"></label>{/if}
+                                <div class="field"><label class="field-check"><input type="checkbox" name="active" {#if item.active}checked{/if}> <span>{inject:i18n.get('t.active')}</span></label></div>
+                            </div>
+                            <div class="form-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer')}</button></div>
                         </form>
                     </details>
                 </td>
@@ -116,16 +120,18 @@
             {/if}
         </tbody>
     </table>
-    <form method="post" action="/admin/lists/item/save" class="filter-row">
+    <form method="post" action="/admin/lists/item/save">
         <input type="hidden" name="listId" value="{posList.id}">
-        <label>{inject:i18n.get('t.code')}<input type="text" name="code" maxlength="40" required></label>
-        <label>{inject:i18n.get('t.libelle-2')}<input type="text" name="label" maxlength="80" required></label>
-        <label>{inject:i18n.get('t.rang')}<input type="number" name="displayOrder" value="0"></label>
-        {#if posList.usesSeverity}<label>{inject:i18n.get('t.severite')}<input type="number" name="severity" min="0" value="1"></label>{/if}
-        {#if posList.usesWeight}<label>{inject:i18n.get(posList.valueLabelKey)}<input type="text" name="numericValue"></label>{/if}
-        {#if posList.usesOptions}<label>{inject:i18n.get('t.options')}<input type="text" name="options" maxlength="120" placeholder="{inject:i18n.get(posList.optionsHintKey)}"></label>{/if}
-        <label class="check"><input type="checkbox" name="active" checked> {inject:i18n.get('t.active')}</label>
-        <button class="btn btn-primary" type="submit">{inject:i18n.get('t.ajouter')}</button>
+        <div class="field-grid">
+            <label class="field"><span class="field-label">{inject:i18n.get('t.code')}</span><input class="input-control" type="text" name="code" maxlength="40" required></label>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.libelle-2')}</span><input class="input-control" type="text" name="label" maxlength="80" required></label>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.rang')}</span><input class="input-control" type="number" name="displayOrder" value="0"></label>
+            {#if posList.usesSeverity}<label class="field"><span class="field-label">{inject:i18n.get('t.severite')}</span><input class="input-control" type="number" name="severity" min="0" value="1"></label>{/if}
+            {#if posList.usesWeight}<label class="field"><span class="field-label">{inject:i18n.get(posList.valueLabelKey)}</span><input class="input-control" type="text" name="numericValue"></label>{/if}
+            {#if posList.usesOptions}<label class="field"><span class="field-label">{inject:i18n.get('t.options')}</span><input class="input-control" type="text" name="options" maxlength="120" placeholder="{inject:i18n.get(posList.optionsHintKey)}"></label>{/if}
+            <div class="field"><label class="field-check"><input type="checkbox" name="active" checked> <span>{inject:i18n.get('t.active')}</span></label></div>
+        </div>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.ajouter')}</button></div>
     </form>
     <form method="post" action="/admin/lists/delete" onsubmit="return confirm('{inject:i18n.js('t.supprimer-definitivement-la-liste')} {posList.code} {inject:i18n.js('t.et-ses-entrees')}');">
         <input type="hidden" name="id" value="{posList.id}">

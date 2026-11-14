@@ -1,0 +1,71 @@
+/*
+ * Mobile page of the register alerts (BO-10-08-02): one column, large touch
+ * targets, readable from 320 px wide; uses the --im-* tokens of base.css.
+ */
+body.mobile-alerts {
+    margin: 0;
+    background: var(--im-bg, #f4f6f9);
+}
+
+.mobile-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--im-surface, #fff);
+    border-bottom: 1px solid var(--im-line, #d7dce3);
+}
+
+.mobile-head h1 {
+    margin: 0;
+    font-size: 20px;
+}
+
+.mobile-main {
+    padding: 12px 16px 32px;
+    max-width: 640px;
+    margin: 0 auto;
+}
+
+.mobile-sub,
+.mobile-empty {
+    color: var(--im-ink-soft, #5b6672);
+}
+
+.mobile-card {
+    margin: 0 0 12px;
+    padding: 14px;
+    background: var(--im-surface, #fff);
+    border: 1px solid var(--im-line, #d7dce3);
+    border-left: 4px solid #c0392b;
+    border-radius: 8px;
+}
+
+.mobile-card-title {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.mobile-card-reason {
+    margin: 6px 0 10px;
+    overflow-wrap: anywhere;
+}
+
+.mobile-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.mobile-btn {
+    flex: 1 1 40%;
+    min-height: 48px;
+    font-size: 16px;
+}
+
+@media (max-width: 420px) {
+    .mobile-btn {
+        flex-basis: 100%;
+    }
+}

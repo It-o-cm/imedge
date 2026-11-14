@@ -43,6 +43,7 @@
     <link rel="stylesheet" href="/admin-assets/journal.css">
     <link rel="stylesheet" href="/admin-assets/articles.css">
     <link rel="stylesheet" href="/admin-assets/touches.css">
+    <link rel="stylesheet" href="/admin-assets/menu-layout.css">
     <link rel="stylesheet" href="/admin-assets/sync.css">
     <link rel="stylesheet" href="/admin-assets/reports.css">
     <link rel="stylesheet" href="/admin-assets/narrow.css">
@@ -183,7 +184,11 @@
     var t = zone.dataset;
     toggle.addEventListener('click', function () { panel.hidden = !panel.hidden; });
     function act(url) {
-        fetch(url).then(poll);
+        /* LS-04-03-13 : un refus (profil non habilite) dit pourquoi. */
+        fetch(url).then(function (r) {
+            if (r.status === 403 && (r.headers.get('Content-Type') || '').indexOf('text/plain') === 0) { r.text().then(function (m) { window.alert(m); }); }
+            poll();
+        });
     }
     function button(label, css, onclick) {
         var b = document.createElement('button');

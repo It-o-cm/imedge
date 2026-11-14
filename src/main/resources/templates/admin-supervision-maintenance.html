@@ -1,0 +1,99 @@
+{!
+ ! Remote take-over of a point of sale (BO-08-04-17): the nodes this node
+ ! knows, an order form on each — restart the payment terminal, reset a
+ ! peripheral, probe the peripherals, pull the referentials, replay the
+ ! integrations, check the version — and the trace of every order: who,
+ ! when, why, handed to the node when, carried out when, with what answer.
+ ! `nodes` = NodeStatus rows, `registerChoices` / `edgeChoices` the orders
+ ! each kind accepts, `history` the latest MaintenanceAction rows.
+!}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.sup-prise-en-main-a-distance')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.sup-prise-en-main-a-distance')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.sup-maintenance-sous-titre')}</p>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
+{/if}
+
+<form method="get" action="/admin/supervision/maintenance" class="filter-bar">
+    <div class="filter-field">
+        <label class="filter-label" for="mt-pdv">{inject:i18n.get('t.sup-point-de-vente')}</label>
+        <input id="mt-pdv" type="text" name="pdv" value="{pdv ?: ''}" size="6">
+    </div>
+    <div class="filter-actions">
+        <button class="btn btn-primary" type="submit">{inject:i18n.get('t.sup-afficher')}</button>
+    </div>
+</form>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.sup-noeuds-connus')}</h2>
+    <table class="sync-table">
+        <thead>
+            <tr><th>{inject:i18n.get('t.sup-point-de-vente')}</th><th>{inject:i18n.get('t.sup-noeud')}</th><th>{inject:i18n.get('t.sup-version')}</th><th>{inject:i18n.get('t.sup-dernier-rapport')}</th><th>{inject:i18n.get('t.sup-ordre')}</th></tr>
+        </thead>
+        <tbody>
+            {#for node in nodes}
+            <tr>
+                <td>{node.pdvNumber ?: '—'}</td>
+                <td>{inject:i18n.code('t.code-kind-', node.kind)} {node.nodeId}</td>
+                <td class="mono">{node.version ?: '—'}</td>
+                <td>{#if node.reportedAt}{node.reportedAt.format('dd/MM/yyyy HH:mm')}{#else}—{/if}</td>
+                <td class="cell-action">
+                    <form method="post" action="/admin/supervision/maintenance/issue" class="card-action"
+                          data-confirm="{inject:i18n.get('t.sup-envoyer-l-ordre-a')} {node.nodeId} ?">
+                        <input type="hidden" name="nodeKey" value="{node.nodeKey}">
+                        <select name="type" aria-label="{inject:i18n.get('t.sup-ordre')}">
+                            {#if node.kind == 'REGISTER'}
+                            {#for choice in registerChoices}<option value="{choice.value}">{inject:i18n.text(choice.label)}</option>{/for}
+                            {#else}
+                            {#for choice in edgeChoices}<option value="{choice.value}">{inject:i18n.text(choice.label)}</option>{/for}
+                            {/if}
+                        </select>
+                        <input type="text" name="reason" maxlength="200" size="14" placeholder="{inject:i18n.get('t.sup-motif')}">
+                        <button class="btn btn-small" type="submit">{inject:i18n.get('t.sup-envoyer')}</button>
+                    </form>
+                </td>
+            </tr>
+            {/for}
+            {#if nodes.isEmpty()}
+            <tr><td colspan="5" class="cell-empty">{inject:i18n.get('t.sup-aucun-noeud')}</td></tr>
+            {/if}
+        </tbody>
+    </table>
+</div>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.sup-tracabilite-des-ordres')}</h2>
+    <table class="sync-table">
+        <thead>
+            <tr><th>{inject:i18n.get('t.sup-emis-le')}</th><th>{inject:i18n.get('t.sup-par')}</th><th>{inject:i18n.get('t.sup-noeud')}</th><th>{inject:i18n.get('t.sup-ordre')}</th><th>{inject:i18n.get('t.sup-motif')}</th><th>{inject:i18n.get('t.sup-etat')}</th><th>{inject:i18n.get('t.sup-execute-le')}</th><th>{inject:i18n.get('t.sup-reponse')}</th></tr>
+        </thead>
+        <tbody>
+            {#for action in history}
+            <tr>
+                <td>{action.issuedAt.format('dd/MM/yyyy HH:mm')}</td>
+                <td>{action.issuedBy ?: '—'} ({inject:i18n.code('t.code-kind-', action.origin)})</td>
+                <td>{action.pdvNumber ?: '—'} {action.nodeId}</td>
+                <td>{inject:i18n.text(action.actionType.label)}</td>
+                <td>{action.reason ?: '—'}</td>
+                <td>{inject:i18n.code('t.code-action-', action.status)}</td>
+                <td>{#if action.doneAt}{action.doneAt.format('dd/MM/yyyy HH:mm')}{#else}—{/if}</td>
+                <td class="cell-error cell-long">{inject:i18n.text(action.result.or('—'))}</td>
+            </tr>
+            {/for}
+            {#if history.isEmpty()}
+            <tr><td colspan="8" class="cell-empty">{inject:i18n.get('t.sup-aucun-ordre')}</td></tr>
+            {/if}
+        </tbody>
+    </table>
+</div>
+<script src="/admin-assets/confirm.js"></script>
+{/body}

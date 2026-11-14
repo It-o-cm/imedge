@@ -1,0 +1,165 @@
+{!
+ ! Back-office SAF-T EXPORT (BO-10-06-03): the Portuguese fiscal documents the
+ ! registers issued over a period, and the audit file drawn from them. READ
+ ! ONLY: the documents are numbered, signed and printed at the till; the file
+ ! states them as they are, with the certification number administered in the
+ ! parameter fiscal.certificate-number.
+!}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.export-saf-t')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.export-saf-t')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.documents-fiscaux-portugais-emis-par-les-caisses')}</p>
+    </div>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
+{/if}
+
+{! BO-05-01-04 : l'extraction mensuelle par le point de vente, avant le jour
+ ! limite, du fichier du mois précédent, puis sa déclaration de transmission. !}
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.u-saft-mensuel')}</h2>
+    {#if previousTransmitted}
+    <div class="alert alert-ok" role="status">{inject:i18n.get('t.u-saft-mois-transmis')} {monthLabel}</div>
+    {#else if late}
+    <div class="alert alert-error" role="status">{inject:i18n.get('t.u-saft-en-retard')} {monthLabel} — {inject:i18n.get('t.u-saft-jour-limite')} {deadline}</div>
+    {#else}
+    <div class="alert alert-ok" role="status">{inject:i18n.get('t.u-saft-a-transmettre')} {monthLabel} — {inject:i18n.get('t.u-saft-jour-limite')} {deadline}{#if previousExtracted} — {inject:i18n.get('t.u-saft-deja-extrait')}{/if}</div>
+    {/if}
+    <form method="post" action="/admin/saft/monthly">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="s-month">{inject:i18n.get('t.u-mois')}</label>
+                <input class="input-control" id="s-month" type="month" name="month" value="{month}" required>
+            </div>
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.u-extraire-le-mois')}</button>
+        </div>
+    </form>
+    {#if !monthlyFiles.isEmpty()}
+    <div class="table-scroll">
+    <table class="data-table">
+        <thead>
+        <tr><th>{inject:i18n.get('t.u-fichier')}</th><th>{inject:i18n.get('t.u-periode-couverte')}</th><th>{inject:i18n.get('t.u-produite-le')}</th><th>{inject:i18n.get('t.u-transmis')}</th><th></th></tr>
+        </thead>
+        <tbody>
+        {#for file in monthlyFiles}
+        <tr>
+            <td class="link-strong">{file.fileName}</td>
+            <td class="col-muted cell-keep">{file.periodFrom.format('dd/MM/yyyy')} → {file.periodTo.format('dd/MM/yyyy')}</td>
+            <td class="col-muted cell-keep">{file.generatedAt.format('dd/MM/yyyy HH:mm')}</td>
+            <td class="col-muted cell-keep">{#if file.transmittedAt}{file.transmittedAt.format('dd/MM/yyyy HH:mm')} ({file.transmittedBy}){#else}—{/if}</td>
+            <td class="col-actions">
+                <a class="btn btn-small btn-ghost" href="/admin/saft/monthly/download?id={file.id}">{inject:i18n.get('t.u-telecharger')}</a>
+                {#if !file.transmittedAt}
+                <form method="post" action="/admin/saft/monthly/transmitted"><input type="hidden" name="id" value="{file.id}"><button class="btn btn-small btn-primary" type="submit">{inject:i18n.get('t.u-declarer-transmis')}</button></form>
+                {/if}
+            </td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+    </div>
+    {/if}
+</div>
+
+{! BO-05-01-05 : le SAF-T au fil de l'eau — ce qui attend, ce qui est parti,
+ ! ce qui a échoué, et la relance des échecs. !}
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.u-saft-fil-de-l-eau')}</h2>
+    <p class="card-sub">{#if realtime}{inject:i18n.get('t.u-saft-temps-reel-actif')}{#else}{inject:i18n.get('t.u-saft-temps-reel-inactif')}{/if} — {inject:i18n.get('t.u-points-d-acces')} {endpoints} — {inject:i18n.get('t.u-en-attente')} {pending} — {inject:i18n.get('t.u-envoyes')} {sent} — {inject:i18n.get('t.u-en-echec')} {failed}</p>
+    {! BO-11-04-02 : l'en-tête WS-Security des messages à l'AT. !}
+    <p class="card-sub">{inject:i18n.code('t.z21-wss-', wsSecurity)}</p>
+    <form method="post" action="/admin/saft/relaunch">
+        <button class="btn btn-ghost" type="submit">{inject:i18n.get('t.u-relancer-les-echecs')}</button>
+    </form>
+    {#if !transmissions.isEmpty()}
+    <div class="table-scroll">
+    <table class="data-table">
+        <thead>
+        <tr><th>{inject:i18n.get('t.n-document')}</th><th>{inject:i18n.get('t.type')}</th><th>{inject:i18n.get('t.u-point-d-acces')}</th><th>{inject:i18n.get('t.u-statut')}</th><th>{inject:i18n.get('t.u-detail')}</th></tr>
+        </thead>
+        <tbody>
+        {#for row in transmissions}
+        <tr>
+            <td class="link-strong cell-keep">{row.documentNumber}</td>
+            <td class="col-muted">{row.documentType}</td>
+            <td class="col-muted">{row.providerCode}</td>
+            <td>{inject:i18n.code('t.u-st-', row.status.name)}{#if row.attempts > 0} ({row.attempts}){/if}</td>
+            <td class="col-muted cell-wrap">{#if row.lastError}{inject:i18n.text(row.lastError)}{#else}{row.acknowledgement ?: ''}{/if}</td>
+        </tr>
+        {/for}
+        </tbody>
+    </table>
+    </div>
+    {/if}
+</div>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.periode')}</h2>
+    <form method="get" action="/admin/saft">
+        <div class="field-grid">
+            <div class="field">
+                <label class="field-label" for="s-from">{inject:i18n.get('t.du')}</label>
+                <input class="input-control" id="s-from" type="date" name="from" value="{from}">
+            </div>
+            <div class="field">
+                <label class="field-label" for="s-to">{inject:i18n.get('t.au')}</label>
+                <input class="input-control" id="s-to" type="date" name="to" value="{to}">
+            </div>
+            <div class="field">
+                <span class="field-label">{inject:i18n.get('t.n-de-certification-fiscale')}</span>
+                <span class="field-hint">{#if certificate}{certificate}{#else}{inject:i18n.get('t.non-renseigne')}{/if}</span>
+            </div>
+        </div>
+        <div class="page-actions" style="margin-top: 6px;">
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.rechercher')}</button>
+            <a class="btn btn-ghost" href="/admin/saft/export?from={from}&to={to}">{inject:i18n.get('t.exporter-le-fichier-saf-t')}</a>
+        </div>
+    </form>
+</div>
+
+<div class="card">
+    {#if documents.isEmpty()}
+    <div class="empty-state">
+        <p>{inject:i18n.get('t.aucun-document-fiscal-sur-la-periode')}</p>
+    </div>
+    {#else}
+    <div class="table-scroll">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>{inject:i18n.get('t.n-document')}</th>
+                <th>{inject:i18n.get('t.type')}</th>
+                <th>{inject:i18n.get('t.date')}</th>
+                <th>{inject:i18n.get('t.caisse')}</th>
+                <th>ATCUD</th>
+                <th>{inject:i18n.get('t.total-ttc')}</th>
+            </tr>
+        </thead>
+        <tbody>
+            {#for document in documents}
+            <tr>
+                <td class="link-strong cell-keep">{document.number}{#if document.cancelled} <span class="sup-muted">{inject:i18n.get('t.annule')}</span>{/if}</td>
+                <td class="col-muted cell-keep">{document.documentType}{#if document.saftDocumentId} ({document.saftDocumentId}){/if}</td>
+                <td class="col-muted cell-keep">{#if document.issuedAt}{document.issuedAt.format('dd/MM/yyyy HH:mm')}{#else}—{/if}</td>
+                <td class="col-muted cell-keep">{document.terminalId}</td>
+                <td class="col-muted cell-keep">{document.atcud}</td>
+                <td class="sup-amount">{inject:i18n.money(document.grossTotal)} €</td>
+            </tr>
+            {/for}
+        </tbody>
+    </table>
+    </div>
+    {/if}
+</div>
+{/body}
+
+{#footer}{inject:i18n.get('t.le-fichier-reprend-les-documents-tels-que-les-caisses')}{/footer}

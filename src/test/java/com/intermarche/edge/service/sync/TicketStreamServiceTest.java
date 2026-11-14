@@ -1200,6 +1200,43 @@ class TicketStreamServiceTest {
     }
 
     /**
+     * DG-03-02-04: the new status of an e-commerce or mobility order goes to
+     * the reachable e-commerce platforms as the order's view — status,
+     * payments, ticket — keyed by its code; nothing while the store does not
+     * return the statuses.
+     */
+    @Test
+    void theStatusOfAnOrderIsPushedToThePlatforms() {
+        TicketStreamService service = service(false, false, mock(ExternalRelayService.class));
+        service.ecommerceOrderViewService = mock(com.intermarche.edge.service.EcommerceOrderViewService.class);
+        ServiceProvider shop = provider("SHOP", ServiceProvider.ProviderType.ECOMMERCE, "https://shop", "k", true);
+        com.intermarche.edge.domain.sale.CustomerOrder order = new com.intermarche.edge.domain.sale.CustomerOrder();
+        order.code = "W4";
+        com.intermarche.edge.service.EcommerceOrderViewService.View view =
+                new com.intermarche.edge.service.EcommerceOrderViewService.View();
+        view.reference = "W4";
+        view.status = "COLLECTED";
+        view.ticketNumber = "C04-000012";
+        when(service.ecommerceOrderViewService.view(order)).thenReturn(view);
+        try (MockedStatic<PanacheEntityBase> panache = mockStatic(PanacheEntityBase.class);
+                MockedConstruction<StreamEvent> filed = mockConstruction(StreamEvent.class)) {
+            panache.when(() -> ServiceProvider.list("providerType = ?1 and active = true order by code",
+                    ServiceProvider.ProviderType.ECOMMERCE)).thenReturn(List.of(shop));
+            stubFindByUid(panache, null);
+            service.onEcommerceOrderStatus(order);
+            Assertions.assertTrue(filed.constructed().isEmpty());
+            when(service.posSettingsService.ecommerceStatusReturn()).thenReturn(true);
+            service.onEcommerceOrderStatus(order);
+            Assertions.assertEquals(1, filed.constructed().size());
+            StreamEvent event = filed.constructed().get(0);
+            Assertions.assertEquals(StreamEvent.Kind.ECOMMERCE, event.kind);
+            Assertions.assertEquals("W4", event.reference);
+            Assertions.assertTrue(event.payload.contains("\"status\":\"COLLECTED\""));
+            Assertions.assertTrue(event.payload.contains("\"ticketNumber\":\"C04-000012\""));
+        }
+    }
+
+    /**
      * Each receiver is posted in its protocol: the house JSON on /events, the
      * Catalina and TFREMA JSON on their own address, the DS and Anaveo text with
      * their media type — a provider with no protocol reading as the house JSON.

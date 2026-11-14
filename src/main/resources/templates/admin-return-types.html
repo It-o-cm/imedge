@@ -1,0 +1,128 @@
+{! Return types (BO-03-13-01 to -04, -11, -12): the referential the registers
+ ! offer, descended by the RETURN_TYPES pull. Each type is a save form (code
+ ! fixed) whose two other buttons toggle and delete through formaction; a
+ ! creation form closes the page. Field grids only, so nothing overflows at
+ ! 800 x 600. !}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.types-de-retour-titre')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.types-de-retour-titre')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.les-types-de-retour-que-la-caisse-propose')}</p>
+    </div>
+    <form method="post" action="/admin/return-types/import">
+        <button class="btn" type="submit">{inject:i18n.get('t.reprendre-les-types-existants')}</button>
+    </form>
+</div>
+
+{#if notice}
+<div class="alert {#if noticeOk}alert-ok{#else}alert-error{/if}" role="status">{inject:i18n.text(notice)}</div>
+{/if}
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.types-de-retour-titre')}</h2>
+    {#if rows.isEmpty()}
+    <p class="card-sub">{inject:i18n.get('t.aucun-type-de-retour-administre')}</p>
+    {#else}
+    {#for row in rows}
+    <form method="post" action="/admin/return-types/save" class="field-grid">
+        <input type="hidden" name="code" value="{row.type.code}">
+        <div class="field">
+            <span class="field-label">{row.type.code}{#if !row.type.active} {inject:i18n.get('t.inactive')}{/if}</span>
+            <span class="field-hint">{inject:i18n.get('t.retours-rattaches')} {row.used}</span>
+        </div>
+        <div class="field">
+            <label class="field-label" for="rl-{row.type.code}">{inject:i18n.get('t.libelle')}</label>
+            <input class="input-control" id="rl-{row.type.code}" type="text" name="label" maxlength="80" value="{row.type.label}" required>
+        </div>
+        <div class="field">
+            <label class="field-label" for="ro-{row.type.code}">{inject:i18n.get('t.ordre')}</label>
+            <input class="input-control" id="ro-{row.type.code}" type="number" name="displayOrder" min="0" value="{row.type.displayOrder}">
+        </div>
+        <div class="field">
+            <label class="field-label" for="rr-{row.type.code}">{inject:i18n.get('t.plage-code-barres-retour')}</label>
+            <select class="input-control" id="rr-{row.type.code}" name="rangeCode">
+                <option value="">{inject:i18n.get('t.aucune-plage')}</option>
+                {#for range in ranges}
+                <option value="{range}" {#if row.type.rangeCode == range}selected{/if}>{range}</option>
+                {/for}
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-check"><input type="checkbox" name="ticketMode" {#if row.type.ticketMode}checked{/if}> <span>{inject:i18n.get('t.mode-ticket-retour')}</span></label>
+        </div>
+        <div class="field">
+            <label class="field-check"><input type="checkbox" name="endorsementExempt" {#if row.type.endorsementExempt}checked{/if}> <span>{inject:i18n.get('t.sans-autorisation-superviseur')}</span></label>
+        </div>
+        <div class="field">
+            <label class="field-check"><input type="checkbox" name="originOptional" {#if row.type.originOptional}checked{/if}> <span>{inject:i18n.get('t.sans-ticket-d-origine')}</span></label>
+        </div>
+        <div class="field">
+            <label class="field-check"><input type="checkbox" name="priceConfirmed" {#if row.type.priceConfirmed}checked{/if}> <span>{inject:i18n.get('t.prix-a-confirmer')}</span></label>
+        </div>
+        <div class="field">
+            <label class="field-check"><input type="checkbox" name="depositReturn" {#if row.type.depositReturn}checked{/if}> <span>{inject:i18n.get('t.retour-deconsigne')}</span></label>
+        </div>
+        <div class="field">
+            <label class="field-check"><input type="checkbox" name="active" {#if row.type.active}checked{/if}> <span>{inject:i18n.get('t.actif')}</span></label>
+        </div>
+        <div class="page-actions">
+            <button class="btn btn-primary" type="submit">{inject:i18n.get('t.enregistrer')}</button>
+            <button class="btn" type="submit" formaction="/admin/return-types/toggle">{#if row.type.active}{inject:i18n.get('t.desactiver')}{#else}{inject:i18n.get('t.activer')}{/if}</button>
+            <button class="btn btn-danger" type="submit" formaction="/admin/return-types/delete">{inject:i18n.get('t.supprimer')}</button>
+        </div>
+    </form>
+    {/for}
+    {/if}
+</div>
+
+<div class="card">
+    <h2 class="card-title">{inject:i18n.get('t.nouveau-type-de-retour')}</h2>
+    <p class="card-sub">{inject:i18n.get('t.le-mode-ticket-impose-l-identification')}</p>
+    <form method="post" action="/admin/return-types/save" class="field-grid">
+        <div class="field">
+            <label class="field-label" for="new-code">{inject:i18n.get('t.code')}</label>
+            <input class="input-control" id="new-code" type="text" name="code" maxlength="40" required>
+        </div>
+        <div class="field">
+            <label class="field-label" for="new-label">{inject:i18n.get('t.libelle')}</label>
+            <input class="input-control" id="new-label" type="text" name="label" maxlength="80" required>
+        </div>
+        <div class="field">
+            <label class="field-label" for="new-order">{inject:i18n.get('t.ordre')}</label>
+            <input class="input-control" id="new-order" type="number" name="displayOrder" min="0" value="0">
+        </div>
+        <div class="field">
+            <label class="field-label" for="new-range">{inject:i18n.get('t.plage-code-barres-retour')}</label>
+            <select class="input-control" id="new-range" name="rangeCode">
+                <option value="">{inject:i18n.get('t.aucune-plage')}</option>
+                {#for range in ranges}
+                <option value="{range}">{range}</option>
+                {/for}
+            </select>
+        </div>
+        <div class="field">
+            <label class="field-check"><input type="checkbox" name="ticketMode"> <span>{inject:i18n.get('t.mode-ticket-retour')}</span></label>
+        </div>
+        <div class="field">
+            <label class="field-check"><input type="checkbox" name="endorsementExempt"> <span>{inject:i18n.get('t.sans-autorisation-superviseur')}</span></label>
+        </div>
+        <div class="field">
+            <label class="field-check"><input type="checkbox" name="originOptional"> <span>{inject:i18n.get('t.sans-ticket-d-origine')}</span></label>
+        </div>
+        <div class="field">
+            <label class="field-check"><input type="checkbox" name="priceConfirmed"> <span>{inject:i18n.get('t.prix-a-confirmer')}</span></label>
+        </div>
+        <div class="field">
+            <label class="field-check"><input type="checkbox" name="depositReturn"> <span>{inject:i18n.get('t.retour-deconsigne')}</span></label>
+        </div>
+        <div class="field">
+            <label class="field-check"><input type="checkbox" name="active" checked> <span>{inject:i18n.get('t.actif')}</span></label>
+        </div>
+        <div class="page-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.creer-le-type-de-retour')}</button></div>
+    </form>
+</div>
+{/body}

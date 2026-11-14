@@ -1,0 +1,41 @@
+{!
+ ! Shared filter fields of the supervision and deployment consoles
+ ! (BO-08-01-17, BO-08-03-06, BO-08-04-15/16/20, BO-08-02-02): the
+ ! organisation view (whole organisation, by country, by enseigne, by point
+ ! of sale, by adhérent - BO-02-05-05), the echelon and adhérent filters and the OK / KO status. Included
+ ! inside each console's GET form with `filter` = its ConsoleFilter.
+!}
+<div class="filter-field">
+    <label class="filter-label" for="cf-group">{inject:i18n.get('t.sup-vision')}</label>
+    <select id="cf-group" name="group">
+        <option value="GLOBAL"{#if filter.group == 'GLOBAL'} selected{/if}>{inject:i18n.get('t.sup-vision-globale')}</option>
+        <option value="COUNTRY"{#if filter.group == 'COUNTRY'} selected{/if}>{inject:i18n.get('t.sup-par-pays')}</option>
+        <option value="ENSEIGNE"{#if filter.group == 'ENSEIGNE'} selected{/if}>{inject:i18n.get('t.sup-par-enseigne')}</option>
+        <option value="PDV"{#if filter.group == 'PDV'} selected{/if}>{inject:i18n.get('t.sup-par-point-de-vente')}</option>
+        <option value="ADHERENT"{#if filter.group == 'ADHERENT'} selected{/if}>{inject:i18n.get('t.q-sup-par-adherent')}</option>
+    </select>
+</div>
+<div class="filter-field">
+    <label class="filter-label" for="cf-country">{inject:i18n.get('t.sup-pays')}</label>
+    <input id="cf-country" type="text" name="country" value="{filter.country ?: ''}" size="6">
+</div>
+<div class="filter-field">
+    <label class="filter-label" for="cf-enseigne">{inject:i18n.get('t.sup-enseigne')}</label>
+    <input id="cf-enseigne" type="text" name="enseigne" value="{filter.enseigne ?: ''}" size="6">
+</div>
+<div class="filter-field">
+    <label class="filter-label" for="cf-pdv">{inject:i18n.get('t.sup-point-de-vente')}</label>
+    <input id="cf-pdv" type="text" name="pdv" value="{filter.pdv ?: ''}" size="6">
+</div>
+<div class="filter-field">
+    <label class="filter-label" for="cf-adherent">{inject:i18n.get('t.q-sup-adherent')}</label>
+    <input id="cf-adherent" type="text" name="adherent" value="{filter.adherent ?: ''}" size="6">
+</div>
+<div class="filter-field">
+    <label class="filter-label" for="cf-status">{inject:i18n.get('t.sup-statut')}</label>
+    <select id="cf-status" name="status">
+        <option value="">{inject:i18n.get('t.sup-ok-et-ko')}</option>
+        <option value="OK"{#if filter.status == 'OK'} selected{/if}>{inject:i18n.get('t.sup-ok')}</option>
+        <option value="KO"{#if filter.status == 'KO'} selected{/if}>{inject:i18n.get('t.sup-ko')}</option>
+    </select>
+</div>

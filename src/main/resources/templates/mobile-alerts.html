@@ -1,0 +1,41 @@
+{!
+ ! Register alerts on a mobile device (BO-10-08-02): a page of its own laid
+ ! out for a telephone — one column, large touch targets, no navigation bar —
+ ! polling /dashboard/mobile/data every 5 s (admin-assets/mobile-alerts.js).
+ ! Each pending supervisor call can be acknowledged, authorised, sent back to
+ ! the till or refused from here with the dashboard's own gestures, which tell
+ ! the lane (LS-04-04-09). `enabled` = the mobile page and the
+ ! dashboard alerts are both activated.
+!}
+<!DOCTYPE html>
+<html lang="{inject:i18n.language}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{inject:i18n.get('t.mob-alertes-caisses')}</title>
+    <link rel="stylesheet" href="/admin-assets/base.css">
+    <link rel="stylesheet" href="/admin-assets/mobile.css">
+</head>
+<body class="mobile-alerts">
+<header class="mobile-head">
+    <h1>{inject:i18n.get('t.mob-alertes-caisses')}</h1>
+    <a class="mobile-link" href="/dashboard">{inject:i18n.get('t.mob-tableau-de-bord')}</a>
+</header>
+<main class="mobile-main">
+    {#if enabled}
+    <p class="mobile-sub" id="mobileStatus">{inject:i18n.get('t.mob-rafraichi-toutes-les-5-s')}</p>
+    <div id="mobileCalls"
+         data-empty="{inject:i18n.get('t.mob-aucune-alerte')}"
+         data-ack="{inject:i18n.get('t.mob-acquitter')}"
+         data-grant="{inject:i18n.get('t.mob-autoriser')}"
+         data-to-till="{inject:i18n.get('t.rc3-dash-a-traiter-en-caisse')}"
+         data-refuse="{inject:i18n.get('t.mob-refuser')}"></div>
+    {#else}
+    <div class="alert alert-error" role="status">{inject:i18n.get('t.mob-desactive')}</div>
+    {/if}
+</main>
+{#if enabled}
+<script src="/admin-assets/mobile-alerts.js"></script>
+{/if}
+</body>
+</html>

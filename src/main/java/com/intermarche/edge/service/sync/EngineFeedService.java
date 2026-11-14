@@ -181,7 +181,7 @@ public class EngineFeedService {
      */
     @Transactional
     public String store(String code, String content) {
-        LOGGER.info("Entering method store with code: " + code + ", content: " + content);
+        LOGGER.info("Entering method store with code: " + code + ", content: " + content.length() + " character(s)");
         String version = sha256(content);
         EngineFeed feed = EngineFeed.findByCode(code);
         if (feed == null) {

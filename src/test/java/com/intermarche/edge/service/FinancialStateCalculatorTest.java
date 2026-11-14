@@ -209,6 +209,36 @@ class FinancialStateCalculatorTest {
     }
 
     /**
+     * LS-03-04-04: a weighing counts ONE article whatever its weight, even a
+     * whole number of kilograms; two pieces on one line count two.
+     */
+    @Test
+    void aWeighingIsOneArticleAndPiecesCountTheirUnits() {
+        FinancialState state = storeState();
+        Ticket ticket = closed("7.00", LocalDateTime.of(2026, 1, 1, 8, 10));
+        TicketLine weighing = goods("2.000", null, "2.50", "5.00", "0.0550");
+        weighing.plu = "4021";
+        TicketLine bread = goods("2", null, "1.00", "2.00", "0.0550");
+        ticket.lines.addAll(List.of(weighing, bread));
+        calculator.fill(state, List.of(ticket), List.of(), config(60, 1, Map.of(), 20, false));
+        assertEquals(3, state.itemCount);
+    }
+
+    /**
+     * R15 on the refunds: a refunded line without a quantity takes back no
+     * article, a fractional one takes back one, a whole one its units.
+     */
+    @Test
+    void refundedLinesTakeBackTheirArticles() {
+        FinancialState state = storeState();
+        Refund refund = refund(null, "9.00", "2", "1.5");
+        RefundLine blank = new RefundLine();
+        refund.lines.add(blank);
+        calculator.fill(state, List.of(), List.of(refund), config(60, 1, Map.of(), 20, false));
+        assertEquals(-3, state.itemCount);
+    }
+
+    /**
      * Builds an open refund, which the calculator skips.
      *
      * @return the open refund

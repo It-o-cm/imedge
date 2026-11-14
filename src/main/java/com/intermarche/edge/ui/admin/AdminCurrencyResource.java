@@ -116,13 +116,20 @@ public class AdminCurrencyResource {
             LOGGER.info("Exiting method saveCurrency");
             return AdminForms.redirect(PAGE, "Le taux (euros pour une unité) doit être un nombre strictement positif.", false);
         }
+        // The label is a NOT NULL column: refused here, an empty one used to
+        // reach the insert and answer an HTTP 500 instead of a notice.
+        String label = AdminForms.text(form, "label");
+        if (label == null) {
+            LOGGER.info("Exiting method saveCurrency");
+            return AdminForms.redirect(PAGE, "Le libellé de la devise est obligatoire.", false);
+        }
         Currency existing = Currency.find("code", isoCode).firstResult();
         Currency currency = existing;
         if (currency == null) {
             currency = new Currency();
             currency.code = isoCode;
         }
-        currency.label = AdminForms.text(form, "label");
+        currency.label = label;
         currency.symbol = AdminForms.text(form, "symbol");
         // BO-03-02-40: the history is written BEFORE the rate is replaced, and
         // only when it really changes — a history padded with rows that say the

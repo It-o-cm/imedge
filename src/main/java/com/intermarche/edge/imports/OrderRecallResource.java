@@ -206,9 +206,19 @@ public class OrderRecallResource {
      * @return the created or refreshed order, or null when refused
      */
     public static CustomerOrder store(CustomerOrderService service, OrderPushDto dto) {
+        List<CustomerOrder.OrderLine> lines = toOrderLines(dto.lines);
+        // A document pushed without its total (a self-scanning basket) is worth
+        // its lines: the back office and the till read what is due from it.
+        java.math.BigDecimal total = dto.totalAmount;
+        if (total == null) {
+            total = java.math.BigDecimal.ZERO;
+            for (CustomerOrder.OrderLine line : lines) {
+                total = total.add(line.totalPrice);
+            }
+        }
         CustomerOrder order = service.createFromTill(dto.code,
                 com.intermarche.edge.domain.sale.OrderKind.fromName(dto.kind),
-                dto.totalAmount, dto.depositVatDetail, toOrderLines(dto.lines), dto.label,
+                total, dto.depositVatDetail, lines, dto.label,
                 dto.depositRule == null || dto.depositRule.isBlank() ? null : dto.depositRule.trim());
         if (order == null) {
             return null;
@@ -337,20 +347,25 @@ public class OrderRecallResource {
     /**
      * Closes the order a register settled at its till (LC-06-03-07): the balance
      * was paid and the goods went with it, so the node marks the order paid and
-     * collected and the code cannot be recalled and paid twice.
+     * collected and the code cannot be recalled and paid twice. The register
+     * may name the ticket that settled it, {@code {"ticketNumber": ...}}, which
+     * the e-commerce platform then reads with the order (DG-03-02-01, -03); an
+     * absent or unreadable body names none.
      *
      * @param code the code of the settled order
      * @param presentedToken the shared token presented by the register
+     * @param body the settlement, JSON, possibly empty
      * @return 200 when the order stands settled, 404 when the store holds no
      *         such code, 401 on a bad token, 403 off-role
      */
     @POST
     @Path("/{code}/settled")
     @PermitAll
+    @Consumes(MediaType.WILDCARD)
     @Produces(MediaType.TEXT_PLAIN)
     @Transactional
     public Response settled(@PathParam("code") String code,
-                            @HeaderParam("X-Sync-Token") String presentedToken) {
+                            @HeaderParam("X-Sync-Token") String presentedToken, String body) {
         LOGGER.info("Entering method settled with code: " + code);
         if (!"store".equalsIgnoreCase(role)) {
             LOGGER.info("Exiting method settled: off-role");
@@ -366,10 +381,27 @@ public class OrderRecallResource {
             LOGGER.info("Exiting method settled: unknown code");
             return Response.status(Response.Status.NOT_FOUND).entity("Commande inconnue").build();
         }
-        boolean settled = customerOrderService.settleAtTill(order);
+        boolean settled = customerOrderService.settleAtTill(order, settlingTicket(body));
         LOGGER.info("Exiting method settled (" + settled + ")");
         return settled ? Response.ok("OK").build()
                 : Response.status(Response.Status.CONFLICT).entity("Commande non réglable").build();
+    }
+
+    /**
+     * Reads the ticket a register names in its settlement.
+     *
+     * @param body the settlement, JSON, possibly null or empty
+     * @return the ticket number, or null when none is named
+     */
+    static String settlingTicket(String body) {
+        try {
+            com.fasterxml.jackson.databind.JsonNode node =
+                    new com.fasterxml.jackson.databind.ObjectMapper().readTree(body == null ? "" : body);
+            String number = node.path("ticketNumber").asText("");
+            return number.isBlank() ? null : number.trim();
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /**
@@ -577,7 +609,9 @@ public class OrderRecallResource {
         json.put("status", order.status.name());
         java.math.BigDecimal total = order.totalAmount == null ? java.math.BigDecimal.ZERO : order.totalAmount;
         json.put("totalAmount", total);
-        java.math.BigDecimal remaining = total.subtract(acompteAlreadyPaid);
+        // The settlements a device or a platform collected count as paid too
+        // (BO-10-01-39, DG-03-01-05): they are restated at the till, not owed.
+        java.math.BigDecimal remaining = total.subtract(acompteAlreadyPaid).subtract(order.getCollected());
         json.put("remaining", remaining.signum() < 0 ? java.math.BigDecimal.ZERO : remaining);
         return json;
     }

@@ -1113,6 +1113,8 @@ public final class RefPayloads {
         public String customerScreen;
         /** The virtual ticket model. */
         public String ticketModel;
+        /** The key layout as JSON, or null for the standard one. */
+        public String layout;
     }
 
     /**

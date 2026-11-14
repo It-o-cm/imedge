@@ -324,9 +324,9 @@ class OrderRecallResourceTest {
         register.role = "register";
         register.token = Optional.empty();
         register.customerOrderService = mock(CustomerOrderService.class);
-        assertEquals(403, register.settled("CMD1", null).getStatus());
+        assertEquals(403, register.settled("CMD1", null, null).getStatus());
         OrderRecallResource badToken = storeResource(Optional.of("secret"));
-        assertEquals(401, badToken.settled("CMD1", "wrong").getStatus());
+        assertEquals(401, badToken.settled("CMD1", "wrong", null).getStatus());
     }
 
     /**
@@ -340,13 +340,15 @@ class OrderRecallResourceTest {
         io.quarkus.hibernate.orm.panache.PanacheQuery<CustomerOrder> known = query(order());
         try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
             mocked.when(() -> CustomerOrder.find("code", "GHOST")).thenReturn(ghost);
-            assertEquals(404, resource.settled("GHOST", null).getStatus());
+            assertEquals(404, resource.settled("GHOST", null, null).getStatus());
             CustomerOrder order = known.firstResult();
             mocked.when(() -> CustomerOrder.find("code", "CMD1")).thenReturn(known);
-            when(resource.customerOrderService.settleAtTill(order)).thenReturn(true);
-            assertEquals(200, resource.settled("CMD1", null).getStatus());
-            when(resource.customerOrderService.settleAtTill(order)).thenReturn(false);
-            assertEquals(409, resource.settled("CMD1", null).getStatus());
+            when(resource.customerOrderService.settleAtTill(order, null)).thenReturn(true);
+            assertEquals(200, resource.settled("CMD1", null, null).getStatus());
+            when(resource.customerOrderService.settleAtTill(order, "C04-000012")).thenReturn(true);
+            assertEquals(200, resource.settled("CMD1", null, "{\"ticketNumber\":\" C04-000012 \"}").getStatus());
+            when(resource.customerOrderService.settleAtTill(order, null)).thenReturn(false);
+            assertEquals(409, resource.settled("CMD1", null, "").getStatus());
         }
     }
 
@@ -386,7 +388,7 @@ class OrderRecallResourceTest {
         try (var base = mockStatic(PanacheEntityBase.class)) {
             var absent = query(null);
             base.when(() -> PanacheEntityBase.find("code", "GHOST")).thenReturn(absent);
-            assertEquals(404, resource.settled("GHOST", "secret").getStatus());
+            assertEquals(404, resource.settled("GHOST", "secret", null).getStatus());
         }
     }
 
@@ -456,14 +458,14 @@ class OrderRecallResourceTest {
         org.mockito.ArgumentCaptor<java.util.List<CustomerOrder.OrderLine>> lines =
                 org.mockito.ArgumentCaptor.forClass(java.util.List.class);
         verify(resource.customerOrderService).createFromTill(org.mockito.ArgumentMatchers.eq("DV000123"),
-                org.mockito.ArgumentMatchers.eq(OrderKind.DEVIS), org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.eq(OrderKind.DEVIS), org.mockito.ArgumentMatchers.eq(new BigDecimal("300.00")),
                 org.mockito.ArgumentMatchers.isNull(), lines.capture(),
                 org.mockito.ArgumentMatchers.eq("CUISINE DUPONT"), org.mockito.ArgumentMatchers.eq("OPTIONAL"));
         assertEquals(new BigDecimal("2"), lines.getValue().get(0).deliveredQuantity);
         dto.depositRule = " ";
         assertEquals(200, resource.ingest(null, dto).getStatus());
         verify(resource.customerOrderService).createFromTill(org.mockito.ArgumentMatchers.eq("DV000123"),
-                org.mockito.ArgumentMatchers.eq(OrderKind.DEVIS), org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.eq(OrderKind.DEVIS), org.mockito.ArgumentMatchers.eq(new BigDecimal("300.00")),
                 org.mockito.ArgumentMatchers.isNull(), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.eq("CUISINE DUPONT"), org.mockito.ArgumentMatchers.isNull());
         dto.depositRule = "SOMETIMES";
@@ -547,7 +549,7 @@ class OrderRecallResourceTest {
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(stored);
         assertEquals(200, resource.ingest(null, dto).getStatus());
         verify(resource.customerOrderService).createFromTill(org.mockito.ArgumentMatchers.eq("SS00000001"),
-                org.mockito.ArgumentMatchers.eq(OrderKind.SELF_SCAN), org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.eq(OrderKind.SELF_SCAN), org.mockito.ArgumentMatchers.eq(BigDecimal.ZERO),
                 org.mockito.ArgumentMatchers.isNull(), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.isNull(), org.mockito.ArgumentMatchers.isNull());
         assertEquals("PARTIAL", stored.controlRequest);
@@ -688,5 +690,76 @@ class OrderRecallResourceTest {
         dto.customerNumber = null;
         resource.ingest(null, dto);
         assertNull(stored.customerAccountNumber);
+    }
+
+    /**
+     * DG defect: the settlements a mobility device collected count as paid in
+     * what remains (9,72 with 5,00 collected leaves 4,72), and they are not
+     * read as a deposit by the register.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void theCollectedSettlementsCountInTheRemaining() {
+        OrderRecallResource resource = storeResource(Optional.empty());
+        CustomerOrder mobility = order();
+        mobility.code = "MO-DG-0001";
+        mobility.kind = OrderKind.MOBILITY;
+        mobility.totalAmount = new BigDecimal("9.72");
+        mobility.depositPaid = BigDecimal.ZERO;
+        mobility.payments.add(new CustomerOrder.OrderPayment("CARD", new BigDecimal("5.00")));
+        when(resource.customerOrderService.recall("MO-DG-0001")).thenReturn(mobility);
+        try (MockedStatic<PanacheEntityBase> mocked = mockStatic(PanacheEntityBase.class)) {
+            mocked.when(() -> CashMovement.list("type = ?1 and orderReference = ?2",
+                    CashMovement.MovementType.CUSTOMER_DEPOSIT, "MO-DG-0001")).thenReturn(List.of());
+            Map<String, Object> json = (Map<String, Object>) resource.recall("MO-DG-0001", null).getEntity();
+            assertEquals(new BigDecimal("4.72"), json.get("remaining"));
+            assertEquals(BigDecimal.ZERO, json.get("acompteAlreadyPaid"));
+        }
+    }
+
+    /**
+     * DG defect: a document pushed without its total is worth its lines; one
+     * pushed with its total keeps it.
+     */
+    @Test
+    void aDocumentWithoutTotalIsWorthItsLines() {
+        OrderRecallResource resource = storeResource(Optional.empty());
+        OrderRecallResource.OrderPushDto dto = new OrderRecallResource.OrderPushDto();
+        dto.code = "SS44000004";
+        dto.kind = "SELF_SCAN";
+        OrderRecallResource.OrderPushLineDto baguette = new OrderRecallResource.OrderPushLineDto();
+        baguette.ean = "3300000000033";
+        baguette.quantity = BigDecimal.ONE;
+        baguette.unitPrice = new BigDecimal("1.10");
+        dto.lines.add(baguette);
+        dto.lines.add(null);
+        when(resource.customerOrderService.createFromTill(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(order());
+        assertEquals(200, resource.ingest(null, dto).getStatus());
+        verify(resource.customerOrderService).createFromTill(org.mockito.ArgumentMatchers.eq("SS44000004"),
+                org.mockito.ArgumentMatchers.eq(OrderKind.SELF_SCAN), org.mockito.ArgumentMatchers.eq(new BigDecimal("1.10")),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        dto.code = "SS44000005";
+        dto.totalAmount = new BigDecimal("2.00");
+        resource.ingest(null, dto);
+        verify(resource.customerOrderService).createFromTill(org.mockito.ArgumentMatchers.eq("SS44000005"),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(new BigDecimal("2.00")),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    /**
+     * DG-03-02-01: the settling ticket is read from the register's body; an
+     * absent, blank or unreadable one names none.
+     */
+    @Test
+    void theSettlingTicketIsReadFromTheBody() {
+        assertEquals("C04-1", OrderRecallResource.settlingTicket("{\"ticketNumber\":\" C04-1 \"}"));
+        assertNull(OrderRecallResource.settlingTicket(null));
+        assertNull(OrderRecallResource.settlingTicket("{\"ticketNumber\":\" \"}"));
+        assertNull(OrderRecallResource.settlingTicket("not json"));
     }
 }

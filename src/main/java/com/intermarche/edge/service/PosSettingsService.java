@@ -496,6 +496,10 @@ public class PosSettingsService {
                 "Contrôle de validité du NIF portugais",
                 "Un NIF saisi ou scanné qui n'est fait que de chiffres, précédés ou non de PT, doit compter 9 chiffres, commencer par un préfixe légal et porter la bonne clé de contrôle (modulo 11) ; sinon il est refusé. Un NIF étranger, qui contient des lettres, n'est pas contrôlé (LC-08-06-04).",
                 "false", null),
+        new Def("customer.tax-id-key", Type.BOOL, "CLIENT EN CAISSE",
+                "Touche NIF CLIENT hors Portugal",
+                "Affiche la touche NIF CLIENT du menu GÉNÉROSITÉ sur une caisse qui n'émet pas les documents fiscaux portugais. Une caisse portugaise (documents fiscaux portugais activés) l'affiche toujours (LC-08-06-02).",
+                "false", null),
         new Def("customer.tax-id-scan-pattern", Type.TEXT, "CLIENT EN CAISSE",
                 "Code-barre porteur d'un NIF",
                 "Expression régulière reconnaissant, au scan, le code-barre qui porte un NIF client (carte d'achat sociale, par exemple) ; le groupe entre parenthèses désigne le NIF. Le NIF scanné est enregistré dans la transaction comme s'il avait été saisi, avec le même contrôle. Vide : aucun code-barre NIF reconnu (LC-08-06-05).",
@@ -2373,7 +2377,13 @@ public class PosSettingsService {
         new Def("stream.compress-image", Type.BOOL, "FIL DE L'EAU",
                 "Compresser l'image du ticket",
                 "L'image imprimée du ticket part compressée (gzip puis Base64) au lieu du texte brut. L'encodage voyage dans la charge : le lecteur n'a jamais à le deviner (BO-11-02-02).",
-                "false", null));
+                "false", null),
+
+        // ---- DG: C parameters ----
+        new Def("channel.ecommerce.partial-payment", Type.TEXT, "CANAUX EXTERNES",
+                "E-commerce : commande partiellement réglée",
+                "Sort d'une commande e-commerce dont les règlements annoncés n'atteignent pas le total des lignes : RECALL (elle n'est pas enregistrée comme vente close ; elle est gardée comme panier E-commerce rappelable en caisse par sa référence, les règlements de la plateforme repris et le reste dû encaissé en caisse ; le compte rendu répond PENDING_PAYMENT avec le reste dû) ou REJECT (la commande est rejetée, rien n'est enregistré) (DG-03-01-05).",
+                "RECALL", null));
 
     /** The four levels of a control point, shared by the eight gestures. */
     private static final List<String> CONTROL_LEVELS =
@@ -2435,6 +2445,7 @@ public class PosSettingsService {
             Map.entry("nexo.activation-moment", List.of("SCAN", "PAYMENT")),
             Map.entry("island.promotion-channel",
                     List.of("", "POINT_OF_SALE", "WEB", "OTHER")),
+            Map.entry("channel.ecommerce.partial-payment", List.of("RECALL", "REJECT")),
             Map.entry("channel.ecommerce.price-source",
                     List.of("", "POS", "TRANSACTION")),
             Map.entry("channel.ecommerce.forbidden-items",
@@ -3283,6 +3294,20 @@ public class PosSettingsService {
         LOGGER.info("Entering method taxIdPortugueseCheck");
         LOGGER.info("Exiting method taxIdPortugueseCheck");
         return boolValue("customer.tax-id-pt-check");
+    }
+
+    /**
+     * Whether the sale screen offers the NIF CLIENT key (LC-08-06-02): always on
+     * a Portuguese register, which states every sale on a Portuguese fiscal
+     * document, and elsewhere only where the store asks for it.
+     *
+     * @return true when the GÉNÉROSITÉ menu shows the NIF CLIENT key
+     */
+    public boolean saleTaxIdKey() {
+        LOGGER.info("Entering method saleTaxIdKey");
+        boolean shown = ptDocuments() || boolValue("customer.tax-id-key");
+        LOGGER.info("Exiting method saleTaxIdKey");
+        return shown;
     }
 
     /**
@@ -9481,4 +9506,15 @@ public class PosSettingsService {
         return value("fiscal.at-public-certificate").trim();
     }
 
+    // ---- DG: C getters ----
+
+    /**
+     * What becomes of an e-commerce order paid short (DG-03-01-05): RECALL
+     * keeps it as a basket the till recalls, REJECT refuses it.
+     *
+     * @return RECALL or REJECT, trimmed and upper-cased
+     */
+    public String ecommercePartialPayment() {
+        return value("channel.ecommerce.partial-payment").trim().toUpperCase(java.util.Locale.ROOT);
+    }
 }

@@ -27,35 +27,35 @@
     <h2 class="card-title">{inject:i18n.get('t.importer-une-image')}</h2>
     <p class="card-sub">{inject:i18n.get('t.echelon-vide-l-image-est-le-defaut')}</p>
     <form method="post" action="/admin/images/save" id="imageForm">
-        <div class="form-grid">
-            <label>{inject:i18n.get('t.code')}<input type="text" name="code" maxlength="40" required></label>
-            <label>{inject:i18n.get('t.libelle-2')}<input type="text" name="label" maxlength="80" required></label>
-            <label>{inject:i18n.get('t.usage')}
-                <select name="usage">
+        <div class="field-grid">
+            <label class="field"><span class="field-label">{inject:i18n.get('t.code')}</span><input class="input-control" type="text" name="code" maxlength="40" required></label>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.libelle-2')}</span><input class="input-control" type="text" name="label" maxlength="80" required></label>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.usage')}</span>
+                <select class="input-control" name="usage">
                     {#for usage in usages}<option value="{usage}">{inject:i18n.text(usage.label)}</option>{/for}
                 </select>
             </label>
-            <label>{inject:i18n.get('t.echelon')}
-                <select name="level">
+            <label class="field"><span class="field-label">{inject:i18n.get('t.echelon')}</span>
+                <select class="input-control" name="level">
                     <option value="">{inject:i18n.get('t.defaut-du-groupe')}</option>
                     <option value="COUNTRY">{inject:i18n.get('t.pays')}</option>
                     <option value="ENSEIGNE">{inject:i18n.get('t.enseigne-2')}</option>
                     <option value="PDV">{inject:i18n.get('t.point-de-vente')}</option>
                 </select>
             </label>
-            <label>{inject:i18n.get('t.code-echelon-2')}<input type="text" name="echelonCode" maxlength="20"></label>
-            <label>{inject:i18n.get('t.code-avantage')}<input type="text" name="advantageCode" maxlength="40"></label>
-            <label>{inject:i18n.get('t.fichier-image')}<input type="file" id="imgFile" accept="image/*" required></label>
-            <label class="check"><input type="checkbox" name="active" checked> {inject:i18n.get('t.active')}</label>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.code-echelon-2')}</span><input class="input-control" type="text" name="echelonCode" maxlength="20"></label>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.code-avantage')}</span><input class="input-control" type="text" name="advantageCode" maxlength="40"></label>
+            <label class="field"><span class="field-label">{inject:i18n.get('t.fichier-image')}</span><input class="input-control" type="file" id="imgFile" accept="image/*" required></label>
+            <div class="field"><label class="field-check"><input type="checkbox" name="active" checked> <span>{inject:i18n.get('t.active')}</span></label></div>
         </div>
         <input type="hidden" name="imgData" id="imgData">
-        <button class="btn btn-primary" type="submit">{inject:i18n.get('t.importer')}</button>
+        <div class="form-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.importer')}</button></div>
     </form>
 </div>
 
 <div class="card">
     <h2 class="card-title">{inject:i18n.get('t.les-images')}</h2>
-    <table class="admin-table">
+    <table class="data-table">
         <thead>
             <tr><th>{inject:i18n.get('t.apercu')}</th><th>{inject:i18n.get('t.code')}</th><th>{inject:i18n.get('t.libelle-2')}</th><th>{inject:i18n.get('t.usage')}</th><th>{inject:i18n.get('t.echelon')}</th><th>{inject:i18n.get('t.avantage')}</th><th>{inject:i18n.get('t.active')}</th><th></th></tr>
         </thead>

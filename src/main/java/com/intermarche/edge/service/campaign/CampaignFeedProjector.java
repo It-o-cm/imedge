@@ -73,14 +73,15 @@ public class CampaignFeedProjector implements SeedFeedProjector {
 
     /**
      * Renders one campaign as a pipe-delimited row, empty cells for open bounds
-     * and unset ceilings.
+     * and unset ceilings; the bounds are the ISO local date-times the engine's
+     * import reads: from the start of the first day to the end of the last.
      *
      * @param campaign the campaign to render
      * @return the row line, without a trailing newline
      */
     private String row(Campaign campaign) {
-        String validFrom = campaign.validFrom == null ? "" : campaign.validFrom.toString();
-        String validTo = campaign.validTo == null ? "" : campaign.validTo.toString();
+        String validFrom = campaign.validFrom == null ? "" : campaign.validFrom + "T00:00:00";
+        String validTo = campaign.validTo == null ? "" : campaign.validTo + "T23:59:59";
         String maxAmount = campaign.maxAmount == null ? ""
                 : campaign.maxAmount.setScale(2, RoundingMode.HALF_UP).toPlainString();
         String maxApplications = campaign.maxApplications == null ? ""

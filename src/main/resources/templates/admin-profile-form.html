@@ -74,7 +74,7 @@
                     <td class="grant-col grant-validation">
                         <div class="grant-validation-options">
                             {#for cell in feature.validationCells}
-                            <label class="toggle">
+                            <label class="field-check">
                                 <input type="checkbox" name="validate" value="{cell.token}"
                                        aria-label="{inject:i18n.get('t.validation')} {inject:i18n.text(feature.label)} {inject:i18n.text(cell.label)}"{#if cell.checked} checked{/if}>
                                 <span>{inject:i18n.text(cell.label)}</span>

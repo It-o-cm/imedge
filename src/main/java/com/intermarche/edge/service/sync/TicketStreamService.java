@@ -103,6 +103,10 @@ public class TicketStreamService {
     @Inject
     ObjectMapper objectMapper;
 
+    /** Reads an e-commerce or mobility order as its platform does (DG-03-02-04). */
+    @Inject
+    com.intermarche.edge.service.EcommerceOrderViewService ecommerceOrderViewService;
+
     /** The delivery loop, null until the node has started. */
     ScheduledExecutorService executor;
 
@@ -196,6 +200,36 @@ public class TicketStreamService {
         status.message = report.message;
         status.unknownLines = report.unknownLines;
         status.forbiddenLines = report.forbiddenLines;
+        enqueue(StreamEvent.Kind.ECOMMERCE, report.reference, status, ecommercePlatforms());
+        LOGGER.info("Exiting method onEcommerceReport");
+    }
+
+    /**
+     * Enqueues the new status of an e-commerce or mobility order for the
+     * declared e-commerce platforms (DG-03-02-04), with its payments — the
+     * platform's and the till's — and the ticket that settled it, when the
+     * store returns the statuses; delivered and supervised by the same loop
+     * as the integration reports (BO-11-04-03).
+     *
+     * @param order the order whose status changed
+     */
+    @Transactional
+    public void onEcommerceOrderStatus(com.intermarche.edge.domain.sale.CustomerOrder order) {
+        LOGGER.info("Entering method onEcommerceOrderStatus");
+        if (!posSettingsService.ecommerceStatusReturn()) {
+            LOGGER.info("Exiting method onEcommerceOrderStatus: status return off");
+            return;
+        }
+        enqueue(StreamEvent.Kind.ECOMMERCE, order.code, ecommerceOrderViewService.view(order), ecommercePlatforms());
+        LOGGER.info("Exiting method onEcommerceOrderStatus");
+    }
+
+    /**
+     * The declared e-commerce platforms that can be reached.
+     *
+     * @return the platforms, in code order
+     */
+    private List<ServiceProvider> ecommercePlatforms() {
         List<ServiceProvider> platforms = new ArrayList<>();
         for (ServiceProvider candidate
                 : ServiceProvider.listActiveOfType(ServiceProvider.ProviderType.ECOMMERCE)) {
@@ -203,8 +237,7 @@ public class TicketStreamService {
                 platforms.add(candidate);
             }
         }
-        enqueue(StreamEvent.Kind.ECOMMERCE, report.reference, status, platforms);
-        LOGGER.info("Exiting method onEcommerceReport");
+        return platforms;
     }
 
     /**

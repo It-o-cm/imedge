@@ -31,7 +31,7 @@
         </div>
         <div class="field">
             <label class="field-label" for="cl-{currency.code}">{inject:i18n.get('t.libelle')}</label>
-            <input class="input-control" id="cl-{currency.code}" type="text" name="label" maxlength="40" value="{currency.label ?: ''}">
+            <input class="input-control" id="cl-{currency.code}" type="text" name="label" maxlength="40" value="{currency.label ?: ''}" required>
         </div>
         <div class="field">
             <label class="field-label" for="cs-{currency.code}">{inject:i18n.get('t.symbole')}</label>
@@ -46,8 +46,7 @@
             <input class="input-control" id="co-{currency.code}" type="number" name="displayOrder" min="0" value="{currency.displayOrder}">
         </div>
         <div class="field">
-            <label class="field-label" for="ca-{currency.code}">{inject:i18n.get('t.active')}</label>
-            <input id="ca-{currency.code}" type="checkbox" name="active" {#if currency.active}checked{/if}>
+            <label class="field-check"><input id="ca-{currency.code}" type="checkbox" name="active" {#if currency.active}checked{/if}> <span>{inject:i18n.get('t.active')}</span></label>
         </div>
         {! BO-03-02-39 : la monnaie dans laquelle le rendu de cette devise est
          ! donne. Un code de MOYEN DE PAIEMENT et non de devise : le rendu sort
@@ -95,7 +94,7 @@
         </div>
         <div class="field">
             <label class="field-label" for="new-label">{inject:i18n.get('t.libelle')}</label>
-            <input class="input-control" id="new-label" type="text" name="label" maxlength="40">
+            <input class="input-control" id="new-label" type="text" name="label" maxlength="40" required>
         </div>
         <div class="field">
             <label class="field-label" for="new-symbol">{inject:i18n.get('t.symbole')}</label>
@@ -110,8 +109,7 @@
             <input class="input-control" id="new-order" type="number" name="displayOrder" min="0" value="0">
         </div>
         <div class="field">
-            <label class="field-label" for="new-active">{inject:i18n.get('t.active')}</label>
-            <input id="new-active" type="checkbox" name="active" checked>
+            <label class="field-check"><input id="new-active" type="checkbox" name="active" checked> <span>{inject:i18n.get('t.active')}</span></label>
         </div>
         <div class="page-actions"><button class="btn btn-primary" type="submit">{inject:i18n.get('t.creer-la-devise')}</button></div>
     </form>

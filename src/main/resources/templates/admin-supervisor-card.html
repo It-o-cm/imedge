@@ -1,0 +1,35 @@
+{!
+ ! Carte superviseur imprimable (BO-03-06-51) : le nom du titulaire et le
+ ! code-barres Code 128 de son badge derriere le prefixe superviseur. Le
+ ! passage de cette carte en caisse vaut aval superviseur.
+!}
+{#include admin-layout}
+
+{#title}{inject:i18n.get('t.carte-superviseur')}{/title}
+
+{#body}
+<div class="page-head">
+    <div>
+        <h1>{inject:i18n.get('t.carte-superviseur')}</h1>
+        <p class="page-sub">{inject:i18n.get('t.imprimez-la-carte-et-remettez-la-a')}</p>
+    </div>
+</div>
+
+<div class="card">
+    {#if holder}
+    <div class="supervisor-card" style="border:1px solid #333; border-radius:8px; padding:16px; max-width:360px; text-align:center;">
+        <div style="font-weight:bold; letter-spacing:2px;">{inject:i18n.get('t.carte-superviseur-2')}</div>
+        <div style="margin:8px 0; font-size:1.1em;">{holder}</div>
+        <div style="overflow-x:auto;">{barcode.raw}</div>
+        <div class="mono">{code}</div>
+    </div>
+    <div class="page-actions">
+        <button class="btn btn-primary" type="button" onclick="window.print()">{inject:i18n.get('t.imprimer')}</button>
+        <a class="btn" href="/admin/accounts">{inject:i18n.get('t.retour-aux-comptes')}</a>
+    </div>
+    {#else}
+    <p class="col-muted">{inject:i18n.get('t.ce-compte-ne-porte-pas-de-carte')}</p>
+    <a class="btn" href="/admin/accounts">{inject:i18n.get('t.retour-aux-comptes')}</a>
+    {/if}
+</div>
+{/body}

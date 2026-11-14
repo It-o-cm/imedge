@@ -1621,7 +1621,8 @@ class SyncOutboxServiceTest {
     /**
      * BO-06-06-02, BO-06-08-02: a ticket travels with the moment its payment
      * started and the valuation trace of its lines, each promotion the line
-     * took and what it took off.
+     * took and what it took off; DG-03-02-01: with the recalled orders it
+     * settled, none when it settled none.
      *
      * @throws Exception never
      */
@@ -1635,6 +1636,7 @@ class SyncOutboxServiceTest {
         ticket.id = 100L;
         ticket.status = Ticket.TicketStatus.CLOSED;
         ticket.paymentStartedAt = LocalDateTime.of(2026, 10, 24, 9, 31, 0);
+        ticket.recalledOrderCode = "W4;BV-1";
         com.intermarche.edge.domain.sale.TicketLineValuation trace = new com.intermarche.edge.domain.sale.TicketLineValuation();
         trace.lineUid = "L1";
         trace.localTotal = new BigDecimal("2.40");
@@ -1653,6 +1655,11 @@ class SyncOutboxServiceTest {
             SyncPayloads.TicketDto out = new ObjectMapper().readValue(service.prepare(1L).json,
                     SyncPayloads.TicketDto.class);
             assertEquals("2026-10-24T09:31:00", out.paymentStartedAt);
+            assertEquals(List.of("W4", "BV-1"), out.recalledOrderCodes);
+            ticket.recalledOrderCode = null;
+            SyncPayloads.TicketDto none = new ObjectMapper().readValue(service.prepare(1L).json,
+                    SyncPayloads.TicketDto.class);
+            assertTrue(none.recalledOrderCodes.isEmpty());
             assertEquals(1, out.valuations.size());
             SyncPayloads.ValuationDto dto = out.valuations.get(0);
             assertEquals("L1", dto.lineUid);
